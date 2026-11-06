@@ -115,6 +115,7 @@
 #include "strata/program/batch_read.hpp"
 #include "strata/program/logits_selection.hpp"
 #include "strata/program/conv_cache.hpp"
+#include "strata/program/conversation_restore.hpp"
 #include "strata/program/split_rules.hpp"
 #include "strata/program/stage_reserve.hpp"
 #include "strata/program/split_walk.hpp"
@@ -17533,90 +17534,70 @@ int main(int argc, char** argv) {
                 }
             }
             const auto parked = conversations.best(ids, req_imgs, want_cvec);
-            std::optional<strata::core::SavedConversation> incoming;
-            // A checkpoint inside ANOTHER parked conversation (a sibling subagent's system prompt and tools, say) is
-            // borrowed: its K/V up to there and the checkpoint come over, and that conversation stays parked for its
-            // own next turn (ConversationCache::borrows).  Everything else is taken whole, as before.
-            // (a layer split restores whole stage images only, so it never borrows; a batch slot that holds a longer
-            // start of this prompt wins as before)
-            bool borrow = stages.empty() && parked.tokens > std::max(resume, slot_tokens) &&
-                          conversations.borrows(parked);
-            if (parked.tokens > std::max(resume, slot_tokens) && !borrow)
-                incoming.emplace(conversations.take(parked.index));
-            if (incoming || borrow) slot_source = -1;
-            // Reject the entire image before parking/overwriting the outgoing
-            // state. Invalid entries can safely fall back to its existing prefix.
-            if (incoming && incoming->stage_images.size() != stages.size()) {
+            strata::program::ConversationRestoreAttempt restore_attempt;
+            auto& incoming = restore_attempt.incoming;
+            bool& borrow = restore_attempt.borrow;
+            const bool selected_prefix = stages.empty() && parked.tokens > std::max(resume, slot_tokens) &&
+                                         conversations.borrows(parked);
+            // Keep the selected image in the cache until validation AND actual resource acquisition succeed.
+            // In particular, preflight failure must not move checkpoints, evict a donor or park the outgoing state.
+            const bool wants_snapshot = parked.tokens > std::max(resume, slot_tokens);
+            const strata::core::SavedConversation* selected = wants_snapshot ? conversations.find(parked.serial) : nullptr;
+            if (selected && selected->stage_images.size() != stages.size()) {
                 std::fprintf(stderr, "strata serve: conversation cache: discard snapshot (stage count)\n");
-                incoming.reset();
+                selected = nullptr;
             }
-            if (incoming) for (size_t i = 0; i < stages.size(); ++i) {
+            if (selected) for (size_t i = 0; i < stages.size(); ++i) {
                 const strata::core::OnDevice on(stages[i]->dev);
-                if (!strata::core::conversation_snapshot_validate(incoming->stage_images[i], stages[i]->ss, g,
-                        use_mtp && !mtp_first && i + 1 == stages.size() ? &mtp.kv_state() : nullptr, err)) {   // the draft: the last stage's
-                    std::fprintf(stderr, "strata serve: conversation cache: discard invalid stage snapshot (%s)\n",
-                                 err.c_str());
-                    incoming.reset();
+                if (!strata::core::conversation_snapshot_validate(selected->stage_images[i], stages[i]->ss, g,
+                        use_mtp && !mtp_first && i + 1 == stages.size() ? &mtp.kv_state() : nullptr, err)) {
+                    std::fprintf(stderr, "strata serve: conversation cache: discard invalid stage snapshot (%s)\n", err.c_str());
+                    selected = nullptr;
                     err.clear();
                     break;
                 }
             }
-            if (incoming && !strata::core::conversation_snapshot_validate(*incoming, ss, g,
+            if (selected && !strata::core::conversation_snapshot_validate(*selected, ss, g,
                     use_mtp && (stages.empty() || mtp_first) ? &mtp.kv_state() : nullptr, err)) {
                 std::fprintf(stderr, "strata serve: conversation cache: discard invalid snapshot (%s)\n", err.c_str());
-                incoming.reset();
+                selected = nullptr;
                 err.clear();
             }
-            // #2409: a restore writes into buffers that exist already. The one thing it can still allocate on a card is
-            // this thread's private copy stream for it (a pooled one is reused), and an out-of-memory there is fatal
-            // for the process (a failed restore must not be decoded from). So a card that would have to create one and
-            // has less than kRestoreFirstUseMib free gets no restore: the snapshot goes back to the cache and this
-            // prompt is read again. A card that already has its stream is never refused, however full it is.
-            if (incoming) {
-                std::vector<int> restore_devs{-1};
-                for (const auto& stp : stages) restore_devs.push_back(stp->dev);
-                std::vector<uint64_t> restore_free;
-                std::vector<uint8_t> restore_ready;
-                int tight = -1;
-                bool sampled = true;
-                for (const int rd : restore_devs) {
-                    const strata::core::OnDevice on(rd);
-                    int cur = 0;
-                    size_t fb = 0, tb = 0;
-                    if (cudaGetDevice(&cur) != cudaSuccess || cudaMemGetInfo(&fb, &tb) != cudaSuccess) {
-                        (void) cudaGetLastError();
-                        sampled = false;   // no sample: the restore goes ahead as it always did
-                        break;
-                    }
-                    restore_free.push_back((uint64_t) fb);
-                    restore_ready.push_back(strata::core::conversation_copy_stream_ready(cur) ? 1 : 0);
+            if (wants_snapshot && !selected && !selected_prefix) {
+                // Preserve the old invalid-whole-image eviction policy. No valid restore attempt has begun.
+                const size_t at = conversations.index_of(parked.serial);
+                if (at != SIZE_MAX) (void) conversations.take(at);
+            }
+            if (selected) {
+                using Prepared = strata::core::ConversationCopyPreparation;
+                Prepared prepared = Prepared::unavailable;
+                try {
+                    // A borrowed prefix can become a whole restore while parking. Prepare the conservative
+                    // complete set now, before parking or K/V growth; thread-local handles cannot be stolen.
+                    std::vector<int> restore_devs{-1};
+                    for (const auto& stp : stages) restore_devs.push_back(stp->dev);
+                    prepared = restore_attempt.prepare(conversations, parked.serial, selected_prefix,
+                            restore_devs.data(), restore_devs.size(), strata::core::conversation_copy_prepare, err);
+                } catch (const std::bad_alloc&) {
+                    // Still before cache take()/mutation: preserve both selected and outgoing conversations.
+                    std::fprintf(stderr, "strata serve: conversation cache: no host memory for restore preparation\n");
                 }
-                if (sampled &&
-                    !strata::program::conv_cache::restore_fits(restore_free.data(), restore_ready.data(), restore_free.size(),
-                                                               strata::program::conv_cache::kRestoreFirstUseMib << 20)) {
-                    for (size_t k = 0; k < restore_free.size(); ++k)
-                        if (!restore_ready[k] && restore_free[k] < (strata::program::conv_cache::kRestoreFirstUseMib << 20)) tight = (int) k;
-                    std::fprintf(stderr, "strata serve: conversation cache: skip restore (%s has %lld MiB free and no copy stream "
-                                         "yet, which needs up to %lld MiB); rereading the prompt\n",
-                                 tight <= 0 ? "CUDA0" : ("stage " + std::to_string(tight)).c_str(),
-                                 (long long) (tight >= 0 ? restore_free[(size_t) tight] >> 20 : 0),
-                                 (long long) strata::program::conv_cache::kRestoreFirstUseMib);
-                    auto retry = std::move(*incoming);
-                    incoming.reset();
-                    if (!conversations.put(std::move(retry)))
-                        std::fprintf(stderr, "strata serve: conversation cache: could not return the skipped snapshot\n");
+                if (prepared == Prepared::fatal) {
+                    std::printf("ERR preparing conversation restore: %s\n", err.c_str());
+                    return 1;
+                }
+                if (prepared == Prepared::unavailable) {
+                    std::fprintf(stderr, "strata serve: conversation cache: skip restore (%s); reading the prompt\n",
+                                 err.empty() ? "resource preparation unavailable" : err.c_str());
                     err.clear();
                 }
             }
-            if (borrow) {
-                const strata::core::SavedConversation* donor = conversations.find(parked.serial);
-                if (donor == nullptr ||
-                    !strata::core::conversation_snapshot_validate(*donor, ss, g, use_mtp ? &mtp.kv_state() : nullptr,
-                                                                  err)) {
-                    std::fprintf(stderr, "strata serve: conversation cache: cannot borrow from a parked conversation "
-                                         "(%s)\n", err.empty() ? "gone" : err.c_str());
-                    borrow = false;
-                    err.clear();
+            if (incoming || borrow) {
+                slot_source = -1;
+                // Recoverable fallback ends here. Every subsequent failure aborts this inference operation.
+                if (!restore_attempt.begin_mutation()) {
+                    std::printf("ERR conversation restore was not prepared\n");
+                    return 1;
                 }
             }
             // Preserve the outgoing branch before any checkpoint rewind, reset,
@@ -17625,11 +17606,26 @@ int main(int argc, char** argv) {
             // (a sibling query of the last one).  What the last query added past it is its private suffix - a few
             // dozen tokens, cheaper to read than the prefix's whole K/V is to copy to the host - so it is not parked:
             // N queries keep one prefix.  A request without pin=, or one that resumes anywhere else, parks as before.
-            bool pin_sibling = false;
-            if (req_pin > 0 && req_ckpt && o.prompt_cache >= 3 && !from_live && !incoming && slot_source < 0 &&
-                resume == req_pin && live_ok)
-                for (const ConvCheckpoint& c : checks)
-                    if ((int64_t) c.ids.size() == resume && c.pinned) pin_sibling = true;
+            bool pinned_at_resume = false;   // resume_gate's pin=N input: a pinned checkpoint exactly at `resume`
+            for (const ConvCheckpoint& c : checks)
+                if ((int64_t) c.ids.size() == resume && c.pinned) pinned_at_resume = true;
+            // --conversation-cache-park-gain N: a park now would supersede the entry parked_prefix_tokens() reports (the copy
+            // this conversation wrote last), so a conversation that advanced fewer than N tokens since then keeps it:
+            // it still holds this conversation's prefix, and re-parking writes the whole snapshot only for the next
+            // turn to drop it again.  0 (the default) parks every turn, as before.
+            const size_t park_held = o.conversation_cache_park_gain > 0
+                                         ? conversations.parked_prefix_tokens(live, live_imgs, checks, cvec_cached)
+                                         : 0;
+            const bool park_worth = o.conversation_cache_park_gain <= 0 || park_held == 0 ||
+                                    (int64_t) live.size() >= (int64_t) park_held + o.conversation_cache_park_gain;
+            // The resume-source decision (pin=N, and whether the outgoing conversation parks). A restore whose
+            // preparation was DECLINED has no incoming image and no borrow and leaves slot_source alone, so this
+            // is exactly the decision a request with no parked match makes: it falls back to the batch slot, or
+            // to the checkpoint chain, and reads the prompt (conv_cache_test walks the table).
+            const auto rsel = strata::program::resume_gate(incoming.has_value(), from_live, live_ok, slot_source,
+                                                           resume, req_pin, req_ckpt, o.prompt_cache, park_worth,
+                                                           pinned_at_resume);
+            const bool pin_sibling = rsel.pin_sibling;
             // The live branch past this request's resume point is only the reply this prompt replaces: the request resumes from
             // the live branch's own turn checkpoint and opens the same assistant turn there again (an OpenAI-style client's
             // next turn sends the reply back without its reasoning; an edited reply; a regenerate).  That branch is not parked:
@@ -17652,15 +17648,6 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "strata serve: conversation cache: the reply this request replaces is not parked (%lld "
                                      "tokens past the turn checkpoint at %lld)\n", (long long) ((int64_t) live.size() - resume),
                              (long long) resume);
-            // --conversation-cache-park-gain N: a park now would supersede the entry parked_prefix_tokens() reports (the copy
-            // this conversation wrote last), so a conversation that advanced fewer than N tokens since then keeps it:
-            // it still holds this conversation's prefix, and re-parking writes the whole snapshot only for the next
-            // turn to drop it again.  0 (the default) parks every turn, as before.
-            const size_t park_held = o.conversation_cache_park_gain > 0
-                                         ? conversations.parked_prefix_tokens(live, live_imgs, checks, cvec_cached)
-                                         : 0;
-            const bool park_worth = o.conversation_cache_park_gain <= 0 || park_held == 0 ||
-                                    (int64_t) live.size() >= (int64_t) park_held + o.conversation_cache_park_gain;
             // STRATA_PARK_ASYNC: the checkpoints this request drops after its park - all of them when another state
             // comes in (a parked conversation, a borrow, a batch slot) or the cvec changes, else the ones off this
             // prompt's path (off_path below) - move into the parked image
@@ -17676,7 +17663,7 @@ int main(int argc, char** argv) {
             }
             if (borrow && !pin_sibling && park_worth) {
                 conversations.guard(parked.serial);   // parking the outgoing conversation must not evict the donor
-                const bool parked_ok = park_current(0);
+                const bool parked_ok = restore_attempt.apply([&] { return park_current(0); });
                 const bool blocked = conversations.guard_blocked();
                 conversations.unguard();
                 if (!parked_ok) {
@@ -17688,16 +17675,17 @@ int main(int argc, char** argv) {
                     // taken whole as before (it was validated above)
                     std::fprintf(stderr, "strata serve: conversation cache: no room beside the parked conversation "
                                          "this request starts with; taking it instead of borrowing\n");
-                    borrow = false;
-                    if (const size_t at = conversations.index_of(parked.serial); at != SIZE_MAX)
-                        incoming.emplace(conversations.take(at));
-                    if (!park_current(incoming ? incoming->bytes() : 0)) {
+                    if (!restore_attempt.take_donor(conversations, parked.serial)) {
+                        std::printf("ERR prepared conversation donor is no longer available\n");
+                        return 1;
+                    }
+                    if (!restore_attempt.apply([&] { return park_current(incoming->bytes()); })) {
                         std::printf("ERR %s\n", err.c_str());
                         return 1;
                     }
                 }
-            } else if ((!from_live || incoming || slot_source >= 0) && !pin_sibling && !reply_replaced && park_worth &&
-                       !park_current(incoming ? incoming->bytes() : 0)) {
+            } else if (rsel.park_outgoing && !reply_replaced &&
+                       !restore_attempt.apply([&] { return park_current(incoming ? incoming->bytes() : 0); })) {
                 std::printf("ERR %s\n", err.c_str());
                 return 1;
             }
@@ -17792,19 +17780,22 @@ int main(int argc, char** argv) {
             }
             // the elastic K/V: a parked conversation is restored whole, and it may be longer than this prompt
             // (STRATA_PARK_VRAM_MIB: the parked K/V copies in VRAM go first, then one more try)
-            if (incoming && !kvg_ensure((int64_t) incoming->live.ids.size() + 256, kv_quiesce) &&
-                (strata::core::conversation_park_vram_release_all() == 0 ||
-                 !kvg_ensure((int64_t) incoming->live.ids.size() + 256, kv_quiesce))) {
+            if (incoming && !restore_attempt.apply([&] {
+                    return kvg_ensure((int64_t) incoming->live.ids.size() + 256, kv_quiesce) ||
+                           (strata::core::conversation_park_vram_release_all() != 0 &&
+                            kvg_ensure((int64_t) incoming->live.ids.size() + 256, kv_quiesce));
+                })) {
                 std::printf("ERR the K/V cannot grow to the parked conversation: no VRAM is left\n");
                 return 1;
             }
             if (borrow) {
                 const auto t0 = Clock::now();
                 const strata::core::SavedConversation* donor = conversations.find(parked.serial);   // still parked
-                if (donor == nullptr ||
-                    strata::core::conversation_snapshot_restore_prefix(*donor, parked.tokens, ss, g,
-                                                                       use_mtp ? &mtp.kv_state() : nullptr, err) !=
-                        strata::core::ConversationRestore::restored) {
+                if (!restore_attempt.apply([&] {
+                        return donor != nullptr &&
+                            strata::core::conversation_snapshot_restore_prefix(*donor, parked.tokens, ss, g,
+                                    use_mtp ? &mtp.kv_state() : nullptr, err) == strata::core::ConversationRestore::restored;
+                    })) {
                     // validated above and guarded while parking: a failure here is fatal, as for a whole restore
                     std::printf("ERR restoring a borrowed conversation prefix: %s\n",
                                 err.empty() ? "gone" : err.c_str());
@@ -17828,9 +17819,11 @@ int main(int argc, char** argv) {
             }
             if (incoming) {
                 const auto t0 = Clock::now();
-                if (strata::core::conversation_snapshot_restore(*incoming, ss, g,
-                        use_mtp && (stages.empty() || mtp_first) ? &mtp.kv_state() : nullptr, err) !=
-                    strata::core::ConversationRestore::restored) {
+                if (!restore_attempt.apply([&] {
+                        return strata::core::conversation_snapshot_restore(*incoming, ss, g,
+                                use_mtp && (stages.empty() || mtp_first) ? &mtp.kv_state() : nullptr, err) ==
+                               strata::core::ConversationRestore::restored;
+                    })) {
                     // Already prevalidated above: a failure here is fatal, never
                     // permission to decode from a partially restored session.
                     std::printf("ERR restoring parked conversation: %s\n", err.c_str());
@@ -17838,14 +17831,18 @@ int main(int argc, char** argv) {
                 }
                 for (size_t i = 0; i < stages.size(); ++i) {   // the later stages' parts
                     const strata::core::OnDevice on(stages[i]->dev);
-                    if (strata::core::conversation_snapshot_restore(incoming->stage_images[i], stages[i]->ss, g,
-                            use_mtp && !mtp_first && i + 1 == stages.size() ? &mtp.kv_state() : nullptr, err) !=
-                        strata::core::ConversationRestore::restored) {
+                    if (!restore_attempt.apply([&] {
+                            return strata::core::conversation_snapshot_restore(incoming->stage_images[i], stages[i]->ss, g,
+                                    use_mtp && !mtp_first && i + 1 == stages.size() ? &mtp.kv_state() : nullptr, err) ==
+                                   strata::core::ConversationRestore::restored;
+                        })) {
                         std::printf("ERR restoring parked conversation (stage CUDA%d): %s\n", stages[i]->dev,
                                     err.c_str());
                         return 1;
                     }
-                    if (cudaDeviceSynchronize() != cudaSuccess) { std::printf("ERR stage sync\n"); return 1; }
+                    if (!restore_attempt.apply([&] { return cudaDeviceSynchronize() == cudaSuccess; })) {
+                        std::printf("ERR stage sync\n"); return 1;
+                    }
                 }
                 if (use_mtp && std::getenv("STRATA_SNAPSHOT_VERIFY") != nullptr) {
                     uint64_t draft_hash = 0;
@@ -18001,6 +17998,10 @@ int main(int argc, char** argv) {
             // KV streaming: the drafter's ring may hold cells past `resume` from a longer turn; the main layers'
             // host copies and slots are always current (every writer writes both), so they need nothing
             if (use_mtp && resume > 0 && reread_to <= 0) mtp.kv_restore(resume);
+            if (!restore_attempt.finish()) {
+                std::printf("ERR cannot continue from an incomplete conversation restore\n");
+                return 1;
+            }
             tr("request", n, geni ? 1 : 0);
             req_times = ReqTimes{};
             if (use_mtp) mtp.set_prompt_len(n);

@@ -37,10 +37,10 @@ bool sync(std::string& error) {
     return false;
 }
 
-bool copy(void* dst, const void* src, size_t bytes, std::string& error, bool queued = false) {
+bool copy(void* dst, const void* src, size_t bytes, std::string& error, bool queued = false, bool host_readback = false) {
     if (!bytes) return true;
     if (!dst || !src) return fail(error, "missing running-state buffer");
-    const auto status = conversation_detail::copy_nonblocking(dst, src, bytes, queued);
+    const auto status = conversation_detail::copy_nonblocking(dst, src, bytes, queued, host_readback);
     if (status == cudaSuccess) return true;
     error = std::string("conversation snapshot running-state copy: ") + cudaGetErrorString(status);
     return false;
@@ -363,7 +363,7 @@ bool checkpoint_save(ConversationCheckpoint& c, const SessionState& ss, const Mo
             staged = true;
         }
     }
-    if (!staged && !copy(c.gdn.data(), ss.gdn_state, c.gdn.size(), error)) return false;
+    if (!staged && !copy(c.gdn.data(), ss.gdn_state, c.gdn.size(), error, false, true)) return false;
     const auto s0 = std::chrono::steady_clock::now();
     const bool ok = [&] {
         // STRATA_CKPT_GATHER=1: the small vectors through one device gather and one copy (else one copy each)
@@ -371,12 +371,12 @@ bool checkpoint_save(ConversationCheckpoint& c, const SessionState& ss, const Mo
             const int r = ckpt_gather_small(c, ss, z, layers, error);
             if (r != 0) return r > 0;
         }
-        if (!copy(c.ple.data(), ss.ple_hist, c.ple.size(), error)) return false;
+        if (!copy(c.ple.data(), ss.ple_hist, c.ple.size(), error, false, true)) return false;
         for (size_t j = 0; j < layers; ++j) {
             const auto& st = owned(ss, j);
-            if (!copy(c.tails.data() + j * z.tail, st.idx_tail, z.tail, error) ||
-                !copy(c.dead.data() + j * z.dead, st.idx_dead, z.dead, error) ||
-                !copy(c.block_pos.data() + j * z.block_pos, st.idx_block_pos, z.block_pos, error)) return false;
+            if (!copy(c.tails.data() + j * z.tail, st.idx_tail, z.tail, error, false, true) ||
+                !copy(c.dead.data() + j * z.dead, st.idx_dead, z.dead, error, false, true) ||
+                !copy(c.block_pos.data() + j * z.block_pos, st.idx_block_pos, z.block_pos, error, false, true)) return false;
         }
         return true;
     }();
@@ -722,6 +722,10 @@ bool conversation_snapshot_validate(const SavedConversation& image, const Sessio
 }
 
 bool conversation_copy_stream_ready(int device) { return conversation_detail::copy_stream_ready(device); }
+
+ConversationCopyPreparation conversation_copy_prepare(const int* devices, size_t count, std::string& error) {
+    return conversation_detail::prepare_copy_resources(devices, count, error);
+}
 
 ConversationRestore conversation_snapshot_restore(const SavedConversation& image, SessionState& ss,
                                                    const ModelGeometry& g, const QsaState* draft, std::string& error) {
