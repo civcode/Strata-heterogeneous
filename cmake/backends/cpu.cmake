@@ -87,6 +87,13 @@ if(STRATA_BUILD_TESTS OR STRATA_BUILD_CONVERSATION_TESTS)
   add_executable(split_ring_test src/program/split_ring_test.cpp)
   target_include_directories(split_ring_test PRIVATE include)
   add_test(NAME split_ring_test COMMAND split_ring_test)
+  # strata-dev-private 05134f54: the restore orchestration the serve loop runs: real cache + gate + resume_gate,
+  # injected failures (header-only, CPU)
+  add_executable(conversation_restore_orchestration_test src/program/conversation_restore_orchestration_test.cpp)
+  target_include_directories(conversation_restore_orchestration_test PRIVATE include)
+  add_test(NAME conversation_restore_orchestration_test COMMAND conversation_restore_orchestration_test)
+  set_tests_properties(conversation_restore_orchestration_test PROPERTIES TIMEOUT 60)
+
   # the serve loop's conversation-cache retention policy (header-only, no library to link)
   add_executable(conv_cache_test src/program/conv_cache_test.cpp)
   target_include_directories(conv_cache_test PRIVATE include)

@@ -256,11 +256,11 @@ bool park_trace_on() {
     return on;
 }
 
-bool transfer(void* dst, const void* src, size_t n, std::string& error) {
+bool transfer(void* dst, const void* src, size_t n, std::string& error, bool host_readback = false) {
     if (!n) return true;
     if (!src || !dst) { error = "conversation snapshot: missing state buffer"; return false; }
     // Default handles both device allocations and device-mapped host pool aliases.
-    const cudaError_t e = conversation_detail::copy_nonblocking(dst, src, n);
+    const cudaError_t e = conversation_detail::copy_nonblocking(dst, src, n, false, host_readback);
     if (e == cudaSuccess) return true;
     error = std::string("conversation snapshot copy: ") + cudaGetErrorString(e);
     return false;
@@ -342,7 +342,7 @@ bool conversation_kv_save(ConversationKv& image, const QsaState& st, const Model
                 } else {
                     dst[i]->resize(sizes[i]);
                     if (!dst[i]->visit(keep, sizes[i] - keep, [&](uint8_t* p, size_t n, size_t at) {
-                            return transfer(p, src[i] ? static_cast<const uint8_t*>(src[i]) + at : nullptr, n, error);
+                            return transfer(p, src[i] ? static_cast<const uint8_t*>(src[i]) + at : nullptr, n, error, true);
                         })) return false;
                 }
                 if (reused_bytes) *reused_bytes += keep;
@@ -365,7 +365,7 @@ bool conversation_kv_save(ConversationKv& image, const QsaState& st, const Model
         if (trace) kv_save_trace().resize_faults += conversation_trace::thread_minflt() - rf0;
         const bool copied = dst[i]->visit(keep, sizes[i] - keep, [&](uint8_t* p, size_t n, size_t at) {
                 const uint8_t* s = src[i] ? static_cast<const uint8_t*>(src[i]) + at : nullptr;
-                if (!staged) return transfer(p, s, n, error);
+                if (!staged) return transfer(p, s, n, error, true);
                 const cudaError_t e = conversation_detail::copy_nonblocking(a.stage + a.used, s, n, true);
                 if (e != cudaSuccess) { error = std::string("conversation snapshot stage copy: ") + cudaGetErrorString(e); return false; }
                 a.items.push_back({p, n, a.used});
@@ -530,7 +530,7 @@ bool conversation_kv_source(SessionKvSource& out, const QsaState& st, const Mode
     auto why = std::make_shared<std::string>();
     s.read = [src, sizes, why](size_t part, size_t offset, void* dst, size_t n) {
         if (part >= 5 || offset > sizes[part] || n > sizes[part] - offset) { *why = "K/V read out of range"; return false; }
-        return transfer(dst, src[part] ? static_cast<const uint8_t*>(src[part]) + offset : nullptr, n, *why);
+        return transfer(dst, src[part] ? static_cast<const uint8_t*>(src[part]) + offset : nullptr, n, *why, true);
     };
     s.error = [why] { return *why; };
     out = std::move(s);
@@ -546,7 +546,7 @@ bool conversation_kv_verify(const ConversationKv& image, const QsaState& st, con
     auto compare = [&](const void* device, const uint8_t* expected, size_t bytes, bool include_hash) {
         for (size_t offset = 0; offset < bytes;) {
             const size_t n = std::min(buffer.size(), bytes - offset);
-            if (!transfer(buffer.data(), static_cast<const uint8_t*>(device) + offset, n, error)) return false;
+            if (!transfer(buffer.data(), static_cast<const uint8_t*>(device) + offset, n, error, true)) return false;
             if (std::memcmp(buffer.data(), expected + offset, n) != 0) {
                 error = "conversation snapshot: restored K/V bytes differ";
                 return false;
@@ -598,6 +598,8 @@ void conversation_kv_save_trace(double& attrs_ms, double& resize_ms, double& cop
 long conversation_kv_save_trace_faults() { return kv_save_trace().resize_faults; }
 
 bool conversation_park_async_begin(size_t need) {
+    // HIP/Metal disable this feature. Do not mutate process-wide staging state during otherwise independent saves.
+    if (!park_async_on()) return false;
     if (park_trace_on()) kv_save_trace() = {};   // (the sums cover this park's saves)
     conversation_park_join();   // (the stage is reused)
     ParkAsync& a = park_async();
@@ -606,7 +608,7 @@ bool conversation_park_async_begin(size_t need) {
     a.used = 0;
     a.slot = nullptr;
     a.slot_tag = 0;
-    if (!park_async_on() || need == 0) return false;
+    if (need == 0) return false;
     int dev = 0;
     if (cudaGetDevice(&dev) != cudaSuccess) { (void) cudaGetLastError(); return false; }
     // STRATA_PARK_VRAM_MIB: a slot of the whole K/V instead of the stage, while the budget allows - taken before the

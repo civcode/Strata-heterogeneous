@@ -1242,7 +1242,50 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(conversation_copy_streams_test PRIVATE include)
   target_link_libraries(conversation_copy_streams_test PRIVATE strata_core ${_strata_gpu_runtime_target})
   add_test(NAME conversation_copy_streams_test COMMAND conversation_copy_streams_test)
-  set_tests_properties(conversation_copy_streams_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+  # cudaMemGetInfo is device-wide, so other CTest GPU workloads can affect the sample.
+  set_tests_properties(conversation_copy_streams_test PROPERTIES RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 120)
+
+  # strata-dev-private 05134f54: HIP pinned snapshot readback and conversation restore preparation
+  if(NOT STRATA_BUILD_CONVERSATION_TESTS)
+    # Exercise the existing snapshot format/restore fixtures in normal GPU test builds too.
+    add_executable(conversation_capture_formats_test src/core/conversation_snapshot_test.cpp)
+    target_link_libraries(conversation_capture_formats_test PRIVATE strata_engine)
+    add_test(NAME conversation_capture_formats_test COMMAND conversation_capture_formats_test)
+    # This existing fixture samples device-wide free memory across repeated restores.
+    set_tests_properties(conversation_capture_formats_test PROPERTIES RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 120)
+  endif()
+
+  add_executable(conversation_prepare_test src/core/conversation_prepare_test.cpp)
+  target_include_directories(conversation_prepare_test PRIVATE include)
+  target_link_libraries(conversation_prepare_test PRIVATE strata_engine)
+  set(_strata_prepare_modes reuse contention wrong-device)
+  if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_definitions(conversation_prepare_test PRIVATE STRATA_PREPARE_WRAP)
+    if(STRATA_ENABLE_HIP)
+      set(_prepare_api hip)
+    else()
+      set(_prepare_api cuda)
+    endif()
+    target_link_options(conversation_prepare_test PRIVATE
+      -Wl,--wrap=${_prepare_api}StreamCreateWithFlags -Wl,--wrap=${_prepare_api}EventCreateWithFlags
+      -Wl,--wrap=${_prepare_api}SetDevice -Wl,--wrap=${_prepare_api}MemGetInfo)
+    list(APPEND _strata_prepare_modes stream event second device query)
+  endif()
+  foreach(_mode IN LISTS _strata_prepare_modes)
+    add_test(NAME conversation_prepare_${_mode} COMMAND conversation_prepare_test ${_mode})
+    set_tests_properties(conversation_prepare_${_mode} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+  endforeach()
+
+  add_executable(conversation_readback_test src/core/conversation_readback_test.cpp)
+  target_include_directories(conversation_readback_test PRIVATE include)
+  target_link_libraries(conversation_readback_test PRIVATE strata_engine)
+  if(STRATA_ENABLE_HIP AND UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_definitions(conversation_readback_test PRIVATE STRATA_READBACK_LINK_WRAP)
+    target_link_options(conversation_readback_test PRIVATE
+      -Wl,--wrap=hipHostMalloc -Wl,--wrap=hipMemcpyAsync -Wl,--wrap=hipStreamSynchronize)
+  endif()
+  add_test(NAME conversation_readback_test COMMAND conversation_readback_test)
+  set_tests_properties(conversation_readback_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(pinned_shared_test src/core/pinned_shared_test.cpp)
