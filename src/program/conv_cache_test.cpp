@@ -12,15 +12,19 @@
 //   3. a mount advances a checkpoint's stamp and the rotation then takes a different leaf;
 //   4. a one-slot budget has no room for root and leaf, so the pin is off and the oldest leaves (the
 //      newest point stays, as before);
-//   5. the policy is pure: the same stamps, the same victim.
+//   5. the policy is pure: the same stamps, the same victim;
+//   6. the restore gate (conversation_restore.hpp) takes the snapshot only after its GPU resources were
+//      acquired, and keeps the two failure classes apart: before the boundary a refusal leaves the cache and
+//      the outgoing conversation untouched, after it nothing may run and the request must not continue.
 #include "strata/program/conv_cache.hpp"
+#include "strata/program/conversation_restore.hpp"
 
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 using strata::program::conv_cache::eviction_victim;
-using strata::program::conv_cache::restore_fits;
 using strata::program::conv_cache::spread_victim;
 
 namespace {
@@ -133,23 +137,127 @@ int main() {
         check(eviction_victim(s4.data(), s4.size(), 4, nullptr, all) == 2, "everything pinned: the oldest pin leaves, never the root");
         check(eviction_victim(s4.data(), s4.size(), 1, nullptr, all) == 0, "a one-slot budget keeps no pin: the oldest leaves");
     }
-    {   // #2409: a restore is refused only for a card that must create its copy stream and has no room for it
-        constexpr uint64_t need = strata::program::conv_cache::kRestoreFirstUseMib << 20;
-        const uint64_t loaded[] = {300ull << 20, 104ull << 20};         // a loaded card: far under --vram-reserve-mib
-        const uint8_t ready[] = {1, 1};
-        check(restore_fits(loaded, ready, 2, need), "cards with their stream already: any amount free admits (the #2409 review's case)");
-        const uint8_t later_new[] = {1, 0};
-        check(restore_fits(loaded, later_new, 2, need), "a card that must create its stream, with 104 MiB free: admitted");
-        const uint64_t full[] = {300ull << 20, 20ull << 20};
-        check(!restore_fits(full, later_new, 2, need), "a card that must create its stream, with 20 MiB free: reread instead");
-        check(restore_fits(full, ready, 2, need), "the same full card with its stream: admitted");
-        const uint64_t edge[] = {need, need - 1};
-        const uint8_t none[] = {0, 0};
-        check(!restore_fits(edge, none, 2, need), "one byte under the need refuses");
-        check(restore_fits(edge, none, 1, need), "exactly the need admits");
-        check(restore_fits(nullptr, none, 2, need) && restore_fits(full, nullptr, 2, need) && restore_fits(full, none, 0, need) &&
-                  restore_fits(full, none, 2, 0),
-              "no sample, no cards, no need: do not refuse");
+    {   // the restore gate: acquisition before mutation, and what each failure class may still do
+        using strata::core::ConversationCopyPreparation;
+        using strata::program::ConversationRestoreAttempt;
+        auto cache = [] {
+            strata::core::ConversationCache c(64ull << 20, 4);
+            strata::core::SavedConversation whole;
+            whole.live.ids = {1, 2, 3, 4, 5};
+            strata::core::ConversationCheckpoint at3;
+            at3.ids = {1, 2, 3};
+            whole.checkpoints.push_back(at3);
+            c.put(std::move(whole));
+            return c;
+        };
+        const std::vector<int32_t> prompt{1, 2, 3, 9};   // matches the checkpoint only -> a borrow
+        const std::vector<strata::core::ConversationImageKey> no_imgs;
+        const int devs[2] = {0, 1};
+        // what the acquire callback sees: proof that preparation runs while the snapshot is still cached
+        bool seen_cached = false, seen_parked = false;
+        int parked_calls = 0;
+        auto park = [&] { ++parked_calls; return true; };   // stands in for park_current
+        ConversationCopyPreparation result = ConversationCopyPreparation::ready;
+        auto acquire = [&](const int* d, size_t n, std::string&) {
+            seen_cached = true; seen_parked = parked_calls > 0;
+            check(n == 2 && d[0] == 0 && d[1] == 1, "prepare is asked for every participating device");
+            return result;
+        };
+        std::string err;
+
+        result = ConversationCopyPreparation::unavailable;   // a cold stream that will not fit
+        {
+            auto c = cache();
+            const auto m = c.best(prompt, no_imgs, true);
+            ConversationRestoreAttempt a;
+            seen_cached = seen_parked = false; parked_calls = 0;
+            check(a.prepare(c, m.serial, true, devs, 2, acquire, err) == ConversationCopyPreparation::unavailable,
+                  "a refused preparation reports unavailable");
+            check(seen_cached && !seen_parked, "preparation runs before the outgoing conversation is parked");
+            check(c.size() == 1 && c.find(m.serial) != nullptr, "a refused preparation leaves the snapshot cached");
+            check(!a.incoming && !a.borrow && a.abandoned(), "a refused preparation selects nothing");
+            check(a.apply(park) && parked_calls == 1, "a refused attempt still parks normally: the prompt is read");
+            check(a.finish(), "a refused attempt is a finished, ordinary request");
+        }
+        result = ConversationCopyPreparation::fatal;         // a poisoned context: no reread can recover it
+        {
+            auto c = cache();
+            const auto m = c.best(prompt, no_imgs, true);
+            ConversationRestoreAttempt a;
+            parked_calls = 0;
+            check(a.prepare(c, m.serial, true, devs, 2, acquire, err) == ConversationCopyPreparation::fatal,
+                  "a fatal preparation reports fatal");
+            check(c.size() == 1, "a fatal preparation takes nothing from the cache");
+            check(!a.apply(park) && parked_calls == 0, "after a fatal preparation nothing runs at all");
+            check(!a.finish(), "a fatal preparation aborts the request instead of reading the prompt");
+        }
+        result = ConversationCopyPreparation::ready;
+        {
+            auto c = cache();
+            const auto m = c.best(prompt, no_imgs, true);
+            ConversationRestoreAttempt a;
+            seen_cached = seen_parked = false; parked_calls = 0;
+            check(a.prepare(c, m.serial, true, devs, 2, acquire, err) == ConversationCopyPreparation::ready,
+                  "a successful preparation reports ready");
+            check(seen_cached && !seen_parked, "a borrowed prefix is prepared before parking too");
+            check(a.borrow && !a.incoming && c.size() == 1, "a borrow leaves its donor parked");
+            check(!a.apply(park), "mutation may not start before begin_mutation crossed the boundary");
+            check(parked_calls == 0, "a premature step runs nothing");
+            check(a.begin_mutation(), "the boundary is crossed once, after preparation");
+            check(a.apply(park) && parked_calls == 1, "the outgoing conversation parks after preparation");
+            check(a.take_donor(c, m.serial) && a.incoming && !a.borrow && c.size() == 0,
+                  "a blocked borrow converts to a whole restore without bypassing preparation");
+            check(a.apply([] { return true; }) && a.finish(), "a completed restore finishes");
+            check(a.phase() == ConversationRestoreAttempt::Phase::complete, "the attempt ends complete");
+        }
+        {
+            auto c = cache();
+            const auto m = c.best(prompt, no_imgs, true);
+            ConversationRestoreAttempt a;
+            check(a.prepare(c, m.serial, true, devs, 2, acquire, err) == ConversationCopyPreparation::ready,
+                  "borrow prepared for the conversion check");
+            check(a.begin_mutation() && a.take_donor(c, m.serial), "converted to a whole restore");
+            check(!a.take_donor(c, m.serial), "the conversion happens once");
+            check(!a.apply([] { return true; }) && !a.finish(),
+                  "an unexpected second conversion aborts the request instead of continuing");
+        }
+        {
+            auto c = cache();
+            const auto m = c.best(prompt, no_imgs, true);
+            ConversationRestoreAttempt a;
+            check(a.prepare(c, m.serial, true, devs, 2, acquire, err) == ConversationCopyPreparation::ready,
+                  "borrow prepared");
+            check(a.begin_mutation(), "boundary crossed");
+            int ran = 0;
+            check(!a.apply([&] { ++ran; return false; }) && ran == 1,
+                  "a failed step after the boundary is reported, not retried");
+            check(!a.apply([&] { ++ran; return true; }) && ran == 1,
+                  "after a post-boundary failure nothing else runs: no partial state is decoded");
+            check(!a.finish(), "a post-boundary failure aborts the request");
+        }
+        {
+            auto c = cache();
+            const std::vector<int32_t> whole_prompt{1, 2, 3, 4, 5, 6};   // matches live -> a whole restore
+            const auto m = c.best(whole_prompt, no_imgs, true);
+            check(m.live && m.tokens == 5, "the fixture matches the parked live state");
+            ConversationRestoreAttempt a;
+            check(a.prepare(c, m.serial, false, devs, 2, acquire, err) == ConversationCopyPreparation::ready,
+                  "a whole restore is prepared");
+            check(a.incoming && !a.borrow && c.size() == 0, "a whole restore takes its snapshot after preparation");
+            check(a.incoming->live.ids == std::vector<int32_t>({1, 2, 3, 4, 5}), "the taken image is the selected one");
+            check(a.begin_mutation() && a.finish(), "a whole restore completes");
+            ConversationRestoreAttempt b;
+            check(b.prepare(c, m.serial, false, devs, 2, acquire, err) == ConversationCopyPreparation::unavailable &&
+                      b.abandoned(),
+                  "a vanished selection is refused safely instead of restoring nothing");
+            check(b.finish(), "and the request reads its prompt");
+        }
+        {
+            ConversationRestoreAttempt a;
+            check(a.apply([] { return true; }), "an ordinary request with no attempt runs its steps");
+            check(a.finish() && a.phase() == ConversationRestoreAttempt::Phase::idle, "and stays idle");
+            check(!a.begin_mutation(), "the boundary cannot be crossed without preparation");
+        }
     }
     std::printf(g_fail ? "FAIL\n" : "PASS\n");
     return g_fail ? 1 : 0;
