@@ -88,15 +88,15 @@ injection proof was produced for every optional CUDA path.
 ## Readback implementation and failure policy
 
 `conversation_readback.hpp` owns one portable pinned piece per copying thread, not a second full snapshot.
-Successful calls reuse it; thread exit releases it. Maximum retained pinned payload is 4 MiB per thread that
-has performed a HIP readback. Each piece adds a CPU memcpy and one stream wait; throughput was not benchmarked.
+Successful calls reuse it; thread exit releases it. Successful steady-state readback retains 4 MiB per thread. Each piece adds a CPU memcpy and one stream wait; throughput was not benchmarked.
 No device-wide synchronization was added by this patch. Existing producer synchronization remains necessary.
 
 Allocation failure returns an error before submission. There is no unsafe pageable fallback. Submission errors
 are followed by a stream drain because an error is not evidence that no work was queued. A failed completion
 never copies that piece into final storage. If completion is unknown, staging is quarantined (not freed or reused)
-until process exit: one 4 MiB allocation can remain per such failure. This favors memory safety over reclaiming
-storage after a GPU error. Earlier completed chunks can have landed in a *temporary* image; save does not publish
+until process exit: one 4 MiB allocation can remain per such failure. Repeated failures or new copying threads
+can accumulate quarantined allocations; there is no process-wide cap. The 4 MiB steady-state figure is not a
+failure-path memory bound. This favors memory safety over reclaiming storage after a GPU error. Earlier completed chunks can have landed in a *temporary* image; save does not publish
 that image. This mechanism does not prove that an asynchronously faulted GPU context can safely continue inference.
 
 CUDA's normal snapshot transfer path is unchanged; the helper also compiles against CUDA API names, but no CUDA
@@ -193,9 +193,10 @@ implemented in `conversation_copy.hpp` / `conversation_state.cpp`) acquires this
 ordering event on every participating device, reusing what it already owns or what the pool holds, creating a
 new handle only when needed, and restoring the original device. Handles land in the existing thread-local set,
 so no other thread can take them; they return to the pool when the thread ends. It submits no copy, records no
-event and never touches the legacy stream, so it cannot conflict with another thread's graph capture. It returns
-`ready`, `unavailable` (an allocation failure with the device restored: recoverable) or `fatal` (a poisoned
-context, a failed device switch, or host allocation failure: not recoverable by rereading).
+event and never touches the legacy stream, avoiding new legacy-stream dependencies during graph capture. It
+returns `ready`, `unavailable` (a device allocation failure or host handle-storage `bad_alloc`, with the original
+device restored) or `fatal` (other runtime errors, or failure to restore the original device). A failed device
+selection is recoverable only when it reports allocation failure and the original device remains selected.
 
 `ConversationRestoreAttempt` (`include/strata/program/conversation_restore.hpp`) is the serve loop's gate. It
 validates nothing itself; `generate.cpp` validates the image, then calls `prepare()` **before** the snapshot
@@ -226,55 +227,49 @@ recoverable* resource failures happen before anything is mutated.
 Tests: `conversation_prepare_*` (8 modes, real GPU, link-wrapped injection of stream/event/device/memory-query
 failures), the gate's state machine in `conv_cache_test`, and the orchestration walk below.
 
-## Restore orchestration (verified)
+## Restore orchestration: modeled tests and real inference
 
-`conversation_restore_orchestration_test` (`src/program/`) drives the serve loop's restore half in its own order
-against the real `ConversationCache`, the real `ConversationRestoreAttempt` and the real `resume_gate`, with
-injected preparation and per-step failures. The serve loop itself is one very large function around a live model
-and cannot be linked into a test, so the harness transcribes its call order and asserts the observable state at
-every step. CPU-only: no GPU, no model, no VRAM.
+`conversation_restore_orchestration_test` uses the real cache, restore gate and `resume_gate`, but transcribes
+`generate.cpp`'s call order. It does not execute the serve loop. Its injected preparation, parking, K/V growth,
+copy and synchronization failures test the modeled boundary and ownership rules. Moving a production call
+outside the gate would not necessarily fail this test.
 
-Verified, with the `generate.cpp` line each step mirrors:
+In the model, preparation precedes cache take and outgoing parking. A declined attempt preserves the selected
+snapshot; an ordinary request may still park its outgoing state. Whole restore takes the image; borrow keeps
+the donor; conversion takes the donor after preparation. Failed modeled steps prevent later modeled decode.
+The actual serve loop returns an error and exits the engine after post-mutation failure, rather than promising
+that the partially written session can be reused in place. Live-model failure injection remains untested.
 
-- **Order.** `prepare` (16013) → `drop-slot`/`begin_mutation` (16029) → `park` (16078/16100) → `kvg` (16195) →
-  `restore` (16234) → `stage-restore` (16246) → `stage-sync` (16255) → `finish` (16413) → decode. Preparation
-  asserts on entry that nothing is parked, no slot was copied, the K/V has not grown and the session bytes are
-  untouched, so a mutation before preflight fails the test rather than passing silently.
-- **Ownership.** A whole restore empties the cache; a borrowed prefix leaves the donor parked and findable by its
-  serial with its own checkpoints; a blocked borrow converts through `take_donor()` and still prepares first.
-  A failure of the borrowed restore itself leaves the donor parked and whole, with none of its bytes applied.
-- **Refused preparation.** On the first device *and* on a later one, the snapshot stays cached, no restore
-  mutation runs, the outgoing conversation and its K/V are intact, and the request reads its prompt. A `fatal`
-  preparation aborts with a reason instead of falling back.
-- **After the boundary.** `park`, `kvg`, `restore`, `stage` and `stage_sync` failures each abort the request:
-  nothing later runs, `finish()` is never reached, no decode follows, and a half-written session is left not
-  marked valid (`from_live` false, `resume` unchanged) rather than published as a good state.
-- **Threads.** Every step records its thread id; preparation and every gated step share one. This matches the
-  implementation: `prepare_copy_resources` fills the same `thread_local` set that `copy_nonblocking` and
-  `order_after_queued` read, and the only `std::async` in these files is the opt-in `STRATA_PARK_ASYNC` host
-  staging, which captures its stream handle explicitly and creates and destroys its own events - it never calls
-  `private_stream`/`private_event`, so it cannot take a prepared handle.
+`resume_gate()` computes `pin_sibling` and `park_outgoing`. A declined attempt has no incoming image or borrow
+and keeps the batch-slot selection. The test compares those decisions with a no-match request, including pin=N
+and checkpoint/slot choices. Its fake byte arrays and decode flag do not prove actual prompt-reread equivalence.
 
-### The declined fallback
+Source inspection finds no thread migration between preparation and restoration. Copy streams/events are held
+in the serving thread's TLS. Optional async parking captures its own stream and owns its events; this is not a
+reservation for arbitrary work migrated to another thread.
 
-Phase 6 stopped forcing `slot_source = -1` when preparation is declined, so the fallback needed proving rather
-than assuming. `resume_gate()` (`include/strata/program/conversation_restore.hpp`) now computes `pin_sibling`
-and `park_outgoing` - the two decisions at 16043 and 16055 - as one pure function, and `generate.cpp` calls it
-instead of inlining them. Its inputs carry no restore-attempt state: a declined restore has no incoming image,
-no borrow and an untouched `slot_source`, which are exactly the inputs of a request that never matched a parked
-conversation. The test proves the equivalence end to end rather than by inspection: it runs the declined request
-and a reference request whose prompt matches nothing, over `slot_source ∈ {-1, 2}` × `pin ∈ {0, resume}`, and
-requires identical slot copy, parking, checkpoint mounting, `resume`, session bytes and decode outcome. So the
-fallback is the batch slot when one was chosen, else the checkpoint chain (and `pin=N` still keeps the outgoing
-conversation unparked); it is never a half-applied restore.
+### Real-model evidence and numerical limits
 
-One correction this made visible: on a declined restore the outgoing conversation *does* still park. That is the
-ordinary request's own decision, not a restore mutation, and the reference request does the same.
+Local tests on two R9700s with Q2_0, int8 K/V and `HSA_ENABLE_SDMA=0` exercised whole restores and repeated
+switches. Separate single-stage tests exercised a 1,280-token borrow within a 3,656-token prompt, donor reuse,
+and host-cache-budget-driven conversion. The earlier 2,899-token attempt did not borrow. These success paths
+do not validate live-model preflight refusal or fatal request-boundary behavior.
 
-Still unverified: the live-model serve loop (whole and borrowed restores end to end, a real blocked-borrow
-conversion, a real preflight refusal under VRAM pressure, a real post-mutation copy failure) and the CUDA path,
-for which no local toolchain or device is available. Live-model fault injection was deliberately not attempted.
-This work does not claim to fix the historical SDMA page fault or the CPU SIGSEGV.
+A controlled replay used exactly the same 19,523 archived prompt IDs. Live resume and restoration matched all
+48 generated IDs and reported log probabilities. Ordinary full reread differed at output index 32, but its log
+probabilities already differed at index 0. Disabling the drafter did not change either result. All experts were
+resident and no expert work was offloaded in this reproduction.
+
+A full reread with zero reused tokens and an explicit prefix boundary at token 19,473 matched live resume's
+48 IDs and reported probabilities. A separate one-token probe also matched the primary stage's GDN/K/V hashes
+between live resume, restoration and that boundary-matched reread; ordinary reread differed. This identifies
+prefill segmentation as a numerical variable, not a demonstrated snapshot-copy defect. It is not a proof of
+second-stage state equality or universal bitwise equality across prefill schedules. The smaller 889-token
+short-read difference was also reproduced and disappeared with `--short-read 0`; no production default changed.
+
+CUDA execution remains unvalidated. Kernel MES timeout diagnostics and the historical SDMA page fault and CPU
+SIGSEGV remain separate open investigations. Successful requests and a green CTest run do not establish that
+these faults are fixed.
 
 ## Sources
 

@@ -60,10 +60,13 @@ bool make_table(const std::string& path, uint32_t rows, uint32_t rb) {
     return (bool) f;
 }
 
-bool check_rows(ng::PleReader& rd, const std::vector<uint32_t>& rows, uint32_t n_rows, uint32_t rb, const char* what) {
+bool check_rows(ng::PleReader& rd, const std::vector<uint32_t>& rows, uint32_t n_rows, uint32_t rb, const char* what,
+                bool late_collect = false) {
     std::vector<uint8_t> out(rows.size() * rb, 0xCC);
     std::string err;
     const auto t = rd.issue(rows.data(), rows.size(), out.data());
+    // Caller-thread mode: let every submitted read age past the injected 3 ms floor before reaping any.
+    if (late_collect) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     if (!rd.collect(t, err)) { CHECK(false, "%s: collect failed: %s", what, err.c_str()); return false; }
     std::vector<uint8_t> want(rb);
     for (size_t i = 0; i < rows.size(); ++i) {
@@ -557,8 +560,10 @@ int selftest(const std::string& dir, uint32_t rb) {
             CHECK(rd.cache_size() <= rd.cache_capacity(), "row cache exceeded its bound");
         }
     }
-    // fault injection: a 3 ms delay must be observed, and must not change the bytes
-    for (bool thr : {false, true}) {
+    // The injected delay is a minimum age since submission, not extra time after I/O completion.
+    // Exercise both reader modes and an already-aged caller-thread completion deterministically.
+    for (int mode = 0; mode < 3; ++mode) {
+        const bool thr = mode == 1, late_collect = mode == 2;
         ng::PleReader rd;
         std::string err;
         CHECK(rd.open(path, HEADER, N, 16, 0, err, thr, rb), "open: %s", err.c_str());
@@ -566,9 +571,11 @@ int selftest(const std::string& dir, uint32_t rb) {
         std::vector<uint32_t> rows(16);
         for (auto& r : rows) r = rng() % N;
         const double t0 = now_us();
-        check_rows(rd, rows, N, rb, "delayed");
+        check_rows(rd, rows, N, rb, "delayed", late_collect);
         CHECK(now_us() - t0 >= 3000, "injected delay not observed (%.0f us)", now_us() - t0);
-        CHECK(rd.stats().late_injected > 0, "no read was held back");
+        // Slow I/O or a descheduled collector may already exceed the floor: no additional hold is required.
+        // Keep the minimum elapsed-time and exact-byte checks above; do not require a fast host to pass.
+        if (late_collect) CHECK(rd.stats().late_injected == 0, "already-aged reads were held back");
     }
     // keep-alive: while rows are asked for, a page goes out after `period` without a read; it stops once the
     // window after the last issue has passed, starts again with the next issue (even one the row cache serves),
