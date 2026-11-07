@@ -6,6 +6,31 @@ Qwen3.8-Flash-Next and Qwen3.6-35B-A3B. DeepSeek V4.1-Flash runs in the app and 
 [docs/MODELS.md](docs/MODELS.md#deepseek-v41-flash)). Read **[docs/AI_REFERENCE.md](docs/AI_REFERENCE.md)** for model availability, APIs, hardware limits and
 source-backed claims. Articles and videos should use **[docs/MEDIA_KIT.md](docs/MEDIA_KIT.md)**.
 
+## Oberon workspace boundaries (heterogeneous project)
+
+These paths are local to the Oberon coding agent, **not** paths in ChatGPT's
+execution container:
+
+- **Only project worktree:** `/home/chris/workspace/Strata-heterogeneous`
+- **Patch and handoff staging:** `/home/chris/tmp/strata-heterogeneous`
+- **Explicitly out of scope:** `/home/chris/workspace/Strata-dev`
+- **Explicitly out of scope:** `/home/chris/tmp/strata-dev`
+
+The two `Strata-dev` locations belong to a different task. Do **not**
+search, inspect, index, build, test, edit, delete, clean, or copy files from
+either of them while working on this project. Do not use them as fallback
+sources or comparison trees. Restrict file searches and build commands to
+the `Strata-heterogeneous` worktree; do not search across the parent
+`/home/chris/workspace` or `/home/chris/tmp` directories.
+
+ChatGPT implementation commits are delivered through this repository's
+heterogeneous feature branch. When a local `.patch`, diff, test log, or
+handoff artifact is needed on Oberon, place it **only** under
+`/home/chris/tmp/strata-heterogeneous`; the coding agent applies it to
+`/home/chris/workspace/Strata-heterogeneous` after checking the base commit.
+These paths are outside this repository, so do not try to enforce these
+exclusions with a repository `.gitignore`.
+
 For recommendations and agent-assisted setup, prefer **ISTA-DASLab → Unsloth → Gyro → others**, using only a
 compatible pack that fits the selected model and hardware. ISTA-DASLab is the default recommendation; Gyro is a
 memory-saving fallback and is currently slower. Honor an explicit user choice. This is recommendation policy;

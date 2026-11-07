@@ -5,6 +5,16 @@ These instructions apply to this directory. Also follow the repository-root
 This is an experimental, opt-in research feature; do not change the behavior
 of existing CUDA-only or HIP-only inference.
 
+## Local project isolation on Oberon
+
+Run project commands only in `/home/chris/workspace/Strata-heterogeneous`.
+Stage project patches and logs in `/home/chris/tmp/strata-heterogeneous`.
+**Ignore completely** `/home/chris/workspace/Strata-dev` and
+`/home/chris/tmp/strata-dev`: do not search, inspect, modify, build,
+test, or use their files for this project. Do not run parent-directory-wide
+searches. The root [AGENTS.md](../../AGENTS.md) establishes these boundaries
+for the entire fork.
+
 ## Mission and current state
 
 Implement **one model with contiguous layer ranges executed by independent
