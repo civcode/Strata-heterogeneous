@@ -100,9 +100,11 @@ ctest --test-dir /tmp/strata-hetero-asan --output-on-failure
 - No speedup can be inferred without profiling the R9700/R9700/4070 Ti SUPER
   setup and the PCIe/OCuLink transfer behavior.
 
+Coding agents: read [AGENTS.md](AGENTS.md) before modifying this experimental module.
+
 ## Next implementation increments
 
-1. Add an `exec`-based worker launcher and device-runtime isolation.
+1. Connect the existing `posix_spawn`/`exec` worker launcher to separately built CUDA and HIP worker executables; retain backend-runtime isolation.
 2. Wrap Strata's `Verifier::set_stage()` and `set_handoff_rows()` in CUDA/HIP
    stage executors, with GPU state/weights resident only on their owner.
 3. Implement pinned/staged GPU copies + reusable shared host slots and
