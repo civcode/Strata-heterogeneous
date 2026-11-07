@@ -36,26 +36,26 @@ code before proposing a change.
 - [src/demo.cpp](src/demo.cpp): isolated worker launch and CPU smoke test.
 - [tests/host_tests.cpp](tests/host_tests.cpp): current correctness baseline.
 - [../../include/strata/core/verify.hpp](../../include/strata/core/verify.hpp):
-  \`Verifier::set_stage\`, \`set_handoff_rows\`,
-  \`handoff_floats\`, stage-to-stage execution and commit semantics.
+  `Verifier::set_stage`, `set_handoff_rows`,
+  `handoff_floats`, stage-to-stage execution and commit semantics.
 - [../../include/strata/prefill/prefill.hpp](../../include/strata/prefill/prefill.hpp):
   later prefill-stage handoff and chunk semantics.
 - [../../docs/MULTI_GPU.md](../../docs/MULTI_GPU.md) and
   [../../docs/AMD_HIP.md](../../docs/AMD_HIP.md): supported same-backend split.
 - [../../CMakeLists.txt](../../CMakeLists.txt):
-  \`STRATA_ENABLE_CUDA\` and \`STRATA_ENABLE_HIP\` are mutually exclusive
+  `STRATA_ENABLE_CUDA` and `STRATA_ENABLE_HIP` are mutually exclusive
   in an ordinary engine build. Do not bypass that guard to link both
   runtimes together; compile separate worker executables instead.
 
 Strata's verifier handoff for **each row** is exactly three contiguous
 float32 arrays, in order:
 
-1. \`R\`: \`hc * n_embd\` floats.
-2. \`bo\`: \`n_embd\` floats.
-3. \`inject\`: \`hc\` floats.
+1. `R`: `hc * n_embd` floats.
+2. `bo`: `n_embd` floats.
+3. `inject`: `hc` floats.
 
-The prototype's \`Geometry::floats_per_row()\` mirrors the upstream
-\`Verifier::handoff_floats()\` formula. Handoff payloads are **not**
+The prototype's `Geometry::floats_per_row()` mirrors the upstream
+`Verifier::handoff_floats()` formula. Handoff payloads are **not**
 session snapshots. Keep K/V, GDN/recurrent state, PLE and expert caches
 owned by the stages that execute their layers.
 
@@ -71,7 +71,7 @@ owned by the stages that execute their layers.
    explicitly synchronized host staging first. Design shared-memory
    transport later, with explicit ownership and host/device visibility.
 3. **Exact layer partition:** each stage owns a nonempty contiguous
-   \`[first_layer, end_layer)\` interval; stages cover every layer exactly
+   `[first_layer, end_layer)` interval; stages cover every layer exactly
    once. Do not use tensor-parallel per-layer splitting for this work.
 4. **Explicit identity:** verify model/weights, quantization-relevant
    configuration, geometry, stage plan, request ID, window ID and stage
@@ -105,12 +105,12 @@ owned by the stages that execute their layers.
 
 ### M1 — Real worker boundary and stage API (CPU-only first)
 
-- Define a narrow backend-neutral \`StageExecutor\` lifecycle:
-  \`prepare(model, plan)\`, \`load_stage\`, \`run_window\`,
-  \`commit\`, \`save_state\`, \`restore_state\`, \`shutdown\`
+- Define a narrow backend-neutral `StageExecutor` lifecycle:
+  `prepare(model, plan)`, `load_stage`, `run_window`,
+  `commit`, `save_state`, `restore_state`, `shutdown`
   (exact API may be refined after inspecting real call sites).
 - First implement a deterministic CPU test double. Do not equate the
-  existing stateless \`mock_execute\` with a real stateful verifier.
+  existing stateless `mock_execute` with a real stateful verifier.
 - Add a worker handshake describing backend, ordinal, supported
   features and loaded model identity. Keep the coordinator backend-free.
 - Add bounded timeouts, cancellation/exit handling, explicit errors,
@@ -128,12 +128,12 @@ no CUDA/HIP runtime is required for the host-side code.
   (typically sm_89); the R9700 is gfx1201. Verify toolchains and device
   enumeration on the real machine rather than guessing ordinals.
 - Adapt the existing Strata verifier's stage-local weights, session
-  state, \`set_stage\`, handoff buffers, run and commit ordering.
+  state, `set_stage`, handoff buffers, run and commit ordering.
   Earlier stages must not generate final logits; the last stage owns
   the head and sampling-related final state.
 - For v1 use complete, explicit D2H -> host buffer -> H2D copies with
   stream completion checks and bound lengths; only then pass valid
-  device-visible memory to \`Verifier::set_stage\`. Never point it at
+  device-visible memory to `Verifier::set_stage`. Never point it at
   a normal socket payload or a foreign runtime allocation.
 - Compare a short decode against single-backend reference results.
   Record token IDs and logits/numerical tolerance where applicable;
@@ -151,7 +151,7 @@ A successful CPU build alone does not meet this milestone.
   Strata's existing same-backend AMD split only if integration and
   ownership semantics are validated.
 - Ensure each card retains only its owned layers' expert cache and
-  layer-specific state; evaluate \`STRATA_STAGE_TRIM=1\` with explicit
+  layer-specific state; evaluate `STRATA_STAGE_TRIM=1` with explicit
   boundaries before making memory-capacity claims.
 - Implement chunked prefill above the 16 MiB frame cap, and stage-local
   save/restore as a coordinated operation.
@@ -165,45 +165,45 @@ measured VRAM/RAM occupancy, and same-workload throughput measurements.
 ## Existing private HIP development work
 
 There is a separate private development repository,
-\`civcode/strata-dev-private\`, branch \`debug/isa-guard-4349\`.
-At the initial review, two custom commits after \`9f7d977\` were:
+`civcode/strata-dev-private`, branch `debug/isa-guard-4349`.
+At the initial review, two custom commits after `9f7d977` were:
 
-- \`05134f5\`: work-in-progress HIP snapshot readback, copy resources,
+- `05134f5`: work-in-progress HIP snapshot readback, copy resources,
   restore admission/mutation gate and tests.
-- \`8db7ddc\`: audit/test corrections.
+- `8db7ddc`: audit/test corrections.
 
 Treat these as **reference work requiring review and rebase**, not as
 validated fixes ready to cherry-pick. The audit documents two R9700s,
-\`HSA_ENABLE_SDMA=0\`, and unresolved hardware/kernel issues. CUDA was not
+`HSA_ENABLE_SDMA=0`, and unresolved hardware/kernel issues. CUDA was not
 validated. Keep private logs, files, credentials and diagnostics out
 of this public fork. If porting, put that in a separate focused change
 and recheck against the current upstream implementation.
 
 ## Commands and validation
 
-Use \`vi\`/\`vim\` for command-line editing, never \`nano\`.
+Use `vi`/`vim` for command-line editing, never `nano`.
 All builds, tests, linting and benchmark execution should run locally
 when the environment permits.
 
-\`\`\`bash
+```bash
 cmake -S experimental/heterogeneous -B /tmp/strata-hetero-build -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug
 cmake --build /tmp/strata-hetero-build
 ctest --test-dir /tmp/strata-hetero-build --output-on-failure
 /tmp/strata-hetero-build/strata_heterogeneous_demo \
   cuda:0:0-3,hip:0:3-7,hip:1:7-10 10 2 6 12345 8
-\`\`\`
+```
 
 Optional sanitizer run on a supported Linux toolchain:
 
-\`\`\`bash
+```bash
 cmake -S experimental/heterogeneous -B /tmp/strata-hetero-asan -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
 cmake --build /tmp/strata-hetero-asan
 ctest --test-dir /tmp/strata-hetero-asan --output-on-failure
-\`\`\`
+```
 
 Don't run GPU-dependent tests without access to the actual GPUs and
 model artifacts; mark those checks **not run**, with a reason. Do not
@@ -211,15 +211,15 @@ download huge model files merely to validate the CPU transport.
 
 ## Repository, CI and reporting rules
 
-- Develop on feature branches. Do not silently change \`main\` or
-  upstream \`Niko1221/Strata\`. Do not push or open a PR unless explicitly
+- Develop on feature branches. Do not silently change `main` or
+  upstream `Niko1221/Strata`. Do not push or open a PR unless explicitly
   requested; commit only changes that are scoped and reviewed.
 - GitHub Actions is a last resort, **never** a test execution default.
   Do not run or dispatch workflows. New/modified workflows must use
-  only \`on: workflow_dispatch\` unless the owner explicitly requests
+  only `on: workflow_dispatch` unless the owner explicitly requests
   otherwise. On this feature branch inherited workflows are manual-only;
-  upstream/\`main\` may still have automatic triggers.
-- Before a substantial upstream proposal, follow \`CONTRIBUTING.md\`:
+  upstream/`main` may still have automatic triggers.
+- Before a substantial upstream proposal, follow `CONTRIBUTING.md`:
   discuss architectural scope with the maintainer and label issues/PRs.
 - Keep documentation consistent with the actual code. Do not claim
   GPU interoperability, 80 GiB unified VRAM, performance improvements,
