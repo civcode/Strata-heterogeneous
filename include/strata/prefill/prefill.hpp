@@ -72,8 +72,14 @@ public:
 
     /// Frees every buffer, stream and event `init` made (as the destructor does) and starts over empty, so `init` can
     /// run again - with a smaller chunk when the first one did not fit.  The stage range (`set_stage`) and the
-    /// callbacks stay.  The device `init` ran on must be current.
+    /// callbacks stay. The device `init` ran on must be current. After a transfer/completion failure,
+    /// reset is a no-op: the instance stays terminal and the engine must be restarted.
     void reset();
+
+    /// After run/drain_pipeline has joined the stage chain: a transfer failure forbids retry,
+    /// borrowed-buffer reuse and ordinary owner teardown. The engine must exit without unwinding
+    /// those external owners; retaining this Prefill alone cannot retain a caller's raw VRAM loan.
+    bool terminal_transfer_failure() const;
 
     /// `host_res`: the static residency table (n_layers x n_expert, slot or -1) or null; `cache` its slots.
     /// `borrow`/`borrow_bytes`: device memory to carve every buffer from (the top slots of the expert cache,
@@ -392,8 +398,11 @@ private:
 
     bool carve(std::size_t T, void* alloc);   // the device buffers of a chunk (prefill.cpp's Alloc)
     void release();                          // the destructor's cleanup (also `reset`'s)
+    bool transfer_failed() const;
+    bool transfer_ready(std::string& err) const;
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    bool quarantined_ = false;              // terminal: cleanup could not establish GPU completion
     PrefillStats stats_;
 };
 

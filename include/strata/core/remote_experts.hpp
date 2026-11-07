@@ -2,6 +2,7 @@
 
 #include "strata/core/expert_cache.hpp"
 #include "strata/core/expert_source.hpp"
+#include "strata/core/remote_readback.hpp"
 
 #include <cuda_runtime.h>
 
@@ -56,8 +57,10 @@ public:
     /// STRATA_PREFILL_HELPER_SOURCE (opt-in): copy up to `n` cached blobs into the host buffers `dst[i]`
     /// on this helper's own stream and wait.  `hit[i]` is set where this helper held (layer, expert); the
     /// bytes are the ones open() filled from the same source, so the prompt path gets identical bytes.
-    /// Misses are left to the caller.  False with `err` on a CUDA failure; the hits copied so far are
-    /// complete (the stream is drained), so the caller falls back for the rest.  Safe from several threads
+    /// Misses are left to the caller. False rejects the batch, with no hits published. GPU writes
+    /// target helper-owned landing storage, so caller destinations remain safe even if draining fails.
+    /// Transfer/device errors are terminal; restart the engine, never retry/fallback. A clean landing
+    /// allocation refusal is a miss (no submission). Safe from several threads
     /// (one stream, one lock): the prompt path's stager is threaded.
     bool copy_cached_blobs(const int32_t* layers, const int32_t* experts, uint8_t* const* dst, size_t n,
                            uint8_t* hit, std::string& err);
@@ -73,7 +76,14 @@ private:
     uint64_t returned_bytes_ = 0;
     uint64_t full_row_bytes_ = 0;
     double ms_begin_ = 0, ms_wait_ = 0;
-    ExpertCache cache_;
+    // Detachable source owner: a failed cleanup fence must not run ExpertCache's destructor.
+    std::unique_ptr<ExpertCache> cache_owner_ = std::make_unique<ExpertCache>();
+    ExpertCache& cache_ = *cache_owner_;
+    detail::RemoteReadback readback_;
+    std::vector<const uint8_t*> read_sources_;
+    std::vector<size_t> read_sizes_;
+    std::atomic<bool> failed_{false};
+    bool quarantined_ = false;
     cudaStream_t stream_ = nullptr;
     cudaStream_t read_stream_ = nullptr;   ///< STRATA_PREFILL_HELPER_SOURCE: cache -> host copies
     std::mutex read_mu_;                   ///< one cache reader at a time (the stager is threaded)

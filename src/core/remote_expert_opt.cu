@@ -141,6 +141,7 @@ bool RemoteExpertOpt::owns(int64_t layer, int32_t expert) const {
 bool RemoteExpertOpt::adapt(const std::vector<float>& usage, const std::vector<int32_t>& primary,
                      const std::vector<std::pair<int32_t, int32_t>>& pending, int max_swaps,
                      ExpertSource& source) {
+    for (const auto& p : peers_) if (p.remote->failed_.load()) return false;
     if (max_swaps <= 0) return true;
     const auto& lay = strata::kernels::cpu::expert_layout();
     std::vector<uint8_t> resident(primary.size(), 0);

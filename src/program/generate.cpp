@@ -19379,6 +19379,16 @@ int main(int argc, char** argv) {
                 const auto tsp = Clock::now();
                 pp_exact = false;   // a batched or pipelined part is in flight: a cancel may leave the state past pp_reached
                 const bool sp_ok = read_to <= at || (win ? read_windows(at, read_to, err) : read_part(at, to, err));
+                if (!sp_ok && sp.terminal_transfer_failure()) {
+                    // The prompt may borrow cache/session VRAM. Retaining Prefill's private Impl
+                    // cannot keep those callers' allocations alive during ordinary stack unwinding.
+                    // Cancellation must not turn this error into a slot refill or a successful DONE.
+                    std::fprintf(stderr, "strata serve: %s; exiting without releasing transfer owners\n", err.c_str());
+                    std::printf("ERR %s\n", err.c_str());
+                    std::fflush(stdout);
+                    std::fflush(stderr);
+                    std::_Exit(1);
+                }
                 if (sp_ok) pp_exact = true;
                 if (trace) {
                     const double ms = std::chrono::duration<double, std::milli>(Clock::now() - tsp).count();
@@ -21722,6 +21732,7 @@ int main(int argc, char** argv) {
         const Clock::time_point tp0 = Clock::now();
         if (!prefill.run(o.tokens.data(), n_batched, 0, err)) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
+            if (prefill.terminal_transfer_failure()) { std::fflush(stderr); std::_Exit(1); }
             return 1;
         }
         // refill the lent slots from the arena and give them back to the decode tier

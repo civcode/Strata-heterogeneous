@@ -1287,6 +1287,48 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   add_test(NAME conversation_readback_test COMMAND conversation_readback_test)
   set_tests_properties(conversation_readback_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 
+  # strata-dev-private 0ef75af1 (Phase 10E): pinned-ring, remote-expert and prefill transfer ownership on the GPU
+  if(STRATA_BUILD_TESTS)
+    if(STRATA_ENABLE_HIP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      # Explicit LD_PRELOAD integration fixture; never linked into or installed with the engine.
+      # Model-dependent invocation is documented in tests/prefill/PINNED_RING.md.
+      add_executable(remote_experts_gpu_test tests/core/remote_experts_gpu_test.cpp)
+      target_link_libraries(remote_experts_gpu_test PRIVATE strata_engine)
+      target_link_options(remote_experts_gpu_test PRIVATE
+        -Wl,--wrap=hipMemcpyAsync -Wl,--wrap=hipStreamSynchronize -Wl,--wrap=hipHostMalloc
+        -Wl,--wrap=hipFreeHost -Wl,--wrap=hipFree)
+      foreach(case success allocation submit unknown submit-unknown)
+        add_test(NAME remote_owner_${case} COMMAND remote_experts_gpu_test ${case})
+        add_test(NAME remote_owner_${case}_reverse COMMAND remote_experts_gpu_test ${case} reverse)
+        set_tests_properties(remote_owner_${case} remote_owner_${case}_reverse
+          PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120 RUN_SERIAL TRUE)
+      endforeach()
+
+      add_executable(transfer_gpu_test tests/prefill/transfer_gpu_test.cpp)
+      target_include_directories(transfer_gpu_test PRIVATE include)
+      target_link_libraries(transfer_gpu_test PRIVATE strata_hip_runtime Threads::Threads)
+      target_link_options(transfer_gpu_test PRIVATE
+        -Wl,--wrap=hipMemcpyAsync -Wl,--wrap=hipEventRecord -Wl,--wrap=hipEventSynchronize
+        -Wl,--wrap=hipEventQuery -Wl,--wrap=hipStreamSynchronize -Wl,--wrap=hipHostMalloc -Wl,--wrap=hipFreeHost)
+      foreach(case remote-ok remote-submit remote-sync stager-ok stager-record stager-wait query-ok query-error)
+        add_test(NAME transfer_hip_${case} COMMAND transfer_gpu_test ${case})
+        set_tests_properties(transfer_hip_${case} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120 RUN_SERIAL TRUE)
+      endforeach()
+
+      add_library(transfer_prefill_inject SHARED tests/prefill/transfer_inject.cpp)
+      target_link_libraries(transfer_prefill_inject PRIVATE strata_hip_runtime ${CMAKE_DL_LIBS})
+      add_library(pinned_ring_prefill_inject SHARED tests/prefill/pinned_ring_inject.cpp)
+      target_link_libraries(pinned_ring_prefill_inject PRIVATE strata_hip_runtime ${CMAKE_DL_LIBS})
+    endif()
+
+    add_executable(pinned_ring_gpu_test tests/core/pinned_ring_gpu_test.cpp)
+    target_include_directories(pinned_ring_gpu_test PRIVATE include)
+    target_link_libraries(pinned_ring_gpu_test PRIVATE strata_core ${_strata_gpu_runtime_target})
+    add_test(NAME pinned_ring_gpu_test COMMAND pinned_ring_gpu_test)
+    set_tests_properties(pinned_ring_gpu_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+  endif()
+
+
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(pinned_shared_test src/core/pinned_shared_test.cpp)
     target_link_libraries(pinned_shared_test PRIVATE strata_core ${_strata_gpu_runtime_target})

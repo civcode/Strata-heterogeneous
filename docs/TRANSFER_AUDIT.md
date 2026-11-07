@@ -126,8 +126,9 @@ HIP execution does not validate them for CUDA.
 - `prefill.cpp` KVA residual capture uses a pageable vector, same producer stream, checked stream synchronization,
   then file output. It retains pageable-readback exposure; optional parity/dump reads are not blanket-replaced.
 - `q36_engine.cu` hybrid routing destinations (`h_ids`, `h_h`, `h_cnt`) are pinned engine-owned allocations. GPU
-  writes and event recording share the inference stream. The CPU event-query loop treats errors other than
-  not-ready as completion: this is an unchecked-error concern, not validated by this patch.
+  writes and event recording share the inference stream. The route query now distinguishes success, not-ready
+  and error. Errors take the existing fatal `CK` path before CPU reads. Focused fake/HIP checks and HIP/CUDA
+  compilation cover the gate, not Q36 model inference.
 - `ds4_model.cu::snap_into` resizes checkpoint vectors, submits on each owning device's producer stream, then waits
   each stream before returning. There is no normal-success local-vector lifetime violation. Submission, device
   selection and synchronization errors are ignored; `c.pos` is set before success. That path needs error-bearing
@@ -270,6 +271,27 @@ short-read difference was also reproduced and disappeared with `--short-read 0`;
 CUDA execution remains unvalidated. Kernel MES timeout diagnostics and the historical SDMA page fault and CPU
 SIGSEGV remain separate open investigations. Successful requests and a green CTest run do not establish that
 these faults are fixed.
+
+## Phase 10D: expert failure paths
+
+| Path | Classification | Boundary / remaining limit |
+|---|---|---|
+| `RemoteExperts::copy_cached_blobs` | Demonstrated defect — corrected | GPU writes now target an owned landing arena. Failed batches publish no hits and cannot fall back into an active caller destination. |
+| Remote cache teardown after read failure | Missing guarantee — corrected | Checked compute/read stream fences; failed cleanup detaches the cache owner and retains landing/raw allocations. Poison blocks retry, reopen and adaptive replacement. |
+| `Stager::work` / `issued_one` | Demonstrated defect — corrected | Checked waits, submission and recording; worker errors propagate before completion publication. Failed independent cleanup retains pinned and pageable sources. |
+| Prefill borrowed owners after staging failure | Missing guarantee — corrected in engine callers | Terminal status exits the engine without unwinding external cache/session owners, before cancellation/refill. Other library callers must honor that raw-loan lifetime contract. Final caller change compiled but GPU rerun stopped below. |
+| Q36 route query | Demonstrated defect — corrected | Only successful completion permits CPU reads; errors use the existing process-fatal policy. No Q36-model runtime claim. |
+| `PeerExperts::finish` | Safe consumption gate; failed cleanup unresolved | Query errors are rejected before CPU reads. `close()` ignores fences; direct input/output are caller-owned mapped buffers, so leaking the peer alone would not fix them. Needs coordinated caller retention. |
+| `RemoteExpertOpt` teardown / generic cache startup | Missing guarantees — unresolved | Optimizer teardown ignores stream errors. Cache startup uses default-stream copies, and `verify_slot` has a local D2H vector on error. Dedicated owner/error tests still needed. |
+
+See [the focused tests](../tests/prefill/TRANSFER_FAILURES.md). This is not a completed audit of the 133 syntactic
+production D2H/Default candidates. Healthy helper-cache reads add a pinned landing copy; the default-disabled
+helper-source path stays opt-in. No global device fence was added.
+
+**Validation stop:** a broad SDMA-off run produced a real MES `INVALIDATE_TLBS` timeout. Further GPU tests were
+stopped. Focused earlier HIP tests passed, but broad completion, final engine-exit integration, performance,
+Q36 inference and native CUDA runtime validation remain outstanding. Keep `HSA_ENABLE_SDMA=0` for unattended
+operation; it does not replace the ownership fixes or guarantee freedom from MES faults.
 
 ## Sources
 

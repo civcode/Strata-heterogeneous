@@ -400,6 +400,23 @@ if(STRATA_BUILD_TESTS)
   target_include_directories(split_walk_test PRIVATE include)
   add_test(NAME split_walk_test COMMAND split_walk_test)
 
+  # CPU-only ownership model: compile the production ring against a test-only runtime.
+  add_executable(transfer_failure_test tests/prefill/transfer_failure_test.cpp)
+  target_include_directories(transfer_failure_test BEFORE PRIVATE tests/prefill/transfer_fake include)
+  target_link_libraries(transfer_failure_test PRIVATE Threads::Threads)
+  foreach(case remote-ok remote-submit remote-submit-drain remote-sync remote-alloc
+               stager-ok stager-record stager-submit stager-wait stager-pageable stager-create stager-cancel
+               stager-record-drain stager-wait-drain stager-early-cancel stager-source stager-concurrent stager-batch stager-oversize
+               query-ok query-delayed query-error query-late-error)
+    add_test(NAME transfer_${case} COMMAND transfer_failure_test ${case})
+    set_tests_properties(transfer_${case} PROPERTIES TIMEOUT 30)
+  endforeach()
+
+  add_executable(pinned_ring_test tests/core/pinned_ring_test.cpp)
+  target_include_directories(pinned_ring_test BEFORE PRIVATE tests/core/pinned_ring_fake include)
+  add_test(NAME pinned_ring_test COMMAND pinned_ring_test)
+  set_tests_properties(pinned_ring_test PROPERTIES TIMEOUT 30)
+
   # the prompt planner's host-memory model (#2824): header-only, no GPU
   add_executable(prefill_plan_test tests/program/prefill_plan_test.cpp)
   target_include_directories(prefill_plan_test PRIVATE include)

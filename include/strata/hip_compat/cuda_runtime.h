@@ -32,6 +32,8 @@
 #define cudaDriverGetVersion hipDriverGetVersion
 #define cudaErrorNotReady hipErrorNotReady
 #define cudaErrorMemoryAllocation hipErrorOutOfMemory
+#define cudaErrorInvalidValue hipErrorInvalidValue
+#define cudaErrorInvalidDevice hipErrorInvalidDevice
 #define cudaErrorPeerAccessAlreadyEnabled hipErrorPeerAccessAlreadyEnabled
 #define cudaErrorStreamCaptureUnsupported hipErrorStreamCaptureUnsupported
 #define cudaError_t hipError_t

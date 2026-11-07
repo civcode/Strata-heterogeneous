@@ -59,6 +59,13 @@ struct DeviceScope {
     }
 };
 
+struct TerminalAttempt {
+    std::atomic<bool>& failed;
+    bool accepted = false;
+    bool success() { accepted = true; return true; }
+    ~TerminalAttempt() { if (!accepted) failed.store(true); }
+};
+
 bool check(cudaError_t result, const char* what, std::string& err, int device) {
     if (result == cudaSuccess) return true;
     err = "CUDA" + std::to_string(device) + " experts: " + what + ": " + cudaGetErrorString(result);
@@ -98,11 +105,20 @@ bool RemoteExperts::preflight(int device, double& free_gib, std::string& err) {
 }
 
 void RemoteExperts::close() {
-    if (device_ < 0) return;
+    std::lock_guard<std::mutex> lock(read_mu_);
+    if (device_ < 0 || quarantined_) return;
     DeviceScope scope(device_);
+    const bool compute_done = scope.ok && (!stream_ || cudaStreamSynchronize(stream_) == cudaSuccess);
+    const bool reads_done = scope.ok && (!read_stream_ || cudaStreamSynchronize(read_stream_) == cudaSuccess);
+    if (!compute_done || !reads_done) {
+        failed_.store(true);
+        quarantined_ = true;
+        (void) cache_owner_.release(); // retain the source arena as well as every raw staging pointer
+        std::fprintf(stderr, "strata remote: retaining helper allocations; cleanup completion is unknown; restart the engine\n");
+        return;
+    }
+    readback_.release_completed();
     if (scope.ok) {
-        if (stream_) cudaStreamSynchronize(stream_);
-        if (read_stream_) cudaStreamSynchronize(read_stream_);
         cache_.close();
         if (d_x_) cudaFree(d_x_);
         if (d_out_) cudaFree(d_out_);
@@ -137,7 +153,9 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
                          const std::vector<std::pair<int32_t, int32_t>>& ranked,
                          const ExpertCache& primary, ExpertSource& source,
                          std::vector<uint8_t>& claimed, std::string& err, bool auto_size) {
+    if (failed_.load()) { err = "remote experts: terminal transfer failure; restart the engine"; return false; }
     close();
+    if (failed_.load()) { err = "remote experts: cleanup failed; restart the engine"; return false; }
     int count = 0;
     if (!check(cudaGetDeviceCount(&count), "cudaGetDeviceCount", err, device)) return false;
     if (device < 0 || device >= count || slots <= 0 || ranked.empty() ||
@@ -265,6 +283,8 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
 bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int64_t n_tok,
                           int64_t k, const int32_t* kind, const int32_t* primary_res,
                           std::string& err) {
+    if (failed_.load()) { err = "remote experts: terminal transfer failure; restart the engine"; return false; }
+    TerminalAttempt attempt{failed_};
     // cumulative host time in here (staging and launches), reported per request by the driver
     struct Timer { double& acc; std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
         ~Timer() { acc += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); } } timer{ms_begin_};
@@ -276,7 +296,7 @@ bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int
     }
     std::fill(owned_.begin(), owned_.begin() + n, 0);
     group_id_.clear(); ptr_.clear(); start_.clear(); dst_.clear(); tok_.clear(); original_row_.clear();
-    if (!layers_present_[(size_t) layer]) return true;
+    if (!layers_present_[(size_t) layer]) return attempt.success();
     std::fill(group_of_.begin(), group_of_.begin() + n, -1);
     for (int64_t i = 0; i < n; ++i) {
         const int32_t e = ids[i];
@@ -296,7 +316,7 @@ bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int
         group_of_[(size_t) i] = group;
         ++computed_;
     }
-    if (group_id_.empty()) return true;
+    if (group_id_.empty()) return attempt.success();
     for (size_t g = 0; g < group_id_.size(); ++g) {
         start_.push_back((int32_t) dst_.size());
         for (int64_t i = 0; i < n; ++i) if (group_of_[(size_t) i] == (int32_t) g) {
@@ -355,11 +375,13 @@ bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int
     ++launched_layers_;
     returned_bytes_ += compact_bytes;
     full_row_bytes_ += (uint64_t) n * H * sizeof(float);
-    return true;
+    return attempt.success();
 }
 
 bool RemoteExperts::finish(float* out, std::string& err) {
-    if (group_id_.empty()) return true;
+    if (failed_.load()) { err = "remote experts: terminal transfer failure; restart the engine"; return false; }
+    TerminalAttempt attempt{failed_};
+    if (group_id_.empty()) return attempt.success();
     DeviceScope scope(device_);
     if (!scope.ok) { err = scope.error(device_); return false; }
     const auto w0 = std::chrono::steady_clock::now();
@@ -385,41 +407,42 @@ bool RemoteExperts::finish(float* out, std::string& err) {
     if (!check(cudaStreamSynchronize(stream_), "finish", err, device_)) return false;
 #endif
     ms_wait_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - w0).count();
-    if (remote_opt_ && remote_opt_->active()) { remote_opt_->accumulate(*this); return true; }
+    if (remote_opt_ && remote_opt_->active()) { remote_opt_->accumulate(*this); return attempt.success(); }
     for (size_t i = 0; i < original_row_.size(); ++i)
         std::memcpy(out + (size_t) original_row_[i] * H, h_out_ + i * H, (size_t) H * sizeof(float));
-    return true;
+    return attempt.success();
 }
 
 bool RemoteExperts::copy_cached_blobs(const int32_t* layers, const int32_t* experts, uint8_t* const* dst,
                                       size_t n, uint8_t* hit, std::string& err) {
     std::fill(hit, hit + n, 0);
+    if (failed_.load()) { err = "remote experts: terminal transfer failure; restart the engine"; return false; }
     if (device_ < 0 || read_stream_ == nullptr || n == 0) return true;
     const auto& lay = strata::kernels::cpu::expert_layout();
     DeviceScope scope(device_);
-    if (!scope.ok) { err = scope.error(device_); return false; }
+    if (!scope.ok) { failed_.store(true); err = scope.error(device_); return false; }
     std::lock_guard<std::mutex> lock(read_mu_);
-    bool queued = false;
+    if (failed_.load()) { err = "remote experts: terminal transfer failure; restart the engine"; return false; }
+    read_sources_.assign(n, nullptr);
+    read_sizes_.assign(n, 0);
+    auto& sources = read_sources_;
+    auto& sizes = read_sizes_;
     for (size_t i = 0; i < n; ++i) {
-        if (dst[i] == nullptr) continue;
+        if (!dst[i]) continue;
         const int32_t slot = cache_.slot_of(layers[i], experts[i]);
         if (slot < 0) continue;
-        const size_t bytes = (size_t) lay.blob_bytes(layers[i]);
-        if (!check(cudaMemcpyAsync(dst[i], cache_.device_slot(slot), bytes, cudaMemcpyDeviceToHost, read_stream_),
-                   "cache read", err, device_)) {
-            // Nothing may still be writing a caller's buffer when this returns.  If the drain succeeds, the
-            // hits queued before the failure are complete and the caller may keep them; if it does not,
-            // forget every hit and let the caller refill all of them from its fallback.
-            if (cudaStreamSynchronize(read_stream_) != cudaSuccess) std::fill(hit, hit + n, 0);
-            return false;
-        }
-        hit[i] = 1;
-        queued = true;
+        sources[i] = cache_.device_slot(slot);
+        sizes[i] = (size_t) lay.blob_bytes(layers[i]);
     }
-    if (queued && !check(cudaStreamSynchronize(read_stream_), "cache read wait", err, device_)) {
-        std::fill(hit, hit + n, 0);   // a failed wait means no copied buffer may be trusted
-        return false;
+    const auto status = readback_.copy(sources.data(), dst, sizes.data(), n, read_stream_);
+    // A landing allocation refusal precedes submission: all misses may safely use the file source.
+    // A copy that reports the same error is different (failed() is sticky), even after a clean drain.
+    if (status == cudaErrorMemoryAllocation && !readback_.failed()) return true;
+    if (!check(status, "cache read", err, device_)) {
+        failed_.store(true);
+        return false; // no partial hits, fallback or external GPU destinations
     }
+    for (size_t i = 0; i < n; ++i) if (sources[i]) hit[i] = 1;
     return true;
 }
 
@@ -437,7 +460,7 @@ bool RemotePrefillSource::copy_blob(int64_t layer, int64_t expert, uint8_t* dst)
                                         std::memory_order_relaxed);
                 return true;
             }
-            if (!ok) break;
+            if (!ok) { warn(err); return false; }
         }
         warn(err);
     }
@@ -474,7 +497,10 @@ bool RemotePrefillSource::copy_blobs(const int32_t* layers, const int32_t* exper
         if (hl.empty()) continue;
         got.assign(hl.size(), 0);
         std::string err;
-        if (!helpers_[k]->copy_cached_blobs(hl.data(), he.data(), hd.data(), hl.size(), got.data(), err)) warn(err);
+        if (!helpers_[k]->copy_cached_blobs(hl.data(), he.data(), hd.data(), hl.size(), got.data(), err)) {
+            warn(err);
+            return false;
+        }
         for (size_t j = 0; j < got.size(); ++j)
             if (got[j]) {
                 served[idx[j]] = 1;
@@ -495,7 +521,7 @@ bool RemotePrefillSource::copy_blobs(const int32_t* layers, const int32_t* exper
 
 void RemotePrefillSource::warn(const std::string& err) {
     if (err.empty() || warned_.exchange(true)) return;
-    std::fprintf(stderr, "prefill: a helper cache read failed (%s); the file source fills that blob instead\n",
+    std::fprintf(stderr, "prefill: a helper cache read failed (%s); rejecting the prompt; restart the engine\n",
                  err.c_str());
 }
 } // namespace strata::core
