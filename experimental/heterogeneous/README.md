@@ -290,3 +290,24 @@ See [docs/VERIFIER_WINDOW_V4.md](docs/VERIFIER_WINDOW_V4.md) for the
 protocol and the Oberon integration handoff. No actual CUDA/HIP execution,
 model loading, state restoration, logits or GPU-specific acceptance logic
 is implemented or verified.
+
+### Milestone M1.10: final-stage result codec (CPU-only)
+
+The new `FinalStageResult` contract has a standalone, versioned little-endian
+packet format (result magic `STFR`, format v1) with predicted token IDs for
+every row, explicit nonfinite-head markers and optional bit-exact float32
+logits. It validates request/window/model/stage identity, payload bounds,
+shape, vocabulary indices and checksums. Its AF_UNIX helpers have bounded
+transfer deadlines and reject truncated or fragmented-invalid packets.
+A `FinalResultGate` prevents publication before the caller explicitly
+reports successful commit acknowledgements from **all** stages.
+
+This module is additive and **not wired to PipelineSession, a final-stage
+worker, or Strata's real verifier**. The existing activation protocol stays
+v4 with no wire change; do not mix these standalone packets on its control
+sockets. It is **not** numerical inference, an implemented last-stage head,
+or a solution to the zero-prefix restoration problem.
+
+Run `strata_heterogeneous_final_result_tests` and see
+[docs/FINAL_RESULT_V1.md](docs/FINAL_RESULT_V1.md) for the wire layout,
+failure semantics and next GPU-dependent integration tasks.

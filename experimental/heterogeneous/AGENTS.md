@@ -275,6 +275,29 @@ Oberon. Keep all normal inference defaults untouched.
 and implement a concrete CUDA-only stage adapter before adding HIP stages.
 GPU validation belongs on Oberon.
 
+### M1.10 — Independent final-stage result codec (implemented, CPU-only)
+
+- `FinalStageResult` is a separate **v1 result packet** with its own
+  64-byte header, magic `STFR`, checksum and a bounded 16 MiB payload.
+  This does **not** change the existing v4 activation/commit protocol.
+- A result carries one predicted token per row, optional row-major logits,
+  sorted nonfinite-row markers, and exact stage/request/window/plan identity.
+  The field ranges and overall size must be checked before allocating
+  untrusted lengths; checksums detect corruption, not malicious peers.
+- `FinalResultGate` explicitly distinguishes provisional from committed
+  results. Do not call `mark_committed` before ALL stages have acknowledged
+  a matching commit; poison on any failure. No distributed rollback exists.
+- The codec and standalone AF_UNIX socket helpers are **not integrated**
+  with `PipelineSession` or an engine worker. No real head, logits
+  sampling, device transfer, or mixed-vendor parity is claimed.
+- Run `strata_heterogeneous_final_result_tests` plus every prior CTest
+  target. See [docs/FINAL_RESULT_V1.md](docs/FINAL_RESULT_V1.md) before
+  designing the opt-in v5 final-stage handshake.
+
+**Next:** extend the worker/coordinator state machine to transport a
+real verifier head result from the final stage instead of inventing a
+bogus activation handoff, and validate CUDA hardware when available.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The
