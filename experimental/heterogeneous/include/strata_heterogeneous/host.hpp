@@ -3,6 +3,7 @@
 // A host-only prototype for cross-runtime Strata stage handoffs.
 // No CUDA or HIP types cross this boundary.  See README.md for limitations.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -44,7 +45,12 @@ struct Plan {
 // Device ordinals are backend-local. Does NOT discover GPUs.
 Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uint64_t model_fingerprint);
 
-enum class Kind : uint16_t { data = 1, failure = 2 };
+// Protocol v2: handshake and two-phase execution/commit control messages.
+// Only stage results (data) carry R/bo/inject floats; hello carries 4 u32s.
+enum class Kind : uint16_t {
+    data = 1, failure = 2, hello = 3, ready = 4,
+    commit = 5, committed = 6
+};
 struct Frame {
     Kind kind = Kind::data;
     uint32_t stage_index = 0;
@@ -55,10 +61,13 @@ struct Frame {
     Geometry geometry;
     std::vector<float> payload;
     std::string error;  // only for Kind::failure
+    // hello: [backend, ordinal, first_layer, end_layer]; other kinds: zero.
+    std::array<uint32_t, 4> identity{};
 };
 
 constexpr uint32_t max_payload_bytes = 16 * 1024 * 1024;
 constexpr size_t wire_header_bytes = 56;
+constexpr int default_io_timeout_ms = 30000;
 
 std::vector<uint8_t> encode(const Frame& f);
 Frame decode(const std::vector<uint8_t>& encoded);
@@ -66,18 +75,74 @@ Frame decode(const std::vector<uint8_t>& encoded);
 // POSIX AF_UNIX SOCK_STREAM transport: short reads/writes and EINTR handled, no GPU API.
 // Receiving an orderly EOF returns nullopt; truncated/invalid frames throw.
 // This deliberately copies payloads. Shared-memory/DMA optimization comes later.
-void send_frame(int fd, const Frame& frame);
-std::optional<Frame> receive_frame(int fd);
+// Total, monotonic wall-clock deadline per frame, not per read/write chunk.
+// timeout_ms must be >= 0. A timeout throws; callers must poison the session.
+void send_frame(int fd, const Frame& frame, int timeout_ms = default_io_timeout_ms);
+std::optional<Frame> receive_frame(int fd, int timeout_ms = default_io_timeout_ms);
 
 using Executor = std::function<bool(const Stage&, const Frame&, Frame&, std::string&)>;
 
-// One worker per process in the intended design, separately linked to CUDA or HIP.
-// Worker does not publish a successful reply when its executor reports failure.
+// The stage owns layer-local state and may have a prepared, uncommitted window.
+// run_window must not advance durable state; commit_window does so only when all
+// stages produced valid outputs. A failure during commit poisons the session;
+// rollback across partially committed GPU workers is NOT promised.
+class StageExecutor {
+public:
+    virtual ~StageExecutor() = default;
+    virtual bool prepare(const Plan& plan, size_t stage_index, std::string& error) = 0;
+    virtual bool run_window(const Frame& input, Frame& output, std::string& error) = 0;
+    virtual bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) = 0;
+    virtual void abandon_window() noexcept = 0;
+    virtual void shutdown() noexcept = 0;
+};
+
+// Stateless test adapter, not a real GPU-backed stage.
+class MockStageExecutor final : public StageExecutor {
+public:
+    bool prepare(const Plan& plan, size_t stage_index, std::string& error) override;
+    bool run_window(const Frame& input, Frame& output, std::string& error) override;
+    bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) override;
+    void abandon_window() noexcept override;
+    void shutdown() noexcept override;
+private:
+    Stage stage_{};
+    bool prepared_ = false;
+    bool pending_ = false;
+    uint64_t pending_request_ = 0;
+    uint64_t pending_window_ = 0;
+};
+
+// Workers send an identity hello before accepting data. Coordinator verifies
+// every worker's declared backend/ordinal/layer range, then sends ready.
+void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
+                           StageExecutor& executor, int timeout_ms = default_io_timeout_ms);
+// Backwards-compatible CPU-test convenience; now uses the same transactional
+// handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);
 
-// Single request/window synchronous pipeline. All-or-error: no final output until
-// each stage has replied successfully. This is NOT yet an asynchronous pipeline.
-Frame run_pipeline(const Plan& plan, const std::vector<int>& worker_fds, Frame initial);
+// Owns only the *protocol state*, not the child processes or socket descriptors.
+// On any failure, shuts down sockets, rejects later windows, and requires new
+// workers/session; it never publishes a partially completed window.
+class PipelineSession {
+public:
+    PipelineSession(Plan plan, std::vector<int> worker_fds, int timeout_ms = default_io_timeout_ms);
+    void initialize();
+    Frame run_window(Frame initial);
+    bool poisoned() const { return poisoned_; }
+    bool initialized() const { return initialized_; }
+private:
+    Plan plan_;
+    std::vector<int> fds_;
+    int timeout_ms_;
+    bool initialized_ = false;
+    bool poisoned_ = false;
+    uint64_t last_request_ = 0;
+    uint64_t last_window_ = 0;
+    void poison() noexcept;
+};
+
+// Legacy entrypoint is intentionally removed in v2. Use a PipelineSession
+// to prevent attempts to reuse poisoned worker state after failures.
 
 // Deterministic CPU-only stand-in. Never used as GPU inference.
 bool mock_execute(const Stage& stage, const Frame& input, Frame& output, std::string& error);

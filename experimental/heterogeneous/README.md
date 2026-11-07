@@ -38,21 +38,34 @@ cannot silently exchange activations. Model fingerprint derivation from Strata's
 loaded model is **not yet implemented**; callers must provide the same stable
 nonzero identity on every worker.
 
-## Wire protocol v1
+## Wire protocol v2 — staged handoff and commit
 
 POSIX Unix-domain stream sockets. Little-endian, IEEE754 float32.
 A fixed 56-byte header carries magic/version, kind, stage, rows, geometry,
 request/window IDs, plan fingerprint, payload length and FNV-1a corruption
-checksum. Payload is either an ordered float32 handoff window or a bounded
-error message. 16 MiB per-frame cap; prefill needs chunking.
+checksum. The v2 wire protocol adds a 16-byte worker hello (backend, local
+ordinal, first and last layer), ready handshake, and commit/committed control
+frames. A normal data payload remains an ordered float32 handoff window;
+errors carry a bounded message. 16 MiB per-frame cap; prefill needs chunking.
+A complete frame has a monotonic I/O deadline (30 seconds by default),
+including short reads/writes. This is a breaking protocol change: v1 worker
+binaries are not compatible with v2 coordinator binaries.
 
-The coordinator submits a window to each stage in order. On errors, truncated
-transfers, stale IDs, incompatible plan/geometry or wrong output sizes, the
-window is **not published**. The worker exits after an execution failure.
+The coordinator first verifies every worker's declared backend, ordinal,
+layer interval, plan fingerprint, and geometry, then authorizes execution.
+Each stage computes a provisional window and waits for a matching commit;
+only after *all* stages acknowledge commit is the final result published.
+On timeouts, stage failures, truncated transfers, stale IDs, incompatible
+plans, bad shapes or commit failures, the session is poisoned and its sockets
+are shut down to wake outstanding workers. A partially committed transaction
+is **not rolled back**: the session must be abandoned and recreated. The
+stateful StageExecutor API is a CPU-only contract; a real stage must not
+advance durable model state during the provisional run.
 The unit tests use **actual separate POSIX processes**, via `fork()` and
-`socketpair()`. The `strata_heterogeneous_demo` executable additionally launches
-workers with `posix_spawn`/`exec`: each runs in its own address space and has only
-a local Unix socket. Both paths use deterministic CPU executors. Different GPU
+`socketpair()`, plus fault injection for handshake, worker-exit and commit
+failure. The `strata_heterogeneous_demo` executable launches workers with
+`posix_spawn`/`exec`: each runs in its own address space and has only a local
+Unix socket. Both paths use deterministic CPU executors. Different GPU
 runtimes will later be compiled and linked into separate worker executables.
 
 The socket protocol is for correctness experiments and interface stability.
@@ -91,12 +104,17 @@ ctest --test-dir /tmp/strata-hetero-asan --output-on-failure
   Production GPU workers must similarly be independently executed.
 - Workers don't restore real model state. Full saved-conversation semantics
   require coordinating the stage-local snapshots as a transaction.
-- Only synchronous single-window scheduling exists; concurrency, timeouts,
-  cancellation, worker restart and authentication are not implemented.
+- Only synchronous single-window scheduling exists. Bounded socket timeouts
+  and fail-closed socket shutdown exist; application-level cancellation,
+  worker restart/recovery, retry, parallel scheduling and authentication do
+  **not** exist.
 - FNV-1a catches incidental corruption, **not malicious input**. Use only
   local trusted sockets; don't expose the worker protocol over a network.
 - A future worker must validate actual device memory allocations, handle
   device/stream errors, and return failure rather than decoding partial state.
+- The coordinator handshake verifies worker-declared identity, not actual GPU
+  hardware attestation. Backend workers must validate and report their own
+  runtime/device identity during real `StageExecutor::prepare`.
 - No speedup can be inferred without profiling the R9700/R9700/4070 Ti SUPER
   setup and the PCIe/OCuLink transfer behavior.
 
@@ -104,7 +122,9 @@ Coding agents: read [AGENTS.md](AGENTS.md) before modifying this experimental mo
 
 ## Next implementation increments
 
-1. Connect the existing `posix_spawn`/`exec` worker launcher to separately built CUDA and HIP worker executables; retain backend-runtime isolation.
+1. Replace the mock backend in the existing `posix_spawn`/`exec` workers
+   with separately compiled CUDA and HIP worker executables. Keep runtime
+   isolation and implement a real stateful stage lifecycle.
 2. Wrap Strata's `Verifier::set_stage()` and `set_handoff_rows()` in CUDA/HIP
    stage executors, with GPU state/weights resident only on their owner.
 3. Implement pinned/staged GPU copies + reusable shared host slots and
@@ -115,3 +135,10 @@ Coding agents: read [AGENTS.md](AGENTS.md) before modifying this experimental mo
 
 The module is opt-in and leaves existing Strata build settings, CI workflows,
 and inference defaults unchanged.
+
+### Milestone M1 completed on the host
+
+Implemented: stateful stage-executor lifecycle (prepare, provisional run,
+commit, abandon, shutdown); versioned identity handshake; bounded Unix-socket
+I/O; session poisoning; worker exit/commit failure tests. **Only host-side
+correctness is demonstrated.** No GPU validation was possible here.

@@ -1,6 +1,8 @@
 #include "strata_heterogeneous/host.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <poll.h>
 #include <cerrno>
 #include <charconv>
 #include <cmath>
@@ -15,7 +17,7 @@
 namespace strata::heterogeneous {
 namespace {
 constexpr uint32_t magic = 0x58485453;  // STHX in little endian
-constexpr uint16_t version = 1;
+constexpr uint16_t version = 2;
 constexpr size_t max_failure_bytes = 1024;
 
 uint64_t checked_add(uint64_t a, uint64_t b) {
@@ -72,34 +74,88 @@ uint32_t expected_bytes(const Frame& f) {
 void validate_frame(const Frame& f) {
     if (!f.request_id || !f.plan_fingerprint || !f.rows || !f.geometry.hc || !f.geometry.n_embd)
         throw std::invalid_argument("frame has unset request, plan, rows, or geometry");
-    if (f.kind == Kind::data) {
-        if (!f.error.empty() || checked_mul(f.payload.size(), sizeof(float)) != expected_bytes(f))
-            throw std::invalid_argument("data frame has wrong handoff shape");
-    } else if (f.kind == Kind::failure) {
-        if (!f.payload.empty() || f.error.empty() || f.error.size() > max_failure_bytes)
-            throw std::invalid_argument("invalid failure frame");
-    } else throw std::invalid_argument("unsupported frame kind");
+    const bool zero_identity = f.identity == std::array<uint32_t, 4>{};
+    switch (f.kind) {
+        case Kind::data:
+            if (!zero_identity || !f.error.empty() ||
+                checked_mul(f.payload.size(), sizeof(float)) != expected_bytes(f))
+                throw std::invalid_argument("data frame has wrong handoff shape");
+            break;
+        case Kind::failure:
+            if (!zero_identity || !f.payload.empty() || f.error.empty() || f.error.size() > max_failure_bytes)
+                throw std::invalid_argument("invalid failure frame");
+            break;
+        case Kind::hello:
+            if (!f.payload.empty() || !f.error.empty() ||
+                (f.identity[0] != static_cast<uint32_t>(Backend::cuda) &&
+                 f.identity[0] != static_cast<uint32_t>(Backend::hip)) ||
+                f.identity[2] >= f.identity[3] || f.rows != 1 ||
+                f.request_id != 1 || f.window_id != 1)
+                throw std::invalid_argument("invalid worker hello");
+            break;
+        case Kind::ready:
+            if (f.rows != 1 || f.request_id != 1 || f.window_id != 1 ||
+                !zero_identity || !f.payload.empty() || !f.error.empty())
+                throw std::invalid_argument("invalid worker ready");
+            break;
+        case Kind::commit:
+        case Kind::committed:
+            if (!zero_identity || !f.payload.empty() || !f.error.empty())
+                throw std::invalid_argument("invalid window control frame");
+            break;
+        default: throw std::invalid_argument("unsupported frame kind");
+    }
 }
-void read_full(int fd, uint8_t* p, size_t n) {
+using Deadline = std::chrono::steady_clock::time_point;
+Deadline deadline_after(int timeout_ms) {
+    if (timeout_ms < 0) throw std::invalid_argument("negative handoff timeout");
+    return std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+}
+void wait_ready(int fd, short events, Deadline deadline) {
+    while (true) {
+        auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline -
+                            std::chrono::steady_clock::now()).count();
+        if (left < 0) throw std::runtime_error("handoff timed out");
+        struct pollfd pfd {fd, events, 0};
+        int n = ::poll(&pfd, 1, static_cast<int>(std::min<int64_t>(left, INT32_MAX)));
+        if (n > 0) {
+            if (pfd.revents & POLLNVAL) throw std::runtime_error("handoff invalid socket");
+            return; // POLLHUP/POLLERR are handled by recv/send
+        }
+        if (n == 0) throw std::runtime_error("handoff timed out");
+        if (errno != EINTR) throw std::runtime_error(std::string("handoff poll: ") + std::strerror(errno));
+    }
+}
+bool read_full(int fd, uint8_t* p, size_t n, Deadline deadline, bool eof_allowed = false) {
     size_t at = 0;
     while (at < n) {
-        const ssize_t got = ::read(fd, p + at, n - at);
+        if (std::chrono::steady_clock::now() > deadline)
+            throw std::runtime_error("handoff timed out");
+        const ssize_t got = ::recv(fd, p + at, n - at, MSG_DONTWAIT);
         if (got > 0) { at += static_cast<size_t>(got); continue; }
         if (got == 0) {
+            if (at == 0 && eof_allowed) return false;
             throw std::runtime_error("truncated handoff frame");
         }
         if (errno == EINTR) continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) { wait_ready(fd, POLLIN, deadline); continue; }
         throw std::runtime_error(std::string("handoff read: ") + std::strerror(errno));
     }
+    return true;
 }
-void write_full(int fd, const uint8_t* p, size_t n) {
+void write_full(int fd, const uint8_t* p, size_t n, Deadline deadline) {
     size_t at = 0;
     while (at < n) {
-        // MSG_NOSIGNAL prevents an accidental SIGPIPE when a GPU worker dies.
-        const ssize_t sent = ::send(fd, p + at, n - at, MSG_NOSIGNAL);
+        if (std::chrono::steady_clock::now() > deadline)
+            throw std::runtime_error("handoff timed out");
+        const ssize_t sent = ::send(fd, p + at, n - at, MSG_NOSIGNAL | MSG_DONTWAIT);
         if (sent > 0) { at += static_cast<size_t>(sent); continue; }
         if (sent < 0 && errno == EINTR) continue;
-        throw std::runtime_error(std::string("handoff send: ") + (sent < 0 ? std::strerror(errno) : "zero write"));
+        if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            wait_ready(fd, POLLOUT, deadline); continue;
+        }
+        throw std::runtime_error(std::string("handoff send: ") +
+                                 (sent < 0 ? std::strerror(errno) : "zero write"));
     }
 }
 } // namespace
@@ -168,7 +224,9 @@ std::vector<uint8_t> encode(const Frame& f) {
     if (f.kind == Kind::data) {
         payload.resize(f.payload.size() * sizeof(float));
         std::memcpy(payload.data(), f.payload.data(), payload.size());
-    } else payload.assign(f.error.begin(), f.error.end());
+    } else if (f.kind == Kind::failure) payload.assign(f.error.begin(), f.error.end());
+    else if (f.kind == Kind::hello)
+        for (uint32_t word : f.identity) add_u32(payload, word);
     std::vector<uint8_t> bytes;
     bytes.reserve(wire_header_bytes + payload.size());
     add_u32(bytes, magic); add_u16(bytes, version); add_u16(bytes, static_cast<uint16_t>(f.kind));
@@ -202,82 +260,28 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         f.payload.resize(n / sizeof(float));
         if (n) std::memcpy(f.payload.data(), payload, n);
     } else if (f.kind == Kind::failure) f.error.assign(reinterpret_cast<const char*>(payload), n);
+    else if (f.kind == Kind::hello) {
+        if (n != 16) throw std::invalid_argument("hello identity has wrong length");
+        for (size_t i = 0; i < 4; ++i) f.identity[i] = get_u32(payload + 4 * i);
+    }
     validate_frame(f);
     return f;
 }
-void send_frame(int fd, const Frame& frame) {
-    auto data = encode(frame);
-    write_full(fd, data.data(), data.size());
+void send_frame(int fd, const Frame& frame, int timeout_ms) {
+    const auto deadline = deadline_after(timeout_ms);
+    auto bytes = encode(frame);
+    write_full(fd, bytes.data(), bytes.size(), deadline);
 }
-std::optional<Frame> receive_frame(int fd) {
+std::optional<Frame> receive_frame(int fd, int timeout_ms) {
+    const auto deadline = deadline_after(timeout_ms);
     uint8_t header[wire_header_bytes]{};
-    // Must distinguish an orderly peer close from a truncated header.
-    ssize_t first;
-    do { first = ::read(fd, header, 1); } while (first < 0 && errno == EINTR);
-    if (first == 0) return std::nullopt;
-    if (first < 0) throw std::runtime_error(std::string("handoff read: ") + std::strerror(errno));
-    read_full(fd, header + 1, wire_header_bytes - 1);
+    if (!read_full(fd, header, wire_header_bytes, deadline, true)) return std::nullopt;
     const uint32_t n = get_u32(header + 48);
     if (n > max_payload_bytes) throw std::invalid_argument("oversized incoming handoff frame");
     std::vector<uint8_t> bytes(header, header + wire_header_bytes);
     bytes.resize(wire_header_bytes + n);
-    if (n) read_full(fd, bytes.data() + wire_header_bytes, n);
+    if (n) read_full(fd, bytes.data() + wire_header_bytes, n, deadline);
     return decode(bytes);
-}
-void serve_worker(int fd, const Plan& plan, size_t index, const Executor& execute) {
-    plan.validate();
-    if (index >= plan.stages.size()) throw std::invalid_argument("worker index out of range");
-    const uint64_t fingerprint = plan.fingerprint();
-    while (auto incoming = receive_frame(fd)) {
-        Frame output = *incoming;
-        output.kind = Kind::data;
-        output.payload.clear(); output.error.clear();
-        std::string error;
-        try {
-            if (incoming->kind != Kind::data || incoming->stage_index != index ||
-                incoming->plan_fingerprint != fingerprint || incoming->geometry.hc != plan.geometry.hc ||
-                incoming->geometry.n_embd != plan.geometry.n_embd)
-                throw std::runtime_error("worker plan/stage/geometry mismatch");
-            if (!execute(plan.stages[index], *incoming, output, error))
-                throw std::runtime_error(error.empty() ? "worker execution failed" : error);
-            if (output.kind != Kind::data || output.request_id != incoming->request_id ||
-                output.window_id != incoming->window_id || output.stage_index != incoming->stage_index ||
-                output.plan_fingerprint != incoming->plan_fingerprint || output.rows != incoming->rows ||
-                output.geometry.hc != incoming->geometry.hc || output.geometry.n_embd != incoming->geometry.n_embd)
-                throw std::runtime_error("worker changed immutable handoff metadata");
-            // send_frame performs final output-shape validation before publication.
-            send_frame(fd, output);
-        } catch (const std::exception& ex) {
-            Frame failure = *incoming;
-            failure.kind = Kind::failure; failure.payload.clear();
-            failure.error.assign(ex.what(), std::min(std::strlen(ex.what()), max_failure_bytes));
-            send_frame(fd, failure);
-            return; // fail-stop; a real worker should poison its session after a runtime error
-        }
-    }
-}
-Frame run_pipeline(const Plan& plan, const std::vector<int>& fds, Frame initial) {
-    plan.validate();
-    if (fds.size() != plan.stages.size()) throw std::invalid_argument("one worker fd required per stage");
-    const uint64_t fingerprint = plan.fingerprint();
-    if (initial.kind != Kind::data || initial.plan_fingerprint != fingerprint ||
-        initial.geometry.hc != plan.geometry.hc || initial.geometry.n_embd != plan.geometry.n_embd)
-        throw std::invalid_argument("initial frame doesn't match plan");
-    for (size_t i = 0; i < fds.size(); ++i) {
-        initial.stage_index = static_cast<uint32_t>(i);
-        send_frame(fds[i], initial);
-        auto answer = receive_frame(fds[i]);
-        if (!answer) throw std::runtime_error("worker closed before replying");
-        if (answer->request_id != initial.request_id || answer->window_id != initial.window_id ||
-            answer->stage_index != initial.stage_index || answer->plan_fingerprint != fingerprint ||
-            answer->rows != initial.rows || answer->geometry.hc != initial.geometry.hc ||
-            answer->geometry.n_embd != initial.geometry.n_embd)
-            throw std::runtime_error("stale or mismatched worker reply");
-        if (answer->kind == Kind::failure)
-            throw std::runtime_error("stage " + std::to_string(i) + " failed: " + answer->error);
-        initial = std::move(*answer);
-    }
-    return initial; // only final-stage success is published
 }
 bool mock_execute(const Stage& stage, const Frame& input, Frame& output, std::string&) {
     output = input;

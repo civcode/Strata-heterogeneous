@@ -6,7 +6,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 option(STRATA_HETERO_HOST_TESTS "Build CPU-only cross-backend host protocol tests" ON)
-add_library(strata_heterogeneous_host STATIC src/host.cpp)
+add_library(strata_heterogeneous_host STATIC src/host.cpp src/session.cpp)
 target_include_directories(strata_heterogeneous_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(strata_heterogeneous_host PUBLIC cxx_std_17)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

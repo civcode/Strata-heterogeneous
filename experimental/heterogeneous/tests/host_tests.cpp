@@ -123,6 +123,14 @@ void test_wire() {
     throws([&] { (void)encode(f); }, "partial row rejected");
     f = input(p, 43, 900, 1); f.geometry.hc = 1000000;
     throws([&] { (void)encode(f); }, "oversized frame rejected");
+    Frame hello;
+    hello.kind = Kind::hello; hello.stage_index = 0;
+    hello.request_id = 1; hello.window_id = 1; hello.rows = 1;
+    hello.plan_fingerprint = p.fingerprint(); hello.geometry = p.geometry;
+    hello.identity = {1, 3, 0, 48};
+    check(decode(encode(hello)).identity == hello.identity, "backend/device/range hello roundtrip");
+    auto bad_hello = encode(hello); bad_hello[48] = 12;
+    throws([&] { (void) decode(bad_hello); }, "invalid hello length rejected");
     Frame failure = input(p, 44, 900, 1);
     failure.kind = Kind::failure; failure.payload.clear(); failure.error = "GPU stream failed";
     check(decode(encode(failure)).error == "GPU stream failed", "error frame roundtrip");
@@ -144,15 +152,158 @@ void test_process_pipeline() {
     auto workers = spawn(p, mock_execute);
     std::vector<int> fds;
     for (auto& w : workers) fds.push_back(w.fd);
+    PipelineSession session(p, fds);
+    session.initialize();
     for (uint32_t rows : {1u, 8u, 13u}) {
         Frame initial = input(p, 100 + rows, 777 + rows, rows);
-        Frame actual = run_pipeline(p, fds, initial);
+        Frame actual = session.run_window(initial);
         Frame expected = initial;
         mock_execute(Stage{Backend::cuda, 0, 0, p.total_layers}, initial, expected, expected.error);
         check(actual.payload == expected.payload, "split and unsplit layer order agree exactly");
         check(actual.stage_index == 2, "final stage owns output");
         check(actual.window_id == initial.window_id, "window id preserved");
     }
+    shutdown(workers);
+}
+// Invariant: a worker's declared backend, ordinal, and layer interval must be
+// checked against the complete plan before it can receive any activation.
+void test_handshake_rejection() {
+    Plan p = parse_plan("cuda:0:0-3,hip:0:3-10", 10, {2, 6}, 0xabcd);
+    int sockets[2]{};
+    check(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0, "identity test socketpair");
+    Frame hello;
+    hello.kind = Kind::hello;
+    hello.request_id = 1; hello.window_id = 1; hello.rows = 1;
+    hello.geometry = p.geometry; hello.plan_fingerprint = p.fingerprint();
+    hello.identity = {static_cast<uint32_t>(Backend::hip), 0, 0, 3}; // expected CUDA
+    send_frame(sockets[1], hello);
+    PipelineSession session(p, {sockets[0], sockets[1]}); // intentionally mismatched workers
+    throws([&] { session.initialize(); }, "wrong worker identity fails handshake");
+    check(session.poisoned(), "handshake mismatch poisons session");
+    ::close(sockets[0]); ::close(sockets[1]);
+
+    // Separately reject a perfectly framed hello carrying an incompatible plan.
+    int fd[2]{};
+    check(::socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == 0, "plan test socketpair");
+    hello.identity = {static_cast<uint32_t>(Backend::cuda), 0, 0, 3};
+    hello.plan_fingerprint ^= 123;
+    send_frame(fd[1], hello);
+    PipelineSession bad_plan(parse_plan("cuda:0:0-10", 10, {2, 6}, 0xabcd), {fd[0]});
+    throws([&] { bad_plan.initialize(); }, "wrong model/plan handshake rejected");
+    check(bad_plan.poisoned(), "bad plan poisons session");
+    ::close(fd[0]); ::close(fd[1]);
+}
+void test_io_deadlines() {
+    int fd[2]{};
+    check(::socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == 0, "timeout test socketpair");
+    throws([&] { (void) receive_frame(fd[0], 20); }, "idle socket receive times out");
+    const Plan p = parse_plan("cuda:0:0-10", 10, {2, 6}, 123);
+    Frame f = input(p, 3, 4, 100000); // > socket buffer; receiver never drains it
+    throws([&] { send_frame(fd[0], f, 20); }, "blocked socket send times out");
+    throws([&] { (void) receive_frame(fd[0], -1); }, "negative timeout rejected");
+    ::close(fd[0]); ::close(fd[1]);
+}
+void test_mock_stage_lifecycle() {
+    const Plan p = parse_plan("hip:1:0-10", 10, {2, 6}, 0x123);
+    MockStageExecutor stage;
+    std::string error;
+    Frame in = input(p, 55, 66, 1), out;
+    check(stage.prepare(p, 0, error), "prepare mock stage");
+    check(stage.run_window(in, out, error), "run prepared stage");
+    check(!stage.run_window(in, out, error), "cannot launch second window before commit");
+    check(!stage.commit_window(55, 67, error), "wrong commit window rejected");
+    check(stage.commit_window(55, 66, error), "correct commit succeeds");
+    check(stage.run_window(in, out, error), "can run next window after commit");
+    stage.abandon_window();
+    check(!stage.commit_window(55, 66, error), "abandoned window cannot be committed");
+    stage.shutdown();
+    check(!stage.run_window(in, out, error), "shutdown stage cannot execute");
+}
+struct RejectCommit final : StageExecutor {
+    MockStageExecutor base;
+    bool reject = false;
+    bool prepare(const Plan& p, size_t i, std::string& e) override {
+        reject = (i == 1); return base.prepare(p, i, e);
+    }
+    bool run_window(const Frame& in, Frame& out, std::string& e) override {
+        return base.run_window(in, out, e);
+    }
+    bool commit_window(uint64_t req, uint64_t win, std::string& e) override {
+        if (reject) { e = "injected HIP commit failure"; return false; }
+        return base.commit_window(req, win, e);
+    }
+    void abandon_window() noexcept override { base.abandon_window(); }
+    void shutdown() noexcept override { base.shutdown(); }
+};
+void test_commit_failure_and_worker_exit() {
+    const Plan p = parse_plan("cuda:0:0-3,hip:0:3-10", 10, {2, 6}, 0x999);
+    std::vector<Worker> workers;
+    for (size_t i = 0; i < p.stages.size(); ++i) {
+        int fd[2]{};
+        check(::socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == 0, "commit-test socketpair");
+        pid_t pid = ::fork();
+        check(pid >= 0, "commit-test fork");
+        if (!pid) {
+            for (const auto& w : workers) ::close(w.fd);
+            ::close(fd[0]);
+            try {
+                RejectCommit executor;
+                serve_worker_stateful(fd[1], p, i, executor, 500);
+                ::close(fd[1]); _exit(0);
+            } catch (...) { _exit(2); }
+        }
+        ::close(fd[1]); workers.push_back({fd[0], pid});
+    }
+    PipelineSession session(p, {workers[0].fd, workers[1].fd}, 500);
+    session.initialize();
+    std::string error;
+    try { (void) session.run_window(input(p, 13, 14, 2)); }
+    catch (const std::exception& e) { error = e.what(); }
+    check(error.find("injected HIP commit failure") != std::string::npos, "commit error propagated");
+    check(session.poisoned(), "partially committed session is poisoned");
+    throws([&] { (void) session.run_window(input(p, 13, 15, 2)); },
+           "poisoned pipeline cannot continue inference");
+    shutdown(workers);
+
+    // A process that dies after a valid hello must never be treated as a
+    // successful stage, even when its socket closes cleanly.
+    int fd[2]{};
+    check(::socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == 0, "worker-exit socketpair");
+    const Plan one = parse_plan("cuda:0:0-3", 3, {2, 6}, 0x999);
+    pid_t child = ::fork();
+    check(child >= 0, "worker-exit fork");
+    if (!child) {
+        ::close(fd[0]);
+        Frame hello;
+        hello.kind = Kind::hello; hello.request_id = 1; hello.window_id = 1;
+        hello.rows = 1; hello.geometry = p.geometry;
+        hello.plan_fingerprint = one.fingerprint();
+        hello.identity = {1, 0, 0, 3};
+        try {
+            send_frame(fd[1], hello, 500);
+            (void) receive_frame(fd[1], 500); // coordinator ready
+        } catch (...) { _exit(2); }
+        ::close(fd[1]); _exit(0);
+    }
+    ::close(fd[1]);
+    PipelineSession exited(one, {fd[0]}, 500);
+    exited.initialize();
+    throws([&] { (void) exited.run_window(input(one, 81, 82, 2)); },
+           "worker exit after valid handshake rejects inference");
+    check(exited.poisoned(), "worker exit poisons session");
+    ::close(fd[0]);
+    int status = 0; check(::waitpid(child, &status, 0) == child, "reap exited worker");
+}
+void test_window_replay() {
+    const Plan p = parse_plan("cuda:0:0-10", 10, {2, 6}, 0xabc7);
+    auto workers = spawn(p, mock_execute);
+    PipelineSession session(p, {workers[0].fd}, 500);
+    session.initialize();
+    Frame f = input(p, 5, 100, 2);
+    check(session.run_window(f).kind == Kind::data, "first window published after commit");
+    check(session.run_window(input(p, 5, 101, 2)).window_id == 101, "later window commits");
+    throws([&] { (void) session.run_window(f); }, "replayed request/window rejected");
+    check(session.poisoned(), "replayed window poisons running session");
     shutdown(workers);
 }
 void test_fail_closed() {
@@ -163,23 +314,30 @@ void test_fail_closed() {
     };
     auto workers = spawn(p, failing);
     std::vector<int> fds; for (auto& w : workers) fds.push_back(w.fd);
+    PipelineSession session(p, fds);
+    session.initialize();
     std::string observed;
-    try { (void) run_pipeline(p, fds, input(p, 91, 1, 2)); }
+    try { (void) session.run_window(input(p, 91, 1, 2)); }
     catch (const std::exception& ex) { observed = ex.what(); }
+    check(session.poisoned(), "failed window poisons coordinator session");
     check(observed.find("stage 1 failed: simulated HIP failure") != std::string::npos,
           "failed HIP stage never publishes a final result");
     shutdown(workers);
     workers = spawn(p, mock_execute);
     fds.clear(); for (auto& w : workers) fds.push_back(w.fd);
+    PipelineSession fresh(p, fds);
+    fresh.initialize();
     auto incorrect = input(p, 19, 2, 1);
     incorrect.plan_fingerprint ^= 123;
-    throws([&] { (void) run_pipeline(p, fds, incorrect); }, "wrong model/config fingerprint rejected upfront");
+    throws([&] { (void) fresh.run_window(incorrect); }, "wrong model/config fingerprint rejected upfront");
     shutdown(workers);
 }
 }
 int main() {
     try {
         test_plan(); test_wire(); test_process_pipeline(); test_fail_closed();
+        test_handshake_rejection(); test_io_deadlines(); test_mock_stage_lifecycle();
+        test_commit_failure_and_worker_exit(); test_window_replay();
         std::cout << "heterogeneous host tests: PASS (" << assertions << " assertions, real worker processes, no GPU)\n";
         return 0;
     } catch (const std::exception& ex) {

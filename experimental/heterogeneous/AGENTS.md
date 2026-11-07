@@ -17,9 +17,9 @@ The code in this directory is presently a **CPU-only Linux host prototype**.
 It includes:
 
 - a validated stage plan with backend-local ordinals;
-- a versioned Unix-socket frame protocol and deterministic mock executor;
+- a v2 Unix-socket frame protocol, stage identity handshake, and commit acknowledgments;
 - process-isolated workers launched with posix_spawn/exec by the demo;
-- exact-shape, integrity, failure-propagation, and subprocess tests.
+- exact-shape, integrity, timeout, failure-propagation, and subprocess tests.
 
 There is **no real CUDA/HIP execution**, model loading, KV/cache handling,
 GPU DMA, streaming prefill, or Strata server integration in this prototype.
@@ -81,11 +81,12 @@ owned by the stages that execute their layers.
    may be published after a failed or incomplete stage. Distinguish
    pre-mutation resource refusal from failure after state mutation.
    Abort or rebuild poisoned stage state rather than silently proceeding.
-6. **Preserve ABI:** the current protocol is version 1, little-endian
-   IEEE754 float32, 56-byte header, maximum 16 MiB payload, and FNV-1a
-   checksum for accidental corruption only. Any incompatible wire change
-   requires a deliberate version bump and new negative tests. This is
-   only for trusted local processes, not network exposure.
+6. **Preserve ABI:** the current protocol is **version 2**, little-endian
+   IEEE754 float32 with a 56-byte header, a 16 MiB data-payload cap,
+   worker identity hello/ready, and per-window commit/committed messages.
+   FNV-1a detects accidental corruption, not attacks. An incompatible
+   change requires another deliberate version bump and negative tests.
+   Use only with trusted local worker processes, never public networks.
 7. **Opt-in:** isolate new code and build flags from production defaults.
    Never alter a normal Strata backend's outputs or performance by
    default. Avoid speculative changes to unrelated kernels or model
@@ -103,23 +104,26 @@ owned by the stages that execute their layers.
   canceled or dead workers, resource cleanup, and process lifecycle where
   useful. Avoid network listeners and untrusted remote clients.
 
-### M1 — Real worker boundary and stage API (CPU-only first)
+### M1 — Host-only stateful worker protocol (implemented)
 
-- Define a narrow backend-neutral `StageExecutor` lifecycle:
-  `prepare(model, plan)`, `load_stage`, `run_window`,
-  `commit`, `save_state`, `restore_state`, `shutdown`
-  (exact API may be refined after inspecting real call sites).
-- First implement a deterministic CPU test double. Do not equate the
-  existing stateless `mock_execute` with a real stateful verifier.
-- Add a worker handshake describing backend, ordinal, supported
-  features and loaded model identity. Keep the coordinator backend-free.
-- Add bounded timeouts, cancellation/exit handling, explicit errors,
-  and tests showing no result is published after a worker failure.
-- Ensure every worker is a separate executable or independently linked
-  backend binary, and the legacy CUDA/HIP CMake guard remains intact.
+- `StageExecutor` now exposes `prepare(plan, stage_index)`, provisional
+  `run_window`, `commit_window`, `abandon_window`, and `shutdown`.
+  `MockStageExecutor` is a CPU test double, **not** a real stateful verifier.
+- `PipelineSession::initialize()` validates worker-declared identity;
+  `run_window()` accepts results only after each stage acknowledges commit.
+  The previous `run_pipeline` entrypoint is gone in protocol v2.
+- Frame I/O has bounded deadlines. Faults poison the session and shut
+  down communication with workers; **partial commits are not rolled back**.
+- The handshake checks declared backend/ordinal/layer interval, plan and
+  geometry. Runtime hardware attestation, capability negotiation, and
+  a fingerprint derived from loaded model bytes are **still missing**.
+- Cancellation, worker restart/recovery, state save/restore, and real GPU
+  backends remain future work. Extend negative tests before those changes.
+- Keep the legacy CUDA/HIP build guard intact and use separate binaries.
 
-**Acceptance:** CPU tests and independent-process round trips pass;
-no CUDA/HIP runtime is required for the host-side code.
+**Evidence:** local CPU CTest and subprocess runs are the acceptance checks.
+No CUDA/HIP kernel, device initialization, or model-layer execution has been
+implemented or validated in this milestone.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 

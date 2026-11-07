@@ -87,7 +87,8 @@ int main(int argc, char** argv) {
         Plan plan = parse_plan(argv[offset], layers, geometry, model_fp);
         if (child) {
             const size_t index = uint_arg(argv[offset + 5]);
-            serve_worker(worker_fd, plan, index, mock_execute);
+            MockStageExecutor executor;
+            serve_worker_stateful(worker_fd, plan, index, executor);
             return 0;
         }
         const uint32_t rows = argc == 7 ? number(argv[6]) : 1;
@@ -104,7 +105,9 @@ int main(int argc, char** argv) {
         in.request_id = 1; in.window_id = 1;
         in.plan_fingerprint = plan.fingerprint(); in.geometry = plan.geometry; in.rows = rows;
         in.payload.assign(static_cast<size_t>(geometry.floats_per_row()) * rows, 0.0f);
-        Frame actual = run_pipeline(plan, fds, in);
+        PipelineSession session(plan, fds);
+        session.initialize();
+        Frame actual = session.run_window(in);
         Frame expected = in;
         std::string ignored;
         mock_execute(Stage{Backend::cuda, 0, 0, layers}, in, expected, ignored);
