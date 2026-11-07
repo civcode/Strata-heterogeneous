@@ -72,6 +72,39 @@ constexpr uint32_t max_payload_bytes = 16 * 1024 * 1024;
 constexpr size_t wire_header_bytes = 56;
 constexpr int default_io_timeout_ms = 30000;
 
+// A borrowed view of one host-visible activation window. Bytes avoid treating
+// a Linux mmap as a constructed float[] (C++17 object-lifetime rules) and give
+// GPU adapters a runtime-neutral D2H/H2D staging interface. This is NOT device
+// memory and cannot be passed directly to a CUDA or HIP kernel.
+struct ByteRange {
+    uint8_t* data = nullptr;
+    size_t bytes = 0;
+    float read_f32(size_t element) const;
+    void write_f32(size_t element, float value) const;
+};
+struct HandoffRow {
+    ByteRange residual;     // hc * n_embd float32 values
+    ByteRange pending_write; // n_embd float32 values
+    ByteRange inject;       // hc float32 values
+};
+class ActivationView {
+public:
+    // Bounds, geometry and the full 16 MiB protocol cap are validated.
+    // The borrowed pointer must remain alive for the entire view lifetime.
+    ActivationView(uint8_t* data, size_t bytes, Geometry geometry, uint32_t rows);
+    HandoffRow row(uint32_t index) const;
+    uint8_t* data() const { return data_; }
+    size_t bytes() const { return bytes_; }
+    uint32_t rows() const { return rows_; }
+    Geometry geometry() const { return geometry_; }
+private:
+    uint8_t* data_;
+    size_t bytes_;
+    Geometry geometry_;
+    uint32_t rows_;
+    size_t stride_bytes_;
+};
+
 std::vector<uint8_t> encode(const Frame& f);
 Frame decode(const std::vector<uint8_t>& encoded);
 
@@ -94,6 +127,12 @@ public:
     virtual ~StageExecutor() = default;
     virtual bool prepare(const Plan& plan, size_t stage_index, std::string& error) = 0;
     virtual bool run_window(const Frame& input, Frame& output, std::string& error) = 0;
+    // Optional in-place shared activation path. Metadata carries IDs/geometry
+    // but no float payload; borrowed bytes contain the exact R|bo|inject rows.
+    // No durable state may advance before commit_window. This default method
+    // safely falls back to vector run_window plus validated memcpy; a CUDA/HIP
+    // executor can override it to stage bytes to backend-owned device buffers.
+    virtual bool run_staged_window(const Frame& metadata, ActivationView view, std::string& error);
     virtual bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) = 0;
     virtual void abandon_window() noexcept = 0;
     virtual void shutdown() noexcept = 0;
@@ -104,6 +143,7 @@ class MockStageExecutor final : public StageExecutor {
 public:
     bool prepare(const Plan& plan, size_t stage_index, std::string& error) override;
     bool run_window(const Frame& input, Frame& output, std::string& error) override;
+    bool run_staged_window(const Frame& metadata, ActivationView view, std::string& error) override;
     bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) override;
     void abandon_window() noexcept override;
     void shutdown() noexcept override;

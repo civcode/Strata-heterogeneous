@@ -157,10 +157,12 @@ mock tests validate the device runtime.
 - Workers verify mapped bytes against the `shared_data` digest before
   execution; the coordinator verifies returned bytes before continuing.
   A mismatch poisons/stops the session and prevents result publication.
-- The stage adapter still copies between shared memory and its host
-  `std::vector<float>` interface. This is **not GPU zero-copy** and does not
-  justify a performance claim. A GPU adapter must provide independently
-  allocated backend-owned buffers and completed D2H/H2D events.
+- Shared memory no longer requires a full CPU vector copy in each worker:
+  a `run_staged_window` override can operate on `ActivationView` directly.
+  The default implementation still supports legacy `std::vector<float>`
+  executors via a safe validated fallback. This is **not GPU zero-copy**
+  and does not justify a performance claim. GPU adapters must use their
+  own device allocations and completed D2H/H2D transfers.
 - Run the new `strata_heterogeneous_shared_tests` and
   `strata_heterogeneous_shared_smoke` locally, plus existing CTest.
   Keep descriptor/failure/timeout tests passing on any protocol change.
@@ -169,6 +171,37 @@ mock tests validate the device runtime.
 
 **Next:** define and implement explicit GPU-side transfer/StageExecutor
 adapters, preserving process separation and stage-local ownership.
+
+### M1.7 — Borrowed host activation view and in-place execution (implemented)
+
+- `ActivationView` validates geometry, row counts and the 16 MiB cap.
+  `HandoffRow` gives exact `R`, `bo`, and `inject` byte ranges. Use
+  `memcpy`-based float accessors; do not cast mmap storage to `float*`
+  under C++17.
+- Shared-memory workers dispatch to
+  `StageExecutor::run_staged_window(metadata, view, error)`. They no
+  longer require intermediate full-size float vectors for the direct
+  path. Preserve the default validated vector fallback for executors
+  that only implement `run_window`.
+- The view is a temporary borrowed **host** mapping, never CUDA/HIP
+  device storage. Real backends must copy to backend-owned buffers,
+  synchronize execution and D2H copies before reporting success.
+- A failed staged execution may have mutated the shared activation
+  bytes, but must not have committed durable stage state. Poison all
+  participants and never publish a result after failure. This is
+  fail-stop, **not rollback**.
+- Run `strata_heterogeneous_activation_tests` and all existing CTest
+  targets (GCC, Clang, ASan and UBSan). Regression coverage includes
+  malformed layouts, overflow, exact multirow partition, corrupted
+  output rejection, direct staged dispatch, and injected post-write
+  worker failures.
+- Protocol v3 and the default socket-data mode are unchanged. Do not
+  alter wire frames for this feature.
+
+**Next:** implement a real CUDA stage adapter against the existing Strata
+verifier (including stage-local weights, KV, run/commit and explicit GPU
+events); validate CUDA-only stages first, then add the HIP process and
+cross-runtime transfer checks on Oberon.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 

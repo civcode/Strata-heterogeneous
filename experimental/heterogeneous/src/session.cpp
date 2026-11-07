@@ -77,6 +77,37 @@ private:
 };
 } // namespace
 
+bool StageExecutor::run_staged_window(const Frame& metadata, ActivationView view, std::string& error) {
+    if (metadata.kind != Kind::data || metadata.rows != view.rows() ||
+        metadata.geometry.hc != view.geometry().hc ||
+        metadata.geometry.n_embd != view.geometry().n_embd ||
+        !metadata.payload.empty() || metadata.shared_checksum)
+        throw std::invalid_argument("staged fallback metadata/view mismatch");
+    // The default adapter is intentionally conservative. GPU adapters should
+    // override this to perform an explicit host->device->host copy and complete
+    // their streams before returning; never interpret view.data() as a device pointer.
+    Frame input = metadata;
+    input.kind = Kind::data;
+    input.shared_checksum = 0;
+    input.payload.resize(view.bytes() / sizeof(float));
+    std::memcpy(input.payload.data(), view.data(), view.bytes());
+    Frame output = input;
+    output.payload.clear();
+    if (!run_window(input, output, error)) return false;
+    if (output.kind != Kind::data || output.request_id != metadata.request_id ||
+        output.window_id != metadata.window_id || output.rows != metadata.rows ||
+        output.stage_index != metadata.stage_index ||
+        output.plan_fingerprint != metadata.plan_fingerprint ||
+        output.geometry.hc != metadata.geometry.hc ||
+        output.geometry.n_embd != metadata.geometry.n_embd)
+        throw std::runtime_error("staged fallback returned incorrect window metadata");
+    (void) encode(output); // validate exact output shape *before* mutating mapping
+    if (output.payload.size() * sizeof(float) != view.bytes())
+        throw std::runtime_error("staged fallback changed activation byte length");
+    std::memcpy(view.data(), output.payload.data(), view.bytes());
+    return true;
+}
+
 bool MockStageExecutor::prepare(const Plan& plan, size_t stage_index, std::string& error) {
     if (prepared_ || stage_index >= plan.stages.size()) {
         error = "mock stage prepared twice or invalid index";
@@ -92,6 +123,27 @@ bool MockStageExecutor::run_window(const Frame& input, Frame& output, std::strin
     pending_ = true;
     pending_request_ = input.request_id;
     pending_window_ = input.window_id;
+    return true;
+}
+bool MockStageExecutor::run_staged_window(const Frame& metadata, ActivationView view,
+                                           std::string& error) {
+    if (!prepared_ || pending_) { error = "mock stage not ready"; return false; }
+    if (metadata.kind != Kind::data || metadata.rows != view.rows() ||
+        metadata.geometry.hc != view.geometry().hc ||
+        metadata.geometry.n_embd != view.geometry().n_embd ||
+        !metadata.payload.empty() || metadata.shared_checksum) {
+        error = "staged metadata does not match mapped view";
+        return false;
+    }
+    // All arithmetic uses memcpy: the memfd is raw bytes, not a C++ float[].
+    // Preserve the same layer-major operation order as mock_execute().
+    ByteRange all{view.data(), view.bytes()};
+    for (uint32_t l = stage_.first_layer; l < stage_.end_layer; ++l)
+        for (size_t i = 0; i < view.bytes() / sizeof(float); ++i)
+            all.write_f32(i, all.read_f32(i) + static_cast<float>(l + 1) * 0.0001f);
+    pending_ = true;
+    pending_request_ = metadata.request_id;
+    pending_window_ = metadata.window_id;
     return true;
 }
 bool MockStageExecutor::commit_window(uint64_t request_id, uint64_t window_id, std::string& error) {
@@ -132,29 +184,31 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                     request->geometry.hc != plan.geometry.hc ||
                     request->geometry.n_embd != plan.geometry.n_embd)
                     throw std::runtime_error("worker plan/stage/geometry mismatch");
-                Frame input = *request;
-                const size_t floats = static_cast<size_t>(request->rows) * plan.geometry.floats_per_row();
-                const size_t bytes = floats * sizeof(float); // bounded by decode(shared_data)
+                Frame reply;
+                error.clear();
                 if (shared_memory) {
+                    // A single mapped slot belongs to this stage until its
+                    // reply is received. The supervisor serializes ownership.
+                    const size_t floats = static_cast<size_t>(request->rows) * plan.geometry.floats_per_row();
+                    const size_t bytes = floats * sizeof(float); // capped by frame decode
                     if (shared.checksum(bytes) != request->shared_checksum)
                         throw std::runtime_error("shared activation checksum mismatch at stage entry");
-                    input.kind = Kind::data;
-                    input.shared_checksum = 0;
-                    input.payload = shared.load(floats);
-                }
-                Frame reply = input;
-                reply.payload.clear();
-                error.clear();
-                if (!executor.run_window(input, reply, error))
-                    throw std::runtime_error(error.empty() ? "worker execution failed" : error);
-                require_match(reply, input, Kind::data);
-                // encode() validates exact output shape before any shared-memory publication.
-                (void) encode(reply);
-                if (shared_memory) {
-                    shared.store(reply.payload);
-                    reply.payload.clear();
-                    reply.kind = Kind::shared_data;
+                    Frame metadata = *request;
+                    metadata.kind = Kind::data;
+                    metadata.shared_checksum = 0;
+                    ActivationView view(shared.data(), bytes, metadata.geometry, metadata.rows);
+                    if (!executor.run_staged_window(metadata, view, error))
+                        throw std::runtime_error(error.empty() ? "worker staged execution failed" : error);
+                    reply = *request;
                     reply.shared_checksum = shared.checksum(bytes);
+                } else {
+                    Frame output = *request;
+                    output.payload.clear();
+                    if (!executor.run_window(*request, output, error))
+                        throw std::runtime_error(error.empty() ? "worker execution failed" : error);
+                    require_match(output, *request, Kind::data);
+                    (void) encode(output); // validate exact shape before publication
+                    reply = std::move(output);
                 }
                 send_frame(fd, reply, timeout_ms);
                 auto commit = receive_frame(fd, timeout_ms);

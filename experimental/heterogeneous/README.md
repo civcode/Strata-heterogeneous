@@ -78,9 +78,11 @@ initialize either GPU runtime, and the marker is not hardware attestation.
 Actual CUDA and HIP executors will replace these mock binaries.
 
 The shared-memory path avoids shipping bulk float32 activations through a
-socket. It still copies between the memfd and the current vector-based CPU
-`StageExecutor` interface. It is **not zero-copy into a GPU** and has not
-been benchmarked. Real CUDA/HIP workers must explicitly synchronize their
+socket. In M1.7, a `StageExecutor` can override `run_staged_window` to
+operate directly on the borrowed host byte mapping, avoiding the intermediate
+full-window CPU vector copies. The default virtual method preserves the
+existing vector-based `run_window` interface through a validated fallback.
+This is **not zero-copy into a GPU** and has not been benchmarked. Real CUDA/HIP workers must explicitly synchronize their
 D2H/H2D transfers and use their own runtime-owned device memory; mapped
 host pointers are not automatically accessible in both runtimes. Only one
 window may use the shared slot at a time; no ring buffers, overlap, or
@@ -193,3 +195,25 @@ map visibility across processes, transfer bounds, checksum failure,
 wrong-mode handshakes, multiple windows and multirow execution. CPU-only
 GCC, Clang, ASan and UBSan builds/tests are required for changes here.
 No actual GPUs or full model engines were exercised.
+
+### Milestone M1.7: Borrowed in-place activation views (CPU-only)
+
+`ActivationView` validates row geometry and the 16 MiB cap, and exposes
+each row's exact `R | bo | inject` byte ranges through `HandoffRow`.
+The float accessors use `memcpy`, not a reinterpret-cast from the untyped
+Linux mapping to `float*` (which would violate C++17 object lifetime rules).
+
+In shared mode, workers dispatch to
+`StageExecutor::run_staged_window(metadata, view, error)`. The mock
+executor implements a direct in-place CPU path; other existing executors
+can rely on the default vector fallback. The latter validates result
+identity/shape **before writing to shared memory**. The socket-data mode
+and wire protocol v3 remain unchanged. The view is borrowed for only one
+provisional window; it is not a CUDA/HIP pointer or an owned allocation.
+
+`strata_heterogeneous_activation_tests` verifies multirow layout,
+bit preservation including a NaN payload, bounds and overflow rejection,
+direct/fallback parity, direct worker dispatch, and fail-closed behavior
+when an executor modifies mapped bytes and subsequently returns an error.
+Full Strata, model weights, GPU DMA and numerical GPU parity are still
+untested and unimplemented.
