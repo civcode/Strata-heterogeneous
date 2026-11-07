@@ -1,7 +1,10 @@
 # Experimental heterogeneous layer handoff — host-only foundation
 
-Status: **CPU-only prototype, not an inference backend**. No GPU execution, CUDA/HIP
-integration, model loading, KV state, speculative decoding, or performance claims.
+Status: **not an inference backend**. The demo and tests remain CPU-only.
+An opt-in [CUDA non-final-stage adapter](docs/CUDA_VERIFIER_ADAPTER.md) now
+compiles and links against the real verifier, but has not run on a GPU.
+Model loading, final-stage outputs and mixed-vendor inference remain unfinished.
+No numerical correctness or performance claims.
 This directory can be added to `civcode/Strata-heterogeneous` without changing the
 upstream CUDA/HIP CMake paths or running GitHub Actions.
 

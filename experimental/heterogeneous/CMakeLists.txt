@@ -13,6 +13,21 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(strata_heterogeneous_host PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Optional CUDA-only adapter archive. A future model-loading worker must link
+# this with strata_engine from a CUDA-only engine build; no engine is fetched
+# or compiled by this standalone project. Host/mock targets never link cudart.
+option(STRATA_HETERO_CUDA_VERIFIER "Compile the real CUDA non-final verifier adapter" OFF)
+if(STRATA_HETERO_CUDA_VERIFIER)
+  if(STRATA_ENABLE_HIP OR STRATA_HIP_GFX906 OR STRATA_ENABLE_SYCL OR STRATA_ENABLE_METAL)
+    message(FATAL_ERROR "The verifier adapter requires a separate CUDA-only build")
+  endif()
+  find_package(CUDAToolkit REQUIRED)
+  add_library(strata_heterogeneous_cuda_verifier STATIC src/cuda_verifier.cpp)
+  target_include_directories(strata_heterogeneous_cuda_verifier PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+  target_link_libraries(strata_heterogeneous_cuda_verifier PUBLIC strata_heterogeneous_host CUDA::cudart)
+  target_compile_options(strata_heterogeneous_cuda_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 # Two independent CPU mock executables. They deliberately do not initialize
 # either GPU runtime, but verify that each worker has a backend-specific image.
 foreach(_mock_backend IN ITEMS cuda hip)
@@ -34,6 +49,15 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # Compile the SAME adapter source against explicit CPU API doubles. These
+  # tests validate contract/lifecycle only, never CUDA or model numerics.
+  add_executable(strata_heterogeneous_cuda_verifier_contract_tests
+    tests/cuda_verifier_tests.cpp src/cuda_verifier.cpp)
+  target_include_directories(strata_heterogeneous_cuda_verifier_contract_tests BEFORE PRIVATE tests/cuda_stubs)
+  target_link_libraries(strata_heterogeneous_cuda_verifier_contract_tests PRIVATE strata_heterogeneous_host)
+  target_compile_options(strata_heterogeneous_cuda_verifier_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME strata_heterogeneous_cuda_verifier_contract_tests COMMAND strata_heterogeneous_cuda_verifier_contract_tests)
+  set_tests_properties(strata_heterogeneous_cuda_verifier_contract_tests PROPERTIES TIMEOUT 20)
   add_executable(strata_heterogeneous_host_tests tests/host_tests.cpp)
   target_link_libraries(strata_heterogeneous_host_tests PRIVATE strata_heterogeneous_host)
   target_compile_features(strata_heterogeneous_host_tests PRIVATE cxx_std_17)

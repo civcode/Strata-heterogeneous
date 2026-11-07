@@ -1,8 +1,10 @@
 # Verifier request/commit handoff — protocol v4 (M1.9)
 
-Status: **CPU-only protocol scaffolding**, not CUDA/HIP model execution.
-No model weights, GPU transfers, expert pooling, logits, KV, GDN, PLE,
-prefill or model-state restoration are integrated here.
+Status: **CPU-tested protocol scaffolding**, not verified CUDA/HIP model execution.
+The opt-in [CUDA adapter increment](CUDA_VERIFIER_ADAPTER.md) compiles against
+the real verifier for non-final stages. It rejects zero-prefix commit and
+final stages; v4 alone cannot yet support complete speculative inference.
+No loaded-model GPU execution or model-state restoration has been validated.
 
 ## Why two phases?
 
