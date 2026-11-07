@@ -23,8 +23,10 @@ Loading weights and launching a real model worker remain unimplemented.
 The adapter owns its verifier, two CUDA handoff allocations, a pinned host
 staging allocation and an event. It calls `set_stage` and
 `set_handoff_rows` before `init`, with no in-process `next` verifier or
-cross-device flags. Only CUDA allocations are passed to `set_stage`.
-Each transfer uses the verifier stream and a completion event. Borrowed
+cross-device flags. Only CUDA allocations are passed to `set_stage`. The layer-zero stage
+embeds tokens and receives a null `handoff_in`, so it now omits the unused
+input allocation and H2D transfer; middle stages still upload and wait.
+Each required transfer uses the verifier stream and a completion event. Borrowed
 socket/memfd bytes are copied through owned pinned storage; DMA never keeps
 a pointer into the borrowed IPC slot. Download writes the slot only after
 the event succeeds. Graphs are destroyed before captured allocations.

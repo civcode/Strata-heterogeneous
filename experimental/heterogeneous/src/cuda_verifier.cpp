@@ -61,8 +61,12 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     plan_ = plan;
     index_ = index;
     device_ = static_cast<int>(stage.ordinal);
+    // The layer-zero stage embeds tokens and never reads handoff_in.
+    // Reserve an activation input only for later stages. Keep the output
+    // and pinned host staging allocations for every non-final stage.
     if (!check(cudaSetDevice(device_), error) ||
-        !check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity), error) ||
+        (stage.first_layer != 0 &&
+         !check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity), error)) ||
         !check(cudaMalloc(reinterpret_cast<void**>(&output_), capacity), error) ||
         !check(cudaMallocHost(&staging_, capacity), error) ||
         !check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error)) return false;
@@ -104,8 +108,14 @@ bool CudaVerifierDriver::begin_window(const WindowSpec& spec, uint64_t request,
 bool CudaVerifierDriver::enqueue_upload(const uint8_t* host, size_t bytes, std::string& error) {
     if (!expect(State::begun, error)) return false;
     if (!host || bytes != bytes_) { error = "CUDA verifier upload shape mismatch"; return false; }
-    std::memcpy(staging_, host, bytes);
     state_ = State::uploading;
+    if (plan_.stages[index_].first_layer == 0) {
+        // set_stage(..., nullptr, ...) uses embeddings for layer zero;
+        // uploading the received activation would be discarded. Still
+        // record a stream fence so wait_upload keeps its normal contract.
+        return record(error);
+    }
+    std::memcpy(staging_, host, bytes);
     return check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice, verifier_->stream()), error) && record(error);
 }
 bool CudaVerifierDriver::wait_upload(std::string& error) {

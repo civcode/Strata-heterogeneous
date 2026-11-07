@@ -34,7 +34,11 @@ int main() {
             in.plan_fingerprint = plan.fingerprint(); in.geometry = plan.geometry;
             in.rows = 2; in.payload.assign(22, 7);
             Frame out;
+            const int copies_before = fake_cuda::copies;
             REQUIRE(executor.run_window(in, out, error));
+            // Stage zero reads embeddings, not handoff_in. Only D2H is
+            // needed there; middle stages still perform H2D + D2H.
+            REQUIRE(fake_cuda::copies - copies_before == (index ? 2 : 1));
             REQUIRE(out.payload == std::vector<float>(22, index ? 8 : 42));
             REQUIRE(fv::tokens == std::vector<int32_t>({5,6}) && fv::pos == 4);
             REQUIRE(executor.commit_prefix(1, 1, 1, error));
