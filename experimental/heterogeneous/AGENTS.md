@@ -18,7 +18,7 @@ It includes:
 
 - a validated stage plan with backend-local ordinals;
 - a v2 Unix-socket frame protocol, stage identity handshake, and commit acknowledgments;
-- process-isolated workers launched with posix_spawn/exec by the demo;
+- separately compiled, backend-tagged CPU mock worker executables launched with posix_spawn/exec by the coordinator;
 - exact-shape, integrity, timeout, failure-propagation, and subprocess tests.
 
 There is **no real CUDA/HIP execution**, model loading, KV/cache handling,
@@ -124,6 +124,26 @@ owned by the stages that execute their layers.
 **Evidence:** local CPU CTest and subprocess runs are the acceptance checks.
 No CUDA/HIP kernel, device initialization, or model-layer execution has been
 implemented or validated in this milestone.
+
+### M1.5 — Independent mock executables and child-process supervision (implemented)
+
+- The experimental library exports `WorkerProcessGroup` in
+  `include/strata_heterogeneous/process.hpp`. It owns child PIDs and
+  coordinator sockets and starts worker binaries with `posix_spawn`/`exec`.
+- The CPU demo now launches separate `strata_heterogeneous_mock_cuda_worker`
+  and `strata_heterogeneous_mock_hip_worker` executables, built from the
+  same test source with different backend markers. Neither links GPU APIs.
+- `WorkerProcessGroup::finish` performs bounded graceful shutdown;
+  `terminate` kills and reaps children on failures and during destruction.
+- `strata_heterogeneous_process_tests` covers three-stage execution,
+  backend marker mismatch, missing executables, nonzero exits, forced
+  timeouts and cleanup. Keep those tests passing.
+- Real CUDA/HIP worker images, hardware identity attestation, secure GPU
+  buffer ownership, model loading and actual inference remain **unimplemented**.
+
+**Next:** use the same `WorkerProcessGroup` launch contract for CUDA/HIP
+worker binaries; do not bypass the backend separation or assume these CPU
+mock tests validate the device runtime.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 

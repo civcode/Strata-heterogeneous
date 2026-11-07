@@ -63,10 +63,14 @@ stateful StageExecutor API is a CPU-only contract; a real stage must not
 advance durable model state during the provisional run.
 The unit tests use **actual separate POSIX processes**, via `fork()` and
 `socketpair()`, plus fault injection for handshake, worker-exit and commit
-failure. The `strata_heterogeneous_demo` executable launches workers with
-`posix_spawn`/`exec`: each runs in its own address space and has only a local
-Unix socket. Both paths use deterministic CPU executors. Different GPU
-runtimes will later be compiled and linked into separate worker executables.
+failure. The `strata_heterogeneous_demo` executable now uses the reusable
+`WorkerProcessGroup` supervisor to launch **two different CPU-only mock
+worker binaries**: `strata_heterogeneous_mock_cuda_worker` for the CUDA
+stages and `strata_heterogeneous_mock_hip_worker` for the HIP stages.
+They have compile-time backend markers, use separate address spaces and
+communicate only through local Unix sockets. They do **not** link or
+initialize either GPU runtime, and the marker is not hardware attestation.
+Actual CUDA and HIP executors will replace these mock binaries.
 
 The socket protocol is for correctness experiments and interface stability.
 It is *not* the intended high-throughput activation path; mmap/shared-memory
@@ -99,9 +103,11 @@ ctest --test-dir /tmp/strata-hetero-asan --output-on-failure
 
 - **Not integrated into the Strata engine or server.** This work does not
   modify `Verifier::run`, `Prefill::run`, layer weights or `generate.cpp`.
-- `fork()` is used only in the CPU unit tests, before any GPU runtime
-  initialization. The executable smoke test uses `posix_spawn`/`exec`.
-  Production GPU workers must similarly be independently executed.
+- `fork()` is used only in CPU tests that exercise the core protocol.
+  `WorkerProcessGroup` uses `posix_spawn`/`exec` for backend-tagged worker
+  binaries, owns child PIDs and sockets, waits for normal EOF shutdown and
+  forcibly reaps stuck/abandoned workers. These workers are CPU mocks;
+  production GPU workers must be independently compiled and GPU-tested.
 - Workers don't restore real model state. Full saved-conversation semantics
   require coordinating the stage-local snapshots as a transaction.
 - Only synchronous single-window scheduling exists. Bounded socket timeouts
@@ -142,3 +148,20 @@ Implemented: stateful stage-executor lifecycle (prepare, provisional run,
 commit, abandon, shutdown); versioned identity handshake; bounded Unix-socket
 I/O; session poisoning; worker exit/commit failure tests. **Only host-side
 correctness is demonstrated.** No GPU validation was possible here.
+
+### Milestone M1.5: exec worker supervision (host-only)
+
+`WorkerProcessGroup::launch(plan, cuda_executable, hip_executable)` creates
+one isolated OS process for each stage, inherits only a local control socket
+on file descriptor 3, and owns the PIDs and coordinator sockets. Call
+`PipelineSession(plan, group.sockets())` while the group remains alive.
+`group.finish(error)` closes the coordinator sockets, waits a bounded time
+for worker EOF shutdown and reports abnormal exits. Its destructor force-kills
+and reaps any remaining workers; it does not attempt session recovery.
+The worker executable paths must be absolute. The mock executable verifies
+its compiled backend marker matches the stage, but does not attest hardware.
+
+The third standalone CTest target, `strata_heterogeneous_process_tests`,
+exercises successful three-stage execution, backend-mismatch rejection,
+failed worker startup, worker exit and PID/descriptor cleanup. No model
+weights or GPUs are used. Existing production engine targets are untouched.
