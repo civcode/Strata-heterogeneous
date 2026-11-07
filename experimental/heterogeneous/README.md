@@ -3,7 +3,7 @@
 Status: **not an inference backend**. The demo and tests remain CPU-only.
 An opt-in [CUDA non-final-stage adapter](docs/CUDA_VERIFIER_ADAPTER.md) now
 compiles and links against the real verifier, but has not run on a GPU.
-Model loading, final-stage outputs and mixed-vendor inference remain unfinished.
+Model loading, the real final-stage CUDA/HIP head implementation and mixed-vendor inference remain unfinished.
 No numerical correctness or performance claims.
 This directory can be added to `civcode/Strata-heterogeneous` without changing the
 upstream CUDA/HIP CMake paths or running GitHub Actions.
@@ -302,12 +302,40 @@ transfer deadlines and reject truncated or fragmented-invalid packets.
 A `FinalResultGate` prevents publication before the caller explicitly
 reports successful commit acknowledgements from **all** stages.
 
-This module is additive and **not wired to PipelineSession, a final-stage
-worker, or Strata's real verifier**. The existing activation protocol stays
-v4 with no wire change; do not mix these standalone packets on its control
-sockets. It is **not** numerical inference, an implemented last-stage head,
-or a solution to the zero-prefix restoration problem.
+M1.10's codec was initially standalone. M1.11 adds an **opt-in
+FinalPipelineSession** and **serve_final_stage_worker** that negotiate a
+distinct final-stage hello and exchange the STFR packet on their existing
+local control socket. The ordinary PipelineSession and mock demo are still
+activation-only. This is **not** numerical GPU inference, an implemented
+last-stage CUDA/HIP head, or a solution to zero-prefix restoration.
 
 Run `strata_heterogeneous_final_result_tests` and see
 [docs/FINAL_RESULT_V1.md](docs/FINAL_RESULT_V1.md) for the wire layout,
 failure semantics and next GPU-dependent integration tasks.
+
+### M1.11 — Opt-in final-stage worker and coordinator (CPU-only)
+
+`FinalPipelineSession` executes verifier-window metadata and activations
+through intermediate workers and receives the final worker's actual
+`FinalStageResult` structure instead of another activation frame.
+`FinalStageExecutor::run_final_window` is a distinct virtual interface for
+the last worker; production implementations must return real head predictions.
+
+Protocol v4 adds `hello_final` and `hello_shared_final` capability kinds
+without changing the 56-byte v4 frame. After that handshake, the final
+worker sends an STFR/v1 packet on the same trusted local socket; the
+coordinator knows to expect that format. Intermediate stages continue to
+send v4 activation frames. Both socket and shared-memory transports work.
+
+No result is published until every worker has acknowledged
+`commit_prefix(n_keep)`, with an exact echoed accepted count.
+Nonfinite-head markers, identity mismatches, corrupted results, invalid
+acknowledgements and worker failures poison the session. This is fail-stop,
+not cross-process state rollback.
+
+`strata_heterogeneous_final_pipeline_tests` uses forked independent CPU
+mock workers with three stages, optional logits, zero/partial/full prefix
+handling, both transports and failure injection. See
+[docs/FINAL_PIPELINE_M111.md](docs/FINAL_PIPELINE_M111.md) for the specific
+contract, validation boundary and Oberon handoff. It is **not real GPU
+inference**, and no loaded-model final-stage driver is yet implemented.

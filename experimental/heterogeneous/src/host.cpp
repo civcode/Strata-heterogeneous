@@ -115,6 +115,8 @@ void validate_frame(const Frame& f) {
             break;
         case Kind::hello:
         case Kind::hello_shared:
+        case Kind::hello_final:
+        case Kind::hello_shared_final:
             if (f.shared_checksum || !f.payload.empty() || !f.error.empty() ||
                 (f.identity[0] != static_cast<uint32_t>(Backend::cuda) &&
                  f.identity[0] != static_cast<uint32_t>(Backend::hip)) ||
@@ -254,7 +256,8 @@ std::vector<uint8_t> encode(const Frame& f) {
         payload.resize(f.payload.size() * sizeof(float));
         std::memcpy(payload.data(), f.payload.data(), payload.size());
     } else if (f.kind == Kind::failure) payload.assign(f.error.begin(), f.error.end());
-    else if (f.kind == Kind::hello || f.kind == Kind::hello_shared)
+    else if (f.kind == Kind::hello || f.kind == Kind::hello_shared ||
+             f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final)
         for (uint32_t word : f.identity) add_u32(payload, word);
     else if (f.kind == Kind::shared_data) add_u32(payload, f.shared_checksum);
     else if (f.kind == Kind::window_spec) {
@@ -313,7 +316,8 @@ Frame decode(const std::vector<uint8_t>& bytes) {
     } else if (f.kind == Kind::shared_data) {
         if (n != 4) throw std::invalid_argument("shared handoff digest has wrong length");
         f.shared_checksum = get_u32(payload);
-    } else if (f.kind == Kind::hello || f.kind == Kind::hello_shared) {
+    } else if (f.kind == Kind::hello || f.kind == Kind::hello_shared ||
+               f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final) {
         if (n != 16) throw std::invalid_argument("hello identity has wrong length");
         for (size_t i = 0; i < 4; ++i) f.identity[i] = get_u32(payload + 4 * i);
     }

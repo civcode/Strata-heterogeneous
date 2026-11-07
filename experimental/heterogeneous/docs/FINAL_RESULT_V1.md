@@ -1,8 +1,10 @@
 # M1.10 — Final-stage result framing (host-only)
 
-Status: a CPU-tested, **opt-in standalone codec**. Not yet integrated with
-`PipelineSession`, `serve_worker_stateful`, `Verifier`, or a model-loading
-CUDA/HIP worker. The existing activation/commit protocol remains **v4**.
+Status: CPU-tested **STFR/v1 codec**. M1.11 now integrates it with the
+**opt-in** FinalPipelineSession and serve_final_stage_worker, using distinct
+v4 final-stage hello kinds. The original activation-only PipelineSession
+and serve_worker_stateful are unchanged. Neither path is a model-loading
+CUDA/HIP worker, and no real final-stage GPU inference is implemented.
 
 ## Problem and contract
 
@@ -28,9 +30,10 @@ this codec does not implement sampling or inspect actual GPU head outputs.
 ## Independent wire packet v1
 
 This is a **different** magic and version from the existing v4 frame.
-It cannot be read by `receive_frame`. Never interleave it on a v4 control
-socket until the state machine is updated to negotiate and expect it.
-The helpers currently require a dedicated local AF_UNIX stream.
+It cannot be read by `receive_frame`. The M1.11 final-stage hello
+negotiates this packet on the existing AF_UNIX worker socket for that stage.
+Only the final worker sends it; intermediate workers continue using v4
+activation frames. Never send it on an unnegotiated control socket.
 
 64-byte little-endian header:
 
@@ -94,3 +97,12 @@ patches/logs in `/home/chris/tmp/strata-heterogeneous`. Neither unrelated
 `Strata-dev` directory is part of this task. Preserve any completed
 `nvidia-bug-report.log.gz` privately before owner-approved maintenance;
 this change does not touch GPU state, drivers or hardware.
+
+## M1.11 integration
+
+See [FINAL_PIPELINE_M111.md](FINAL_PIPELINE_M111.md). FinalPipelineSession
+now uses FinalResultGate as part of its actual coordinator flow, with an
+explicit final-stage worker handshake and commit-ACK gating. This does
+not implement CUDA/HIP head execution, zero-prefix restoration or mixed-GPU
+inference parity. Older sections above describe the original standalone
+M1.10 milestone and remain useful as codec background.

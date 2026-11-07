@@ -2,8 +2,9 @@
 
 // Experimental, backend-neutral final-stage result channel.
 // This v1 codec is deliberately independent of the v4 activation/commit
-// frames. It is NOT integrated with PipelineSession or GPU runtimes yet.
-// Use only on a dedicated local AF_UNIX stream with trusted workers.
+// frames. The opt-in FinalPipelineSession negotiates this packet format
+// for the last worker; the ordinary PipelineSession remains activation-only.
+// Use only on trusted local AF_UNIX streams. No GPU runtime is used here.
 
 #include <cstddef>
 #include <cstdint>
@@ -55,8 +56,8 @@ void send_final_result(int fd, const FinalStageResult& result, int timeout_ms = 
 std::optional<FinalStageResult> receive_final_result(int fd, int timeout_ms = 30000);
 
 // The result is never marked publishable until the coordinator has received
-// matching commit ACKs from EVERY stage. This is a tiny helper for future
-// opt-in final-stage integration; it does not perform commit or rollback.
+// matching commit ACKs from EVERY stage. FinalPipelineSession uses this
+// gate for its opt-in final-worker flow; it never performs rollback.
 class FinalResultGate {
 public:
     void stage(FinalStageResult result, uint32_t final_stage_index,

@@ -298,6 +298,25 @@ GPU validation belongs on Oberon.
 real verifier head result from the final stage instead of inventing a
 bogus activation handoff, and validate CUDA hardware when available.
 
+### M1.11 — Opt-in final-stage result execution (CPU-only)
+
+- FinalPipelineSession and serve_final_stage_worker are **separate** from the
+  existing activation-only PipelineSession and worker APIs. They require an
+  explicit hello_final/hello_shared_final mode for the final stage only.
+- Non-final stages return v4 R|bo|inject activations. The final stage
+  instead returns the STFR/v1 head-result packet over its negotiated trusted
+  control socket. Never read this packet with receive_frame or treat
+  activation bytes as actual logits.
+- FinalStageExecutor::run_final_window must return model-produced predictions
+  and optionally logits; the mock final stage exists only inside tests.
+- Before sending commit_prefix, reject any nonfinite result. Verify every
+  committed_prefix ACK including its n_keep. Never publish provisional
+  predictions; poison all stages on partial commit or mismatched result.
+- Use tests/final_pipeline_tests.cpp and
+  [docs/FINAL_PIPELINE_M111.md](docs/FINAL_PIPELINE_M111.md). No real
+  CUDA/HIP final driver or numerical parity yet. Zero-prefix restoration
+  still needs a real engine/state implementation and GPU validation.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

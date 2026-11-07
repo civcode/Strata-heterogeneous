@@ -53,7 +53,8 @@ Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uin
 enum class Kind : uint16_t {
     data = 1, failure = 2, hello = 3, ready = 4,
     commit = 5, committed = 6, shared_data = 7, hello_shared = 8,
-    window_spec = 9, commit_prefix = 10, committed_prefix = 11
+    window_spec = 9, commit_prefix = 10, committed_prefix = 11,
+    hello_final = 12, hello_shared_final = 13
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
