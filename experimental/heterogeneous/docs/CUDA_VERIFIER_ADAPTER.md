@@ -20,8 +20,8 @@ worker's backend-local device before loading them. The supplied fingerprint
 is checked against the plan, but is **not derived from weights or attested**.
 Loading weights and launching a real model worker remain unimplemented.
 
-The adapter owns its verifier, two CUDA handoff allocations, a pinned host
-staging allocation and an event. It calls `set_stage` and
+The adapter owns its verifier, a CUDA output handoff allocation, an input
+allocation for nonzero-layer stages, a pinned host staging allocation and an event. It calls `set_stage` and
 `set_handoff_rows` before `init`, with no in-process `next` verifier or
 cross-device flags. Only CUDA allocations are passed to `set_stage`. The layer-zero stage
 embeds tokens and receives a null `handoff_in`, so it now omits the unused
@@ -110,7 +110,10 @@ CPU CUDA/Verifier doubles. It covers first/middle stage wiring, owned token
 metadata, both activation entrypoints, partial commit, T=1 commit deferral,
 zero refusal, invalid vocabulary/context/row count/position, metadata-free
 execution refusal, partial allocation cleanup and injected upload, execute,
-download, commit and fence-timeout failures. It is not GPU numerical evidence.
+download, commit and fence-timeout failures. Allocation-failure coverage checks
+the two allocations on layer zero and three on middle stages. H2D faults use a
+middle stage; layer zero no longer performs that transfer. It is not GPU
+numerical evidence.
 
 Reproduce (choose a build directory under the staging path above):
 

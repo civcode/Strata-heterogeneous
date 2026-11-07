@@ -58,8 +58,12 @@ int main() {
         REQUIRE(pool_calls == 4 && fake_cuda::allocations == 0);
         session.layer_lo = 0; session.layer_hi = 2;
         for (int fault = 0; fault < 13; ++fault) {
+            // Upload faults must use a middle stage: layer zero has no H2D.
+            const size_t index = fault == 3 ? 1 : 0;
+            session.layer_lo = plan.stages[index].first_layer;
+            session.layer_hi = plan.stages[index].end_layer;
             CudaVerifierDriver driver(bindings()); DeviceStageExecutor executor(driver);
-            REQUIRE(executor.prepare(plan, 0, error));
+            REQUIRE(executor.prepare(plan, index, error));
             WindowSpec spec{0,{1}};
             if (fault == 0) spec.token_ids = {100}; // vocab
             if (fault == 1) spec.pos0 = 32; // context
@@ -67,7 +71,8 @@ int main() {
             if (fault == 8) spec.pos0 = 1; // missing state at skipped position
             if (fault < 3 || fault == 8) { REQUIRE(!executor.begin_window(spec,1,1,error)); continue; }
             if (fault != 9) REQUIRE(executor.begin_window(spec,1,1,error));
-            Frame in; in.geometry = plan.geometry; in.rows = 1; in.payload.assign(11,0);
+            Frame in; in.stage_index = index;
+            in.geometry = plan.geometry; in.rows = 1; in.payload.assign(11,0);
             in.request_id = 1; in.window_id = 1; in.plan_fingerprint = plan.fingerprint();
             if (fault == 3) fake_cuda::failure = 1;
             if (fault == 4) fv::fail_run = true;
@@ -93,14 +98,20 @@ int main() {
             fake_cuda::fail_download = false; fv::fail_commit = false;
         }
         REQUIRE(fake_cuda::allocations == 0);
-        for (int allocation = 1; allocation <= 3; ++allocation) {
-            CudaVerifierDriver driver(bindings()); DeviceStageExecutor executor(driver);
-            fake_cuda::fail_alloc = fake_cuda::alloc_calls + allocation;
-            REQUIRE(!executor.prepare(plan,0,error));
-            executor.shutdown();
-            REQUIRE(fake_cuda::allocations == 0);
-            fake_cuda::fail_alloc = 0;
+        for (size_t index : {size_t(0), size_t(1)}) {
+            session.layer_lo = plan.stages[index].first_layer;
+            session.layer_hi = plan.stages[index].end_layer;
+            const int allocations = index ? 3 : 2;
+            for (int allocation = 1; allocation <= allocations; ++allocation) {
+                CudaVerifierDriver driver(bindings()); DeviceStageExecutor executor(driver);
+                fake_cuda::fail_alloc = fake_cuda::alloc_calls + allocation;
+                REQUIRE(!executor.prepare(plan,index,error));
+                executor.shutdown();
+                REQUIRE(fake_cuda::allocations == 0);
+                fake_cuda::fail_alloc = 0;
+            }
         }
+        session.layer_lo = 0; session.layer_hi = 2;
         // Reject final stage, model mismatch, wrong carve, and HIP before allocations.
         for (int fault = 0; fault < 4; ++fault) {
             auto b = bindings(); if (fault == 1) b.model_fingerprint = 456;
