@@ -8,10 +8,9 @@ name: Reopen
 # we need for fork authors too. It never checks out or executes the pull request's code: it reads the live
 # title and description through the REST API. Only the author of the item or a maintainer can trigger it.
 
+# Fork development policy: manual-only; do not enable event-triggered Actions.
 on:
-  issue_comment:
-    types: [created]
-
+  workflow_dispatch:
 permissions:
   contents: read
   issues: write

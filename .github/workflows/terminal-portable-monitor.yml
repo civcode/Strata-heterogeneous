@@ -1,32 +1,8 @@
 name: Portable monitor client
 
+# Fork development policy: manual-only; do not enable event-triggered Actions.
 on:
-  push:
-    paths:
-      - .github/workflows/terminal-portable-monitor.yml
-      - packaging/monitor_bundle.py
-      - strata.py
-      - strata_cli/**
-      - strata_control/**
-      - tools/minimal_cli_smoke.py
-      - tools/portable_monitor_smoke.py
-      - tools/portable_monitor_pty_smoke.py
-      - requirements-monitor.txt
-      - LICENSE
-  pull_request:
-    paths:
-      - .github/workflows/terminal-portable-monitor.yml
-      - packaging/monitor_bundle.py
-      - strata.py
-      - strata_cli/**
-      - strata_control/**
-      - tools/minimal_cli_smoke.py
-      - tools/portable_monitor_smoke.py
-      - tools/portable_monitor_pty_smoke.py
-      - requirements-monitor.txt
-      - LICENSE
   workflow_dispatch:
-
 permissions:
   contents: read
 

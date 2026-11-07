@@ -1,12 +1,8 @@
 name: Scripts test
 
+# Fork development policy: manual-only; do not enable event-triggered Actions.
 on:
-  pull_request:
-    paths:
-      - '.github/scripts/**'
-      - '.github/workflows/intake.yml'
-      - '.github/workflows/reopen.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

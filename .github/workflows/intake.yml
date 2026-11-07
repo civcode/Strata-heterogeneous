@@ -8,15 +8,9 @@ name: Intake
 # workflow never checks out or runs the pull request's code. It checks out the default branch only (the bot
 # scripts) and reads the title and description from the event payload and the REST API.
 
+# Fork development policy: manual-only; do not enable event-triggered Actions.
 on:
-  issues:
-    types: [opened, edited]
-  pull_request_target:
-    types: [opened, edited]
-  schedule:
-    - cron: '17 4 * * *'
   workflow_dispatch:
-
 permissions:
   contents: read
   issues: write
