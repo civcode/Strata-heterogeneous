@@ -17,7 +17,7 @@ The code in this directory is presently a **CPU-only Linux host prototype**.
 It includes:
 
 - a validated stage plan with backend-local ordinals;
-- a v2 Unix-socket frame protocol, stage identity handshake, and commit acknowledgments;
+- a v3 Unix-socket protocol with opt-in memfd-backed activation handoff, stage identity handshake and commit acknowledgments;
 - separately compiled, backend-tagged CPU mock worker executables launched with posix_spawn/exec by the coordinator;
 - exact-shape, integrity, timeout, failure-propagation, and subprocess tests.
 
@@ -81,12 +81,14 @@ owned by the stages that execute their layers.
    may be published after a failed or incomplete stage. Distinguish
    pre-mutation resource refusal from failure after state mutation.
    Abort or rebuild poisoned stage state rather than silently proceeding.
-6. **Preserve ABI:** the current protocol is **version 2**, little-endian
-   IEEE754 float32 with a 56-byte header, a 16 MiB data-payload cap,
-   worker identity hello/ready, and per-window commit/committed messages.
-   FNV-1a detects accidental corruption, not attacks. An incompatible
-   change requires another deliberate version bump and negative tests.
-   Use only with trusted local worker processes, never public networks.
+6. **Preserve ABI:** the current protocol is **version 3**, little-endian
+   IEEE754 float32 with a 56-byte header and a 16 MiB data-payload cap.
+   Workers negotiate socket-data versus `hello_shared`; the coordinator
+   passes a size-sealed memfd via SCM_RIGHTS after `ready`. Only four
+   digest bytes cross the socket per `shared_data` window. Both modes use
+   per-window commit/committed messages. FNV-1a detects accidental
+   corruption, **not attacks**. Incompatible changes require a deliberate
+   version bump and new negative tests. Keep sockets local and trusted.
 7. **Opt-in:** isolate new code and build flags from production defaults.
    Never alter a normal Strata backend's outputs or performance by
    default. Avoid speculative changes to unrelated kernels or model
@@ -144,6 +146,29 @@ implemented or validated in this milestone.
 **Next:** use the same `WorkerProcessGroup` launch contract for CUDA/HIP
 worker binaries; do not bypass the backend separation or assume these CPU
 mock tests validate the device runtime.
+
+### M1.6 — Reusable shared-memory activation slot (implemented, CPU-only)
+
+- `SharedActivation` creates a sealed 16 MiB Linux memfd and uses
+  SCM_RIGHTS to transfer descriptor access to each exec-isolated worker.
+- Opt-in `PipelineSession(..., shared_memory=true)` uses a distinct
+  `hello_shared` handshake. All stages reuse one mapping, sequentially;
+  ordinary socket-data mode remains the default.
+- Workers verify mapped bytes against the `shared_data` digest before
+  execution; the coordinator verifies returned bytes before continuing.
+  A mismatch poisons/stops the session and prevents result publication.
+- The stage adapter still copies between shared memory and its host
+  `std::vector<float>` interface. This is **not GPU zero-copy** and does not
+  justify a performance claim. A GPU adapter must provide independently
+  allocated backend-owned buffers and completed D2H/H2D events.
+- Run the new `strata_heterogeneous_shared_tests` and
+  `strata_heterogeneous_shared_smoke` locally, plus existing CTest.
+  Keep descriptor/failure/timeout tests passing on any protocol change.
+- One 16 MiB slot and one in-flight window is supported. Do not claim
+  chunked prefill, asynchronous overlap, recovery or worker restart.
+
+**Next:** define and implement explicit GPU-side transfer/StageExecutor
+adapters, preserving process separation and stage-local ownership.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 

@@ -26,27 +26,29 @@ uint32_t number(const char* s) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 6 && argc != 7) {
-            std::cerr << "usage: strata_heterogeneous_demo <plan> <layers> <hc> <n_embd> <model_fp> [rows]\n"
+        if (argc < 6 || argc > 8) {
+            std::cerr << "usage: strata_heterogeneous_demo <plan> <layers> <hc> <n_embd> <model_fp> [rows] [--shared]\n"
                          "  e.g.: strata_heterogeneous_demo cuda:0:0-3,hip:0:3-7,hip:1:7-10 10 2 6 12345 8\n";
             return 2;
         }
         const uint32_t layers = number(argv[2]);
         Geometry geometry{number(argv[3]), number(argv[4])};
         const uint64_t model_fp = uint_arg(argv[5]);
-        const uint32_t rows = argc == 7 ? number(argv[6]) : 1;
+        const bool shared = (argc >= 7 && std::string(argv[argc - 1]) == "--shared");
+        if (argc == 8 && !shared) throw std::invalid_argument("expected --shared");
+        const uint32_t rows = argc >= 7 && !(argc == 7 && shared) ? number(argv[6]) : 1;
         if (!rows) throw std::invalid_argument("rows must be nonzero");
         Plan plan = parse_plan(argv[1], layers, geometry, model_fp);
         const std::string dir = executable_directory();
         auto workers = WorkerProcessGroup::launch(plan,
             dir + "/strata_heterogeneous_mock_cuda_worker",
-            dir + "/strata_heterogeneous_mock_hip_worker");
+            dir + "/strata_heterogeneous_mock_hip_worker", shared);
         const size_t worker_count = workers.size();
         Frame in;
         in.request_id = 1; in.window_id = 1;
         in.plan_fingerprint = plan.fingerprint(); in.geometry = plan.geometry; in.rows = rows;
         in.payload.assign(static_cast<size_t>(geometry.floats_per_row()) * rows, 0.0f);
-        PipelineSession session(plan, workers.sockets());
+        PipelineSession session(plan, workers.sockets(), default_io_timeout_ms, shared);
         session.initialize();
         Frame actual = session.run_window(in);
         Frame expected = in;
@@ -56,7 +58,8 @@ int main(int argc, char** argv) {
         if (actual.payload != expected.payload)
             throw std::runtime_error("stage partition lost or reordered a layer");
         if (!workers.finish(err)) throw std::runtime_error("worker shutdown: " + err);
-        std::cout << "PASS: " << worker_count << " exec-isolated CPU mock workers, " << rows
+        std::cout << "PASS: " << worker_count << " exec-isolated CPU mock workers ("
+                  << (shared ? "shared-memory" : "socket-data") << "), " << rows
                   << " rows, " << layers << " contiguous layers, " << actual.payload.size()
                   << " float32 handoff values, final checksum/parity verified (no GPU)\n";
         return 0;

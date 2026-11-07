@@ -17,7 +17,7 @@
 namespace strata::heterogeneous {
 namespace {
 constexpr uint32_t magic = 0x58485453;  // STHX in little endian
-constexpr uint16_t version = 2;
+constexpr uint16_t version = 3;
 constexpr size_t max_failure_bytes = 1024;
 
 uint64_t checked_add(uint64_t a, uint64_t b) {
@@ -77,16 +77,22 @@ void validate_frame(const Frame& f) {
     const bool zero_identity = f.identity == std::array<uint32_t, 4>{};
     switch (f.kind) {
         case Kind::data:
-            if (!zero_identity || !f.error.empty() ||
+            if (f.shared_checksum || !zero_identity || !f.error.empty() ||
                 checked_mul(f.payload.size(), sizeof(float)) != expected_bytes(f))
                 throw std::invalid_argument("data frame has wrong handoff shape");
             break;
+        case Kind::shared_data:
+            if (!zero_identity || !f.payload.empty() || !f.error.empty())
+                throw std::invalid_argument("shared_data must carry only the mapped-buffer checksum");
+            (void) expected_bytes(f);
+            break;
         case Kind::failure:
-            if (!zero_identity || !f.payload.empty() || f.error.empty() || f.error.size() > max_failure_bytes)
+            if (f.shared_checksum || !zero_identity || !f.payload.empty() || f.error.empty() || f.error.size() > max_failure_bytes)
                 throw std::invalid_argument("invalid failure frame");
             break;
         case Kind::hello:
-            if (!f.payload.empty() || !f.error.empty() ||
+        case Kind::hello_shared:
+            if (f.shared_checksum || !f.payload.empty() || !f.error.empty() ||
                 (f.identity[0] != static_cast<uint32_t>(Backend::cuda) &&
                  f.identity[0] != static_cast<uint32_t>(Backend::hip)) ||
                 f.identity[2] >= f.identity[3] || f.rows != 1 ||
@@ -94,13 +100,13 @@ void validate_frame(const Frame& f) {
                 throw std::invalid_argument("invalid worker hello");
             break;
         case Kind::ready:
-            if (f.rows != 1 || f.request_id != 1 || f.window_id != 1 ||
+            if (f.shared_checksum || f.rows != 1 || f.request_id != 1 || f.window_id != 1 ||
                 !zero_identity || !f.payload.empty() || !f.error.empty())
                 throw std::invalid_argument("invalid worker ready");
             break;
         case Kind::commit:
         case Kind::committed:
-            if (!zero_identity || !f.payload.empty() || !f.error.empty())
+            if (f.shared_checksum || !zero_identity || !f.payload.empty() || !f.error.empty())
                 throw std::invalid_argument("invalid window control frame");
             break;
         default: throw std::invalid_argument("unsupported frame kind");
@@ -225,8 +231,9 @@ std::vector<uint8_t> encode(const Frame& f) {
         payload.resize(f.payload.size() * sizeof(float));
         std::memcpy(payload.data(), f.payload.data(), payload.size());
     } else if (f.kind == Kind::failure) payload.assign(f.error.begin(), f.error.end());
-    else if (f.kind == Kind::hello)
+    else if (f.kind == Kind::hello || f.kind == Kind::hello_shared)
         for (uint32_t word : f.identity) add_u32(payload, word);
+    else if (f.kind == Kind::shared_data) add_u32(payload, f.shared_checksum);
     std::vector<uint8_t> bytes;
     bytes.reserve(wire_header_bytes + payload.size());
     add_u32(bytes, magic); add_u16(bytes, version); add_u16(bytes, static_cast<uint16_t>(f.kind));
@@ -260,7 +267,10 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         f.payload.resize(n / sizeof(float));
         if (n) std::memcpy(f.payload.data(), payload, n);
     } else if (f.kind == Kind::failure) f.error.assign(reinterpret_cast<const char*>(payload), n);
-    else if (f.kind == Kind::hello) {
+    else if (f.kind == Kind::shared_data) {
+        if (n != 4) throw std::invalid_argument("shared handoff digest has wrong length");
+        f.shared_checksum = get_u32(payload);
+    } else if (f.kind == Kind::hello || f.kind == Kind::hello_shared) {
         if (n != 16) throw std::invalid_argument("hello identity has wrong length");
         for (size_t i = 0; i < 4; ++i) f.identity[i] = get_u32(payload + 4 * i);
     }

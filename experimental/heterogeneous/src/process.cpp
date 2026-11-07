@@ -87,7 +87,7 @@ WorkerProcessGroup& WorkerProcessGroup::operator=(WorkerProcessGroup&& other) no
 
 WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_executable,
-                                            const std::string& hip_executable) {
+                                            const std::string& hip_executable, bool shared_memory) {
     plan.validate();
     if (cuda_executable.empty() || hip_executable.empty() ||
         cuda_executable.front() != '/' || hip_executable.front() != '/')
@@ -114,7 +114,7 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
             actions.dup2(pair[1], worker_fd);
             actions.close(pair[1]);
             std::vector<std::string> args = {
-                exe, "--worker", spec, std::to_string(plan.total_layers),
+                exe, shared_memory ? "--worker-shared" : "--worker", spec, std::to_string(plan.total_layers),
                 std::to_string(plan.geometry.hc), std::to_string(plan.geometry.n_embd),
                 std::to_string(plan.model_fingerprint), std::to_string(i)
             };

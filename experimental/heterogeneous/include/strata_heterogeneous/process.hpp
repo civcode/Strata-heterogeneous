@@ -27,7 +27,8 @@ public:
     // a dedicated inherited socket on fd 3. Paths must be absolute.
     static WorkerProcessGroup launch(const Plan& plan,
                                      const std::string& cuda_executable,
-                                     const std::string& hip_executable);
+                                     const std::string& hip_executable,
+                                     bool shared_memory = false);
     std::vector<int> sockets() const;
     size_t size() const { return children_.size(); }
 

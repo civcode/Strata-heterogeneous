@@ -1,6 +1,7 @@
 // CPU-only worker handshake and transactional window coordinator.
 // Production backends will implement StageExecutor in separate CUDA/HIP binaries.
 #include "strata_heterogeneous/host.hpp"
+#include "strata_heterogeneous/shared.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -21,7 +22,7 @@ Frame control(const Plan& plan, size_t index, Kind kind,
     f.rows = rows;
     f.geometry = plan.geometry;
     f.plan_fingerprint = plan.fingerprint();
-    if (kind == Kind::hello) {
+    if (kind == Kind::hello || kind == Kind::hello_shared) {
         const Stage& stage = plan.stages.at(index);
         f.identity = {static_cast<uint32_t>(stage.backend), stage.ordinal,
                       stage.first_layer, stage.end_layer};
@@ -43,6 +44,7 @@ void send_failure(int fd, Frame request, const std::string& reason, int timeout_
     request.kind = Kind::failure;
     request.payload.clear();
     request.identity = {};
+    request.shared_checksum = 0;
     request.error = reason.substr(0, max_failure_bytes);
     if (request.error.empty()) request.error = "unknown stage failure";
     send_frame(fd, request, timeout_ms);
@@ -104,11 +106,11 @@ void MockStageExecutor::abandon_window() noexcept { pending_ = false; }
 void MockStageExecutor::shutdown() noexcept { pending_ = false; prepared_ = false; }
 
 void serve_worker_stateful(int fd, const Plan& plan, size_t index,
-                           StageExecutor& executor, int timeout_ms) {
+                           StageExecutor& executor, int timeout_ms, bool shared_memory) {
     plan.validate();
     if (index >= plan.stages.size()) throw std::invalid_argument("worker index out of range");
     if (timeout_ms < 0) throw std::invalid_argument("negative worker timeout");
-    const Frame hello = control(plan, index, Kind::hello);
+    const Frame hello = control(plan, index, shared_memory ? Kind::hello_shared : Kind::hello);
     std::string error;
     if (!executor.prepare(plan, index, error)) {
         send_failure(fd, hello, error.empty() ? "worker preparation failed" : error, timeout_ms);
@@ -120,19 +122,40 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
         auto ready = receive_frame(fd, timeout_ms);
         if (!ready) { executor.shutdown(); return; }
         require_match(*ready, hello, Kind::ready);
+        SharedActivation shared;
+        if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
         while (auto request = receive_frame(fd, timeout_ms)) {
             try {
-                if (request->kind != Kind::data || request->stage_index != index ||
+                if (request->kind != (shared_memory ? Kind::shared_data : Kind::data) ||
+                    request->stage_index != index ||
                     request->plan_fingerprint != hello.plan_fingerprint ||
                     request->geometry.hc != plan.geometry.hc ||
                     request->geometry.n_embd != plan.geometry.n_embd)
                     throw std::runtime_error("worker plan/stage/geometry mismatch");
-                Frame reply = *request;
+                Frame input = *request;
+                const size_t floats = static_cast<size_t>(request->rows) * plan.geometry.floats_per_row();
+                const size_t bytes = floats * sizeof(float); // bounded by decode(shared_data)
+                if (shared_memory) {
+                    if (shared.checksum(bytes) != request->shared_checksum)
+                        throw std::runtime_error("shared activation checksum mismatch at stage entry");
+                    input.kind = Kind::data;
+                    input.shared_checksum = 0;
+                    input.payload = shared.load(floats);
+                }
+                Frame reply = input;
                 reply.payload.clear();
                 error.clear();
-                if (!executor.run_window(*request, reply, error))
+                if (!executor.run_window(input, reply, error))
                     throw std::runtime_error(error.empty() ? "worker execution failed" : error);
-                require_match(reply, *request, Kind::data);
+                require_match(reply, input, Kind::data);
+                // encode() validates exact output shape before any shared-memory publication.
+                (void) encode(reply);
+                if (shared_memory) {
+                    shared.store(reply.payload);
+                    reply.payload.clear();
+                    reply.kind = Kind::shared_data;
+                    reply.shared_checksum = shared.checksum(bytes);
+                }
                 send_frame(fd, reply, timeout_ms);
                 auto commit = receive_frame(fd, timeout_ms);
                 if (!commit) { executor.abandon_window(); break; }
@@ -163,13 +186,16 @@ void serve_worker(int fd, const Plan& plan, size_t index, const Executor& exec) 
     serve_worker_stateful(fd, plan, index, adapter);
 }
 
-PipelineSession::PipelineSession(Plan plan, std::vector<int> worker_fds, int timeout_ms)
-    : plan_(std::move(plan)), fds_(std::move(worker_fds)), timeout_ms_(timeout_ms) {
+PipelineSession::PipelineSession(Plan plan, std::vector<int> worker_fds, int timeout_ms,
+                                 bool shared_memory)
+    : plan_(std::move(plan)), fds_(std::move(worker_fds)), timeout_ms_(timeout_ms),
+      shared_memory_(shared_memory) {
     plan_.validate();
     if (fds_.size() != plan_.stages.size())
         throw std::invalid_argument("one worker fd required per stage");
     if (timeout_ms_ < 0) throw std::invalid_argument("negative pipeline timeout");
 }
+PipelineSession::~PipelineSession() = default;
 void PipelineSession::poison() noexcept {
     poisoned_ = true;
     // Do not close caller-owned FDs; shutdown wakes workers awaiting commit.
@@ -183,13 +209,17 @@ void PipelineSession::initialize() {
             if (!hello) throw std::runtime_error("worker closed before hello");
             if (hello->kind == Kind::failure)
                 throw std::runtime_error("worker " + std::to_string(i) + " preparation failed: " + hello->error);
-            const Frame expected = control(plan_, i, Kind::hello);
-            require_match(*hello, expected, Kind::hello);
+            const Kind expected_kind = shared_memory_ ? Kind::hello_shared : Kind::hello;
+            const Frame expected = control(plan_, i, expected_kind);
+            require_match(*hello, expected, expected_kind);
             if (hello->identity != expected.identity)
                 throw std::runtime_error("worker backend, device or layer range mismatch");
         }
-        for (size_t i = 0; i < fds_.size(); ++i)
+        if (shared_memory_) shared_ = std::make_unique<SharedActivation>(SharedActivation::create());
+        for (size_t i = 0; i < fds_.size(); ++i) {
             send_frame(fds_[i], control(plan_, i, Kind::ready), timeout_ms_);
+            if (shared_memory_) shared_->send(fds_[i], timeout_ms_);
+        }
         initialized_ = true;
     } catch (...) { poison(); throw; }
 }
@@ -206,6 +236,20 @@ Frame PipelineSession::run_window(Frame initial) {
         const uint64_t committed_request = initial.request_id;
         const uint64_t committed_window = initial.window_id;
         // Execution phase: every stage returns provisional data; no stage commits.
+        // Only one window owns the shared slot. Never overwrite until commits finish.
+        size_t floats = 0;
+        size_t bytes = 0;
+        if (shared_memory_) {
+            // Validation checks geometry multiplication, byte cap and exact shape
+            // before any host size arithmetic or mapped-slot write.
+            (void) encode(initial);
+            floats = static_cast<size_t>(initial.rows) * plan_.geometry.floats_per_row();
+            bytes = floats * sizeof(float);
+            shared_->store(initial.payload);
+            initial.payload.clear();
+            initial.kind = Kind::shared_data;
+            initial.shared_checksum = shared_->checksum(bytes);
+        }
         for (size_t i = 0; i < fds_.size(); ++i) {
             initial.stage_index = static_cast<uint32_t>(i);
             send_frame(fds_[i], initial, timeout_ms_);
@@ -213,7 +257,9 @@ Frame PipelineSession::run_window(Frame initial) {
             if (!answer) throw std::runtime_error("worker closed before replying");
             if (answer->kind == Kind::failure)
                 throw std::runtime_error("stage " + std::to_string(i) + " failed: " + answer->error);
-            require_match(*answer, initial, Kind::data);
+            require_match(*answer, initial, shared_memory_ ? Kind::shared_data : Kind::data);
+            if (shared_memory_ && answer->shared_checksum != shared_->checksum(bytes))
+                throw std::runtime_error("shared activation checksum mismatch after worker reply");
             initial = std::move(*answer);
         }
         // Commit phase: acknowledge every stage before publishing final output.
@@ -227,6 +273,11 @@ Frame PipelineSession::run_window(Frame initial) {
             if (reply->kind == Kind::failure)
                 throw std::runtime_error("stage " + std::to_string(i) + " commit failed: " + reply->error);
             require_match(*reply, request, Kind::committed);
+        }
+        if (shared_memory_) {
+            initial.kind = Kind::data;
+            initial.payload = shared_->load(floats);
+            initial.shared_checksum = 0;
         }
         last_request_ = committed_request;
         last_window_ = committed_window;

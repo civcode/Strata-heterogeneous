@@ -32,7 +32,8 @@ uint32_t parse_u32(const char* str) {
 } // namespace
 int main(int argc, char** argv) {
     try {
-        if (argc != 8 || std::string(argv[1]) != "--worker")
+        const bool shared = argc == 8 && std::string(argv[1]) == "--worker-shared";
+        if (argc != 8 || (!shared && std::string(argv[1]) != "--worker"))
             throw std::invalid_argument("expected --worker plan layers hc n_embd fingerprint stage_index");
         Plan plan = parse_plan(argv[2], parse_u32(argv[3]),
                                {parse_u32(argv[4]), parse_u32(argv[5])}, parse_unsigned(argv[6]));
@@ -46,7 +47,7 @@ int main(int argc, char** argv) {
         if (::getsockopt(3, SOL_SOCKET, SO_TYPE, &type, &len) != 0 || type != SOCK_STREAM)
             throw std::runtime_error("no worker socket on descriptor 3");
         MockStageExecutor executor;
-        serve_worker_stateful(3, plan, index, executor);
+        serve_worker_stateful(3, plan, index, executor, default_io_timeout_ms, shared);
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "mock worker: " << ex.what() << '\n';

@@ -131,6 +131,24 @@ void test_wire() {
     check(decode(encode(hello)).identity == hello.identity, "backend/device/range hello roundtrip");
     auto bad_hello = encode(hello); bad_hello[48] = 12;
     throws([&] { (void) decode(bad_hello); }, "invalid hello length rejected");
+    hello.kind = Kind::hello_shared;
+    check(decode(encode(hello)).identity == hello.identity, "shared worker handshake roundtrip");
+    Frame shared = input(p, 52, 901, 2);
+    shared.kind = Kind::shared_data; shared.payload.clear();
+    shared.shared_checksum = 0xfedcba98;
+    check(decode(encode(shared)).shared_checksum == shared.shared_checksum,
+          "shared handoff sends only four digest bytes");
+    check(encode(shared).size() == wire_header_bytes + sizeof(uint32_t),
+          "shared handoff never sends bulk payload over socket");
+    shared.payload = {1.f};
+    throws([&] { (void) encode(shared); }, "shared handoff refuses in-band floats");
+    shared.payload.clear(); shared.error = "unexpected";
+    throws([&] { (void) encode(shared); }, "shared handoff refuses accidental errors");
+    shared.error.clear(); shared.geometry.hc = 1000000;
+    throws([&] { (void) encode(shared); }, "shared handoff enforces capacity");
+    Frame ordinary = input(p, 91, 3, 1);
+    ordinary.shared_checksum = 42;
+    throws([&] { (void) encode(ordinary); }, "socket mode refuses shared-only checksum");
     Frame failure = input(p, 44, 900, 1);
     failure.kind = Kind::failure; failure.payload.clear(); failure.error = "GPU stream failed";
     check(decode(encode(failure)).error == "GPU stream failed", "error frame roundtrip");

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -45,11 +46,12 @@ struct Plan {
 // Device ordinals are backend-local. Does NOT discover GPUs.
 Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uint64_t model_fingerprint);
 
-// Protocol v2: handshake and two-phase execution/commit control messages.
-// Only stage results (data) carry R/bo/inject floats; hello carries 4 u32s.
+// Protocol v3: v2 handshake/commit plus optional shared-memory data frames.
+// Socket data carries R/bo/inject floats; shared_data carries a 32-bit digest.
+// The memfd is delivered separately via SCM_RIGHTS immediately after ready.
 enum class Kind : uint16_t {
     data = 1, failure = 2, hello = 3, ready = 4,
-    commit = 5, committed = 6
+    commit = 5, committed = 6, shared_data = 7, hello_shared = 8
 };
 struct Frame {
     Kind kind = Kind::data;
@@ -61,8 +63,9 @@ struct Frame {
     Geometry geometry;
     std::vector<float> payload;
     std::string error;  // only for Kind::failure
-    // hello: [backend, ordinal, first_layer, end_layer]; other kinds: zero.
+    // hello/hello_shared: [backend, ordinal, first_layer, end_layer]; others: zero.
     std::array<uint32_t, 4> identity{};
+    uint32_t shared_checksum = 0; // shared_data only, over mapped float32 bytes
 };
 
 constexpr uint32_t max_payload_bytes = 16 * 1024 * 1024;
@@ -74,7 +77,7 @@ Frame decode(const std::vector<uint8_t>& encoded);
 
 // POSIX AF_UNIX SOCK_STREAM transport: short reads/writes and EINTR handled, no GPU API.
 // Receiving an orderly EOF returns nullopt; truncated/invalid frames throw.
-// This deliberately copies payloads. Shared-memory/DMA optimization comes later.
+// Socket-data mode copies payloads; shared_data uses an explicitly staged memfd.
 // Total, monotonic wall-clock deadline per frame, not per read/write chunk.
 // timeout_ms must be >= 0. A timeout throws; callers must poison the session.
 void send_frame(int fd, const Frame& frame, int timeout_ms = default_io_timeout_ms);
@@ -115,7 +118,8 @@ private:
 // Workers send an identity hello before accepting data. Coordinator verifies
 // every worker's declared backend/ordinal/layer range, then sends ready.
 void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
-                           StageExecutor& executor, int timeout_ms = default_io_timeout_ms);
+                           StageExecutor& executor, int timeout_ms = default_io_timeout_ms,
+                           bool shared_memory = false);
 // Backwards-compatible CPU-test convenience; now uses the same transactional
 // handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);
@@ -125,7 +129,9 @@ void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& 
 // workers/session; it never publishes a partially completed window.
 class PipelineSession {
 public:
-    PipelineSession(Plan plan, std::vector<int> worker_fds, int timeout_ms = default_io_timeout_ms);
+    PipelineSession(Plan plan, std::vector<int> worker_fds, int timeout_ms = default_io_timeout_ms,
+                    bool shared_memory = false);
+    ~PipelineSession();
     void initialize();
     Frame run_window(Frame initial);
     bool poisoned() const { return poisoned_; }
@@ -136,6 +142,8 @@ private:
     int timeout_ms_;
     bool initialized_ = false;
     bool poisoned_ = false;
+    bool shared_memory_ = false;
+    std::unique_ptr<class SharedActivation> shared_;
     uint64_t last_request_ = 0;
     uint64_t last_window_ = 0;
     void poison() noexcept;

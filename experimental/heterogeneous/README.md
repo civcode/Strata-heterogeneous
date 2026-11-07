@@ -38,18 +38,23 @@ cannot silently exchange activations. Model fingerprint derivation from Strata's
 loaded model is **not yet implemented**; callers must provide the same stable
 nonzero identity on every worker.
 
-## Wire protocol v2 — staged handoff and commit
+## Wire protocol v3 — staged handoff, commit, and optional shared memory
 
 POSIX Unix-domain stream sockets. Little-endian, IEEE754 float32.
 A fixed 56-byte header carries magic/version, kind, stage, rows, geometry,
 request/window IDs, plan fingerprint, payload length and FNV-1a corruption
-checksum. The v2 wire protocol adds a 16-byte worker hello (backend, local
-ordinal, first and last layer), ready handshake, and commit/committed control
-frames. A normal data payload remains an ordered float32 handoff window;
-errors carry a bounded message. 16 MiB per-frame cap; prefill needs chunking.
-A complete frame has a monotonic I/O deadline (30 seconds by default),
-including short reads/writes. This is a breaking protocol change: v1 worker
-binaries are not compatible with v2 coordinator binaries.
+checksum. Protocol v3 keeps the identity hello, ready handshake, and
+per-window commit/committed control messages. The optional shared-memory
+mode uses a distinct `hello_shared` handshake and passes one sealed,
+16 MiB Linux memfd to each isolated worker through SCM_RIGHTS. After setup,
+`shared_data` frames carry a four-byte FNV-1a digest instead of the float32
+activation payload. The owner writes the mapped slot, then signals the worker
+on its control socket; a worker completes its CPU operations before replying.
+Each stage validates mapped bytes before execution, and the coordinator
+validates replies before advancing. Socket-data mode remains the default.
+Frame capacity is 16 MiB in both modes; prefill needs chunking. A complete
+socket frame has a monotonic I/O deadline (30 seconds by default). Protocol
+v3 does not interoperate with v1/v2 worker binaries.
 
 The coordinator first verifies every worker's declared backend, ordinal,
 layer interval, plan fingerprint, and geometry, then authorizes execution.
@@ -72,10 +77,15 @@ communicate only through local Unix sockets. They do **not** link or
 initialize either GPU runtime, and the marker is not hardware attestation.
 Actual CUDA and HIP executors will replace these mock binaries.
 
-The socket protocol is for correctness experiments and interface stability.
-It is *not* the intended high-throughput activation path; mmap/shared-memory
-buffers and explicit completed GPU→host / host→GPU DMA will replace the
-bulk socket copies. No CUDA-pinned pointer is ever treated as a HIP pointer.
+The shared-memory path avoids shipping bulk float32 activations through a
+socket. It still copies between the memfd and the current vector-based CPU
+`StageExecutor` interface. It is **not zero-copy into a GPU** and has not
+been benchmarked. Real CUDA/HIP workers must explicitly synchronize their
+D2H/H2D transfers and use their own runtime-owned device memory; mapped
+host pointers are not automatically accessible in both runtimes. Only one
+window may use the shared slot at a time; no ring buffers, overlap, or
+pipelined prefill is implemented. FNV-1a detects accidental corruption,
+not malicious concurrent writes. Do not expose this protocol publicly.
 
 ## Build/test locally, no GPU required
 
@@ -86,6 +96,9 @@ cmake --build /tmp/strata-hetero-build
 ctest --test-dir /tmp/strata-hetero-build --output-on-failure
 /tmp/strata-hetero-build/strata_heterogeneous_demo \
   cuda:0:0-3,hip:0:3-7,hip:1:7-10 10 2 6 12345 8
+# Opt-in shared-memory transport, still CPU-only:
+/tmp/strata-hetero-build/strata_heterogeneous_demo \
+  cuda:0:0-3,hip:0:3-7,hip:1:7-10 10 2 6 12345 8 --shared
 ```
 
 To run with sanitizers (Clang/GCC on supported Linux environments):
@@ -133,8 +146,9 @@ Coding agents: read [AGENTS.md](AGENTS.md) before modifying this experimental mo
    isolation and implement a real stateful stage lifecycle.
 2. Wrap Strata's `Verifier::set_stage()` and `set_handoff_rows()` in CUDA/HIP
    stage executors, with GPU state/weights resident only on their owner.
-3. Implement pinned/staged GPU copies + reusable shared host slots and
-   explicit events; preserve strict failure-before-publication semantics.
+3. Connect the host's now-available shared-memory slot to explicit,
+   synchronized pinned/staged GPU copies with backend-local device buffers
+   and events; preserve strict failure-before-publication semantics.
 4. Apply the same scheme to `Prefill` chunks and session save/restore.
 5. Use local GPU tests for logits/parity, checkpoints, multi-GPU throughput,
    and CPU/GPU expert-cache accounting.
@@ -165,3 +179,17 @@ The third standalone CTest target, `strata_heterogeneous_process_tests`,
 exercises successful three-stage execution, backend-mismatch rejection,
 failed worker startup, worker exit and PID/descriptor cleanup. No model
 weights or GPUs are used. Existing production engine targets are untouched.
+
+### Milestone M1.6: Linux shared-memory handoff (host-only)
+
+`SharedActivation` creates a size-sealed 16 MiB memfd, maps it once in
+the coordinator and passes the same descriptor to each worker using the
+existing AF_UNIX socket. `PipelineSession(..., shared_memory=true)` and
+`WorkerProcessGroup::launch(..., shared_memory=true)` select v3 shared mode.
+Shared mode is explicitly opt-in; ordinary socket-data mode is the default.
+
+Two new CTest checks cover shared object creation/descriptor verification,
+map visibility across processes, transfer bounds, checksum failure,
+wrong-mode handshakes, multiple windows and multirow execution. CPU-only
+GCC, Clang, ASan and UBSan builds/tests are required for changes here.
+No actual GPUs or full model engines were exercised.

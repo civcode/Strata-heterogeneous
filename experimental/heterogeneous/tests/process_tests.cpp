@@ -55,6 +55,40 @@ int main() {
         check(group.finish(error, 1000), "all workers exit on coordinator EOF");
         check(group.size() == 0, "workers reaped");
         check(group.sockets().empty(), "socket descriptors closed");
+
+        // The opt-in shared-memory path carries only control frames on the
+        // sockets. All workers map the same sealed memfd from SCM_RIGHTS.
+        auto shared_group = WorkerProcessGroup::launch(plan, cuda, hip, true);
+        PipelineSession shared_session(plan, shared_group.sockets(), 1000, true);
+        shared_session.initialize();
+        for (uint64_t window : {1ULL, 2ULL, 3ULL}) {
+            auto shared_input = input(plan, 100, window);
+            auto shared_output = shared_session.run_window(shared_input);
+            Frame shared_reference = shared_input;
+            std::string mock_error;
+            check(mock_execute({Backend::cuda, 0, 0, 10}, shared_input, shared_reference, mock_error),
+                  "shared reference runs");
+            check(shared_output.payload == shared_reference.payload, "shared workers preserve layer order");
+            check(shared_output.kind == Kind::data, "shared output returns ordinary data frame");
+        }
+        auto many_rows = input(plan, 101, 1);
+        many_rows.rows = 4096;
+        many_rows.payload.assign(static_cast<size_t>(many_rows.rows * plan.geometry.floats_per_row()), 0.375f);
+        auto many_output = shared_session.run_window(many_rows);
+        Frame many_expected = many_rows;
+        std::string many_error;
+        check(mock_execute({Backend::cuda, 0, 0, 10}, many_rows, many_expected, many_error),
+              "large shared-memory reference");
+        check(many_output.payload == many_expected.payload, "multirow shared handoff matches reference");
+        check(shared_group.finish(error, 1000), "all shared workers finish and are reaped");
+        check(shared_group.size() == 0, "shared process cleanup");
+
+        // Mismatched data transport modes must fail closed rather than hang.
+        auto mismatched = WorkerProcessGroup::launch(plan, cuda, hip, true);
+        PipelineSession no_shared(plan, mismatched.sockets(), 200, false);
+        should_throw([&] { no_shared.initialize(); }, "shared worker rejects socket mode at handshake");
+        check(no_shared.poisoned(), "mismatched transport poisons coordinator");
+        mismatched.terminate();
         group.terminate(); // safe repeated cleanup
         check(group.size() == 0, "terminate idempotent");
 
