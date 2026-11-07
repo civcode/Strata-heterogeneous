@@ -20,9 +20,10 @@ contains:
   diagnostics, with each float's IEEE754 bit pattern preserved.
 
 The result is **provisional** until every execution stage confirms the
-accepted-prefix commit. Nonfinite diagnostic markers must block acceptance
-in the eventual coordinator; this standalone codec does not implement
-sampling or validation of the model's actual head outputs.
+accepted-prefix commit. Nonfinite diagnostic markers remain available provisionally, but the
+result gate refuses commit and poisons itself when any such row is present.
+The eventual coordinator must check markers **before sending commit**;
+this codec does not implement sampling or inspect actual GPU head outputs.
 
 ## Independent wire packet v1
 

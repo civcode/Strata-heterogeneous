@@ -127,7 +127,8 @@ void encoding_tests() {
 }
 void gate_tests() {
     FinalResultGate gate;
-    const auto r = sample(false);
+    auto r = sample(false);
+    r.nonfinite_rows.clear();
     rejects([&] { (void)gate.provisional(); }, "cannot read an empty provisional slot");
     rejects([&] { (void)gate.take_committed(); }, "cannot publish without a commit");
     gate.stage(r, 2, 120, 8, r.plan_fingerprint, 3);
@@ -147,6 +148,14 @@ void gate_tests() {
     FinalResultGate bad;
     rejects([&] { bad.stage(r, 1, 120, 8, r.plan_fingerprint, 3); }, "bad result identity poisons staging");
     ok(bad.poisoned(), "mismatched result fails closed");
+    FinalResultGate nonfinite;
+    auto unsafe = sample(false);
+    nonfinite.stage(unsafe, 2, 120, 8, unsafe.plan_fingerprint, 3);
+    rejects([&] { nonfinite.mark_committed(120, 8); },
+            "nonfinite final head rows cannot be committed");
+    ok(nonfinite.poisoned(), "nonfinite head invalidates result gate");
+    rejects([&] { (void)nonfinite.take_committed(); },
+            "unhealthy result cannot be published");
 }
 void socket_tests() {
     int sockets[2];

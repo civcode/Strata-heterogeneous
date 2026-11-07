@@ -264,6 +264,10 @@ void FinalResultGate::mark_committed(uint64_t request_id, uint64_t window_id) {
         poison();
         throw std::runtime_error("final result commit identity mismatch");
     }
+    if (!staged_->nonfinite_rows.empty()) {
+        poison();
+        throw std::runtime_error("nonfinite final head result cannot be committed");
+    }
     committed_ = true;
 }
 FinalStageResult FinalResultGate::take_committed() {
