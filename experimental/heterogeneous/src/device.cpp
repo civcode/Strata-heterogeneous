@@ -33,6 +33,7 @@ void DeviceStageExecutor::abort_once() noexcept {
 bool DeviceStageExecutor::fail(const char* phase, std::string& error) noexcept {
     poisoned_ = true;
     pending_ = false;
+    has_spec_ = false;
     // Always stop pending device work before touching potentially allocating
     // diagnostics: this function must remain noexcept during failure cleanup.
     abort_once();
@@ -67,6 +68,29 @@ bool DeviceStageExecutor::prepare(const Plan& plan, size_t index, std::string& e
     }
 }
 
+bool DeviceStageExecutor::begin_window(const WindowSpec& spec, uint64_t request_id,
+                                       uint64_t window_id, std::string& error) {
+    if (!prepared_ || pending_ || poisoned_ || shutdown_ || has_spec_ ||
+        !request_id || !window_id) {
+        error = "device cannot begin overlapping or invalid verifier window";
+        return fail("begin verifier window", error);
+    }
+    try { spec.validate(static_cast<uint32_t>(spec.token_ids.size())); }
+    catch (const std::exception& ex) {
+        error = std::string("invalid verifier tokens: ") + ex.what();
+        return fail("begin verifier window", error);
+    }
+    if (!checked_call([&](std::string& e) {
+            return driver_.begin_window(spec, request_id, window_id, e);
+        }, "begin verifier window", error))
+        return fail("begin verifier window", error);
+    spec_ = spec;
+    has_spec_ = true;
+    request_id_ = request_id;
+    window_id_ = window_id;
+    return true;
+}
+
 bool DeviceStageExecutor::run_staged_window(const Frame& metadata, ActivationView view,
                                              std::string& error) {
     if (!prepared_ || pending_ || poisoned_ || shutdown_) {
@@ -84,7 +108,10 @@ bool DeviceStageExecutor::run_staged_window(const Frame& metadata, ActivationVie
         metadata.geometry.hc != plan_.geometry.hc ||
         metadata.geometry.n_embd != plan_.geometry.n_embd ||
         view.geometry().hc != plan_.geometry.hc ||
-        view.geometry().n_embd != plan_.geometry.n_embd) {
+        view.geometry().n_embd != plan_.geometry.n_embd ||
+        (has_spec_ && (metadata.request_id != request_id_ ||
+                        metadata.window_id != window_id_ ||
+                        metadata.rows != spec_.token_ids.size()))) {
         error = "invalid device window metadata or activation view";
         return fail("validate window", error);
     }
@@ -134,9 +161,28 @@ bool DeviceStageExecutor::run_window(const Frame& input, Frame& output, std::str
     }
 }
 
+bool DeviceStageExecutor::commit_prefix(uint64_t request_id, uint64_t window_id,
+                                        uint32_t n_keep, std::string& error) {
+    if (!has_spec_ || !prepared_ || poisoned_ || shutdown_ || !pending_ ||
+        request_id != request_id_ || window_id != window_id_ ||
+        n_keep > spec_.token_ids.size()) {
+        error = "device has no matching verifier prefix to commit";
+        return fail("prefix commit validation", error);
+    }
+    if (!checked_call([&](std::string& e) {
+            return driver_.enqueue_commit_prefix(request_id, window_id, n_keep, e);
+        }, "enqueue prefix commit", error) ||
+        !checked_call([&](std::string& e) { return driver_.wait_commit(e); },
+                      "wait prefix commit", error))
+        return fail("accepted-prefix commit", error);
+    pending_ = false;
+    has_spec_ = false;
+    return true;
+}
+
 bool DeviceStageExecutor::commit_window(uint64_t request_id, uint64_t window_id,
                                          std::string& error) {
-    if (!prepared_ || poisoned_ || shutdown_ || !pending_ ||
+    if (!prepared_ || poisoned_ || shutdown_ || !pending_ || has_spec_ ||
         request_id != request_id_ || window_id != window_id_) {
         error = "device stage has no matching provisional window to commit";
         return fail("commit validation", error);
@@ -154,6 +200,7 @@ void DeviceStageExecutor::abandon_window() noexcept {
     // operation: explicit abort does not promise a reliable state restore.
     poisoned_ = true;
     pending_ = false;
+    has_spec_ = false;
     abort_once();
 }
 void DeviceStageExecutor::shutdown() noexcept {
@@ -161,6 +208,7 @@ void DeviceStageExecutor::shutdown() noexcept {
     shutdown_ = true;
     if (pending_ || poisoned_) abort_once();
     pending_ = false;
+    has_spec_ = false;
     driver_.shutdown();
     prepared_ = false;
 }

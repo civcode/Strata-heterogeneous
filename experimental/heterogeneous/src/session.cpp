@@ -45,6 +45,8 @@ void send_failure(int fd, Frame request, const std::string& reason, int timeout_
     request.payload.clear();
     request.identity = {};
     request.shared_checksum = 0;
+    request.window.reset();
+    request.keep_count = 0;
     request.error = reason.substr(0, max_failure_bytes);
     if (request.error.empty()) request.error = "unknown stage failure";
     send_frame(fd, request, timeout_ms);
@@ -76,6 +78,15 @@ private:
     bool pending_ = false;
 };
 } // namespace
+
+bool StageExecutor::begin_window(const WindowSpec&, uint64_t, uint64_t, std::string& error) {
+    error = "executor does not support token/position window metadata";
+    return false;
+}
+bool StageExecutor::commit_prefix(uint64_t, uint64_t, uint32_t, std::string& error) {
+    error = "executor does not support accepted-prefix commit";
+    return false;
+}
 
 bool StageExecutor::run_staged_window(const Frame& metadata, ActivationView view, std::string& error) {
     if (metadata.kind != Kind::data || metadata.rows != view.rows() ||
@@ -117,8 +128,34 @@ bool MockStageExecutor::prepare(const Plan& plan, size_t stage_index, std::strin
     prepared_ = true;
     return true;
 }
+bool MockStageExecutor::begin_window(const WindowSpec& spec, uint64_t request,
+                                    uint64_t window, std::string& error) {
+    if (!prepared_ || pending_ || has_spec_ || !request || !window) {
+        error = "mock window context conflicts with pending state"; return false;
+    }
+    try { spec.validate(static_cast<uint32_t>(spec.token_ids.size())); }
+    catch (const std::exception& e) { error = e.what(); return false; }
+    has_spec_ = true;
+    window_spec_ = spec;
+    pending_request_ = request;
+    pending_window_ = window;
+    return true;
+}
+bool MockStageExecutor::commit_prefix(uint64_t request, uint64_t window,
+                                     uint32_t n_keep, std::string& error) {
+    if (!has_spec_ || !pending_ || n_keep > window_spec_.token_ids.size() ||
+        request != pending_request_ || window != pending_window_) {
+        error = "mock accepted-prefix commit mismatch"; return false;
+    }
+    pending_ = false; has_spec_ = false;
+    return true;
+}
 bool MockStageExecutor::run_window(const Frame& input, Frame& output, std::string& error) {
-    if (!prepared_ || pending_) { error = "mock stage not ready"; return false; }
+    if (!prepared_ || pending_ || (has_spec_ &&
+        (input.request_id != pending_request_ || input.window_id != pending_window_ ||
+         input.rows != window_spec_.token_ids.size()))) {
+        error = "mock stage not ready or metadata mismatch"; return false;
+    }
     if (!mock_execute(stage_, input, output, error)) return false;
     pending_ = true;
     pending_request_ = input.request_id;
@@ -127,7 +164,11 @@ bool MockStageExecutor::run_window(const Frame& input, Frame& output, std::strin
 }
 bool MockStageExecutor::run_staged_window(const Frame& metadata, ActivationView view,
                                            std::string& error) {
-    if (!prepared_ || pending_) { error = "mock stage not ready"; return false; }
+    if (!prepared_ || pending_ || (has_spec_ &&
+        (metadata.request_id != pending_request_ || metadata.window_id != pending_window_ ||
+         metadata.rows != window_spec_.token_ids.size()))) {
+        error = "mock staged metadata mismatch"; return false;
+    }
     if (metadata.kind != Kind::data || metadata.rows != view.rows() ||
         metadata.geometry.hc != view.geometry().hc ||
         metadata.geometry.n_embd != view.geometry().n_embd ||
@@ -147,15 +188,15 @@ bool MockStageExecutor::run_staged_window(const Frame& metadata, ActivationView 
     return true;
 }
 bool MockStageExecutor::commit_window(uint64_t request_id, uint64_t window_id, std::string& error) {
-    if (!pending_ || request_id != pending_request_ || window_id != pending_window_) {
+    if (!pending_ || has_spec_ || request_id != pending_request_ || window_id != pending_window_) {
         error = "mock commit does not match pending window";
         return false;
     }
-    pending_ = false;
+    pending_ = false; has_spec_ = false;
     return true;
 }
-void MockStageExecutor::abandon_window() noexcept { pending_ = false; }
-void MockStageExecutor::shutdown() noexcept { pending_ = false; prepared_ = false; }
+void MockStageExecutor::abandon_window() noexcept { pending_ = false; has_spec_ = false; }
+void MockStageExecutor::shutdown() noexcept { pending_ = false; has_spec_ = false; prepared_ = false; }
 
 void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                            StageExecutor& executor, int timeout_ms, bool shared_memory) {
@@ -178,6 +219,23 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
         if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
         while (auto request = receive_frame(fd, timeout_ms)) {
             try {
+                bool has_window_spec = false;
+                if (request->kind == Kind::window_spec) {
+                    const Kind expected_data = shared_memory ? Kind::shared_data : Kind::data;
+                    if (request->stage_index != index ||
+                        request->plan_fingerprint != hello.plan_fingerprint ||
+                        request->geometry.hc != plan.geometry.hc ||
+                        request->geometry.n_embd != plan.geometry.n_embd || !request->window)
+                        throw std::runtime_error("bad worker window specification");
+                    error.clear();
+                    if (!executor.begin_window(*request->window, request->request_id, request->window_id, error))
+                        throw std::runtime_error(error.empty() ? "window metadata rejected" : error);
+                    auto activation = receive_frame(fd, timeout_ms);
+                    if (!activation) throw std::runtime_error("worker closed after window specification");
+                    require_match(*activation, *request, expected_data);
+                    request = std::move(activation);
+                    has_window_spec = true;
+                }
                 if (request->kind != (shared_memory ? Kind::shared_data : Kind::data) ||
                     request->stage_index != index ||
                     request->plan_fingerprint != hello.plan_fingerprint ||
@@ -213,12 +271,15 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                 send_frame(fd, reply, timeout_ms);
                 auto commit = receive_frame(fd, timeout_ms);
                 if (!commit) { executor.abandon_window(); break; }
-                require_match(*commit, *request, Kind::commit);
+                require_match(*commit, *request, has_window_spec ? Kind::commit_prefix : Kind::commit);
                 error.clear();
-                if (!executor.commit_window(request->request_id, request->window_id, error))
+                const bool committed = has_window_spec
+                    ? executor.commit_prefix(request->request_id, request->window_id, commit->keep_count, error)
+                    : executor.commit_window(request->request_id, request->window_id, error);
+                if (!committed)
                     throw std::runtime_error(error.empty() ? "worker commit failed" : error);
                 Frame ack = *commit;
-                ack.kind = Kind::committed;
+                ack.kind = has_window_spec ? Kind::committed_prefix : Kind::committed;
                 send_frame(fd, ack, timeout_ms);
             } catch (const std::exception& ex) {
                 executor.abandon_window();
@@ -277,28 +338,22 @@ void PipelineSession::initialize() {
         initialized_ = true;
     } catch (...) { poison(); throw; }
 }
-Frame PipelineSession::run_window(Frame initial) {
+Frame PipelineSession::execute_impl(Frame initial, const WindowSpec* spec) {
     if (!initialized_ || poisoned_) throw std::logic_error("pipeline is uninitialized or poisoned");
+    if (pending_) throw std::logic_error("previous window is still provisional");
     try {
         if (initial.kind != Kind::data ||
             initial.plan_fingerprint != plan_.fingerprint() ||
             initial.geometry.hc != plan_.geometry.hc ||
             initial.geometry.n_embd != plan_.geometry.n_embd)
             throw std::invalid_argument("initial frame doesn't match plan");
+        (void) encode(initial); // reject malformed payload before worker contact
         if (initial.request_id == last_request_ && initial.window_id <= last_window_)
             throw std::invalid_argument("stale or replayed window ID");
-        const uint64_t committed_request = initial.request_id;
-        const uint64_t committed_window = initial.window_id;
-        // Execution phase: every stage returns provisional data; no stage commits.
-        // Only one window owns the shared slot. Never overwrite until commits finish.
-        size_t floats = 0;
-        size_t bytes = 0;
+        if (spec) spec->validate(initial.rows);
+        const size_t floats = static_cast<size_t>(initial.rows) * plan_.geometry.floats_per_row();
+        const size_t bytes = floats * sizeof(float); // capped by encode(initial)
         if (shared_memory_) {
-            // Validation checks geometry multiplication, byte cap and exact shape
-            // before any host size arithmetic or mapped-slot write.
-            (void) encode(initial);
-            floats = static_cast<size_t>(initial.rows) * plan_.geometry.floats_per_row();
-            bytes = floats * sizeof(float);
             shared_->store(initial.payload);
             initial.payload.clear();
             initial.kind = Kind::shared_data;
@@ -306,6 +361,12 @@ Frame PipelineSession::run_window(Frame initial) {
         }
         for (size_t i = 0; i < fds_.size(); ++i) {
             initial.stage_index = static_cast<uint32_t>(i);
+            if (spec) {
+                Frame context = control(plan_, i, Kind::window_spec,
+                                        initial.request_id, initial.window_id, initial.rows);
+                context.window = *spec;
+                send_frame(fds_[i], context, timeout_ms_);
+            }
             send_frame(fds_[i], initial, timeout_ms_);
             auto answer = receive_frame(fds_[i], timeout_ms_);
             if (!answer) throw std::runtime_error("worker closed before replying");
@@ -316,26 +377,57 @@ Frame PipelineSession::run_window(Frame initial) {
                 throw std::runtime_error("shared activation checksum mismatch after worker reply");
             initial = std::move(*answer);
         }
-        // Commit phase: acknowledge every stage before publishing final output.
-        // A failed commit may leave a partial transaction; poison all workers.
-        for (size_t i = 0; i < fds_.size(); ++i) {
-            Frame request = control(plan_, i, Kind::commit,
-                                    initial.request_id, initial.window_id, initial.rows);
-            send_frame(fds_[i], request, timeout_ms_);
-            auto reply = receive_frame(fds_[i], timeout_ms_);
-            if (!reply) throw std::runtime_error("worker exited during commit");
-            if (reply->kind == Kind::failure)
-                throw std::runtime_error("stage " + std::to_string(i) + " commit failed: " + reply->error);
-            require_match(*reply, request, Kind::committed);
-        }
         if (shared_memory_) {
             initial.kind = Kind::data;
             initial.payload = shared_->load(floats);
             initial.shared_checksum = 0;
         }
-        last_request_ = committed_request;
-        last_window_ = committed_window;
-        return initial;
+        // Provisional output can be inspected to determine speculative n_keep.
+        // It must not be published as committed inference or saved as session state.
+        provisional_ = std::move(initial);
+        pending_ = true;
+        pending_spec_ = (spec != nullptr);
+        return provisional_;
     } catch (...) { poison(); throw; }
+}
+Frame PipelineSession::commit_impl(uint32_t n_keep) {
+    if (!initialized_ || poisoned_ || !pending_)
+        throw std::logic_error("no live provisional window to commit");
+    // Invalid client input does not mutate worker state; permit a corrected count.
+    if (n_keep > provisional_.rows) throw std::invalid_argument("accepted prefix exceeds window rows");
+    try {
+        for (size_t i = 0; i < fds_.size(); ++i) {
+            Frame request = control(plan_, i, pending_spec_ ? Kind::commit_prefix : Kind::commit,
+                                    provisional_.request_id, provisional_.window_id, provisional_.rows);
+            if (pending_spec_) request.keep_count = n_keep;
+            send_frame(fds_[i], request, timeout_ms_);
+            auto reply = receive_frame(fds_[i], timeout_ms_);
+            if (!reply) throw std::runtime_error("worker exited during commit");
+            if (reply->kind == Kind::failure)
+                throw std::runtime_error("stage " + std::to_string(i) + " commit failed: " + reply->error);
+            require_match(*reply, request, pending_spec_ ? Kind::committed_prefix : Kind::committed);
+            if (pending_spec_ && reply->keep_count != n_keep)
+                throw std::runtime_error("worker accepted-prefix acknowledgment mismatch");
+        }
+        Frame output = std::move(provisional_);
+        last_request_ = output.request_id;
+        last_window_ = output.window_id;
+        pending_ = false;
+        pending_spec_ = false;
+        return output;
+    } catch (...) { poison(); throw; }
+}
+Frame PipelineSession::run_window(Frame initial) {
+    const uint32_t rows = initial.rows;
+    (void) execute_impl(std::move(initial), nullptr);
+    return commit_impl(rows);
+}
+Frame PipelineSession::execute_window(Frame initial, const WindowSpec& spec) {
+    return execute_impl(std::move(initial), &spec);
+}
+Frame PipelineSession::commit_pending(uint32_t n_keep) {
+    if (!pending_ || !pending_spec_)
+        throw std::logic_error("no metadata-bearing provisional window to commit");
+    return commit_impl(n_keep);
 }
 } // namespace strata::heterogeneous

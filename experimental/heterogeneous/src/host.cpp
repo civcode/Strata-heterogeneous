@@ -15,9 +15,16 @@
 #include <utility>
 
 namespace strata::heterogeneous {
+void WindowSpec::validate(uint32_t rows) const {
+    if (!rows || rows > max_window_tokens || token_ids.size() != rows || pos0 < 0 ||
+        static_cast<uint64_t>(pos0) > static_cast<uint64_t>(INT64_MAX) - (rows - 1))
+        throw std::invalid_argument("invalid token window count or position");
+    for (int32_t token : token_ids)
+        if (token < 0) throw std::invalid_argument("negative token id in window");
+}
 namespace {
 constexpr uint32_t magic = 0x58485453;  // STHX in little endian
-constexpr uint16_t version = 3;
+constexpr uint16_t version = 4;
 constexpr size_t max_failure_bytes = 1024;
 
 uint64_t checked_add(uint64_t a, uint64_t b) {
@@ -72,6 +79,10 @@ uint32_t expected_bytes(const Frame& f) {
     return static_cast<uint32_t>(n);
 }
 void validate_frame(const Frame& f) {
+    if (f.kind != Kind::window_spec && f.window)
+        throw std::invalid_argument("unexpected window specification");
+    if (f.kind != Kind::commit_prefix && f.kind != Kind::committed_prefix && f.keep_count)
+        throw std::invalid_argument("unexpected accepted-token count");
     if (!f.request_id || !f.plan_fingerprint || !f.rows || !f.geometry.hc || !f.geometry.n_embd)
         throw std::invalid_argument("frame has unset request, plan, rows, or geometry");
     const bool zero_identity = f.identity == std::array<uint32_t, 4>{};
@@ -85,6 +96,18 @@ void validate_frame(const Frame& f) {
             if (!zero_identity || !f.payload.empty() || !f.error.empty())
                 throw std::invalid_argument("shared_data must carry only the mapped-buffer checksum");
             (void) expected_bytes(f);
+            break;
+        case Kind::window_spec:
+            if (!zero_identity || f.shared_checksum || !f.payload.empty() ||
+                !f.error.empty() || !f.window)
+                throw std::invalid_argument("invalid window specification frame");
+            f.window->validate(f.rows);
+            break;
+        case Kind::commit_prefix:
+        case Kind::committed_prefix:
+            if (!zero_identity || f.shared_checksum || !f.payload.empty() ||
+                !f.error.empty() || f.keep_count > f.rows)
+                throw std::invalid_argument("invalid accepted-prefix control");
             break;
         case Kind::failure:
             if (f.shared_checksum || !zero_identity || !f.payload.empty() || f.error.empty() || f.error.size() > max_failure_bytes)
@@ -234,6 +257,12 @@ std::vector<uint8_t> encode(const Frame& f) {
     else if (f.kind == Kind::hello || f.kind == Kind::hello_shared)
         for (uint32_t word : f.identity) add_u32(payload, word);
     else if (f.kind == Kind::shared_data) add_u32(payload, f.shared_checksum);
+    else if (f.kind == Kind::window_spec) {
+        add_u64(payload, static_cast<uint64_t>(f.window->pos0));
+        add_u32(payload, static_cast<uint32_t>(f.window->token_ids.size()));
+        for (int32_t token : f.window->token_ids) add_u32(payload, static_cast<uint32_t>(token));
+    } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix)
+        add_u32(payload, f.keep_count);
     std::vector<uint8_t> bytes;
     bytes.reserve(wire_header_bytes + payload.size());
     add_u32(bytes, magic); add_u16(bytes, version); add_u16(bytes, static_cast<uint16_t>(f.kind));
@@ -267,7 +296,21 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         f.payload.resize(n / sizeof(float));
         if (n) std::memcpy(f.payload.data(), payload, n);
     } else if (f.kind == Kind::failure) f.error.assign(reinterpret_cast<const char*>(payload), n);
-    else if (f.kind == Kind::shared_data) {
+    else if (f.kind == Kind::window_spec) {
+        if (n < 12 || (n - 12) % 4 != 0 || get_u32(payload + 8) != (n - 12) / 4 ||
+            get_u32(payload + 8) > max_window_tokens)
+            throw std::invalid_argument("invalid token window wire length");
+        WindowSpec w;
+        w.pos0 = static_cast<int64_t>(get_u64(payload));
+        const uint32_t count = get_u32(payload + 8);
+        w.token_ids.reserve(count);
+        for (uint32_t i = 0; i < count; ++i)
+            w.token_ids.push_back(static_cast<int32_t>(get_u32(payload + 12 + 4 * i)));
+        f.window = std::move(w);
+    } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix) {
+        if (n != 4) throw std::invalid_argument("invalid accepted-prefix wire length");
+        f.keep_count = get_u32(payload);
+    } else if (f.kind == Kind::shared_data) {
         if (n != 4) throw std::invalid_argument("shared handoff digest has wrong length");
         f.shared_checksum = get_u32(payload);
     } else if (f.kind == Kind::hello || f.kind == Kind::hello_shared) {

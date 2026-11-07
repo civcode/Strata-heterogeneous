@@ -4,8 +4,8 @@
 // This header deliberately includes no CUDA/HIP types and must remain usable
 // by host-only builds. A production worker links exactly one GPU runtime.
 //
-// M1.8 implements the ordering/error boundary, not device kernels, model
-// loading, token metadata, KV ownership or GPU-based inference.
+// M1.9 adds explicit token/position and post-execution accepted-prefix
+// metadata. Neither milestone implements model loading or actual GPU inference.
 #include "strata_heterogeneous/host.hpp"
 
 #include <cstddef>
@@ -22,13 +22,22 @@ namespace strata::heterogeneous {
 //
 // prepare() must load/validate model identity, stage weights and device
 // capabilities before returning success (the CPU test fake does not).
-// Compute receives window metadata only: Strata's real Verifier::run also
-// needs token IDs, pos0, pool callbacks and commit(n_keep), which are NOT yet
-// present in protocol v3. Real inference is impossible until integrated.
+// v4 supplies token IDs and pos0 via begin_window(), and the accepted prefix
+// via enqueue_commit_prefix(). The real Verifier still needs a pool callback,
+// state lifetime management, device-local weights and decode/head integration.
+// The CPU fake cannot validate actual inference or GPU kernel behavior.
 class DeviceDriver {
 public:
     virtual ~DeviceDriver() = default;
     virtual bool prepare(const Plan& plan, size_t stage_index, std::string& error) = 0;
+
+    // Called before upload/execute when a real verifier window is requested.
+    // The driver must retain a safe copy of tokens/positions for execution.
+    // The default rejects: real GPU workers must not silently drop metadata.
+    virtual bool begin_window(const WindowSpec&, uint64_t, uint64_t, std::string& error) {
+        error = "device driver does not implement token/position windows";
+        return false;
+    }
 
     // h2d: copy from a borrowed, host-visible staging slot to owned device
     // storage. The pointer may be used until wait_upload succeeds/fails.
@@ -49,6 +58,12 @@ public:
     // Do not treat an enqueue as an acknowledged commit: wait is mandatory.
     virtual bool enqueue_commit(uint64_t request_id, uint64_t window_id,
                                 std::string& error) = 0;
+    // Verifier::commit(n_keep) after speculative acceptance has been computed.
+    // Must not translate n_keep to a full-window commit. Same wait_commit fence.
+    virtual bool enqueue_commit_prefix(uint64_t, uint64_t, uint32_t, std::string& error) {
+        error = "device driver does not implement accepted-prefix commit";
+        return false;
+    }
     virtual bool wait_commit(std::string& error) = 0;
 
     // Must not throw. After a failed/partial asynchronous operation abort()
@@ -75,6 +90,10 @@ public:
     bool run_staged_window(const Frame& metadata, ActivationView view,
                            std::string& error) override;
     bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) override;
+    bool begin_window(const WindowSpec& spec, uint64_t request_id,
+                      uint64_t window_id, std::string& error) override;
+    bool commit_prefix(uint64_t request_id, uint64_t window_id,
+                       uint32_t n_keep, std::string& error) override;
     void abandon_window() noexcept override;
     void shutdown() noexcept override;
 
@@ -91,6 +110,8 @@ private:
     bool aborted_ = false;
     uint64_t request_id_ = 0;
     uint64_t window_id_ = 0;
+    WindowSpec spec_;
+    bool has_spec_ = false;
 
     bool fail(const char* phase, std::string& error) noexcept;
     void abort_once() noexcept;

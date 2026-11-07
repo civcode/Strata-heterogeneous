@@ -46,13 +46,26 @@ struct Plan {
 // Device ordinals are backend-local. Does NOT discover GPUs.
 Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uint64_t model_fingerprint);
 
-// Protocol v3: v2 handshake/commit plus optional shared-memory data frames.
+// Protocol v4: explicit verifier window metadata and accepted-prefix commit.
+// v3 workers are intentionally rejected by the v4 protocol version.
 // Socket data carries R/bo/inject floats; shared_data carries a 32-bit digest.
 // The memfd is delivered separately via SCM_RIGHTS immediately after ready.
 enum class Kind : uint16_t {
     data = 1, failure = 2, hello = 3, ready = 4,
-    commit = 5, committed = 6, shared_data = 7, hello_shared = 8
+    commit = 5, committed = 6, shared_data = 7, hello_shared = 8,
+    window_spec = 9, commit_prefix = 10, committed_prefix = 11
 };
+// Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
+// tokens is NOT known until execution completes and is chosen at commit.
+// Token IDs must be nonnegative and fit the loaded model's vocabulary (the
+// actual vocabulary check is the responsibility of the GPU worker).
+struct WindowSpec {
+    int64_t pos0 = 0;
+    std::vector<int32_t> token_ids;
+    void validate(uint32_t rows) const;
+};
+constexpr uint32_t max_window_tokens = 8192; // protocol ceiling, not Verifier::max_t
+
 struct Frame {
     Kind kind = Kind::data;
     uint32_t stage_index = 0;
@@ -66,6 +79,8 @@ struct Frame {
     // hello/hello_shared: [backend, ordinal, first_layer, end_layer]; others: zero.
     std::array<uint32_t, 4> identity{};
     uint32_t shared_checksum = 0; // shared_data only, over mapped float32 bytes
+    std::optional<WindowSpec> window; // window_spec only
+    uint32_t keep_count = 0; // commit_prefix and committed_prefix only
 };
 
 constexpr uint32_t max_payload_bytes = 16 * 1024 * 1024;
@@ -134,6 +149,12 @@ public:
     // executor can override it to stage bytes to backend-owned device buffers.
     virtual bool run_staged_window(const Frame& metadata, ActivationView view, std::string& error);
     virtual bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) = 0;
+    // Optional v4 verifier metadata support. Default rejects rather than
+    // silently pretending that a real model can run without token positions.
+    virtual bool begin_window(const WindowSpec& spec, uint64_t request_id,
+                              uint64_t window_id, std::string& error);
+    virtual bool commit_prefix(uint64_t request_id, uint64_t window_id,
+                               uint32_t n_keep, std::string& error);
     virtual void abandon_window() noexcept = 0;
     virtual void shutdown() noexcept = 0;
 };
@@ -145,6 +166,10 @@ public:
     bool run_window(const Frame& input, Frame& output, std::string& error) override;
     bool run_staged_window(const Frame& metadata, ActivationView view, std::string& error) override;
     bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) override;
+    bool begin_window(const WindowSpec& spec, uint64_t request_id,
+                      uint64_t window_id, std::string& error) override;
+    bool commit_prefix(uint64_t request_id, uint64_t window_id,
+                       uint32_t n_keep, std::string& error) override;
     void abandon_window() noexcept override;
     void shutdown() noexcept override;
 private:
@@ -153,6 +178,8 @@ private:
     bool pending_ = false;
     uint64_t pending_request_ = 0;
     uint64_t pending_window_ = 0;
+    bool has_spec_ = false;
+    WindowSpec window_spec_;
 };
 
 // Workers send an identity hello before accepting data. Coordinator verifies
@@ -173,7 +200,15 @@ public:
                     bool shared_memory = false);
     ~PipelineSession();
     void initialize();
+    // Legacy one-call CPU path: implicitly commits all rows (v4 control
+    // with old commit kind); not valid for real speculative decode.
     Frame run_window(Frame initial);
+    // Verifier-style two-phase path: execute stages with token/position
+    // metadata, inspect provisional output, then choose n_keep in [0,rows].
+    // The provisional result is NOT published/committed model state.
+    Frame execute_window(Frame initial, const WindowSpec& spec);
+    Frame commit_pending(uint32_t n_keep);
+    bool has_pending() const { return pending_; }
     bool poisoned() const { return poisoned_; }
     bool initialized() const { return initialized_; }
 private:
@@ -186,7 +221,12 @@ private:
     std::unique_ptr<class SharedActivation> shared_;
     uint64_t last_request_ = 0;
     uint64_t last_window_ = 0;
+    bool pending_ = false;
+    bool pending_spec_ = false;
+    Frame provisional_;
     void poison() noexcept;
+    Frame execute_impl(Frame initial, const WindowSpec* spec);
+    Frame commit_impl(uint32_t n_keep);
 };
 
 // Legacy entrypoint is intentionally removed in v2. Use a PipelineSession

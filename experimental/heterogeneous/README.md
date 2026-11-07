@@ -38,7 +38,7 @@ cannot silently exchange activations. Model fingerprint derivation from Strata's
 loaded model is **not yet implemented**; callers must provide the same stable
 nonzero identity on every worker.
 
-## Wire protocol v3 — staged handoff, commit, and optional shared memory
+## Wire protocol v4 — verifier window metadata, deferred commit, and shared memory
 
 POSIX Unix-domain stream sockets. Little-endian, IEEE754 float32.
 A fixed 56-byte header carries magic/version, kind, stage, rows, geometry,
@@ -258,3 +258,32 @@ Oberon agent handoff: validate commit in
 `/home/chris/workspace/Strata-heterogeneous`, stage any patch or test logs
 only in `/home/chris/tmp/strata-heterogeneous`, and do not inspect the
 unrelated `Strata-dev` locations.
+
+### Milestone M1.9: verifier request and accepted-prefix commit (CPU-only)
+
+Wire protocol **v4** adds a per-window `WindowSpec` control frame carrying
+the starting token position (`pos0`) and ordered token IDs. Workers must
+receive this metadata before activation bytes. The coordinator now supports
+`PipelineSession::execute_window(input,spec)` for provisional execution,
+followed **after acceptance is known** by
+`PipelineSession::commit_pending(n_keep)`. Each worker must acknowledge
+the exact accepted-token count, including zero, before the coordinator
+returns committed output. A failed stage or mismatched acknowledgement
+poisons the session. Partial commits cannot be rolled back.
+
+The original `run_window(Frame)` remains for CPU mock tests and still
+commits the whole window immediately; it does not implement real speculative
+decode. Both original socket-data and opt-in shared-memory modes continue
+working under the v4 framing. v3 worker executables are not compatible.
+
+`DeviceStageExecutor` passes the new metadata to
+`DeviceDriver::begin_window` and `enqueue_commit_prefix` and requires a
+completed commit fence. Backends without these methods **reject** metadata
+rather than silently dropping it. The test suite includes real mock worker
+processes, both transport modes, invalid window metadata, zero/partial
+acceptance and incorrect commit acknowledgements.
+
+See [docs/VERIFIER_WINDOW_V4.md](docs/VERIFIER_WINDOW_V4.md) for the
+protocol and the Oberon integration handoff. No actual CUDA/HIP execution,
+model loading, state restoration, logits or GPU-specific acceptance logic
+is implemented or verified.

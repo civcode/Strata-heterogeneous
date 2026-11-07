@@ -91,14 +91,14 @@ owned by the stages that execute their layers.
    may be published after a failed or incomplete stage. Distinguish
    pre-mutation resource refusal from failure after state mutation.
    Abort or rebuild poisoned stage state rather than silently proceeding.
-6. **Preserve ABI:** the current protocol is **version 3**, little-endian
-   IEEE754 float32 with a 56-byte header and a 16 MiB data-payload cap.
-   Workers negotiate socket-data versus `hello_shared`; the coordinator
-   passes a size-sealed memfd via SCM_RIGHTS after `ready`. Only four
-   digest bytes cross the socket per `shared_data` window. Both modes use
-   per-window commit/committed messages. FNV-1a detects accidental
-   corruption, **not attacks**. Incompatible changes require a deliberate
-   version bump and new negative tests. Keep sockets local and trusted.
+6. **Preserve ABI:** the current wire protocol is **version 4**.
+   The 56-byte little-endian header remains, with a bounded
+   `window_spec` frame carrying verifier token IDs and pos0 before each
+   activation, plus `commit_prefix` and `committed_prefix` frames
+   carrying the accepted-token count chosen *after* execution. v3 workers
+   are incompatible. The v3-style socket-data and optional memfd transport
+   modes remain available under v4. Keep frame and acknowledgement checks.
+   FNV-1a is not an authenticator; use only with trusted local processes.
 7. **Opt-in:** isolate new code and build flags from production defaults.
    Never alter a normal Strata backend's outputs or performance by
    default. Avoid speculative changes to unrelated kernels or model
@@ -244,6 +244,36 @@ cross-runtime transfer checks on Oberon.
 **Next:** add the real verifier request/commit metadata and model identity
 contract, then implement stage-owned CUDA and HIP binaries and validate on
 Oberon. Keep all normal inference defaults untouched.
+
+### M1.9 — Verifier token metadata and deferred prefix commit (CPU-only)
+
+- Protocol **v4** carries `WindowSpec {pos0, token_ids}` in a
+  `window_spec` control frame before each activation handoff.
+  `WindowSpec::validate` checks lengths, nonnegative tokens/positions,
+  a conservative 8192-row protocol cap, and position overflow.
+- A caller uses `PipelineSession::execute_window(frame,spec)` to obtain
+  provisional data. Only **after** computing acceptance may it call
+  `PipelineSession::commit_pending(n_keep)` with (0 <= n_keep <= T).
+  The coordinator requires a matching `committed_prefix` from every stage
+  before returning the committed result. No rollback is provided.
+- `StageExecutor::begin_window` and `commit_prefix` default to rejecting
+  unsupported real-verifier work. `DeviceDriver::begin_window` and
+  `enqueue_commit_prefix` must be implemented in real backend adapters;
+  never silently treat a partial commit as a full-window commit.
+- The legacy `run_window` call remains for CPU mocks only.
+  `tests/window_tests.cpp` runs wire, subprocess, CUDA-labeled/HIP-labeled,
+  both IPC transports, driver metadata and fault-injection checks.
+- Read [docs/VERIFIER_WINDOW_V4.md](docs/VERIFIER_WINDOW_V4.md) before
+  integrating. This is **not** real inference: final logits, expert pool
+  callbacks, model weights, device buffers, GDN, KV, PLE and prefill remain.
+- The native Oberon coding agent must work only in
+  `/home/chris/workspace/Strata-heterogeneous`, use
+  `/home/chris/tmp/strata-heterogeneous` for handoff artifacts,
+  and completely avoid both unrelated `Strata-dev` paths.
+
+**Next:** verify the real `Verifier::run` and `commit(n_keep)` interfaces
+and implement a concrete CUDA-only stage adapter before adding HIP stages.
+GPU validation belongs on Oberon.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
