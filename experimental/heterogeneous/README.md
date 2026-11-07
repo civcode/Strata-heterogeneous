@@ -217,3 +217,44 @@ direct/fallback parity, direct worker dispatch, and fail-closed behavior
 when an executor modifies mapped bytes and subsequently returns an error.
 Full Strata, model weights, GPU DMA and numerical GPU parity are still
 untested and unimplemented.
+
+### Milestone M1.8: Backend-neutral device transfer ordering (CPU-only)
+
+`include/strata_heterogeneous/device.hpp` defines `DeviceDriver`, a narrow
+interface for a **single** backend-specific worker. `DeviceStageExecutor`
+adapts it to the existing staged/session protocol without linking any GPU
+runtime into the host library. Each provisional window must execute:
+
+1. enqueue host-to-device transfer, then **wait for completion**;
+2. enqueue this stage's layer execution, then **wait for completion**;
+3. enqueue device-to-host transfer, then **wait for completion**;
+4. return a provisional result; only after the pipeline asks for commit,
+   enqueue stage-local commit and **wait for completion**.
+
+Both socket-data and opt-in memfd transports use this ordering. On a failed
+enqueue, wait, commit or thrown driver exception, the stage is poisoned and
+aborted; neither result nor next window is published. A failed D2H operation
+may have partially modified the shared host slot, so *fail-stop is not
+rollback*. Real drivers must impose finite GPU wait deadlines and must drain
+in-flight DMA before relinquishing borrowed host memory, or terminate their
+worker process when an unrecoverable GPU hang prevents safe cleanup.
+
+`strata_heterogeneous_device_tests` uses a CPU fake with queued operations.
+It checks upload/execute/download/commit ordering, stage identity, successful
+two-stage worker pipelines in both transports, and injected transfer/commit
+failures (including actual child-process error propagation). It does **not**
+execute or test CUDA/HIP kernels.
+
+**Remaining real-Verifier requirements:** `Verifier::run(T, tokens, pos0,
+pool, user, out, err)` requires token IDs, position, pool callbacks and head
+outputs. Its `commit(n_keep)` needs the accepted-prefix length. Protocol
+v3 only carries activations and request/window IDs; its metadata is not yet
+sufficient for real inference. Derive model identity from loaded weights,
+extend the control contract deliberately (with versioning and negative tests),
+then implement CUDA and HIP drivers in separate worker binaries. Existing
+stateful sessions, KV/GDN/PLE/expert caches must remain stage-owned.
+
+Oberon agent handoff: validate commit in
+`/home/chris/workspace/Strata-heterogeneous`, stage any patch or test logs
+only in `/home/chris/tmp/strata-heterogeneous`, and do not inspect the
+unrelated `Strata-dev` locations.

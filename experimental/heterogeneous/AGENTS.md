@@ -213,6 +213,38 @@ verifier (including stage-local weights, KV, run/commit and explicit GPU
 events); validate CUDA-only stages first, then add the HIP process and
 cross-runtime transfer checks on Oberon.
 
+
+### M1.8 — Device transfer lifecycle (implemented, simulated only)
+
+- `DeviceDriver` is a runtime-neutral asynchronous device interface:
+  prepare, enqueue/wait H2D, enqueue/wait stage execution, enqueue/wait D2H,
+  enqueue/wait commit, abort, and shutdown.
+- `DeviceStageExecutor` provides strict stage/plan/window/view validation.
+  Both socket and shared-memory workers can use the adapter. Each wait must
+  prove completion before publishing a provisional result or commit ACK.
+- Every driver failure or exception poisons the stage, aborts the in-flight
+  work and prevents another window. A partially written host activation
+  or partially committed stage cannot be recovered by assuming rollback.
+- **Driver implementers:** put finite deadlines on GPU waits, ensure abort
+  drains all pending DMA before borrowed host pointers can be unmapped,
+  or terminate the worker if the GPU cannot be safely drained. Do not put
+  CUDA/HIP runtime types into the host library or combine both runtimes
+  in one process.
+- The `strata_heterogeneous_device_tests` target runs CPU-only queued fake
+  device operations, numerical parity of mocked stage ranges, injected
+  faults at every transfer/commit boundary, and real subprocess poisoning
+  in both transport modes.
+- **Real integration blocker:** actual `Verifier::run` requires tokens,
+  pos0, pool callbacks and head outputs; `commit(n_keep)` needs accepted
+  prefix length. These are absent from v3 `Frame`. Before implementing
+  real GPU execution, design versioned control messages and a model-loaded
+  identity attestation, with negative tests. The fake deliberately does not
+  claim to perform GPU inference or validate actual model state.
+
+**Next:** add the real verifier request/commit metadata and model identity
+contract, then implement stage-owned CUDA and HIP binaries and validate on
+Oberon. Keep all normal inference defaults untouched.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The
