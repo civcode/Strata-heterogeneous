@@ -3064,3 +3064,17 @@ option(STRATA_BUILD_SPLIT "Build strata-split: sFNX's split-every-layer engine, 
 if(STRATA_BUILD_SPLIT)
   add_subdirectory(src/split)
 endif()
+
+# ---- Experimental heterogeneous CUDA worker: manually opted in, CUDA-only ----
+# Adds a new executable and its CPU protocol contracts. No default engine path
+# or GPU process starts during the build. HIP workers are separate images.
+option(STRATA_BUILD_HETERO_CUDA_WORKER "Build supervised experimental CUDA model-loading worker (no automatic execution)" OFF)
+if(STRATA_BUILD_HETERO_CUDA_WORKER)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT STRATA_ENABLE_CUDA OR
+     STRATA_ENABLE_HIP OR STRATA_HIP_GFX906 OR STRATA_ENABLE_SYCL OR STRATA_ENABLE_METAL)
+    message(FATAL_ERROR "The heterogeneous CUDA worker needs a Linux CUDA-only Strata build")
+  endif()
+  set(STRATA_HETERO_CUDA_VERIFIER ON)
+  set(STRATA_HETERO_BUILD_CUDA_WORKER ON)
+  add_subdirectory(experimental/heterogeneous)
+endif()

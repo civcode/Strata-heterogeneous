@@ -423,3 +423,23 @@ This is **not yet a runnable worker executable**. Live GPU loading,
 expert numerical parity, watchdog/failed-CUDA teardown and mixed CUDA/HIP
 inference remain untested or unimplemented. See
 [docs/CUDA_FILE_EXPERTS_M115.md](docs/CUDA_FILE_EXPERTS_M115.md).
+
+
+### M1.16 — Supervised CUDA model-loading worker (opt-in)
+
+An explicitly enabled native CUDA-only executable now assembles the M1.12
+nonfinal/final verifier with M1.13 stage weights, M1.14 owned CUDA session,
+and M1.15 real file-backed Q2_0 experts. It reuses the existing
+`WorkerProcessGroup` child supervision and v4/STFR worker protocols.
+Startup validates a versioned, operator-authored configuration file,
+pack-index SHA-256, expert profile header, stage/plan identity and compiled
+model geometry before **any CUDA runtime call**. The supervisor passes
+`--config /absolute/path` only to CUDA child executables. No paths are
+searched or inferred. A live worker also requires the independent environment
+approval gate `STRATA_HETERO_CUDA_LIVE=I_APPROVE_CUDA_RUNTIME`.
+
+CPU-only configuration and argv tests run in standalone builds. To build the
+CUDA worker executable from the top-level native CUDA engine, explicitly
+configure with `STRATA_BUILD_HETERO_CUDA_WORKER=ON` (OFF by default). No
+GPU loading, parity, prefill, HIP inference or live teardown was run in this
+increment. See [docs/CUDA_WORKER_M116.md](docs/CUDA_WORKER_M116.md).

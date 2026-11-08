@@ -87,11 +87,16 @@ WorkerProcessGroup& WorkerProcessGroup::operator=(WorkerProcessGroup&& other) no
 
 WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_executable,
-                                            const std::string& hip_executable, bool shared_memory) {
+                                            const std::string& hip_executable, bool shared_memory,
+                                            const std::string& cuda_config_path) {
     plan.validate();
     if (cuda_executable.empty() || hip_executable.empty() ||
         cuda_executable.front() != '/' || hip_executable.front() != '/')
         throw std::invalid_argument("worker executable paths must be absolute");
+    if (!cuda_config_path.empty() && (cuda_config_path.front() != '/' ||
+        cuda_config_path.find('\n') != std::string::npos ||
+        cuda_config_path.find('\r') != std::string::npos))
+        throw std::invalid_argument("CUDA worker config path must be absolute and contain no line breaks");
     const std::string spec = plan_spec(plan);
     WorkerProcessGroup group;
     group.children_.reserve(plan.stages.size()); // no allocation after a successful spawn
@@ -118,6 +123,10 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                 std::to_string(plan.geometry.hc), std::to_string(plan.geometry.n_embd),
                 std::to_string(plan.model_fingerprint), std::to_string(i)
             };
+            if (!cuda_config_path.empty() && plan.stages[i].backend == Backend::cuda) {
+                args.push_back("--config");
+                args.push_back(cuda_config_path);
+            }
             std::vector<char*> argv;
             for (auto& a : args) argv.push_back(a.data());
             argv.push_back(nullptr);

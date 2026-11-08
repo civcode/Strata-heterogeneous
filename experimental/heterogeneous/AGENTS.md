@@ -421,6 +421,33 @@ explicit worker-owned provider to be implemented before runnable inference.
   Actions or initiate NVIDIA recovery.
 - See `docs/CUDA_FILE_EXPERTS_M115.md`.
 
+### M1.16 — Supervised CUDA model-loading worker (source integrated)
+
+- Build only with `STRATA_BUILD_HETERO_CUDA_WORKER=ON` in a Linux,
+  CUDA-only full-engine build. It does not alter the default `strata`
+  executable. The worker consumes the existing supervisor fd 3, requires
+  `--config /absolute/path`, and never loads HIP in the CUDA process.
+- The new CPU-only preflight validates strict v1 config, stage identity,
+  SHA-256 of the authorized pack's `index.txt`, and STRP/v1 expert profile
+  header. The model fingerprint comes from the **trusted caller**, not an
+  index hash or a claim of binary attestation. No config/profile discovery.
+- Inference runtime requires the explicit opt-in gate
+  `STRATA_HETERO_CUDA_LIVE=I_APPROVE_CUDA_RUNTIME`, after a separate owner
+  approval to recover NVIDIA. No developer/agent should set this gate during
+  CPU or build-only validation.
+- The worker creates `CudaStageResources`, then attaches real
+  `CudaFileExperts`, then creates a `CudaVerifierDriver` (nonfinal) or
+  `CudaFinalVerifierExecutor` (final with prior handoff stage). The verifier
+  is destroyed before the worker frees the expert/cache and weight/session
+  resources. No prefill or rollback is implemented. No HIP worker is added.
+- `WorkerProcessGroup::launch` accepts one optional CUDA config path;
+  the mock/hip argv contract remains unchanged when absent.
+- Expected **17** CTest targets in standalone experimental builds after
+  adding config/argv tests; compile native CUDA executable and link against
+  real strata_engine on Oberon using `--parallel 28`, with NO GPU runtime
+  startup, NVIDIA reset/reboot or GitHub Actions. Preserve the untracked
+  pool probe and avoid `Strata-dev`. See `docs/CUDA_WORKER_M116.md`.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

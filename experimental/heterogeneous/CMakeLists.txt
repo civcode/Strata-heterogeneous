@@ -6,7 +6,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 option(STRATA_HETERO_HOST_TESTS "Build CPU-only cross-backend host protocol tests" ON)
-add_library(strata_heterogeneous_host STATIC src/host.cpp src/session.cpp src/process.cpp src/shared.cpp src/activation.cpp src/device.cpp src/final_result.cpp src/final_pipeline.cpp src/stage_weights.cpp)
+add_library(strata_heterogeneous_host STATIC src/host.cpp src/session.cpp src/process.cpp src/shared.cpp src/activation.cpp src/device.cpp src/final_result.cpp src/final_pipeline.cpp src/stage_weights.cpp
+  src/cuda_worker_config.cpp src/cuda_worker_bootstrap.cpp)
 target_include_directories(strata_heterogeneous_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(strata_heterogeneous_host PUBLIC cxx_std_17)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -30,6 +31,23 @@ if(STRATA_HETERO_CUDA_VERIFIER)
   target_compile_options(strata_heterogeneous_cuda_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# M1.16: native executable is available only when this subproject is
+# deliberately added by the top-level CUDA-only Strata build. Do not
+# attempt to link the executable in standalone CPU or HIP configurations.
+option(STRATA_HETERO_BUILD_CUDA_WORKER "Build opt-in native CUDA model-loading worker" OFF)
+if(STRATA_HETERO_BUILD_CUDA_WORKER)
+  if(NOT STRATA_HETERO_CUDA_VERIFIER OR NOT TARGET strata_engine)
+    message(FATAL_ERROR "CUDA worker requires the parent CUDA strata_engine target and STRATA_HETERO_CUDA_VERIFIER=ON")
+  endif()
+  add_executable(strata_heterogeneous_cuda_worker src/cuda_worker_main.cpp)
+  target_link_libraries(strata_heterogeneous_cuda_worker PRIVATE
+    strata_heterogeneous_cuda_verifier strata_engine)
+  target_compile_features(strata_heterogeneous_cuda_worker PRIVATE cxx_std_17)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_cuda_worker PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endif()
+
 # Two independent CPU mock executables. They deliberately do not initialize
 # either GPU runtime, but verify that each worker has a backend-specific image.
 foreach(_mock_backend IN ITEMS cuda hip)
@@ -51,6 +69,21 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M1.16 startup config and supervisor argv parsers: strictly CPU-only.
+  add_executable(strata_heterogeneous_cuda_worker_config_tests tests/cuda_worker_config_tests.cpp)
+  target_link_libraries(strata_heterogeneous_cuda_worker_config_tests PRIVATE strata_heterogeneous_host)
+  add_test(NAME strata_heterogeneous_cuda_worker_config_tests
+    COMMAND strata_heterogeneous_cuda_worker_config_tests)
+  set_tests_properties(strata_heterogeneous_cuda_worker_config_tests PROPERTIES TIMEOUT 20)
+  add_executable(strata_heterogeneous_cuda_worker_bootstrap_tests tests/cuda_worker_bootstrap_tests.cpp)
+  target_link_libraries(strata_heterogeneous_cuda_worker_bootstrap_tests PRIVATE strata_heterogeneous_host)
+  add_test(NAME strata_heterogeneous_cuda_worker_bootstrap_tests
+    COMMAND strata_heterogeneous_cuda_worker_bootstrap_tests)
+  set_tests_properties(strata_heterogeneous_cuda_worker_bootstrap_tests PROPERTIES TIMEOUT 20)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_cuda_worker_config_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(strata_heterogeneous_cuda_worker_bootstrap_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
   # Compile the SAME adapter source against explicit CPU API doubles. These
   # tests validate contract/lifecycle only, never CUDA or model numerics.
   add_executable(strata_heterogeneous_cuda_verifier_contract_tests
