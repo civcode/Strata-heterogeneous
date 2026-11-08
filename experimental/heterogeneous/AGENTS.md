@@ -478,6 +478,30 @@ explicit worker-owned provider to be implemented before runnable inference.
   untouched and do not access either `Strata-dev` tree. No Actions,
   NVIDIA reset or reboot.
 
+### M1.18 — Bounded stage-window admission and fail-closed commits
+
+- Only the opt-in live CUDA worker supplies `WindowLimits` to the v4
+  intermediate or STFR final worker server. A CPU-only `WindowAdmission`
+  validates monotonic request/window IDs, token IDs against `n_vocab`,
+  context positions, max_t, geometry and 16 MiB payload bounds before
+  calling either native verifier's `begin_window`.
+- Shared-memory inputs are byte-checked for finite IEEE-754 float32 values
+  after their checksum; intermediate CUDA stage outputs are checked before
+  publishing even a provisional activation frame.
+- The final-stage result is checked through existing STFR rules.
+  A commit is only acknowledged for an exactly matching positive accepted
+  prefix after the verifier's commit/wait reports success; n_keep=0 requires
+  real restoration and is refused. All failures poison worker state.
+- `STRATA_HETERO_WINDOW_TRACE=1` is opt-in and prints only stage, request,
+  window, position, row count and status, not token IDs or model contents.
+  Never set `STRATA_HETERO_CUDA_LIVE` for CPU-only validation.
+- Existing mock and HIP code paths omit WindowLimits and retain their
+  legacy semantics. Expect 20 standalone CTest targets (2 new CPU-only
+  tests). Native compilation/link and any live CUDA numerical verification
+  remain Oberon approval gates. Build with `--parallel 28`; no Actions,
+  GPU reset or reboot. Preserve the untracked probe and stash.
+- See `docs/WINDOW_ADMISSION_M118.md`.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

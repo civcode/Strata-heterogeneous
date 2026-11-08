@@ -2,9 +2,13 @@
 // Production backends will implement StageExecutor in separate CUDA/HIP binaries.
 #include "strata_heterogeneous/host.hpp"
 #include "strata_heterogeneous/shared.hpp"
+#include "strata_heterogeneous/window_admission.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <sys/socket.h>
 #include <utility>
 
@@ -38,6 +42,14 @@ void require_match(const Frame& actual, const Frame& requested, Kind kind) {
         actual.geometry.hc != requested.geometry.hc ||
         actual.geometry.n_embd != requested.geometry.n_embd)
         throw std::runtime_error("stale or mismatched worker reply");
+}
+
+void trace_window(const WindowAdmission* gate, const char* phase) noexcept {
+    if (!gate) return;
+    const char* opt = std::getenv("STRATA_HETERO_WINDOW_TRACE");
+    if (!opt || std::strcmp(opt, "1") != 0) return;
+    try { std::fprintf(stderr, "%s\n", gate->diagnostic(phase).c_str()); }
+    catch (...) {} // diagnostics can never bypass fail-stop
 }
 
 void send_failure(int fd, Frame request, const std::string& reason, int timeout_ms) {
@@ -202,11 +214,14 @@ void MockStageExecutor::abandon_window() noexcept { pending_ = false; has_spec_ 
 void MockStageExecutor::shutdown() noexcept { pending_ = false; has_spec_ = false; prepared_ = false; }
 
 void serve_worker_stateful(int fd, const Plan& plan, size_t index,
-                           StageExecutor& executor, int timeout_ms, bool shared_memory) {
+                           StageExecutor& executor, int timeout_ms, bool shared_memory,
+                           const WindowLimits* limits) {
     plan.validate();
     if (index >= plan.stages.size()) throw std::invalid_argument("worker index out of range");
     if (timeout_ms < 0) throw std::invalid_argument("negative worker timeout");
     const Frame hello = control(plan, index, shared_memory ? Kind::hello_shared : Kind::hello);
+    std::unique_ptr<WindowAdmission> gate;
+    if (limits) gate = std::make_unique<WindowAdmission>(plan, index, *limits);
     std::string error;
     if (!executor.prepare(plan, index, error)) {
         send_failure(fd, hello, error.empty() ? "worker preparation failed" : error, timeout_ms);
@@ -231,6 +246,9 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                         request->geometry.n_embd != plan.geometry.n_embd || !request->window)
                         throw std::runtime_error("bad worker window specification");
                     error.clear();
+                    if (gate && !gate->begin(*request->window, request->request_id, request->window_id, error))
+                        throw std::runtime_error(error);
+                    trace_window(gate.get(), "admitted");
                     if (!executor.begin_window(*request->window, request->request_id, request->window_id, error))
                         throw std::runtime_error(error.empty() ? "window metadata rejected" : error);
                     auto activation = receive_frame(fd, timeout_ms);
@@ -239,12 +257,16 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                     request = std::move(activation);
                     has_window_spec = true;
                 }
+                if (gate && !has_window_spec)
+                    throw std::runtime_error("CUDA worker requires a verifier window_spec before activation");
                 if (request->kind != (shared_memory ? Kind::shared_data : Kind::data) ||
                     request->stage_index != index ||
                     request->plan_fingerprint != hello.plan_fingerprint ||
                     request->geometry.hc != plan.geometry.hc ||
                     request->geometry.n_embd != plan.geometry.n_embd)
                     throw std::runtime_error("worker plan/stage/geometry mismatch");
+                if (gate && !gate->validate_input(*request, shared_memory, error))
+                    throw std::runtime_error(error);
                 Frame reply;
                 error.clear();
                 if (shared_memory) {
@@ -254,12 +276,16 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                     const size_t bytes = floats * sizeof(float); // capped by frame decode
                     if (shared.checksum(bytes) != request->shared_checksum)
                         throw std::runtime_error("shared activation checksum mismatch at stage entry");
+                    if (gate && !gate->validate_bytes(shared.data(), bytes, error))
+                        throw std::runtime_error(error);
                     Frame metadata = *request;
                     metadata.kind = Kind::data;
                     metadata.shared_checksum = 0;
                     ActivationView view(shared.data(), bytes, metadata.geometry, metadata.rows);
                     if (!executor.run_staged_window(metadata, view, error))
                         throw std::runtime_error(error.empty() ? "worker staged execution failed" : error);
+                    if (gate && !gate->provisional(shared.data(), bytes, error))
+                        throw std::runtime_error(error);
                     reply = *request;
                     reply.shared_checksum = shared.checksum(bytes);
                 } else {
@@ -269,22 +295,34 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                         throw std::runtime_error(error.empty() ? "worker execution failed" : error);
                     require_match(output, *request, Kind::data);
                     (void) encode(output); // validate exact shape before publication
+                    if (gate && !gate->provisional(
+                            reinterpret_cast<const uint8_t*>(output.payload.data()),
+                            output.payload.size() * sizeof(float), error))
+                        throw std::runtime_error(error);
                     reply = std::move(output);
                 }
+                trace_window(gate.get(), "provisional");
                 send_frame(fd, reply, timeout_ms);
                 auto commit = receive_frame(fd, timeout_ms);
                 if (!commit) { executor.abandon_window(); break; }
                 require_match(*commit, *request, has_window_spec ? Kind::commit_prefix : Kind::commit);
+                if (gate && !gate->check_commit(*commit, error))
+                    throw std::runtime_error(error);
                 error.clear();
                 const bool committed = has_window_spec
                     ? executor.commit_prefix(request->request_id, request->window_id, commit->keep_count, error)
                     : executor.commit_window(request->request_id, request->window_id, error);
                 if (!committed)
                     throw std::runtime_error(error.empty() ? "worker commit failed" : error);
+                if (gate && !gate->committed(commit->keep_count, error))
+                    throw std::runtime_error(error);
+                trace_window(gate.get(), "committed");
                 Frame ack = *commit;
                 ack.kind = has_window_spec ? Kind::committed_prefix : Kind::committed;
                 send_frame(fd, ack, timeout_ms);
             } catch (const std::exception& ex) {
+                trace_window(gate.get(), "failure");
+                if (gate) gate->poison();
                 executor.abandon_window();
                 send_failure(fd, *request, ex.what(), timeout_ms);
                 executor.shutdown();
@@ -292,6 +330,7 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
             }
         }
     } catch (...) {
+        if (gate) gate->poison();
         executor.abandon_window();
         executor.shutdown();
         throw;

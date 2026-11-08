@@ -10,6 +10,7 @@
 #include <vector>
 
 namespace strata::heterogeneous {
+struct WindowLimits;
 
 // Final verifier stages return head results, not another R|bo|inject buffer.
 // This interface is intentionally separate from StageExecutor::run_window:
@@ -30,7 +31,8 @@ public:
 void serve_final_stage_worker(int fd, const Plan& plan, size_t stage_index,
                               FinalStageExecutor& executor,
                               int timeout_ms = default_io_timeout_ms,
-                              bool shared_memory = false);
+                              bool shared_memory = false,
+                              const WindowLimits* limits = nullptr);
 
 // Owns only protocol state and the optional shared activation slot, never
 // child processes or caller-owned file descriptors. The final worker uses

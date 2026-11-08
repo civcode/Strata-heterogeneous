@@ -4,6 +4,7 @@
 #include "strata_heterogeneous/cuda_worker_config.hpp"
 #include "strata_heterogeneous/cuda_stage_resources.hpp"
 #include "strata_heterogeneous/cuda_native_stage.hpp"
+#include "strata_heterogeneous/window_admission.hpp"
 #include "strata_heterogeneous/cuda_file_experts.hpp"
 #include "strata_heterogeneous/cuda_verifier.hpp"
 #include "strata_heterogeneous/cuda_final_verifier.hpp"
@@ -131,16 +132,21 @@ int main(int argc,char** argv) {
                !owner.attach_experts(std::move(experts),error))
                 throw std::runtime_error("expert provider startup: "+error);
             auto bindings=owner.make_bindings();
+            const hetero::WindowLimits window_limits{
+                0, static_cast<int64_t>(config.max_cells),
+                static_cast<int64_t>(config.n_vocab), config.max_t};
             if(index+1==plan.stages.size()) {
                 hetero::CudaFinalVerifierExecutor final(bindings);
                 hetero::serve_final_stage_worker(3,plan,index,final,
-                    static_cast<int>(config.io_timeout_ms),invocation.shared_memory);
+                    static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
+                    &window_limits);
                 final.shutdown(); // before owner releases stage weights and experts
             } else {
                 hetero::CudaVerifierDriver driver(bindings);
                 hetero::DeviceStageExecutor executor(driver);
                 hetero::serve_worker_stateful(3,plan,index,executor,
-                    static_cast<int>(config.io_timeout_ms),invocation.shared_memory);
+                    static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
+                    &window_limits);
                 executor.shutdown();driver.shutdown();
             }
             native.shutdown(); // after verifier graphs, before stage weights

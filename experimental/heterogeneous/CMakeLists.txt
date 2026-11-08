@@ -7,7 +7,8 @@ endif()
 
 option(STRATA_HETERO_HOST_TESTS "Build CPU-only cross-backend host protocol tests" ON)
 add_library(strata_heterogeneous_host STATIC src/host.cpp src/session.cpp src/process.cpp src/shared.cpp src/activation.cpp src/device.cpp src/final_result.cpp src/final_pipeline.cpp src/stage_weights.cpp
-  src/cuda_worker_config.cpp src/cuda_worker_bootstrap.cpp)
+  src/cuda_worker_config.cpp src/cuda_worker_bootstrap.cpp
+  src/window_admission.cpp)
 target_include_directories(strata_heterogeneous_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(strata_heterogeneous_host PUBLIC cxx_std_17)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -69,6 +70,27 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M1.18: bounded protocol gate and forked CPU worker failures.
+  add_executable(strata_heterogeneous_window_admission_tests
+    tests/window_admission_tests.cpp)
+  target_link_libraries(strata_heterogeneous_window_admission_tests PRIVATE
+    strata_heterogeneous_host)
+  add_test(NAME strata_heterogeneous_window_admission_tests
+    COMMAND strata_heterogeneous_window_admission_tests)
+  set_tests_properties(strata_heterogeneous_window_admission_tests PROPERTIES TIMEOUT 20)
+  add_executable(strata_heterogeneous_window_admission_process_tests
+    tests/window_admission_process_tests.cpp)
+  target_link_libraries(strata_heterogeneous_window_admission_process_tests PRIVATE
+    strata_heterogeneous_host)
+  add_test(NAME strata_heterogeneous_window_admission_process_tests
+    COMMAND strata_heterogeneous_window_admission_process_tests)
+  set_tests_properties(strata_heterogeneous_window_admission_process_tests PROPERTIES TIMEOUT 30)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(_t strata_heterogeneous_window_admission_tests
+               strata_heterogeneous_window_admission_process_tests)
+      target_compile_options(${_t} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endforeach()
+  endif()
   # M1.17 NativeDense + PLE lifetime and failure contracts. Compile the
   # actual owner and new CUDA native-stage sources against CPU-only CUDA/core
   # doubles; no GPU or model files are opened.

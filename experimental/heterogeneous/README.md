@@ -460,3 +460,20 @@ The CPU-only contract test compiles real native-owner source against API
 doubles, including missing QKV, PLE types, partial allocations and teardown.
 GPU loading, PLE numerical parity and full inference **remain unverified**.
 See [docs/CUDA_NATIVE_PLE_M117.md](docs/CUDA_NATIVE_PLE_M117.md).
+
+
+### M1.18 — Bounded supervised CUDA stage windows
+
+The real CUDA worker now passes explicit context, vocabulary, window and
+position limits to CPU-only `WindowAdmission` guards in both intermediate
+and final-stage protocol servers. A window must have v4 `window_spec`,
+valid bounded token IDs and positions, finite input/output activations and a
+**positive accepted prefix**; no state advances before the verifier's commit
+completes. Invalid data, nonfinite outputs, request replays and zero-prefix
+commits fail closed without a successful output or commit acknowledgment.
+`STRATA_HETERO_WINDOW_TRACE=1` optionally logs only stage/window phase and
+position metadata; no tokens, activation values or model paths. Existing
+mock-worker protocol behavior is unchanged when no limits are supplied.
+The CPU-only unit and forked-worker tests bring the experimental suite to
+**20 CTest targets**. No live GPU inference was run. See
+[docs/WINDOW_ADMISSION_M118.md](docs/WINDOW_ADMISSION_M118.md).

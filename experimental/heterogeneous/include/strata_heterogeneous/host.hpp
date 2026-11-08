@@ -14,6 +14,7 @@
 #include <vector>
 
 namespace strata::heterogeneous {
+struct WindowLimits; // M1.18 optional CPU-only, strictly validated CUDA admission
 
 enum class Backend : uint8_t { cuda = 1, hip = 2 };
 
@@ -187,7 +188,8 @@ private:
 // every worker's declared backend/ordinal/layer range, then sends ready.
 void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
                            StageExecutor& executor, int timeout_ms = default_io_timeout_ms,
-                           bool shared_memory = false);
+                           bool shared_memory = false,
+                           const WindowLimits* limits = nullptr);
 // Backwards-compatible CPU-test convenience; now uses the same transactional
 // handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);

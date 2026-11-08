@@ -1,6 +1,9 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/shared.hpp"
+#include "strata_heterogeneous/window_admission.hpp"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <sys/socket.h>
@@ -31,6 +34,14 @@ void match(const Frame& got, const Frame& expected, Kind kind) {
         got.geometry.hc != expected.geometry.hc || got.geometry.n_embd != expected.geometry.n_embd)
         throw std::runtime_error("final pipeline frame kind, identity, plan or geometry mismatch");
 }
+void trace_window(const WindowAdmission* gate, const char* phase) noexcept {
+    if (!gate) return;
+    const char* opt = std::getenv("STRATA_HETERO_WINDOW_TRACE");
+    if (!opt || std::strcmp(opt, "1") != 0) return;
+    try { std::fprintf(stderr, "%s\n", gate->diagnostic(phase).c_str()); }
+    catch (...) {}
+}
+
 void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noexcept {
     try {
         Frame f = frame;
@@ -49,12 +60,14 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
 
 void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                               FinalStageExecutor& executor, int timeout_ms,
-                              bool shared_memory) {
+                              bool shared_memory, const WindowLimits* limits) {
     plan.validate();
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
     const Frame hello = control(plan, index,
         shared_memory ? Kind::hello_shared_final : Kind::hello_final);
+    std::unique_ptr<WindowAdmission> gate;
+    if (limits) gate = std::make_unique<WindowAdmission>(plan, index, *limits);
     std::string error;
     if (!executor.prepare(plan, index, error)) {
         failure(fd, hello, error.empty() ? "final stage preparation failed" : error, timeout_ms);
@@ -77,12 +90,18 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                     request->geometry.hc != plan.geometry.hc ||
                     request->geometry.n_embd != plan.geometry.n_embd)
                     throw std::runtime_error("final worker window plan mismatch");
+                if (gate && !gate->begin(*request->window, request->request_id,
+                                         request->window_id, error))
+                    throw std::runtime_error(error);
+                trace_window(gate.get(), "admitted");
                 if (!executor.begin_window(*request->window,
                                            request->request_id, request->window_id, error))
                     throw std::runtime_error(error.empty() ? "final window admission failed" : error);
                 auto data = receive_frame(fd, timeout_ms);
                 if (!data) throw std::runtime_error("final worker closed after window metadata");
                 match(*data, *request, shared_memory ? Kind::shared_data : Kind::data);
+                if (gate && !gate->validate_input(*data, shared_memory, error))
+                    throw std::runtime_error(error);
                 const size_t floats = static_cast<size_t>(request->rows) * plan.geometry.floats_per_row();
                 const size_t bytes = floats * sizeof(float);
                 // encode()/decode() bound the activation window to the 16MiB cap.
@@ -94,6 +113,8 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (shared_memory) {
                     if (shared.checksum(bytes) != data->shared_checksum)
                         throw std::runtime_error("final worker shared input checksum mismatch");
+                    if (gate && !gate->validate_bytes(shared.data(), bytes, error))
+                        throw std::runtime_error(error);
                     ActivationView view(shared.data(), bytes, metadata.geometry, metadata.rows);
                     if (!executor.run_final_window(metadata, view, result, error))
                         throw std::runtime_error(error.empty() ? "final stage execution failed" : error);
@@ -106,17 +127,28 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 require_final_result_identity(result, static_cast<uint32_t>(index),
                                               request->request_id, request->window_id,
                                               request->plan_fingerprint, request->rows);
+                validate_final_result(result);
+                if (gate && !gate->provisional_final(error))
+                    throw std::runtime_error(error);
+                trace_window(gate.get(), "provisional");
                 send_final_result(fd, result, timeout_ms);
                 auto commit = receive_frame(fd, timeout_ms);
                 if (!commit) { executor.abandon_window(); break; }
                 match(*commit, *request, Kind::commit_prefix);
+                if (gate && !gate->check_commit(*commit, error))
+                    throw std::runtime_error(error);
                 if (!executor.commit_prefix(request->request_id, request->window_id,
                                             commit->keep_count, error))
                     throw std::runtime_error(error.empty() ? "final stage prefix commit failed" : error);
+                if (gate && !gate->committed(commit->keep_count, error))
+                    throw std::runtime_error(error);
+                trace_window(gate.get(), "committed");
                 Frame ack = *commit;
                 ack.kind = Kind::committed_prefix;
                 send_frame(fd, ack, timeout_ms);
             } catch (const std::exception& ex) {
+                trace_window(gate.get(), "failure");
+                if (gate) gate->poison();
                 executor.abandon_window();
                 failure(fd, *request, ex.what(), timeout_ms);
                 executor.shutdown();
@@ -124,6 +156,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
             }
         }
     } catch (...) {
+        if (gate) gate->poison();
         executor.abandon_window();
         executor.shutdown();
         throw;
