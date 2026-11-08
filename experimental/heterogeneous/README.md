@@ -97,7 +97,7 @@ not malicious concurrent writes. Do not expose this protocol publicly.
 ```bash
 cmake -S experimental/heterogeneous -B /tmp/strata-hetero-build -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug
-cmake --build /tmp/strata-hetero-build
+cmake --build /tmp/strata-hetero-build --parallel 28
 ctest --test-dir /tmp/strata-hetero-build --output-on-failure
 /tmp/strata-hetero-build/strata_heterogeneous_demo \
   cuda:0:0-3,hip:0:3-7,hip:1:7-10 10 2 6 12345 8
@@ -113,7 +113,7 @@ cmake -S experimental/heterogeneous -B /tmp/strata-hetero-asan -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
-cmake --build /tmp/strata-hetero-asan
+cmake --build /tmp/strata-hetero-asan --parallel 28
 ctest --test-dir /tmp/strata-hetero-asan --output-on-failure
 ```
 
@@ -382,3 +382,23 @@ KV/GDN/PLE state, construct the expert pool or establish model fingerprints.
 A source-level test of the existing host `Plan` and parser passes locally;
 the complete native CTest suite and loaded-model validation belong on
 Oberon. See [docs/STAGE_WEIGHT_PLAN_M113.md](docs/STAGE_WEIGHT_PLAN_M113.md).
+
+
+### M1.14 — CUDA stage weight and session owner (CPU-double validated)
+
+`CudaStageResources` is an opt-in CUDA-only lifetime owner for the native
+`WeightTable::load` selected by M1.13 and stage-carved `session_init`.
+It checks the planner against the native pool-size API, GPU free memory and
+reserve, and a configurable arena budget before allocating weight and
+session device arenas. It zeroes and synchronizes a **fresh** session
+(position 0 only) and owns an explicitly attached expert callback provider
+until after the verifier is destroyed. It handles partial load failures,
+stage-offset QSA/RoPE registration cleanup and fail-stop runtime failures.
+
+This is **not** a runnable CUDA model worker. The actual expert-source/cache
+factory, model geometry/fingerprint provenance, prompt prefill, sampling
+state, HIP worker and real numerical parity are not implemented. Do not run
+native GPU loading until owner-approved NVIDIA recovery. The default
+CPU-only build runs `strata_heterogeneous_cuda_stage_resources_contract_tests`
+with runtime and engine doubles. See
+[docs/CUDA_STAGE_RESOURCES_M114.md](docs/CUDA_STAGE_RESOURCES_M114.md).

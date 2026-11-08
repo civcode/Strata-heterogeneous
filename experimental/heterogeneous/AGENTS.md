@@ -363,9 +363,36 @@ See [docs/CUDA_FINAL_VERIFIER_M112.md](docs/CUDA_FINAL_VERIFIER_M112.md).
 - No GPU reset/reboot, automatic GitHub Actions, or unrelated `Strata-dev`
   directory access. See `docs/STAGE_WEIGHT_PLAN_M113.md`.
 
-**Next:** add a CUDA-only stage resource owner that actually loads the
-selected dense weights, carves session state and binds a live expert pool
-before constructing the existing nonfinal/final verifier adapters.
+**M1.14 completed source-side:** The CUDA resource owner now calls the real
+native pack loader and session carve, while the expert source remains an
+explicit worker-owned provider to be implemented before runnable inference.
+
+### M1.14 — CUDA stage weight/session resource ownership
+
+- The CUDA-only `CudaStageResources` owns the selected native
+  `WeightTable` arena and stage-local `SessionState` arena; it validates
+  the real `WeightTable::pool_bytes` against the M1.13 planner **before**
+  allocating GPU memory. Keep all global tensors until their ownership
+  requirements are explicitly verified.
+- `CudaStageLoadOptions.initial_position` must be 0 in this increment:
+  `session_zero` is not prompt prefill or KV/indexer restoration.
+- A real expert/caching service must implement `CudaStageExperts` and be
+  attached before the owner exposes `CudaVerifierBindings`. The owner
+  manages its lifetime but **does not construct** native expert pools,
+  attested model geometry, residency tables or model fingerprints.
+- Always shut down the live verifier before destroying the resource owner.
+  On errors, abandon worker state and rebuild in a new process. Explicit
+  carved-QSA RoPE release precedes `session_release` and device freeing.
+- `src/cuda_stage_resources.cpp` is built into the optional CUDA-only
+  adapter archive. CPU contract tests use native code with stub CUDA/
+  WeightTable/session functions, but native CUDA engine compile/link,
+  real weights and GPU parity still require Oberon verification.
+- The verified Q2_0 index is read-only at
+  `/home/chris/workspace/Strata-data/packs/q2_0/index.txt`. IQ3_XXS
+  is not supported by the native packed loader (zero-byte output rows).
+  No unrelated worktrees are allowed.
+- See `docs/CUDA_STAGE_RESOURCES_M114.md`. Build with
+  `cmake --build "$build" --parallel 28`. No GitHub Actions or reboot.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
