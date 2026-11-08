@@ -113,6 +113,8 @@ bool CudaStageResources::load(const Plan& plan, size_t index,
             shutdown(); return false;
         }
         selected_ = std::move(selected);
+        pack_dir_ = options.pack_dir;
+        native_required_ = options.require_native_stage;
         max_t_ = options.max_t;
         timeout_ms_ = options.timeout_ms;
         initial_position_ = options.initial_position;
@@ -149,6 +151,9 @@ void CudaStageResources::shutdown() noexcept {
     // This process owns its GPU runtime. On a driver failure we must never
     // free allocations that may still be referenced by a hung kernel.
     state_ = State::dead;
+    // NativeDense and PLE weights/table are still referenced by verifier
+    // graphs. The independently owned CUDA native stage must die FIRST.
+    if (native_attached_) std::_Exit(70);
     if (device_ >= 0 && (cudaSetDevice(device_) != cudaSuccess ||
                          cudaDeviceSynchronize() != cudaSuccess)) std::_Exit(70);
     experts_.reset(); // expert callbacks and cache references go away first
@@ -178,6 +183,8 @@ void CudaStageResources::shutdown() noexcept {
     session_ = core::SessionState{};
     weights_ = core::WeightTable{};
     selected_ = StageWeightPlan{};
+    pack_dir_.clear();
+    native_required_ = native_ready_ = false;
     session_bytes_ = weight_bytes_ = 0;
     device_ = -1;
 }

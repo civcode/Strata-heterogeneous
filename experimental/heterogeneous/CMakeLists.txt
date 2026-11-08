@@ -25,7 +25,7 @@ if(STRATA_HETERO_CUDA_VERIFIER)
   find_package(CUDAToolkit REQUIRED)
   add_library(strata_heterogeneous_cuda_verifier STATIC
     src/cuda_verifier.cpp src/cuda_final_verifier.cpp src/cuda_stage_resources.cpp
-    src/cuda_file_experts.cpp)
+    src/cuda_file_experts.cpp src/cuda_native_stage.cpp)
   target_include_directories(strata_heterogeneous_cuda_verifier PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_cuda_verifier PUBLIC strata_heterogeneous_host CUDA::cudart)
   target_compile_options(strata_heterogeneous_cuda_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -69,6 +69,24 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M1.17 NativeDense + PLE lifetime and failure contracts. Compile the
+  # actual owner and new CUDA native-stage sources against CPU-only CUDA/core
+  # doubles; no GPU or model files are opened.
+  add_executable(strata_heterogeneous_cuda_native_stage_contract_tests
+    tests/cuda_native_stage_tests.cpp src/cuda_native_stage.cpp
+    src/cuda_stage_resources.cpp)
+  target_include_directories(strata_heterogeneous_cuda_native_stage_contract_tests BEFORE
+    PRIVATE tests/cuda_native_stubs)
+  target_link_libraries(strata_heterogeneous_cuda_native_stage_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_cuda_native_stage_contract_tests PRIVATE
+      -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME strata_heterogeneous_cuda_native_stage_contract_tests
+    COMMAND strata_heterogeneous_cuda_native_stage_contract_tests)
+  set_tests_properties(strata_heterogeneous_cuda_native_stage_contract_tests PROPERTIES
+    TIMEOUT 20)
   # M1.16 startup config and supervisor argv parsers: strictly CPU-only.
   add_executable(strata_heterogeneous_cuda_worker_config_tests tests/cuda_worker_config_tests.cpp)
   target_link_libraries(strata_heterogeneous_cuda_worker_config_tests PRIVATE strata_heterogeneous_host)

@@ -5,10 +5,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace strata::heterogeneous {
 
 struct CudaWorkerConfig {
+    uint32_t version = 1;
+    // v2: ordered, authorized original GGUF shards for native projections.
+    // The primary shard containing architecture metadata MUST come first.
+    std::vector<std::string> gguf_shards;
+    // v2: required only for a stage containing the PLE layer (layer 1).
+    std::string ple_gguf_path;
     std::string pack_dir;
     std::string profile_path;
     std::string index_sha256; // lowercase hex SHA-256 of the exact pack index
@@ -31,7 +38,7 @@ struct CudaWorkerConfig {
 };
 
 // Config is a strict ASCII key=value file with one required occurrence of
-// each v1 key (blank lines/# comments allowed). Unknown/duplicate keys,
+// each v1 key, with v2 GGUF inputs (blank lines/# comments allowed). Unknown/duplicate keys,
 // invalid numbers and unsafe/relative paths are refused. Output unchanged
 // on error, and parsing performs NO I/O beyond reading the config itself.
 bool read_cuda_worker_config(const std::string& filename,

@@ -1,6 +1,7 @@
 #include "strata_heterogeneous/cuda_worker_config.hpp"
 
 #include <array>
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
@@ -119,6 +120,31 @@ const std::set<std::string>& keys() {
         "io_timeout_ms","free_reserve_bytes","arena_budget_bytes"};
     return values;
 }
+std::vector<std::string> shards_value(const std::string& value) {
+    if (value.empty() || value.size() > 16384)
+        throw std::invalid_argument("GGUF shard list is empty or too long");
+    std::vector<std::string> shards;
+    std::set<std::string> unique;
+    size_t begin = 0;
+    for (;;) {
+        const size_t next = value.find(';', begin);
+        const std::string path = value.substr(begin, next == std::string::npos ? next : next - begin);
+        absolute_path(path, "gguf_shards");
+        if (!unique.insert(path).second || shards.size() >= 64)
+            throw std::invalid_argument("GGUF shards are duplicated or exceed the 64-shard limit");
+        shards.push_back(path);
+        if (next == std::string::npos) break;
+        begin = next + 1;
+    }
+    return shards;
+}
+void gguf_header(const std::string& path) {
+    regular_file(path, "GGUF shard");
+    std::ifstream file(path, std::ios::binary);
+    char magic[4]{};
+    if (!file.read(magic, sizeof(magic)) || std::string(magic, sizeof(magic)) != "GGUF")
+        throw std::runtime_error("GGUF shard lacks valid GGUF magic: " + path);
+}
 } // namespace
 
 bool read_cuda_worker_config(const std::string& filename,CudaWorkerConfig& out,std::string& error) {
@@ -139,13 +165,37 @@ bool read_cuda_worker_config(const std::string& filename,CudaWorkerConfig& out,s
             if(eq==std::string::npos||eq==0||eq==line.size()-1||line.find('=',eq+1)!=std::string::npos)
                 throw std::invalid_argument("config requires one key=value per line");
             const auto key=line.substr(0,eq),value=line.substr(eq+1);
-            if(!keys().count(key)||!fields.emplace(key,value).second)
+            if(!(keys().count(key) || key == "gguf_shards" || key == "ple_gguf_path") ||
+               !fields.emplace(key,value).second)
                 throw std::invalid_argument("unknown or duplicate CUDA config key: "+key);
         }
-        if(!in.eof()||fields.size()!=keys().size())throw std::invalid_argument("config lacks required fields or has read error");
+        if(!in.eof() || !fields.count("version"))
+            throw std::invalid_argument("config lacks required version or has read error");
+        const std::string& version = fields.at("version");
+        if (version != "1" && version != "2")
+            throw std::invalid_argument("unsupported CUDA worker config version");
+        const bool native = version == "2";
+        const bool ple_stage = native && fields.count("first_layer") && fields.count("end_layer") &&
+            decimal<uint32_t>(fields.at("first_layer"), "first_layer") <= 1 &&
+            decimal<uint32_t>(fields.at("end_layer"), "end_layer") > 1;
+        const size_t extra = native ? 1u + (ple_stage ? 1u : 0u) : 0u;
+        if(fields.size() != keys().size() + extra ||
+           (native && !fields.count("gguf_shards")) ||
+           (native && (bool(fields.count("ple_gguf_path")) != ple_stage)))
+            throw std::invalid_argument("CUDA config has missing or unexpected versioned fields");
         const auto& v=[&](const char* key)->const std::string& {return fields.at(key);};
-        if(v("version")!="1")throw std::invalid_argument("unsupported CUDA worker config version");
         CudaWorkerConfig c;
+        c.version = native ? 2 : 1;
+        if (native) {
+            c.gguf_shards = shards_value(v("gguf_shards"));
+            if (ple_stage) {
+                c.ple_gguf_path = v("ple_gguf_path");
+                absolute_path(c.ple_gguf_path, "ple_gguf_path");
+                if (std::find(c.gguf_shards.begin(), c.gguf_shards.end(), c.ple_gguf_path) ==
+                    c.gguf_shards.end())
+                    throw std::invalid_argument("PLE shard must be one of the authorized original GGUF shards");
+            }
+        }
         c.pack_dir=v("pack_dir");c.profile_path=v("profile_path");
         absolute_path(c.pack_dir,"pack_dir");absolute_path(c.profile_path,"profile_path");
         c.index_sha256=v("index_sha256");
@@ -185,6 +235,22 @@ bool validate_cuda_worker_files(const CudaWorkerConfig& c,std::string& error) {
             throw std::runtime_error("pack_dir is not a readable directory");
         const auto digest=file_digest(c.pack_dir+"/index.txt");
         if(digest!=c.index_sha256)throw std::runtime_error("pack index SHA-256 does not match trusted config");
+        if (c.version == 2) {
+            if (c.gguf_shards.empty()) throw std::invalid_argument("v2 requires GGUF shards");
+            for (const auto& shard : c.gguf_shards) {
+                absolute_path(shard, "gguf_shards");
+                gguf_header(shard);
+            }
+            if (c.first_layer <= 1 && c.end_layer > 1) {
+                absolute_path(c.ple_gguf_path, "ple_gguf_path");
+                if (std::find(c.gguf_shards.begin(), c.gguf_shards.end(), c.ple_gguf_path) ==
+                    c.gguf_shards.end())
+                    throw std::invalid_argument("PLE shard not in GGUF input list");
+            } else if (!c.ple_gguf_path.empty())
+                throw std::invalid_argument("PLE shard was specified for a stage without layer 1");
+        } else if (c.version != 1 || !c.gguf_shards.empty() || !c.ple_gguf_path.empty()) {
+            throw std::invalid_argument("unsupported or inconsistent CUDA config version");
+        }
         regular_file(c.profile_path,"profile_path");
         std::ifstream profile(c.profile_path,std::ios::binary);
         char prefix[8]{};profile.read(prefix,8);

@@ -448,6 +448,36 @@ explicit worker-owned provider to be implemented before runnable inference.
   startup, NVIDIA reset/reboot or GitHub Actions. Preserve the untracked
   pool probe and avoid `Strata-dev`. See `docs/CUDA_WORKER_M116.md`.
 
+### M1.17 — NativeDense and PLE required for real CUDA windows
+
+- A separate `CudaNativeStage` companion lives between a loaded
+  `CudaStageResources` and the verifier. The real M1.17 worker sets
+  `require_native_stage=true`; without a successful native load and PLE
+  (if owning layer 1), `make_bindings` is refused.
+- `CudaNativeStage::open` uses the actual native GGUF uploader and
+  `weight_bytes_for`, checks the stage's QKV native alias, validates all
+  selected tensor representations, and budgets NativeDense + PLE allocations.
+  Never pass empty fake/native tensor outputs to a verifier.
+- The layer-1 PLE cannot be silently skipped: it uses the canonical six
+  `blk.1.ple_*` weights, with the exact F16 conv1d type check from
+  `generate.cpp`, and a reader over the original GGUF table. Direct mode
+  starts with no implicit RAM cache, lock or keepalive.
+- Worker config v2 adds ordered `gguf_shards` (semicolon-separated paths)
+  plus `ple_gguf_path` **only** for stages containing layer 1. v1 remains
+  readable for CPU preflight but is rejected by live worker startup.
+  Only operator-authorized paths may be used; the pack index SHA-256 is NOT
+  proof of all original model bytes.
+- Teardown order: verifier graphs first, native PLE and NativeDense second,
+  expert provider/session/weight owner last. Violating the order in the owner
+  causes a fail-stop worker exit (70); this is NOT live GPU-fault proof.
+- M1.17's CPU native-stage contract adds one CTest target: **18 total**
+  standalone experimental tests expected; use `--parallel 28` on Oberon.
+  Validate native CUDA engine build and whole-archive link, then await
+  separate authorization for live Q2_0/PLE numerical validation.
+- See `docs/CUDA_NATIVE_PLE_M117.md`. Leave the untracked pool probe
+  untouched and do not access either `Strata-dev` tree. No Actions,
+  NVIDIA reset or reboot.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

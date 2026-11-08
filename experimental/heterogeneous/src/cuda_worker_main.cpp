@@ -3,6 +3,7 @@
 #include "strata_heterogeneous/cuda_worker_bootstrap.hpp"
 #include "strata_heterogeneous/cuda_worker_config.hpp"
 #include "strata_heterogeneous/cuda_stage_resources.hpp"
+#include "strata_heterogeneous/cuda_native_stage.hpp"
 #include "strata_heterogeneous/cuda_file_experts.hpp"
 #include "strata_heterogeneous/cuda_verifier.hpp"
 #include "strata_heterogeneous/cuda_final_verifier.hpp"
@@ -90,6 +91,11 @@ int main(int argc,char** argv) {
                !hetero::validate_cuda_worker_config(config,plan,index,error)||
                !check_compiled_geometry(config,plan,index,error))
                 throw std::runtime_error(error);
+            // v1 is still readable for old CPU-only preflight tests, but the
+            // production worker must not run its first window without the
+            // original GGUF projections and layer-1 PLE table.
+            if (config.version != 2)
+                throw std::runtime_error("CUDA worker needs v2 native GGUF/PLE configuration; v1 is preflight-only");
             const char* live=std::getenv("STRATA_HETERO_CUDA_LIVE");
             if(!live||std::string(live)!="I_APPROVE_CUDA_RUNTIME")
                 throw std::runtime_error("GPU runtime disabled; explicit STRATA_HETERO_CUDA_LIVE=I_APPROVE_CUDA_RUNTIME required after approved device recovery");
@@ -97,6 +103,7 @@ int main(int argc,char** argv) {
             hetero::CudaStageResources owner(geometry,plan.model_fingerprint);
             hetero::CudaStageLoadOptions lo;
             lo.pack_dir=config.pack_dir;
+            lo.require_native_stage=true;
             lo.max_cells=config.max_cells;
             lo.experts_per_token=geometry.n_expert_used;
             lo.initial_position=0;  // fresh state ONLY; no prompt prefill
@@ -105,6 +112,14 @@ int main(int argc,char** argv) {
             lo.free_reserve_bytes=config.free_reserve_bytes;
             lo.arena_budget_bytes=config.arena_budget_bytes;
             if(!owner.load(plan,index,lo,error))throw std::runtime_error("weight/session startup: "+error);
+            hetero::CudaNativeStage native;
+            hetero::CudaNativeStageOptions no;
+            no.gguf_shards=config.gguf_shards;
+            no.ple_gguf_path=config.ple_gguf_path;
+            no.free_reserve_bytes=config.free_reserve_bytes;
+            no.total_arena_budget_bytes=config.arena_budget_bytes;
+            if(!native.open(owner,plan,index,no,error))
+                throw std::runtime_error("native dense/PLE startup: "+error);
             auto experts=std::make_unique<hetero::CudaFileExperts>();
             hetero::CudaFileExpertOptions eo;
             eo.pack_dir=config.pack_dir;
@@ -128,6 +143,7 @@ int main(int argc,char** argv) {
                     static_cast<int>(config.io_timeout_ms),invocation.shared_memory);
                 executor.shutdown();driver.shutdown();
             }
+            native.shutdown(); // after verifier graphs, before stage weights
             owner.shutdown();
             return 0;
         }catch(const std::exception& ex) {

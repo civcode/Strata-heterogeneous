@@ -52,6 +52,40 @@ int main(int,char**){try{
  other=plan();other.geometry.hc=5;
  need(!validate_cuda_worker_config(c,other,0,err),"shape mismatch");
  need(!validate_cuda_worker_config(c,plan(),1,err),"index mismatch");
+ // M1.17 v2: only approved, correctly ordered original GGUF shard paths.
+ const std::string gguf1=f.dir+"/original-00001.gguf";
+ const std::string gguf2=f.dir+"/original-00002.gguf";
+ {std::ofstream out(gguf1,std::ios::binary);out<<"GGUF"<<"first";}
+ {std::ofstream out(gguf2,std::ios::binary);out<<"GGUF"<<"second";}
+ const std::string v2=std::string("version=2\n")+f.text(expected).substr(10)+
+     "gguf_shards="+gguf1+";"+gguf2+"\nple_gguf_path="+gguf2+"\n";
+ f.write(v2);
+ need(read_cuda_worker_config(f.config,c,err),"v2 schema parsed");
+ need(c.version==2&&c.gguf_shards.size()==2&&c.gguf_shards[0]==gguf1&&
+      c.ple_gguf_path==gguf2,"native shard order and PLE path");
+ need(validate_cuda_worker_config(c,plan(),0,err),"v2 native GGUF files preflight");
+ {std::ofstream out(gguf2,std::ios::binary);out<<"BAD!";}
+ need(!validate_cuda_worker_files(c,err),"malformed GGUF magic rejected");
+ {std::ofstream out(gguf2,std::ios::binary);out<<"GGUF";}
+ need(validate_cuda_worker_files(c,err),"repaired original GGUF accepted");
+ for (const std::string& bad:{
+      std::string("version=2\n")+f.text(expected).substr(10)+"gguf_shards="+gguf1+"\n",
+      v2+"ple_gguf_path="+gguf1+"\n",
+      std::string("version=2\n")+f.text(expected).substr(10)+
+          "gguf_shards="+gguf1+";"+gguf1+"\nple_gguf_path="+gguf1+"\n",
+      std::string("version=2\n")+f.text(expected).substr(10)+
+          "gguf_shards=relative.gguf\nple_gguf_path="+gguf2+"\n",
+      std::string("version=2\n")+f.text(expected).substr(10)+
+          "gguf_shards="+gguf1+"\nple_gguf_path="+gguf2+"\n"
+    }) {
+    f.write(bad);CudaWorkerConfig untouched=c;
+    // The last bad case is a valid syntax but references a PLE shard not in the list.
+    need(!read_cuda_worker_config(f.config,untouched,err),"v2 invalid inputs rejected");
+    need(untouched.gguf_shards.size()==2,"failed v2 parse is nonmutating");
+ }
+ // Return to v1 for unchanged M1.16 mutation tests.
+ c=CudaWorkerConfig{};f.write(f.text(expected));
+ need(read_cuda_worker_config(f.config,c,err),"v1 still parses unchanged");
  {std::ofstream out(f.index,std::ios::app);out<<"tampered";}
  need(!validate_cuda_worker_files(c,err),"index mutation rejected");
  {std::ofstream out(f.profile,std::ios::binary);out<<"XXXX";}

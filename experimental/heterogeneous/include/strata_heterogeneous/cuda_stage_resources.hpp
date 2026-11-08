@@ -11,6 +11,7 @@
 #include <utility>
 
 namespace strata::heterogeneous {
+class CudaNativeStage;
 
 // This interface is supplied by a *real* worker expert-source/cache builder.
 // A callback with invented/zero expert values is NOT a working inference pool.
@@ -25,6 +26,9 @@ public:
 
 struct CudaStageLoadOptions {
     std::string pack_dir;
+    // M1.17 real worker requires NativeDense and PLE (where layer 1 is owned)
+    // before make_bindings. Kept opt-in for existing M1.14 contract fixtures.
+    bool require_native_stage = false;
     int64_t max_cells = 0;
     int64_t experts_per_token = 0;
     int64_t initial_position = 0; // ONLY fresh zero-state supported in M1.14
@@ -57,13 +61,16 @@ public:
     void shutdown() noexcept;
 
     bool loaded() const noexcept { return state_ == State::loaded; }
-    bool ready() const noexcept { return loaded() && experts_ != nullptr; }
+    bool ready() const noexcept { return loaded() && experts_ != nullptr &&
+         (!native_required_ || native_ready_); }
+    bool native_ready() const noexcept { return native_ready_; }
     bool poisoned() const noexcept { return state_ == State::dead; }
     uint64_t weight_bytes() const noexcept { return weight_bytes_; }
     uint64_t session_bytes() const noexcept { return session_bytes_; }
     const StageWeightPlan& weight_plan() const noexcept { return selected_; }
     const core::SessionState& session() const noexcept { return session_; }
 private:
+    friend class CudaNativeStage; // grants access to the live WeightTable and SessionState
     enum class State { fresh, initializing, loaded, dead };
     static void pool_dispatch(void* ctx, const float* x_f, const int32_t* ids,
                               int64_t n_tok, int64_t k, float* out, int64_t layer);
@@ -71,6 +78,10 @@ private:
     uint64_t model_fingerprint_ = 0;
     State state_ = State::fresh;
     StageWeightPlan selected_;
+    std::string pack_dir_;
+    bool native_required_ = false;
+    bool native_attached_ = false; // owner shutdown before native teardown is fatal
+    bool native_ready_ = false;
     core::WeightTable weights_;
     core::SessionState session_{};
     std::unique_ptr<CudaStageExperts> experts_;

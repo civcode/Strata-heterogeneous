@@ -443,3 +443,20 @@ CUDA worker executable from the top-level native CUDA engine, explicitly
 configure with `STRATA_BUILD_HETERO_CUDA_WORKER=ON` (OFF by default). No
 GPU loading, parity, prefill, HIP inference or live teardown was run in this
 increment. See [docs/CUDA_WORKER_M116.md](docs/CUDA_WORKER_M116.md).
+
+
+### M1.17 — NativeDense projections and layer-1 PLE
+
+A CUDA-only `CudaNativeStage` now attaches real `core::NativeDense` GGUF
+projections to the M1.14 `WeightTable` and initializes the mandatory
+layer-1 PLE n-gram table, weights, history, pinned staging and graph scratch.
+It validates the first-stage `blk.0.attn_qkv.weight` native alias and
+**refuses** to expose production verifier bindings until the native stage is
+ready. Shutdown checks ownership order so native projections outlive verifier
+graphs. `CudaWorkerConfig` v2 accepts explicit, ordered original GGUF shards
+and a PLE-bearing shard; old v1 remains CPU-preflight-only, not live-runnable.
+
+The CPU-only contract test compiles real native-owner source against API
+doubles, including missing QKV, PLE types, partial allocations and teardown.
+GPU loading, PLE numerical parity and full inference **remain unverified**.
+See [docs/CUDA_NATIVE_PLE_M117.md](docs/CUDA_NATIVE_PLE_M117.md).
