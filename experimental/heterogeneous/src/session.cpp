@@ -97,7 +97,10 @@ bool StageExecutor::run_staged_window(const Frame& metadata, ActivationView view
     // The default adapter is intentionally conservative. GPU adapters should
     // override this to perform an explicit host->device->host copy and complete
     // their streams before returning; never interpret view.data() as a device pointer.
-    Frame input = metadata;
+    // Copy-assign validated metadata to avoid GCC 13's optimized empty-vector
+    // copy-constructor array-bounds diagnostic in native Release builds.
+    Frame input;
+    input = metadata;
     input.kind = Kind::data;
     input.shared_checksum = 0;
     input.payload.resize(view.bytes() / sizeof(float));
