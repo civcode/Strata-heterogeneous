@@ -60,6 +60,7 @@
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/on_device.hpp"
 #include "strata/core/layer_split_stage_owner.hpp"
+#include "strata/core/layer_split_stage_resources.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
 #include "strata/core/kv_grow_rules.hpp"
@@ -1637,6 +1638,7 @@ void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int
 struct GpuStage {
     int dev = 0;
     bool cleanup_armed = false;  // true before any GPU-owning stage allocation
+    strata::core::LayerSplitStageResources raw; // declared early: destroyed after dependent members
     int64_t lb = 0, le = 0;
     double pcie_frac = 0.0;
     double link_gbps = 0.0;   ///< this card's probed host->device bandwidth (PcieAuto's per-stage share)
@@ -6271,9 +6273,8 @@ int main(int argc, char** argv) {
         } else {
             skip_s = skip;
         }
-        void* arena_s = nullptr;
-        if (cudaMalloc(&arena_s, pool_s) != cudaSuccess ||
-            !st.wt.load(o.pack, arena_s, pool_s, err, skip_s.empty() ? nullptr : &skip_s)) {
+        if (cudaMalloc(&st.raw.weight_arena, pool_s) != cudaSuccess ||
+            !st.wt.load(o.pack, st.raw.weight_arena, pool_s, err, skip_s.empty() ? nullptr : &skip_s)) {
             cudaGetLastError();
             size_t free_b = 0, total_b = 0;   // #486: what that card had free
             cudaMemGetInfo(&free_b, &total_b);
@@ -6323,9 +6324,18 @@ int main(int argc, char** argv) {
         // THE SESSION AND THE HEAD WAIT FOR THE SPLIT SEARCH.  `session_bytes` prices a stage's session by its
         // LAYER RANGE (the carve - every stage used to hold all 48 layers' state whatever it ran), so the
         // sessions are allocated after the search below has set `st.lb`/`st.le`; the last stage's head follows.
-        if (cudaStreamCreateWithFlags(&st.stream, cudaStreamNonBlocking) != cudaSuccess ||
-            cudaStreamCreateWithFlags(&st.adapt_stream, cudaStreamNonBlocking) != cudaSuccess ||
-            cudaEventCreateWithFlags(&st.adapt_ev, cudaEventDisableTiming) != cudaSuccess) {
+        // Register each resource immediately, including on partial initialization.
+        cudaError_t stage_create = cudaStreamCreateWithFlags(&st.stream, cudaStreamNonBlocking);
+        st.raw.stream = st.stream;
+        if (stage_create == cudaSuccess) {
+            stage_create = cudaStreamCreateWithFlags(&st.adapt_stream, cudaStreamNonBlocking);
+            st.raw.adapt_stream = st.adapt_stream;
+        }
+        if (stage_create == cudaSuccess) {
+            stage_create = cudaEventCreateWithFlags(&st.adapt_ev, cudaEventDisableTiming);
+            st.raw.adapt_event = st.adapt_ev;
+        }
+        if (stage_create != cudaSuccess) {
             std::fprintf(stderr, "strata generate: layer split, CUDA%d: its streams failed\n", st.dev);
             return 1;
         }
@@ -6337,7 +6347,9 @@ int main(int argc, char** argv) {
         // --vision: this device's image-position table (the identity until a picture request), read by every rope
         // kernel its stage runs - set before any of its graphs is captured
         if (o.vision) {
-            if (cudaMalloc(&st.mrope, mrope_host.size() * sizeof(int32_t)) != cudaSuccess ||
+            const cudaError_t mrope_alloc = cudaMalloc(&st.mrope, mrope_host.size() * sizeof(int32_t));
+            st.raw.mrope = st.mrope;
+            if (mrope_alloc != cudaSuccess ||
                 cudaMemcpy(st.mrope, mrope_host.data(), mrope_host.size() * sizeof(int32_t), cudaMemcpyHostToDevice) !=
                     cudaSuccess) {
                 std::fprintf(stderr, "strata generate: layer split, CUDA%d: the image position table failed\n", st.dev);
@@ -7342,9 +7354,8 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < stages.size(); ++i) {
         GpuStage& st = *stages[i];
         const strata::core::OnDevice on(st.dev);
-        void* sbuf_s = nullptr;
-        if (cudaMalloc(&sbuf_s, strata::core::session_bytes(g, o.max_context, K, st.lb, st.le)) != cudaSuccess ||
-            strata::core::session_init(g, o.max_context, K, sbuf_s, st.ss, st.lb, st.le) == 0) {
+        if (cudaMalloc(&st.raw.session_arena, strata::core::session_bytes(g, o.max_context, K, st.lb, st.le)) != cudaSuccess ||
+            strata::core::session_init(g, o.max_context, K, st.raw.session_arena, st.ss, st.lb, st.le) == 0) {
             std::fprintf(stderr, "strata generate: layer split, CUDA%d: the session state failed\n", st.dev);
             return 1;
         }
@@ -10326,9 +10337,9 @@ int main(int argc, char** argv) {
         }
         for (auto& st : stages) {   // layer split across GPUs: the same table on every device
             const strata::core::OnDevice on(st->dev);
-            if (cudaMalloc((void**) &st->d_res, host_res.size() * sizeof(int32_t)) != cudaSuccess ||
-                res_put(st->d_res) !=
-                    cudaSuccess) {
+            const cudaError_t residency_alloc = cudaMalloc((void**) &st->d_res, host_res.size() * sizeof(int32_t));
+            st->raw.residency = st->d_res;
+            if (residency_alloc != cudaSuccess || res_put(st->d_res) != cudaSuccess) {
                 std::fprintf(stderr, "strata generate: layer split: CUDA%d residency table failed\n", st->dev);
                 return 1;
             }
