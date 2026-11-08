@@ -1,4 +1,5 @@
 #include "strata/core/logit_bias.hpp"
+#include "strata/core/transfer_terminal.hpp"
 // src/program/generate.cpp - P2.S6: `strata generate`.
 //
 // THE DRIVER, and the first program in this project that answers a question.  Everything below it is a
@@ -16842,6 +16843,8 @@ int main(int argc, char** argv) {
                     refuse(std::string("session identity: ") + e.what(), strata::core::SessionError::io);
                     continue;
                 }
+                // Session files carry draft K/V only when MTP is actually loaded.
+                const auto* disk_draft = use_mtp ? &mtp.kv_state() : nullptr;
                 if (save) {
                     if (!live_ok || live.empty()) { refuse("no complete session to save"); continue; }
                     size_t bytes = 0, kept = 0;
@@ -16866,7 +16869,7 @@ int main(int argc, char** argv) {
                             sl.state_bytes = state;
                             sl.tokens = live.size();
                             sl.images = live_imgs.size();
-                            sl.kv_layers = (uint64_t) std::max<int64_t>(ss.qsa_alloc, 0) + 1;
+                            sl.kv_layers = (uint64_t) std::max<int64_t>(ss.qsa_alloc, 0) + (disk_draft ? 1 : 0);
                         }
                         const uint64_t floor = (uint64_t) o.conversation_cache_min_free_mib << 20;
                         pools_budget.shrink((size_t) -1);   // (the park pools' idle memory goes back before the RAM checks of a session save)
@@ -16905,7 +16908,7 @@ int main(int argc, char** argv) {
                         std::vector<strata::core::SessionKvSource> sources;
                         // the live running state comes off the device in one synchronous copy
                         blocking("capture", sl.state_bytes == UINT64_MAX ? 0 : sl.state_bytes);
-                        if (!strata::core::conversation_snapshot_sources(meta, sources, view, ss, g, mtp.kv_state(),
+                        if (!strata::core::conversation_snapshot_sources(meta, sources, view, ss, g, disk_draft,
                                                                          err)) {
                             refuse(err, strata::core::SessionError::io);
                             continue;
@@ -16952,7 +16955,7 @@ int main(int argc, char** argv) {
                             return false;
                         };
                         if (!strata::core::conversation_session_read_limits(
-                                limits, ss, g, mtp.kv_state(), (uint64_t) o.max_context,
+                                limits, ss, g, disk_draft, (uint64_t) o.max_context,
                                 (uint64_t) std::max(o.prompt_cache, 1), err)) {
                             refuse(err, strata::core::SessionError::io);
                             continue;
@@ -16969,7 +16972,7 @@ int main(int argc, char** argv) {
                     const double read_ms = ms();
                     // the whole image against this engine, still without any device write
                     blocking("validate", bytes);
-                    if (!strata::core::conversation_snapshot_validate(image, ss, g, mtp.kv_state(), err)) {
+                    if (!strata::core::conversation_snapshot_validate(image, ss, g, disk_draft, err)) {
                         refuse(err);
                         continue;
                     }
@@ -16982,7 +16985,7 @@ int main(int argc, char** argv) {
                     live_ok = false;
                     // host -> device in synchronous copies of the whole state: one bounded allowance
                     blocking("transfer", bytes);
-                    if (strata::core::conversation_snapshot_restore(image, ss, g, mtp.kv_state(), err) !=
+                    if (strata::core::conversation_snapshot_restore(image, ss, g, disk_draft, err) !=
                         strata::core::ConversationRestore::restored) {
                         // validated above: a failure here is a transfer failure, after device writes began - never
                         // decode from a partial state; the server starts the engine again
@@ -19383,11 +19386,7 @@ int main(int argc, char** argv) {
                     // The prompt may borrow cache/session VRAM. Retaining Prefill's private Impl
                     // cannot keep those callers' allocations alive during ordinary stack unwinding.
                     // Cancellation must not turn this error into a slot refill or a successful DONE.
-                    std::fprintf(stderr, "strata serve: %s; exiting without releasing transfer owners\n", err.c_str());
-                    std::printf("ERR %s\n", err.c_str());
-                    std::fflush(stdout);
-                    std::fflush(stderr);
-                    std::_Exit(1);
+                    strata::core::transfer_terminal("serve prefill", err.c_str());
                 }
                 if (sp_ok) pp_exact = true;
                 if (trace) {
@@ -21732,7 +21731,7 @@ int main(int argc, char** argv) {
         const Clock::time_point tp0 = Clock::now();
         if (!prefill.run(o.tokens.data(), n_batched, 0, err)) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
-            if (prefill.terminal_transfer_failure()) { std::fflush(stderr); std::_Exit(1); }
+            if (prefill.terminal_transfer_failure()) strata::core::transfer_terminal("generate prefill", err.c_str());
             return 1;
         }
         // refill the lent slots from the arena and give them back to the decode tier

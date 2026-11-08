@@ -1,6 +1,6 @@
 // include/strata/core/peer_experts.hpp - multi-GPU: a second expert tier on another GPU.
 //
-// The primary GPU (device 0) keeps everything it had: the dense weights, the KV cache, the MTP layer, its own
+// The configured primary GPU keeps everything it had: the dense weights, the KV cache, the MTP layer, its own
 // adaptive expert tier and the captured verify graph.  This class adds an expert tier on a SECOND card.  From
 // the verify graph's point of view nothing changes: for each layer the pool thread decides which routed experts
 // the primary computes (its VRAM tier, the PCIe share), and every remaining expert is a "CPU row" the graph reads

@@ -1,6 +1,7 @@
 // src/core/peer_experts.cpp - see include/strata/core/peer_experts.hpp.
 #include "strata/core/peer_experts.hpp"
 
+#include "strata/core/peer_experts_completion.hpp"
 #include "strata/core/device.hpp"   // primary_device() (STRATA_PRIMARY_DEVICE)
 #include "strata/kernels/cpu/expert_layout.hpp"
 #include "strata/kernels/cpu/hadamard.hpp"
@@ -55,7 +56,7 @@ bool p2p_copies_data(int device) {
     std::vector<float> h(kN), back(kN);
     for (size_t i = 0; i < kN; ++i) h[i] = 1.0f + (float) ((i * 2654435761u) % 4093u);
     float* d[2] = {nullptr, nullptr};
-    const int dev[2] = {0, device};
+    const int dev[2] = {primary_device(), device};
     bool ok = true, tested = true;
     for (int k = 0; k < 2 && tested; ++k) {
         On on(dev[k]);
@@ -97,23 +98,25 @@ PeerExperts::~PeerExperts() { close(); }
 void PeerExperts::close() {
     if (device_ < 0) return;
     {
-        On on(device_);
-        if (stream_) cudaStreamSynchronize(stream_);
-        if (refill_) cudaStreamSynchronize(refill_);
+        // The peer stream can still read borrowed caller x or write borrowed out after
+        // a partial submission/error. Refill also reads ExpertSource blobs. Fencing
+        // the whole peer device here covers both streams and legacy-stream work.
+        detail::PeerDeviceScope on(device_);
+        detail::peer_check(cudaDeviceSynchronize(), "peer experts teardown completion");
         cache_.close();
-        if (d_x_) cudaFree(d_x_);
-        if (d_out_) cudaFree(d_out_);
-        if (d_meta_) cudaFree(d_meta_);
-        if (d_q8_) cudaFree(d_q8_);
-        if (d_scratch_) cudaFree(d_scratch_);
-        if (h_x_) cudaFreeHost(h_x_);
-        if (h_out_) cudaFreeHost(h_out_);
-        if (h_meta_) cudaFreeHost(h_meta_);
-        if (d_gate_vals_) cudaFree(d_gate_vals_);
-        if (h_gate_) cudaFreeHost((void*) h_gate_);
-        if (refill_ev_) cudaEventDestroy(refill_ev_);
-        if (stream_) cudaStreamDestroy(stream_);
-        if (refill_) cudaStreamDestroy(refill_);
+        if (d_x_) detail::peer_check(cudaFree(d_x_), "peer experts free input");
+        if (d_out_) detail::peer_check(cudaFree(d_out_), "peer experts free output");
+        if (d_meta_) detail::peer_check(cudaFree(d_meta_), "peer experts free metadata");
+        if (d_q8_) detail::peer_check(cudaFree(d_q8_), "peer experts free activation");
+        if (d_scratch_) detail::peer_check(cudaFree(d_scratch_), "peer experts free scratch");
+        if (h_x_) detail::peer_check(cudaFreeHost(h_x_), "peer experts free host input");
+        if (h_out_) detail::peer_check(cudaFreeHost(h_out_), "peer experts free host output");
+        if (h_meta_) detail::peer_check(cudaFreeHost(h_meta_), "peer experts free host metadata");
+        if (d_gate_vals_) detail::peer_check(cudaFree(d_gate_vals_), "peer experts free gate values");
+        if (h_gate_) detail::peer_check(cudaFreeHost((void*) h_gate_), "peer experts free host gate");
+        if (refill_ev_) detail::peer_check(cudaEventDestroy(refill_ev_), "peer experts destroy refill event");
+        if (stream_) detail::peer_check(cudaStreamDestroy(stream_), "peer experts destroy stream");
+        if (refill_) detail::peer_check(cudaStreamDestroy(refill_), "peer experts destroy refill stream");
     }
     d_x_ = d_out_ = h_x_ = h_out_ = nullptr;
     d_meta_ = h_meta_ = d_scratch_ = nullptr;
@@ -132,7 +135,8 @@ bool PeerExperts::open(int device, const std::vector<std::pair<int32_t, int32_t>
     close();
     int count = 0;
     if (!ck(cudaGetDeviceCount(&count), "cudaGetDeviceCount", err)) return false;
-    if (device < 1 || device >= count) {
+    // Any visible GPU except the configured primary may serve as helper, including ordinal 0.
+    if (device < 0 || device >= count || device == primary_device()) {
         err = "peer experts: CUDA device " + std::to_string(device) + " is not visible (" + std::to_string(count) +
               " devices; set CUDA_VISIBLE_DEVICES)";
         return false;
@@ -161,8 +165,8 @@ bool PeerExperts::open(int device, const std::vector<std::pair<int32_t, int32_t>
                 std::fprintf(stderr, "strata: peer GPU %d: peer access is enabled but a test copy between the two GPUs arrived wrong "
                                      "(a host bridge between them, no real P2P): the prompt path takes the host route instead "
                                      "(STRATA_PEER_NO_P2P=1 does that by hand)\n", device);
-                { On q0(0); cudaDeviceDisablePeerAccess(device); cudaGetLastError(); }
-                { On q1(device); cudaDeviceDisablePeerAccess(0); cudaGetLastError(); }
+                { On q0(primary_device()); cudaDeviceDisablePeerAccess(device); cudaGetLastError(); }
+                { On q1(device); cudaDeviceDisablePeerAccess(primary_device()); cudaGetLastError(); }
                 p2p_ = false;
             }
         }
@@ -296,35 +300,56 @@ bool PeerExperts::launch(int64_t layer, const float* x, const int32_t* ids, int6
     launched_rows_ = rows;
     // direct: x is the verifier's pinned (portable) doorbell row block - copied from where it is
     if (!direct) std::memcpy(h_x_, x, (size_t) (n_tok * H) * sizeof(float));
-    On on(device_);
+    detail::PeerDeviceScope on(device_);
     const cudaStream_t s = stream_;
+    const auto submission_failed = [&]() {
+        // An API can report an issue error after accepting DMA. Neither a
+        // borrowed caller row nor our pinned staging may unwind before drain.
+        detail::peer_drain_or_exit(s, "peer experts failed submission drain");
+        launched_rows_ = 0;
+        launched_direct_ = false;
+        return false;
+    };
     if (!ck(cudaMemcpyAsync(d_x_, direct ? x : h_x_, (size_t) (n_tok * H) * sizeof(float), cudaMemcpyHostToDevice, s), "input", err) ||
         !ck(cudaMemcpyAsync(d_meta_, h_meta_, sizeof(Meta), cudaMemcpyHostToDevice, s), "plan", err))
-        return false;
+        return submission_failed();
     Meta* dm = (Meta*) d_meta_;
-    const auto& lay = strata::kernels::cpu::expert_layout();
-    if (lay.native) {
-        const auto& f = lay.fmt[(size_t) layer];
-        // APR: Hadamard-folded gate/up take H (s * x); d_x_ is this device's private copy, rotated in place
-        if (f.had_gu) strata::kernels::hadamard_rows(d_x_, d_x_, n_tok, H, f.had_block, d_sx_, s);
-        strata::kernels::quantize_q8_1_rows(d_x_, n_tok, H, d_q8_, s);
-        auto L = strata::kernels::native_expert_layout(f.gu_type, f.d_type, f.n_embd, f.n_ff);
-        if (f.had_d) { L.had_block = f.had_block; L.d_signs = d_sh_; }
-        strata::kernels::native_expert_grouped(L, dm->ptr, dm->start, dm->count, dm->dst, dm->tok, groups, rows, d_q8_,
-                                               d_scratch_, d_out_, s);
-    } else {
-        err = "peer experts: only native packs are supported";
+    try {
+        const auto& lay = strata::kernels::cpu::expert_layout();
+        if (lay.native) {
+            const auto& f = lay.fmt[(size_t) layer];
+            // APR: Hadamard-folded gate/up take H (s * x); d_x_ is this device's private copy, rotated in place
+            if (f.had_gu) strata::kernels::hadamard_rows(d_x_, d_x_, n_tok, H, f.had_block, d_sx_, s);
+            strata::kernels::quantize_q8_1_rows(d_x_, n_tok, H, d_q8_, s);
+            auto L = strata::kernels::native_expert_layout(f.gu_type, f.d_type, f.n_embd, f.n_ff);
+            if (f.had_d) { L.had_block = f.had_block; L.d_signs = d_sh_; }
+            strata::kernels::native_expert_grouped(L, dm->ptr, dm->start, dm->count, dm->dst, dm->tok, groups, rows, d_q8_,
+                                                   d_scratch_, d_out_, s);
+        } else {
+            err = "peer experts: only native packs are supported";
+            return submission_failed();
+        }
+        if (direct) {   // the rows straight into the host `out` (zero-copy, coalesced float4 writes)
+            strata::kernels::scatter_rows_f32(d_out_, out, dm->out_row, rows, H, s);
+            launched_direct_ = true;
+            return true;
+        }
+        if (!ck(cudaMemcpyAsync(h_out_, d_out_, (size_t) rows * H * sizeof(float), cudaMemcpyDeviceToHost, s),
+                "results", err)) return submission_failed();
+        return true;
+    } catch (const std::exception& e) {
+        detail::peer_drain_or_exit(s, "peer experts launch exception drain");
+        launched_rows_ = 0;
+        launched_direct_ = false;
+        err = std::string("peer experts: launch: ") + e.what();
+        return false;
+    } catch (...) {
+        detail::peer_drain_or_exit(s, "peer experts launch exception drain");
+        launched_rows_ = 0;
+        launched_direct_ = false;
+        err = "peer experts: unknown launch exception";
         return false;
     }
-    if (direct) {   // the rows straight into the host `out` (zero-copy, coalesced float4 writes)
-        try {
-            strata::kernels::scatter_rows_f32(d_out_, out, dm->out_row, rows, H, s);
-        } catch (const std::exception& e) { err = std::string("peer experts: scatter: ") + e.what(); return false; }
-        launched_direct_ = true;
-        return true;
-    }
-    return ck(cudaMemcpyAsync(h_out_, d_out_, (size_t) rows * H * sizeof(float), cudaMemcpyDeviceToHost, s),
-              "results", err);
 }
 
 bool PeerExperts::finish(float* out, std::string& err) {
@@ -332,12 +357,17 @@ bool PeerExperts::finish(float* out, std::string& err) {
     ++launches;
     const auto t0 = std::chrono::steady_clock::now();
     {
-        On on(device_);
-        // spin on the stream (a blocking sync would sleep the pool thread and wake it late)
+        detail::PeerDeviceScope on(device_);
+        // Keep the fast query on success; only a query error incurs a drain.
         cudaError_t e;
         while ((e = cudaStreamQuery(stream_)) == cudaErrorNotReady) {
         }
-        if (!ck(e, "finish", err)) return false;
+        if (!ck(e, "finish", err)) {
+            detail::peer_drain_or_exit(stream_, "peer experts failed finish drain");
+            launched_rows_ = 0;
+            launched_direct_ = false;
+            return false;
+        }
     }
     ms_wait += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (launched_direct_) { launched_rows_ = 0; return true; }
@@ -384,7 +414,8 @@ bool PeerExperts::adapt(const float* usage, const int32_t* res0, int max_swaps, 
         gate_has_->assign((size_t) n_layers_, 0);
         *gate_last_ = -1;
     }
-    On on(device_);
+    detail::PeerDeviceScope on(device_);
+    pending_.reserve(swaps.size()); // any allocation failure happens before GPU submission
     int32_t issued_layer = -1;   // the layer whose copies are on the stream and not yet ticked
     auto tick = [&](int32_t layer) -> bool {
         if ((h_gate_ != nullptr
@@ -400,69 +431,53 @@ bool PeerExperts::adapt(const float* usage, const int32_t* res0, int max_swaps, 
         gate_landed_->store((int32_t) n_layers_, std::memory_order_release);
         return false;
     };
-    for (const Swap& s : swaps) {
-        const size_t in = (size_t) (s.layer * n_expert_ + s.in), out = (size_t) (s.layer * n_expert_ + s.out);
-        const int32_t slot = res_[out];
-        const uint8_t* b = src_->blob(s.layer, s.in);
-        if (slot < 0 || b == nullptr) continue;
-        if (gated && issued_layer >= 0 && issued_layer != s.layer) tick(issued_layer);
-        if (!ck(cudaMemcpyAsync(cache_.device_slot(slot), b, (size_t) lay.blob_bytes(s.layer), cudaMemcpyHostToDevice,
-                                refill_), "refill", err))
+    try {
+        for (const Swap& s : swaps) {
+            const size_t in = (size_t) (s.layer * n_expert_ + s.in), out = (size_t) (s.layer * n_expert_ + s.out);
+            const int32_t slot = res_[out];
+            const uint8_t* b = src_->blob(s.layer, s.in);
+            if (slot < 0 || b == nullptr) continue;
+            if (gated && issued_layer >= 0 && issued_layer != s.layer) tick(issued_layer);
+            if (!ck(cudaMemcpyAsync(cache_.device_slot(slot), b, (size_t) lay.blob_bytes(s.layer), cudaMemcpyHostToDevice,
+                                    refill_), "refill", err)) {
+                detail::peer_drain_or_exit(refill_, "peer experts failed refill drain");
+                pending_.clear(); // never publish a partial refill through a stale event
+                return false;
+            }
+            if (gated) {
+                (*gate_has_)[(size_t) s.layer] = 1;
+                *gate_last_ = std::max(*gate_last_, s.layer);
+                issued_layer = s.layer;
+            }
+            res_[out] = kNotResident;              // evicted now: the CPU computes it meanwhile
+            pending_.emplace_back((int32_t) in, slot);
+            ++swaps_;
+        }
+        if (gated && issued_layer >= 0) tick(issued_layer);
+        if (!ck(cudaEventRecord(refill_ev_, refill_), "refill event", err)) {
+            detail::peer_drain_or_exit(refill_, "peer experts failed refill event drain");
+            pending_.clear();
             return false;
-        if (gated) {
-            (*gate_has_)[(size_t) s.layer] = 1;
-            *gate_last_ = std::max(*gate_last_, s.layer);
-            issued_layer = s.layer;
         }
-        res_[out] = kNotResident;              // evicted now: the CPU computes it meanwhile
-        pending_.emplace_back((int32_t) in, slot);
-        ++swaps_;
+        // #2188: hand the copies and their landing signals to the GPU now (WDDM batches a stream's work until a driver
+        // call flushes it, and the verify window only spins on the pinned int; Linux submits at once: a no-op)
+        if (gated && h_gate_ != nullptr && issued_layer >= 0) (void) cudaStreamQuery(refill_);
+        return true;
+    } catch (...) {
+        // A source read or a vector operation can throw after earlier refills
+        // were accepted; completion must precede unwinding borrowed blob owners.
+        detail::peer_drain_or_exit(refill_, "peer experts refill exception drain");
+        pending_.clear();
+        throw;
     }
-    if (gated && issued_layer >= 0) tick(issued_layer);
-    if (!ck(cudaEventRecord(refill_ev_, refill_), "refill event", err)) return false;
-    // #2188: hand the copies and their landing signals to the GPU now (WDDM batches a stream's work until a driver
-    // call flushes it, and the verify window only spins on the pinned int; Linux submits at once: a no-op)
-    if (gated && h_gate_ != nullptr && issued_layer >= 0) (void) cudaStreamQuery(refill_);
-    return true;
-}
-
-volatile int32_t* PeerExperts::set_overlap_gate(std::atomic<int32_t>* landed, std::vector<uint8_t>* has, int32_t* last,
-                                                bool copy_signal) {
-    gate_landed_ = landed;
-    gate_has_ = has;
-    gate_last_ = last;
-    ticks_.resize((size_t) n_layers_);
-    for (int64_t l = 0; l < n_layers_; ++l) ticks_[(size_t) l] = {landed, (int32_t) l};
-    if (copy_signal && h_gate_ == nullptr) {
-        On on(device_);
-        std::vector<int32_t> iota((size_t) n_layers_);
-        for (size_t i = 0; i < iota.size(); ++i) iota[i] = (int32_t) i;
-        int32_t* vals = nullptr;
-        void* hp = nullptr;
-        if (cudaMalloc((void**) &vals, iota.size() * 4) == cudaSuccess &&
-            cudaMemcpy(vals, iota.data(), iota.size() * 4, cudaMemcpyHostToDevice) == cudaSuccess &&
-            cudaHostAlloc(&hp, 64, cudaHostAllocPortable) == cudaSuccess) {
-            *(volatile int32_t*) hp = -1;
-            d_gate_vals_ = vals;
-            h_gate_ = (volatile int32_t*) hp;
-        } else {   // host functions then
-            (void) cudaGetLastError();
-            if (vals) cudaFree(vals);
-        }
-    }
-    return h_gate_;
-}
-
-void PeerExperts::flip_pending() {
-    for (const auto& [i, slot] : pending_) res_[(size_t) i] = slot;
 }
 
 void PeerExperts::apply_pending(bool wait) {
     if (pending_.empty()) return;
     {
-        On on(device_);
-        if (wait) cudaEventSynchronize(refill_ev_);
-        else if (cudaEventQuery(refill_ev_) != cudaSuccess) return;
+        detail::PeerDeviceScope on(device_);
+        if (wait) detail::peer_check(cudaEventSynchronize(refill_ev_), "peer experts refill wait");
+        else if (!detail::peer_event_ready(refill_ev_, "peer experts refill query")) return;
     }
     for (const auto& [i, slot] : pending_) res_[(size_t) i] = slot;
     pending_.clear();

@@ -28,10 +28,30 @@ complete real valid work before returning synthetic errors. They do not induce h
 a faulted device can recover. Fixture reclamation is separate from production cleanup.
 
 `libtransfer_prefill_inject.so` can be explicitly preloaded into an isolated Q2_0 model process. Set
-`STRATA_TRANSFER_INJECT=observe|remote-submit|remote-sync|stager-record|stager-wait`. It selects a 1,382,400-byte
+`STRATA_TRANSFER_INJECT=observe|remote-submit|remote-sync|stager-record|stager-wait|prefill-final-copy|prefill-final-copy-unknown`.
+It selects a 1,382,400-byte
 expert transfer with the appropriate owned-host allocation flags, then logs `TRANSFER_INJECT selected`.
 A missing selection is not coverage. Never preload it into a production service. Record/wait error modes
 also report failed cleanup fences after real completion. No environment knob in the normal engine enables it.
+
+The two `prefill-final-copy` modes also accept the registered expert arena as the source. They report an
+error at the selected copy stream's first host wait, without poisoning Stager's status. The one-shot mode
+then lets cleanup succeed; the `-unknown` mode keeps reporting failure after real fences. Both must produce
+an error and exit without a generated token, `DONE`, refill or owner teardown. A missing selection is not coverage.
+
+Phase 11B completion checks:
+
+```sh
+ctest --test-dir BUILD -R '^(prefill_completion_test|lifetime_(cuda|hip)_)' --output-on-failure
+# Linux native runtime; one selected GPU, one process at a time:
+HSA_ENABLE_SDMA=0 ctest --test-dir BUILD -R '^lifetime_native_' --output-on-failure -j1
+```
+
+The CPU fixtures use production completion/copy headers and the real restore-attempt gate. They cover clean
+cancellation, sticky cleanup errors, whole/borrow/conversion admission, accepted work with a reported error,
+error-path drains, ordering failures and subprocess no-unwind boundaries. Native wrappers issue valid work
+and fence it before reporting synthetic errors. They do not create device faults. The native readback fixture
+also tests the actual snapshot capture/restore fail-stop boundary. These are not full serving or stability tests.
 
 Failure policy:
 
@@ -47,8 +67,11 @@ Failure policy:
 - Q36 query errors take its existing fatal `CK` policy, before CPU routing reads. There is no in-process recovery.
 
 Retention is bounded by the failed object's existing allocations, not by a process-wide quarantine cap. Do not
-construct replacement owners indefinitely in a failed process. These checks do not complete the separate
-PeerExperts direct-buffer, RemoteExpertOpt, generic ExpertCache startup, or CUDA async snapshot audits.
+construct replacement owners indefinitely in a failed process. Conversation copies now drain reported issue
+errors; unknown completion exits before either caller operand can unwind. Successful queued ordering stays
+device-side. Async checkpoint/park joins exit on worker errors rather than publishing a failed image.
+These checks do not complete the separate PeerExperts direct-buffer, RemoteExpertOpt, generic ExpertCache
+startup, or full CUDA async snapshot audits.
 
 Phase 10D validation stopped on a real MES `INVALIDATE_TLBS` timeout during a broad SDMA-off run. Do not infer
 hardware stability, final GPU validation, Q36 model coverage or a performance sign-off from the focused tests.

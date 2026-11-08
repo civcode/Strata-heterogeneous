@@ -1,0 +1,27 @@
+{
+  "base": "0ef75af1730c9374bbf1cb66a361f410d699b805",
+  "branch": "fix/phase11b-prefill-restore-lifetime",
+  "patch_sha256": "204994c9196d71b35044cf2b279477e7b6cbfb5d1756907486462e06106074b9",
+  "index_empty": true,
+  "files": {
+    "CMakeLists.txt": "9629965bf86a20992e912ee30c56e311191b07603b9a57ec2a3c618def1373b3",
+    "include/strata/prefill/expert_stager.hpp": "fcb691accf573813c78cabcdf88e2b7f20f5a40644e9028b7b5cc0119a2fe7d4",
+    "include/strata/prefill/host_group_readback.hpp": "2b6f4c2b1717478d0078415ce66315778b0e8b38c5052673f2e6bfb125273da2",
+    "include/strata/prefill/moe_fused.hpp": "99c587265ca567a2ae3bf2d7d5d0011bd58c00e75ac13e0104eb5dcf007431e2",
+    "src/core/conversation_copy.hpp": "0b0bb5bedc683ee409edd64fed34e358de0d402c396d740d49e775d8cd4aec38",
+    "src/core/conversation_readback.hpp": "d2c47d6025c02ab75d6b2efc6af0281cb3262497429888c0bb89f35ba0bfac6a",
+    "src/core/conversation_readback_test.cpp": "eafbdfbd2e0c7a3319325973695cb97a6bf93cd136207b09427a7b607bda90e3",
+    "src/core/conversation_snapshot.cpp": "a17c90fbb2b6520be6163944acc7c174c971df8fd38436cfc3e60606d739e9f0",
+    "src/core/conversation_state.cpp": "afb655ed0a6e67aef697e5c9a48eb943168bdbed85d554c6008bd2cacc7f919b",
+    "src/prefill/prefill.cpp": "8ddf7392a6ef1dbc7e5f4002633a8be7e9325694748f11df3c6ec765d9624f71",
+    "src/program/generate.cpp": "74fd094ec7738a52649d01c1551ddbc6ba2509a3a97cdcbde2dd818deb7f82a0",
+    "tests/prefill/TRANSFER_FAILURES.md": "a3fb81da7bade47e0e0d87015363cc43970ea33ab368c32110164026634b170c",
+    "tests/prefill/transfer_inject.cpp": "b7c57dcdd596bfe841a03586f5cc981720d0560a006b45ce19a094ecbca529c3",
+    "include/strata/core/transfer_terminal.hpp": "3c5a73bb2a13b4192a3dcd86aff01d2b1cf2b9ee6eb8479043bc805881459b53",
+    "src/core/conversation_completion.hpp": "035cb1ada9c1e5a6c112ae88c7ca7917e965560ad0d220b324bfbca0fb0216fb",
+    "tests/core/conversation_fake/cuda_runtime.h": "a9c80407b43152acfa738bb1714b52dc4e930fa5025f654f81a9a6f417c6d7e9",
+    "tests/core/conversation_lifetime_gpu_test.cpp": "d189a86b2947ea77b133d6671ff6a3f0a6e4c079ba3fb49df8e816c13345a58b",
+    "tests/core/conversation_lifetime_test.cpp": "a03a278f189b1ddad6e67a3213db1efe54a5efff88e938158e29c40ee37c6ae4",
+    "tests/prefill/completion_failure_test.cpp": "71842fa6b5fc39a0357ed511731ab9a9774cbd89d721588c6f2e90e740a31230"
+  }
+}

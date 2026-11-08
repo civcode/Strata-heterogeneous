@@ -21,6 +21,14 @@ macro(strata_cuda_toolchain)
     set(_strata_cuda_arch_defaulted ON)
   endif()
   enable_language(CUDA)
+  # strata-dev-private ffe0ceaf (Phase 11B):
+  # CUDA 12.0 and older have a 4096-byte launch-parameter limit. Keep the same
+  # kernels/math, but split wide expert batches at 128 instead of passing 4216 bytes.
+  # Define this for host AND device translation units: WideBatch is a shared ABI.
+  if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 12.1)
+    add_compile_definitions(STRATA_CUDA_SMALL_KERNEL_PARAMS=1)
+    message(STATUS "Strata: CUDA < 12.1 uses 128-expert fused batches (4096-byte parameter limit)")
+  endif()
   # `enable_language(CUDA)` gives the .cu compile rules but NOT the imported targets, so `CUDA::cudart` has to
   # be brought in explicitly for the host-side tests that call cudaMalloc themselves.
   find_package(CUDAToolkit REQUIRED)

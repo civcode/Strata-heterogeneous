@@ -1287,6 +1287,28 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   add_test(NAME conversation_readback_test COMMAND conversation_readback_test)
   set_tests_properties(conversation_readback_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 
+  # strata-dev-private ffe0ceaf (Phase 11B): conversation copy lifetime on the GPU
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(conversation_lifetime_gpu_test tests/core/conversation_lifetime_gpu_test.cpp)
+    target_include_directories(conversation_lifetime_gpu_test PRIVATE src/core include)
+    target_link_libraries(conversation_lifetime_gpu_test PRIVATE strata_core ${_strata_gpu_runtime_target} Threads::Threads)
+    if(STRATA_ENABLE_HIP)
+      set(_copy_runtime_prefix hip)
+    else()
+      set(_copy_runtime_prefix cuda)
+    endif()
+    target_link_options(conversation_lifetime_gpu_test PRIVATE
+      "-Wl,--wrap=${_copy_runtime_prefix}MemcpyAsync"
+      "-Wl,--wrap=${_copy_runtime_prefix}StreamSynchronize"
+      "-Wl,--wrap=${_copy_runtime_prefix}EventRecord")
+    foreach(_case success issue-drain issue-unknown wait-unknown record-drain record-unknown
+                  readback-issue-drain readback-unknown)
+      add_test(NAME lifetime_native_${_case} COMMAND conversation_lifetime_gpu_test ${_case})
+      set_tests_properties(lifetime_native_${_case} PROPERTIES RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 40)
+    endforeach()
+  endif()
+
+
   # strata-dev-private 0ef75af1 (Phase 10E): pinned-ring, remote-expert and prefill transfer ownership on the GPU
   if(STRATA_BUILD_TESTS)
     if(STRATA_ENABLE_HIP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -1303,6 +1325,50 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
         set_tests_properties(remote_owner_${case} remote_owner_${case}_reverse
           PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120 RUN_SERIAL TRUE)
       endforeach()
+
+      # strata-dev-private ffe0ceaf (Phase 11B): expert cache, peer experts and remote-opt ownership on the GPU
+      add_executable(expert_cache_gpu_test tests/core/expert_cache_gpu_test.cpp)
+      target_link_libraries(expert_cache_gpu_test PRIVATE strata_engine)
+      target_link_options(expert_cache_gpu_test PRIVATE
+        -Wl,--wrap=hipMalloc -Wl,--wrap=hipHostMalloc -Wl,--wrap=hipFree -Wl,--wrap=hipFreeHost
+        -Wl,--wrap=hipMemset -Wl,--wrap=hipMemcpy -Wl,--wrap=hipMemcpyAsync
+        -Wl,--wrap=hipStreamSynchronize -Wl,--wrap=hipDeviceSynchronize
+        -Wl,--wrap=_ZdlPv -Wl,--wrap=_ZdlPvm)
+      foreach(case success async-success blocking-issue blocking-unknown readback-issue readback-unknown
+                   queued-issue queued-unknown parts-issue parts-unknown async-issue async-unknown
+                   sync-drain sync-unknown close-reader close-unknown graph-reader verify-null
+                   open-alloc open-memset open-memset-unknown open-stage open-sized-stage device-scope)
+        add_test(NAME expert_cache_native_${case} COMMAND expert_cache_gpu_test ${case})
+        set_tests_properties(expert_cache_native_${case} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60 RUN_SERIAL TRUE)
+      endforeach()
+
+      add_executable(peer_experts_gpu_test tests/core/peer_experts_gpu_test.cpp)
+      target_link_libraries(peer_experts_gpu_test PRIVATE strata_engine)
+      target_link_options(peer_experts_gpu_test PRIVATE
+        -Wl,--wrap=hipMalloc -Wl,--wrap=hipHostMalloc -Wl,--wrap=hipFree -Wl,--wrap=hipFreeHost
+        -Wl,--wrap=hipMemcpyAsync -Wl,--wrap=hipStreamSynchronize -Wl,--wrap=hipDeviceSynchronize
+        -Wl,--wrap=hipSetDevice -Wl,--wrap=hipStreamQuery -Wl,--wrap=hipEventRecord
+        -Wl,--wrap=hipEventQuery -Wl,--wrap=hipEventSynchronize)
+      foreach(case success-direct success-staged primary-one close-queued close-sync-failure select-failure
+                   input-issue plan-issue results-issue issue-drain-failure finish-query finish-drain-failure
+                   refill-success refill-issue refill-drain-failure refill-record-failure
+                   refill-query-failure refill-wait-failure refill-not-ready refill-source-throws partial-init)
+        add_test(NAME peer_native_${case} COMMAND peer_experts_gpu_test ${case})
+        set_tests_properties(peer_native_${case} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60 RUN_SERIAL TRUE)
+      endforeach()
+
+      add_executable(remote_opt_gpu_test tests/core/remote_opt_gpu_test.cpp)
+      target_link_libraries(remote_opt_gpu_test PRIVATE strata_engine)
+      target_link_options(remote_opt_gpu_test PRIVATE
+        -Wl,--wrap=hipDeviceSynchronize -Wl,--wrap=hipSetDevice -Wl,--wrap=hipHostMalloc
+        -Wl,--wrap=hipHostGetDevicePointer -Wl,--wrap=hipMalloc -Wl,--wrap=hipFree -Wl,--wrap=hipFreeHost)
+      foreach(case success partial-init partial-map primary-sync-failure helper-sync-failure helper-select-failure)
+        add_test(NAME remote_opt_native_${case} COMMAND remote_opt_gpu_test ${case})
+        add_test(NAME remote_opt_native_${case}_reverse COMMAND remote_opt_gpu_test ${case} reverse)
+        set_tests_properties(remote_opt_native_${case} remote_opt_native_${case}_reverse
+          PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60 RUN_SERIAL TRUE)
+      endforeach()
+
 
       add_executable(transfer_gpu_test tests/prefill/transfer_gpu_test.cpp)
       target_include_directories(transfer_gpu_test PRIVATE include)

@@ -8,6 +8,10 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#if defined(STRATA_READBACK_LINK_WRAP)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #if defined(STRATA_READBACK_LINK_WRAP)
 namespace {
@@ -107,7 +111,7 @@ void deterministic() {
     }
     check(state->releases == 0 && state->in_flight, "unknown-completion storage quarantined, not freed");
 }
-void capture(int dev, int salt) {
+void capture(int dev, int salt, bool fail_restore = false) {
     ck(cudaSetDevice(dev));
     const size_t n = PinnedReadback<>::piece_bytes + 4099;
     auto src = pattern(n, salt);
@@ -148,6 +152,11 @@ void capture(int dev, int salt) {
     SavedConversation moved = std::move(saved); // eviction/replacement cannot race a synchronous capture
     saved = {};
     ck(cudaMemset(ss.gdn_state, 0, z.gdn)); ck(cudaDeviceSynchronize());
+#if defined(STRATA_READBACK_LINK_WRAP)
+    if (fail_restore) { calls = 0; fail_at = 1; fault = Fault::sync; }
+#else
+    (void) fail_restore;
+#endif
     check(conversation_snapshot_restore(moved, ss, g, nullptr, error) == ConversationRestore::restored, error.c_str());
     std::vector<uint8_t> restored(z.gdn);
     ck(copy_nonblocking(restored.data(), ss.gdn_state, restored.size(), false, true));
@@ -186,28 +195,44 @@ void capture_failure(Fault which, int nth, int dev) {
     check(previous.live.ids == old_ids && previous.live.gdn == std::vector<uint8_t>(z.gdn, 37) &&
           conversation_snapshot_validate(previous, ss, g, nullptr, error),
           "failed capture never replaces previously valid image, including after first chunk");
-    // A failed restore reports transfer_failed even when a preceding chunk already changed the session.
-    SavedConversation valid;
-    check(conversation_snapshot_save(valid, {ids, images, checkpoints, true}, ss, g, nullptr, error), "capture after failure");
-    ck(cudaMemset(ss.gdn_state, 0, z.gdn)); ck(cudaDeviceSynchronize());
-    calls = 0; fail_at = 1; fault = Fault::sync;
-    const auto restored = conversation_snapshot_restore(valid, ss, g, nullptr, error);
-    fault = Fault::none;
-    check(calls == 1, "requested restore synchronization failure was reached");
-    check(restored == ConversationRestore::transfer_failed, "restore failure is never reported as restored");
-    uint8_t changed = 0;
-    ck(copy_nonblocking(&changed, ss.gdn_state, 1, false, true));
-    check(changed == 19, "restore failure fixture actually modified live GPU state before failing");
     ck(cudaFree(ss.gdn_state));
 }
 #endif
 }
-int main() {
+int main(int argc, char** argv) {
+#if defined(STRATA_READBACK_LINK_WRAP)
+    if (argc > 1) {
+        int available = 0;
+        if (cudaGetDeviceCount(&available) != cudaSuccess || available == 0) return 77;
+        struct Unwind { ~Unwind() { std::puts("UNWIND"); } } owners;
+        if (std::string(argv[1]) == "restore") capture(0, 11, true);
+        else capture_failure(Fault::sync, std::atoi(argv[1]), 0);
+        return 9;
+    }
+    // Fork BEFORE initializing the GPU runtime, then exec. A reported wait error must
+    // reach the real capture/restore process boundary, not return to ordinary cleanup.
+    for (const char* mode : {"1", "2", "restore"}) {
+        int fds[2]; check(pipe(fds) == 0, "terminal pipe");
+        const pid_t pid = fork(); check(pid >= 0, "terminal fork");
+        if (pid == 0) {
+            close(fds[0]); check(dup2(fds[1], STDOUT_FILENO) >= 0, "redirect terminal output"); close(fds[1]);
+            execl(argv[0], argv[0], mode, static_cast<char*>(nullptr)); std::_Exit(2);
+        }
+        close(fds[1]); std::string output; char buf[256]; ssize_t nread;
+        while ((nread = read(fds[0], buf, sizeof(buf))) > 0) output.append(buf, static_cast<size_t>(nread));
+        close(fds[0]); int status = 0; check(waitpid(pid, &status, 0) == pid, "terminal wait");
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 77) return 77;
+        check(WIFEXITED(status) && WEXITSTATUS(status) == 1 && output.find("ERR conversation") != std::string::npos &&
+              output.find("UNWIND") == std::string::npos, "actual capture/restore unknown completion cannot unwind");
+    }
+#else
+    (void) argc; (void) argv;
+#endif
     deterministic();
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) return 77;
 #if defined(STRATA_READBACK_LINK_WRAP)
-    for (auto f : {Fault::pin, Fault::submit, Fault::sync}) {
+    for (auto f : {Fault::pin, Fault::submit}) {
         // Fresh threads also start with cold pinned staging. nth=2 fails after a completed first chunk.
         for (int nth : {1, 2}) {
             if (f == Fault::pin && nth == 2) continue;

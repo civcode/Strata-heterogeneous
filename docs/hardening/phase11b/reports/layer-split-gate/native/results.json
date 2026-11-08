@@ -1,0 +1,211 @@
+{
+  "phase": "11B",
+  "scenario": "layer-split A/B/A",
+  "results": [
+    {
+      "uuid_order": [
+        "GPU-e39306ee46993aad",
+        "GPU-2f182f01261ba30b"
+      ],
+      "status": "pass",
+      "records": [
+        {
+          "name": "A",
+          "prompt_tokens": 624,
+          "tokens": [
+            27775
+          ],
+          "finish": "length",
+          "reused": 0,
+          "log_excerpt": "strata prefill: QSA layers: norm + rope in one pass on, attention gate in the attention epilogue on\nstrata serve: DRAFT_PREFILL path=token mode=0 cells=617\nstrata verify: capturing the 1-token window (7010 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 5.5 ms\nstrata verify: capturing the 2-token window (7002 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 2.3 ms\nstrata verify: capturing the 3-token window (6998 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 4-token window (6994 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 5-token window (6990 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 6-token window (6986 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 1-token window (6980 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 2-token window (6976 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 3-token window (6972 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 4-token window (6968 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 5-token window (6964 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 6-token window (6960 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 2.2 ms\nstrata verify: capturing the 1-token window (7870 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 32.4 ms\nstrata verify: capturing the 2-token window (7830 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 3-token window (7826 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 1.6 ms\nstrata verify: capturing the 4-token window (7822 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 5-token window (7818 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 6-token window (7814 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 1-token window (7808 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 2-token window (7804 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 3-token window (7800 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 4-token window (7796 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 5-token window (7792 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 6-token window (7788 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 1.9 ms\nstrata serve: prompt 624 tokens = 0 reused + 624 read in 845 ms (738.5 tok/s), 1 generated in 15 ms (66.1 tok/s), drafts accepted 0 of 0, 1 checkpoints\n"
+        },
+        {
+          "name": "B",
+          "prompt_tokens": 534,
+          "tokens": [
+            40
+          ],
+          "finish": "length",
+          "reused": 0,
+          "log_excerpt": "strata serve: conversation cache: parked 624 tokens in 48.6 ms; parked=1 bytes=246409576 evictions=0 snapshot_bytes=246409576 reused_kv_bytes=0\nstrata serve: DRAFT_PREFILL path=token mode=0 cells=527\nstrata serve: prompt 534 tokens = 0 reused + 534 read in 763 ms (699.8 tok/s), 1 generated in 15 ms (67.5 tok/s), drafts accepted 0 of 0, 1 checkpoints\n"
+        },
+        {
+          "name": "A-return",
+          "prompt_tokens": 624,
+          "tokens": [
+            27775
+          ],
+          "finish": "length",
+          "reused": 617,
+          "log_excerpt": "strata serve: conversation cache: parked 534 tokens in 48.8 ms; parked=1 bytes=245058760 evictions=0 snapshot_bytes=245058760 reused_kv_bytes=0\nstrata serve: SNAPSHOT_VERIFY draft=8c1117b158945805 cells=624 mode=0 source=ram resident=24576\nstrata serve: conversation cache: restored 617 tokens (checkpoint) in 17.5 ms; parked=1 bytes=254596880\nstrata serve: prompt 624 tokens = 617 reused + 7 read in 97 ms (72.0 tok/s), 1 generated in 15 ms (67.5 tok/s), drafts accepted 0 of 0, 1 checkpoints\n"
+        }
+      ],
+      "log": "/home/chris/workspace/Strata-phase11b/layer-split-gate/native/layer-split-46993aad-261ba30b.log",
+      "engine_args": [
+        "--pack",
+        "/home/chris/workspace/Strata-data/packs/q2_0",
+        "--native",
+        "/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
+        "--ple-gguf",
+        "/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf",
+        "--expert-profile",
+        "/home/chris/workspace/Strata/data/expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "/home/chris/workspace/Strata-data/mtp/rt",
+        "--max-context",
+        "24576",
+        "--kv",
+        "int8",
+        "--vision",
+        "--vram-reserve-mib",
+        "700",
+        "--control-vector-scaled",
+        "/home/chris/workspace/Strata/data/experimental-speed-projection/Qwen3.8-Flash-Next-experimental-speed-projection.gguf:1.0",
+        "--control-vector-layer-range",
+        "4",
+        "44",
+        "--cvec-mode",
+        "project",
+        "--cvec-dir",
+        "per-layer",
+        "--conversation-cache-mib",
+        "2048",
+        "--conversation-cache-slots",
+        "4",
+        "--prompt-cache",
+        "4",
+        "--prompt-cache-every",
+        "128",
+        "--layer-split",
+        "auto"
+      ],
+      "physical_mapping": [
+        {
+          "pid": 78337,
+          "ordinal": 0,
+          "pci": "0000:03:00.0",
+          "uuid": "e39306ee46993aad",
+          "name": "AMD Radeon AI PRO R9700"
+        },
+        {
+          "pid": 78337,
+          "ordinal": 1,
+          "pci": "0000:07:00.0",
+          "uuid": "2f182f01261ba30b",
+          "name": "AMD Radeon AI PRO R9700"
+        }
+      ]
+    },
+    {
+      "uuid_order": [
+        "GPU-2f182f01261ba30b",
+        "GPU-e39306ee46993aad"
+      ],
+      "status": "pass",
+      "records": [
+        {
+          "name": "A",
+          "prompt_tokens": 624,
+          "tokens": [
+            27775
+          ],
+          "finish": "length",
+          "reused": 0,
+          "log_excerpt": "strata prefill: QSA layers: norm + rope in one pass on, attention gate in the attention epilogue on\nstrata serve: DRAFT_PREFILL path=token mode=0 cells=617\nstrata verify: capturing the 1-token window (7010 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 5.2 ms\nstrata verify: capturing the 2-token window (7002 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 3-token window (6998 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 4-token window (6994 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 5-token window (6990 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 6-token window (6986 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 1-token window (6980 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 2-token window (6976 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 1.7 ms\nstrata verify: capturing the 3-token window (6972 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 4-token window (6968 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 5-token window (6964 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 6-token window (6960 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 2.2 ms\nstrata verify: capturing the 1-token window (7870 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 33.2 ms\nstrata verify: capturing the 2-token window (7830 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 3-token window (7826 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 4-token window (7822 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 1.6 ms\nstrata verify: capturing the 5-token window (7818 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 6-token window (7814 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 2.0 ms\nstrata verify: capturing the 1-token window (7808 MiB of VRAM free)\nstrata verify: captured the 1-token window (upload no error, sync no error) in 2.1 ms\nstrata verify: capturing the 2-token window (7804 MiB of VRAM free)\nstrata verify: captured the 2-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 3-token window (7800 MiB of VRAM free)\nstrata verify: captured the 3-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 4-token window (7796 MiB of VRAM free)\nstrata verify: captured the 4-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 5-token window (7792 MiB of VRAM free)\nstrata verify: captured the 5-token window (upload no error, sync no error) in 1.9 ms\nstrata verify: capturing the 6-token window (7788 MiB of VRAM free)\nstrata verify: captured the 6-token window (upload no error, sync no error) in 1.9 ms\nstrata serve: prompt 624 tokens = 0 reused + 624 read in 833 ms (748.7 tok/s), 1 generated in 15 ms (66.6 tok/s), drafts accepted 0 of 0, 1 checkpoints\n"
+        },
+        {
+          "name": "B",
+          "prompt_tokens": 534,
+          "tokens": [
+            40
+          ],
+          "finish": "length",
+          "reused": 0,
+          "log_excerpt": "strata serve: conversation cache: parked 624 tokens in 49.7 ms; parked=1 bytes=246409576 evictions=0 snapshot_bytes=246409576 reused_kv_bytes=0\nstrata serve: DRAFT_PREFILL path=token mode=0 cells=527\nstrata serve: prompt 534 tokens = 0 reused + 534 read in 766 ms (696.7 tok/s), 1 generated in 15 ms (67.9 tok/s), drafts accepted 0 of 0, 1 checkpoints\n"
+        },
+        {
+          "name": "A-return",
+          "prompt_tokens": 624,
+          "tokens": [
+            27775
+          ],
+          "finish": "length",
+          "reused": 617,
+          "log_excerpt": "strata serve: conversation cache: parked 534 tokens in 48.6 ms; parked=1 bytes=245058760 evictions=0 snapshot_bytes=245058760 reused_kv_bytes=0\nstrata serve: SNAPSHOT_VERIFY draft=8c1117b158945805 cells=624 mode=0 source=ram resident=24576\nstrata serve: conversation cache: restored 617 tokens (checkpoint) in 15.1 ms; parked=1 bytes=254596880\nstrata serve: prompt 624 tokens = 617 reused + 7 read in 101 ms (69.1 tok/s), 1 generated in 15 ms (67.8 tok/s), drafts accepted 0 of 0, 1 checkpoints\n"
+        }
+      ],
+      "log": "/home/chris/workspace/Strata-phase11b/layer-split-gate/native/layer-split-261ba30b-46993aad.log",
+      "engine_args": [
+        "--pack",
+        "/home/chris/workspace/Strata-data/packs/q2_0",
+        "--native",
+        "/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
+        "--ple-gguf",
+        "/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf",
+        "--expert-profile",
+        "/home/chris/workspace/Strata/data/expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "/home/chris/workspace/Strata-data/mtp/rt",
+        "--max-context",
+        "24576",
+        "--kv",
+        "int8",
+        "--vision",
+        "--vram-reserve-mib",
+        "700",
+        "--control-vector-scaled",
+        "/home/chris/workspace/Strata/data/experimental-speed-projection/Qwen3.8-Flash-Next-experimental-speed-projection.gguf:1.0",
+        "--control-vector-layer-range",
+        "4",
+        "44",
+        "--cvec-mode",
+        "project",
+        "--cvec-dir",
+        "per-layer",
+        "--conversation-cache-mib",
+        "2048",
+        "--conversation-cache-slots",
+        "4",
+        "--prompt-cache",
+        "4",
+        "--prompt-cache-every",
+        "128",
+        "--layer-split",
+        "auto"
+      ],
+      "physical_mapping": [
+        {
+          "pid": 79302,
+          "ordinal": 0,
+          "pci": "0000:07:00.0",
+          "uuid": "2f182f01261ba30b",
+          "name": "AMD Radeon AI PRO R9700"
+        },
+        {
+          "pid": 79302,
+          "ordinal": 1,
+          "pci": "0000:03:00.0",
+          "uuid": "e39306ee46993aad",
+          "name": "AMD Radeon AI PRO R9700"
+        }
+      ]
+    }
+  ],
+  "qualification": "bounded HIP real-model ownership only; not P2P/long-context/CUDA"
+}

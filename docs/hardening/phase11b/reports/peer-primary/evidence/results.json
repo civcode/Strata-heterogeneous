@@ -1,0 +1,207 @@
+{
+  "start": "2026-11-08T00:15:15+01:00",
+  "environment": {
+    "HSA_ENABLE_SDMA": "0",
+    "STRATA_PEER_NO_P2P": "1"
+  },
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "ctest",
+        "--test-dir",
+        "/home/chris/workspace/Strata-builds/phase11b-hip",
+        "-R",
+        "^peer_native_primary-one$",
+        "-j",
+        "1",
+        "-V",
+        "--output-on-failure",
+        "--no-tests=error"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "00-primary-one.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "ctest",
+        "--test-dir",
+        "/home/chris/workspace/Strata-builds/phase11b-hip",
+        "-R",
+        "^peer_native_primary-one$",
+        "-j",
+        "1",
+        "-V",
+        "--output-on-failure",
+        "--no-tests=error"
+      ],
+      "returncode": 0,
+      "order": "GPU-2f182f01261ba30b,GPU-e39306ee46993aad",
+      "log": "01-primary-one.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "success-direct"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "02-peer-success-direct.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "success-staged"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "03-peer-success-staged.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "close-queued"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "04-peer-close-queued.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "select-failure"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "05-peer-select-failure.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "input-issue"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "06-peer-input-issue.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-success"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "07-peer-refill-success.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "success"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "08-cache-success.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "async-success"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "09-cache-async-success.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "readback-unknown"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "10-cache-readback-unknown.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "graph-reader"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "11-cache-graph-reader.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "75",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "device-scope"
+      ],
+      "returncode": 0,
+      "order": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+      "log": "12-cache-device-scope.log",
+      "kernel_faults": [],
+      "journal_returncode": 0
+    }
+  ]
+}

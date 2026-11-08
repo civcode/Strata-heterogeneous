@@ -22,6 +22,7 @@ constexpr size_t blob = 1382400;
 const char* mode() { const char* p = std::getenv("STRATA_TRANSFER_INJECT"); return p ? p : "observe"; }
 bool is(const char* p) { return std::strcmp(mode(), p) == 0; }
 bool remote() { return std::strncmp(mode(), "remote-", 7) == 0; }
+bool final_copy() { return std::strncmp(mode(), "prefill-final-copy", 18) == 0; }
 }
 extern "C" hipError_t hipHostMalloc(void** p, size_t n, unsigned flags) {
     auto e = next<hipError_t(*)(void**, size_t, unsigned)>("hipHostMalloc")(p, n, flags);
@@ -34,8 +35,10 @@ extern "C" hipError_t hipHostMalloc(void** p, size_t n, unsigned flags) {
 extern "C" hipError_t hipMemcpyAsync(void* dst, const void* src, size_t n, hipMemcpyKind kind, hipStream_t s) {
     auto e = next<hipError_t(*)(void*, const void*, size_t, hipMemcpyKind, hipStream_t)>("hipMemcpyAsync")(dst, src, n, kind, s);
     if (e != hipSuccess || n != blob || !have_stager || selected) return e;
-    bool pick = false;
-    {
+    // The final-copy case targets Prefill's stream status, not Stager's own error latch.
+    // Its source can be the registered resident arena instead of a private staging slot.
+    bool pick = final_copy() && kind == hipMemcpyHostToDevice;
+    if (!pick) {
         std::lock_guard<std::mutex> lk(mu);
         auto it = hosts.find(remote() ? dst : const_cast<void*>(src));
         pick = it != hosts.end() &&
@@ -68,7 +71,8 @@ extern "C" hipError_t hipEventSynchronize(hipEvent_t ev) {
 extern "C" hipError_t hipStreamSynchronize(hipStream_t s) {
     auto e = next<hipError_t(*)(hipStream_t)>("hipStreamSynchronize")(s);
     if (e == hipSuccess && selected && s == stream.load() &&
-        (is("remote-sync") || ((is("stager-record") || is("stager-wait")) && injected))) {
+        (is("remote-sync") || (final_copy() && (!injected || is("prefill-final-copy-unknown"))) ||
+         ((is("stager-record") || is("stager-wait")) && injected))) {
         injected = true; std::fprintf(stderr, "TRANSFER_INJECT completed stream reports synthetic error\n"); return hipErrorUnknown;
     }
     return e;

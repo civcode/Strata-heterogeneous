@@ -15,6 +15,42 @@ inline bool drain_prefill_streams(cudaStream_t compute, std::initializer_list<cu
     return ok;
 }
 
+// Single run-thread completion status, observed by callers only after pipeline joins. Cleanup
+// cannot throw: latch its error even if a later wait succeeds or the body had already returned true.
+struct PrefillCompletion {
+    cudaError_t error = cudaSuccess;
+    cudaError_t observe(cudaError_t status) {
+        if (error == cudaSuccess && status != cudaSuccess) error = status;
+        return status;
+    }
+    cudaError_t stream(cudaStream_t s) { return observe(cudaStreamSynchronize(s)); }
+    cudaError_t event(cudaEvent_t e) { return observe(cudaEventSynchronize(e)); }
+    bool failed() const { return error != cudaSuccess; }
+};
+struct PrefillStreamDrain {
+    PrefillCompletion& completion;
+    cudaStream_t stream;
+    ~PrefillStreamDrain() { if (stream) (void) completion.stream(stream); }
+};
+
+// Early return/cancellation must settle the borrowed compute/copy operands before refill.
+// The normal path already waits explicitly, so it disarms this guard without another fence.
+struct PrefillRunDrain {
+    PrefillCompletion& completion;
+    cudaStream_t compute;
+    cudaStream_t copy;
+    cudaStream_t kv = nullptr;
+    cudaStream_t ple = nullptr;
+    bool completed = false;
+    ~PrefillRunDrain() {
+        if (completed) return;
+        (void) completion.stream(compute); // null is a valid compute stream
+        if (copy) (void) completion.stream(copy);
+        if (kv) (void) completion.stream(kv);
+        if (ple) (void) completion.stream(ple);
+    }
+};
+
 // The host grouping gate. Both the mapped-ID producer and an optional activation download must
 // complete before callbacks/grouping may read their host storage. A failed gate is terminal for this
 // Prefill instance; its GPU-visible grouping buffers must be retained, not recycled during cleanup.

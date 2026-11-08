@@ -1,0 +1,121 @@
+{
+  "backend": "hip",
+  "start": "2026-11-07T20:44:07+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "ROCR_VISIBLE_DEVICES": "GPU-e39306ee46993aad",
+    "HSA_ENABLE_SDMA": "0"
+  },
+  "passed": 9,
+  "skipped": 0,
+  "failed": 0,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_readback_test"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-00-conversation_readback_test.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "remote-ok"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-01-transfer_gpu_test-remote-ok.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "remote-submit"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-02-transfer_gpu_test-remote-submit.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "remote-sync"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-03-transfer_gpu_test-remote-sync.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "stager-ok"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-04-transfer_gpu_test-stager-ok.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "stager-record"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-05-transfer_gpu_test-stager-record.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "stager-wait"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-06-transfer_gpu_test-stager-wait.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "query-ok"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-07-transfer_gpu_test-query-ok.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test",
+        "query-error"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-remaining-08-transfer_gpu_test-query-error.log"
+    }
+  ]
+}

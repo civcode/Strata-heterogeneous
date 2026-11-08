@@ -15,7 +15,8 @@
 
 namespace strata::prefill::detail {
 struct StagerFailure : std::runtime_error {
-    StagerFailure() : std::runtime_error("prefill: expert staging failed; restart the engine") {}
+    explicit StagerFailure(const char* message = "prefill: expert staging failed; restart the engine")
+        : std::runtime_error(message) {}
 };
 
 // Source is ExpertSource in production. Keeping the source interface parametric

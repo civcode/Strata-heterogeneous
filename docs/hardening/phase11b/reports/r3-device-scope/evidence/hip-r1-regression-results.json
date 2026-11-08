@@ -1,0 +1,254 @@
+{
+  "backend": "hip",
+  "start": "2026-11-07T23:44:57+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "ROCR_VISIBLE_DEVICES": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+    "HSA_ENABLE_SDMA": "0"
+  },
+  "passed": 20,
+  "skipped": 0,
+  "failed": 0,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "success-direct"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-00-peer_experts_gpu_test-success-direct.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "success-staged"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-01-peer_experts_gpu_test-success-staged.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "close-queued"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-02-peer_experts_gpu_test-close-queued.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "close-sync-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-03-peer_experts_gpu_test-close-sync-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "select-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-04-peer_experts_gpu_test-select-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "input-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-05-peer_experts_gpu_test-input-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "plan-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-06-peer_experts_gpu_test-plan-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "results-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-07-peer_experts_gpu_test-results-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "issue-drain-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-08-peer_experts_gpu_test-issue-drain-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "finish-query"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-09-peer_experts_gpu_test-finish-query.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "finish-drain-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-10-peer_experts_gpu_test-finish-drain-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-11-peer_experts_gpu_test-refill-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-12-peer_experts_gpu_test-refill-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-drain-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-13-peer_experts_gpu_test-refill-drain-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-record-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-14-peer_experts_gpu_test-refill-record-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-query-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-15-peer_experts_gpu_test-refill-query-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-wait-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-16-peer_experts_gpu_test-refill-wait-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-not-ready"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-17-peer_experts_gpu_test-refill-not-ready.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "refill-source-throws"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-18-peer_experts_gpu_test-refill-source-throws.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/peer_experts_gpu_test",
+        "partial-init"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r1-regression-19-peer_experts_gpu_test-partial-init.log"
+    }
+  ]
+}

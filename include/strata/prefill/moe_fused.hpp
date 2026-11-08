@@ -40,8 +40,9 @@ constexpr int kMoeGuRows = 2 * kMoeFF;
 constexpr int kMaxBatch = 128;
 /// The room of WideBatch::blob (below): a whole layer of 512 experts, which STRATA_PF_BATCH=512 (opt-in) launches at
 /// once on the native kernels' NT = 256 instances when all of them are resident (4 KB of kernel parameters: CUDA 12.1+,
-/// Volta and newer).  HIP, gfx906 and the Pascal / Volta build (STRATA_EXPERIMENTAL_SM60): kMaxBatch.
-#if defined(__HIPCC__) || defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_EXPERIMENTAL_SM60)
+/// Volta and newer). HIP, gfx906, CUDA < 12.1 and the Pascal / Volta build: kMaxBatch.
+/// STRATA_CUDA_SMALL_KERNEL_PARAMS is supplied to both host and device code by CMake.
+#if defined(__HIPCC__) || defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_EXPERIMENTAL_SM60) || defined(STRATA_CUDA_SMALL_KERNEL_PARAMS)
 constexpr int kBatchRoom = kMaxBatch;
 #else
 constexpr int kBatchRoom = 512;

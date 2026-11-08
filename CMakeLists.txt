@@ -412,6 +412,58 @@ if(STRATA_BUILD_TESTS)
     set_tests_properties(transfer_${case} PROPERTIES TIMEOUT 30)
   endforeach()
 
+  foreach(_backend IN ITEMS cuda hip)
+    add_executable(conversation_lifetime_${_backend}_test tests/core/conversation_lifetime_test.cpp)
+    target_include_directories(conversation_lifetime_${_backend}_test BEFORE PRIVATE tests/core/conversation_fake src/core include)
+    target_link_libraries(conversation_lifetime_${_backend}_test PRIVATE Threads::Threads)
+    if(_backend STREQUAL "hip")
+      target_compile_definitions(conversation_lifetime_${_backend}_test PRIVATE STRATA_USE_HIP=1)
+    endif()
+    foreach(_case pre-submit success issue-drain queued-issue-drain issue-unknown wait-unknown
+                  record-drain record-unknown dependency-drain readback readback-issue-drain readback-unknown
+                  async-join-ok async-join-failed async-join-throws async-join-throws-unknown)
+      add_test(NAME lifetime_${_backend}_${_case} COMMAND conversation_lifetime_${_backend}_test ${_case})
+      set_tests_properties(lifetime_${_backend}_${_case} PROPERTIES TIMEOUT 30)
+    endforeach()
+  endforeach()
+
+  add_executable(prefill_completion_test tests/prefill/completion_failure_test.cpp)
+  target_include_directories(prefill_completion_test BEFORE PRIVATE tests/prefill/transfer_fake include)
+  add_test(NAME prefill_completion_test COMMAND prefill_completion_test)
+  set_tests_properties(prefill_completion_test PROPERTIES TIMEOUT 30)
+
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(remote_opt_completion_test tests/core/remote_opt_completion_test.cpp)
+    target_include_directories(remote_opt_completion_test BEFORE PRIVATE tests/core/remote_opt_fake include)
+    foreach(_case success primary-sync-failure helper-sync-failure helper-select-failure)
+      add_test(NAME remote_opt_completion_${_case} COMMAND remote_opt_completion_test ${_case})
+      set_tests_properties(remote_opt_completion_${_case} PROPERTIES TIMEOUT 15)
+    endforeach()
+  endif()
+
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(peer_experts_completion_test tests/core/peer_experts_completion_test.cpp)
+    target_include_directories(peer_experts_completion_test BEFORE PRIVATE tests/core/peer_experts_fake include)
+    foreach(_case close-success select-failure close-sync-failure issue-drain-success issue-drain-failure
+                  finish-drain-failure event-not-ready event-query-failure event-wait-failure)
+      add_test(NAME peer_experts_completion_${_case} COMMAND peer_experts_completion_test ${_case})
+      set_tests_properties(peer_experts_completion_${_case} PROPERTIES TIMEOUT 15)
+    endforeach()
+  endif()
+
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(expert_cache_completion_test tests/core/expert_cache_completion_test.cpp)
+    target_include_directories(expert_cache_completion_test BEFORE PRIVATE tests/core/expert_cache_fake include)
+    foreach(_case success issue-drain issue-unknown readback-drain readback-unknown
+                  sync-drain sync-unknown close-success close-unknown
+                  owner-switch owner-already-selected owner-no-storage
+                  owner-get-unknown owner-select-unknown owner-sync-unknown
+                  owner-restore-unknown owner-missing)
+      add_test(NAME expert_cache_completion_${_case} COMMAND expert_cache_completion_test ${_case})
+      set_tests_properties(expert_cache_completion_${_case} PROPERTIES TIMEOUT 15)
+    endforeach()
+  endif()
+
   add_executable(pinned_ring_test tests/core/pinned_ring_test.cpp)
   target_include_directories(pinned_ring_test BEFORE PRIVATE tests/core/pinned_ring_fake include)
   add_test(NAME pinned_ring_test COMMAND pinned_ring_test)

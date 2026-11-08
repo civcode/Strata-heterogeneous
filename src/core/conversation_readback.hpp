@@ -1,6 +1,7 @@
 #pragma once
 
 #include "strata/core/progress.hpp"
+#include "conversation_completion.hpp"
 #include <cuda_runtime.h>
 #include <algorithm>
 #include <cstddef>
@@ -49,6 +50,7 @@ public:
                 // Completion is unknown. Never free/reuse memory that the GPU might still reference.
                 // Quarantine until process exit; caller must reject this capture and handle the GPU error.
                 stage_ = nullptr;
+                unknown_completion_ = true;
                 return completed;
             }
             if (submitted != cudaSuccess) return submitted;
@@ -58,8 +60,10 @@ public:
         }
         return cudaSuccess;
     }
+    bool unknown_completion() const { return unknown_completion_; }
 private:
     void* stage_ = nullptr;
+    bool unknown_completion_ = false;
 };
 
 // HIP snapshot readback avoids the pageable destination path implicated by the concurrent QSA reproducer.
@@ -67,10 +71,13 @@ private:
 inline cudaError_t readback_host(void* dst, const void* src, size_t bytes, cudaStream_t stream) {
 #if defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906)
     thread_local PinnedReadback<> staging;
-    return staging.copy(dst, src, bytes, stream);
+    const auto e = staging.copy(dst, src, bytes, stream);
+    if (staging.unknown_completion())
+        core::transfer_terminal("conversation readback completion", cudaGetErrorString(e));
+    return e;
 #else
     cudaError_t e = cudaMemcpyAsync(dst, src, bytes, cudaMemcpyDefault, stream);
-    return e == cudaSuccess ? cudaStreamSynchronize(stream) : e;
+    return finish_copy(e, stream);
 #endif
 }
 

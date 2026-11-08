@@ -155,9 +155,8 @@ inline cudaError_t copy_nonblocking(void* dst, const void* src, size_t bytes, bo
         return e;
     }
     e = cudaMemcpyAsync(dst, src, bytes, cudaMemcpyDefault, s);
-    if (e != cudaSuccess || queued) return e;
-    e = cudaStreamSynchronize(s);
-    core::progress_beat();   // #2049: a parked conversation is many of these; each one that lands is progress
+    e = finish_copy(e, s, queued);
+    if (!queued) core::progress_beat();   // #2049: a parked conversation is many of these; each one that lands is progress
     return e;
 }
 
@@ -331,13 +330,15 @@ inline ConversationCopyPreparation prepare_copy_resources(const int* devices, si
 inline cudaError_t order_after_queued() {
     cudaStream_t stream = nullptr;
     cudaError_t e = private_stream(stream);
-    if (e != cudaSuccess) return e;
+    if (e != cudaSuccess) core::transfer_terminal("conversation queued ordering stream", cudaGetErrorString(e));
     cudaEvent_t event = nullptr;
     e = private_event(event);
-    if (e != cudaSuccess) return e;
-    e = cudaEventRecord(event, stream);
-    if (e != cudaSuccess) return e;
-    return cudaStreamWaitEvent(nullptr, event, 0);
+    if (e == cudaSuccess) e = cudaEventRecord(event, stream);
+    if (e == cudaSuccess) e = cudaStreamWaitEvent(nullptr, event, 0);
+    // A failed dependency cannot allow queued copies' operands to unwind. Healthy ordering
+    // remains device-side; only the failure path waits on the host.
+    if (e != cudaSuccess) drain_copy_or_exit(stream);
+    return e;
 }
 
 } // namespace strata::core::conversation_detail

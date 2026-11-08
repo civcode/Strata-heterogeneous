@@ -1,0 +1,11 @@
+{
+  "start": "2026-11-08T00:43:48+01:00",
+  "command": [
+    "/home/chris/workspace/Strata/.venv/bin/python",
+    "/home/chris/workspace/Strata-phase11b/layer-split-gate/monitored_gate.py",
+    "--child"
+  ],
+  "deadline_seconds": 300,
+  "returncode": 0,
+  "error": null
+}

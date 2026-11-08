@@ -1,0 +1,48 @@
+{
+  "backend": "cuda",
+  "start": "2026-11-07T21:03:18+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "CUDA_VISIBLE_DEVICES": "0"
+  },
+  "passed": 0,
+  "skipped": 3,
+  "failed": 0,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-cuda/conversation_lifetime_gpu_test",
+        "success"
+      ],
+      "returncode": 77,
+      "kernel_faults": [],
+      "log": "cuda-reviewed-runtime-00-conversation_lifetime_gpu_test-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-cuda/conversation_lifetime_gpu_test",
+        "issue-drain"
+      ],
+      "returncode": 77,
+      "kernel_faults": [],
+      "log": "cuda-reviewed-runtime-01-conversation_lifetime_gpu_test-issue-drain.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-cuda/pinned_ring_gpu_test"
+      ],
+      "returncode": 77,
+      "kernel_faults": [],
+      "log": "cuda-reviewed-runtime-02-pinned_ring_gpu_test.log"
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "backend": "hip",
+  "start": "2026-11-07T22:00:31+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "ROCR_VISIBLE_DEVICES": "GPU-e39306ee46993aad",
+    "HSA_ENABLE_SDMA": "1"
+  },
+  "passed": 3,
+  "skipped": 0,
+  "failed": 0,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-sdma1-00-conversation_lifetime_gpu_test-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "issue-drain"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-sdma1-01-conversation_lifetime_gpu_test-issue-drain.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/pinned_ring_gpu_test"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-sdma1-02-pinned_ring_gpu_test.log"
+    }
+  ]
+}

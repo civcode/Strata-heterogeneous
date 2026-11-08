@@ -585,8 +585,7 @@ void conversation_park_join() {
     ParkAsync& a = park_async();
     std::lock_guard<std::mutex> lk(a.mu);
     if (a.pending.valid()) {
-        const cudaError_t e = a.pending.get();
-        if (e != cudaSuccess) std::fprintf(stderr, "strata: STRATA_PARK_ASYNC: a parked K/V copy failed (%s)\n", cudaGetErrorString(e));
+        conversation_detail::join_copy_or_exit(a.pending, "STRATA_PARK_ASYNC image");
     }
 }
 
@@ -672,8 +671,9 @@ void conversation_park_async_abandon() {
     a.active = false;
     a.items.clear();
     cudaStream_t s = nullptr;
-    if (conversation_detail::private_stream(s) == cudaSuccess) (void) cudaStreamSynchronize(s);   // nothing reads the stage after
-    (void) cudaGetLastError();
+    if (const auto e = conversation_detail::private_stream(s); e != cudaSuccess)
+        core::transfer_terminal("conversation park abandon stream", cudaGetErrorString(e));
+    conversation_detail::drain_copy_or_exit(s);   // nothing may read the stage after it is released
     if (a.slot != nullptr) { vram_kv_release(*a.slot); a.slot = nullptr; a.slot_tag = 0; }   // (STRATA_PARK_VRAM_MIB)
 }
 
@@ -683,13 +683,9 @@ bool conversation_park_async_launch(std::string& error) {
     a.active = false;
     cudaStream_t s = nullptr;
     cudaError_t e = conversation_detail::private_stream(s);
-    if (e == cudaSuccess) e = cudaStreamSynchronize(s);   // the device-to-device copies into the stage
-    if (e != cudaSuccess) {
-        a.items.clear();
-        if (a.slot != nullptr) { vram_kv_release(*a.slot); a.slot = nullptr; a.slot_tag = 0; }   // (STRATA_PARK_VRAM_MIB)
-        error = std::string("conversation snapshot stage: ") + cudaGetErrorString(e);
-        return false;
-    }
+    if (e != cudaSuccess) core::transfer_terminal("conversation snapshot stream", cudaGetErrorString(e));
+    conversation_detail::drain_copy_or_exit(s);   // device-to-device copies must finish before the stage is published
+    (void) error;
     // STRATA_PARK_VRAM_MIB: the host copies read the slot; it stays until the image and its K/V layers go (their tokens)
     const uint8_t* stage = a.slot != nullptr ? static_cast<const uint8_t*>(a.slot->p) : a.stage;
     a.slot = nullptr;
@@ -703,7 +699,8 @@ bool conversation_park_async_launch(std::string& error) {
     // two pinned pieces in turn: the next piece's DMA runs while this one is copied into its segment
     a.pending = std::async(std::launch::async, [items = std::move(items), stage, host, st, dev] {
         conversation_detail::background_thread_placement();
-        (void) cudaSetDevice(dev);
+        if (const auto selected = cudaSetDevice(dev); selected != cudaSuccess)
+            core::transfer_terminal("STRATA_PARK_ASYNC device", cudaGetErrorString(selected));
         cudaEvent_t done[2] = {nullptr, nullptr};
         cudaError_t e = cudaEventCreateWithFlags(&done[0], cudaEventDisableTiming | cudaEventBlockingSync);
         if (e == cudaSuccess) e = cudaEventCreateWithFlags(&done[1], cudaEventDisableTiming | cudaEventBlockingSync);
@@ -727,6 +724,7 @@ bool conversation_park_async_launch(std::string& error) {
             }
         land(b);
         land(b ^ 1);
+        if (e != cudaSuccess) conversation_detail::drain_copy_or_exit(st);
         for (cudaEvent_t d : done) if (d) (void) cudaEventDestroy(d);
         return e;
     });

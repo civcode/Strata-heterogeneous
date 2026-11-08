@@ -1,0 +1,289 @@
+{
+  "backend": "hip",
+  "start": "2026-11-07T22:23:37+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "ROCR_VISIBLE_DEVICES": "GPU-e39306ee46993aad,GPU-2f182f01261ba30b",
+    "HSA_ENABLE_SDMA": "0"
+  },
+  "passed": 22,
+  "skipped": 0,
+  "failed": 0,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-00-remote_opt_gpu_test-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "success",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-01-remote_opt_gpu_test-success-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "partial-init"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-02-remote_opt_gpu_test-partial-init.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "partial-init",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-03-remote_opt_gpu_test-partial-init-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "partial-map"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-04-remote_opt_gpu_test-partial-map.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "partial-map",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-05-remote_opt_gpu_test-partial-map-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "primary-sync-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-06-remote_opt_gpu_test-primary-sync-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "primary-sync-failure",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-07-remote_opt_gpu_test-primary-sync-failure-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "helper-sync-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-08-remote_opt_gpu_test-helper-sync-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "helper-sync-failure",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-09-remote_opt_gpu_test-helper-sync-failure-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "helper-select-failure"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-10-remote_opt_gpu_test-helper-select-failure.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_opt_gpu_test",
+        "helper-select-failure",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-11-remote_opt_gpu_test-helper-select-failure-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-12-remote_experts_gpu_test-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "success",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-13-remote_experts_gpu_test-success-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "allocation"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-14-remote_experts_gpu_test-allocation.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "allocation",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-15-remote_experts_gpu_test-allocation-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "submit"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-16-remote_experts_gpu_test-submit.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "submit",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-17-remote_experts_gpu_test-submit-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-18-remote_experts_gpu_test-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "unknown",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-19-remote_experts_gpu_test-unknown-reverse.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "submit-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-20-remote_experts_gpu_test-submit-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/remote_experts_gpu_test",
+        "submit-unknown",
+        "reverse"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-r2-sdma0-21-remote_experts_gpu_test-submit-unknown-reverse.log"
+    }
+  ]
+}

@@ -191,6 +191,36 @@ void full_session(int fmt, int mode, int experts) {
               x.checkpoints.size()==y.checkpoints.size() && equal(x.kv[0],y.kv[0]) && equal(x.kv.back(),y.kv.back()),
               "streamed file equals captured file");
         check(slurp(p1)==slurp(p2),"streamed file is byte-identical to the captured file");
+        // Disk SAVE/LOAD also works without an MTP layer; the file must carry only
+        // the session's own K/V layers, and a reader with MTP must reject that image.
+        const QsaState* no_draft = nullptr;
+        SavedConversation plain, plain_meta, loaded;
+        std::vector<SessionKvSource> plain_sources;
+        check(conversation_snapshot_save(plain, view, ss, g, no_draft, err), "no-MTP captured image");
+        check(conversation_snapshot_sources(plain_meta, plain_sources, view, ss, g, no_draft, err),
+              "no-MTP disk sources");
+        check(plain_meta.kv.empty() && plain_sources.size() == plain.kv.size(),
+              "no-MTP source layer count");
+        const std::string p3 = (dir/"plain-streamed.bin").string();
+        const std::string p4 = (dir/"plain-captured.bin").string();
+        size_t n3 = 0, n4 = 0;
+        check(session_file_write(p3, plain_meta, plain_sources, id, n3, err), "no-MTP streamed write");
+        check(session_file_write(p4, plain, id, n4, err), "no-MTP captured write");
+        check(slurp(p3) == slurp(p4), "no-MTP streamed and captured files identical");
+        SessionReadLimits plain_limits;
+        check(conversation_session_read_limits(plain_limits, ss, g, no_draft,
+                                               (uint64_t) ss.max_cells, 8, err), "no-MTP read limits");
+        check(plain_limits.max_kv_layers == plain_sources.size(), "no-MTP read layer limit");
+        check(session_file_read(p3, id, loaded, n3, err, plain_limits), "no-MTP file read");
+        check(conversation_snapshot_validate(loaded, ss, g, no_draft, err), "no-MTP validated image");
+        check(!conversation_snapshot_validate(loaded, ss, g, &draft.state, err),
+              "no-MTP image rejected by draft-enabled runtime");
+        SavedConversation wrong;
+        size_t wrong_bytes = 0;
+        check(!session_file_read(p1, id, wrong, wrong_bytes, err, plain_limits),
+              "no-MTP read limits reject a file with draft layer");
+        check(conversation_snapshot_restore(loaded, ss, g, no_draft, err) == ConversationRestore::restored,
+              "no-MTP round-trip restore");
         std::error_code ec;
         fs::remove_all(dir,ec);
         auto empty_ids=std::vector<int32_t>{};

@@ -1,0 +1,13 @@
+{
+  "/home/chris/workspace/Strata-builds/phase11b-cuda/strata": "e3ccf46402c57b4eb40cb37eee41977adef7231a4f96d50c8f86c065a82348a9",
+  "/home/chris/workspace/Strata-builds/phase11b-cuda/conversation_lifetime_gpu_test": "6e4c465bcb7b1279a5017b2b6232ffd5b4df6ae6a217f1f0a2b33914b4066fd9",
+  "/home/chris/workspace/Strata-builds/phase11b-cuda/conversation_snapshot_test": "8b49f806851821cc693760947cc60e8031780dc85e5fa6c5c394e90438c87784",
+  "/home/chris/workspace/Strata-builds/phase11b-cuda/pinned_ring_gpu_test": "5329bda18e98b877dad7454785502d2d0abd7a9c5367936396bf7793db36832a",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/strata": "42adb3f19048962c2cabbd9d04e916488735d1ae0ac697ccbce63e3e03233387",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test": "c19f0be176796e453504b64ec5e43c190652dc16e28c7572f6bfec82d15cb25d",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_snapshot_test": "38e528529aa3b77ce576df5a41020d8b80ab136a9da5ca7ff851a6561b2945d4",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_readback_test": "051b3a22befdce2063a781a1ac5f1b82990ca3534aab5b6ff370494f2758edd1",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/pinned_ring_gpu_test": "1e36597bf022bc638b527a702689571f943ac74074df6f59c109c52d4de9a183",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/transfer_gpu_test": "4cb95e773c8558300dcb6a1a3ef275a69bb44facfca9a1012ca77238702cbdac",
+  "/home/chris/workspace/Strata-builds/phase11b-hip/libtransfer_prefill_inject.so": "c0c8e4d5ec84c0281da97d9da001f2126fa4740cfe629d355ebf431d5576027e"
+}

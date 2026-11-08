@@ -1,0 +1,323 @@
+{
+  "backend": "hip",
+  "start": "2026-11-07T23:44:54+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "ROCR_VISIBLE_DEVICES": "GPU-e39306ee46993aad",
+    "HSA_ENABLE_SDMA": "0"
+  },
+  "passed": 26,
+  "skipped": 0,
+  "failed": 0,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-00-expert_cache_gpu_test-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "async-success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-01-expert_cache_gpu_test-async-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "blocking-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-02-expert_cache_gpu_test-blocking-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "blocking-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-03-expert_cache_gpu_test-blocking-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "readback-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-04-expert_cache_gpu_test-readback-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "readback-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-05-expert_cache_gpu_test-readback-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "queued-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-06-expert_cache_gpu_test-queued-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "queued-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-07-expert_cache_gpu_test-queued-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "parts-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-08-expert_cache_gpu_test-parts-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "parts-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-09-expert_cache_gpu_test-parts-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "async-issue"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-10-expert_cache_gpu_test-async-issue.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "async-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-11-expert_cache_gpu_test-async-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "sync-drain"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-12-expert_cache_gpu_test-sync-drain.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "sync-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-13-expert_cache_gpu_test-sync-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "close-reader"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-14-expert_cache_gpu_test-close-reader.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "close-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-15-expert_cache_gpu_test-close-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "graph-reader"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-16-expert_cache_gpu_test-graph-reader.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "verify-null"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-17-expert_cache_gpu_test-verify-null.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "open-alloc"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-18-expert_cache_gpu_test-open-alloc.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "open-memset"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-19-expert_cache_gpu_test-open-memset.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "open-memset-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-20-expert_cache_gpu_test-open-memset-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "open-stage"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-21-expert_cache_gpu_test-open-stage.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_gpu_test",
+        "open-sized-stage"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-22-expert_cache_gpu_test-open-sized-stage.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/hip_expert_cache_staging"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-23-hip_expert_cache_staging-.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_per_layer_test"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-24-expert_cache_per_layer_test-.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/expert_cache_slot_guard_test"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-cache-device0-25-expert_cache_slot_guard_test-.log"
+    }
+  ]
+}

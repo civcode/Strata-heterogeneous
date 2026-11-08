@@ -1,0 +1,143 @@
+{
+  "backend": "hip",
+  "start": "2026-11-07T20:42:41+01:00",
+  "environment": {
+    "LD_LIBRARY_PATH": "/opt/rocm/core-10.1/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib",
+    "ROCR_VISIBLE_DEVICES": "GPU-e39306ee46993aad",
+    "HSA_ENABLE_SDMA": "0"
+  },
+  "passed": 10,
+  "skipped": 0,
+  "failed": 1,
+  "tests": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "success"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-00-conversation_lifetime_gpu_test-success.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "issue-drain"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-01-conversation_lifetime_gpu_test-issue-drain.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "issue-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-02-conversation_lifetime_gpu_test-issue-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "wait-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-03-conversation_lifetime_gpu_test-wait-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "record-drain"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-04-conversation_lifetime_gpu_test-record-drain.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "record-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-05-conversation_lifetime_gpu_test-record-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "readback-issue-drain"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-06-conversation_lifetime_gpu_test-readback-issue-drain.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_lifetime_gpu_test",
+        "readback-unknown"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-07-conversation_lifetime_gpu_test-readback-unknown.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/pinned_ring_gpu_test"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-08-pinned_ring_gpu_test.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_snapshot_test"
+      ],
+      "returncode": 0,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-09-conversation_snapshot_test.log"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5",
+        "60",
+        "/home/chris/workspace/Strata-builds/phase11b-hip/conversation_readback_test"
+      ],
+      "returncode": 1,
+      "kernel_faults": [],
+      "log": "hip-final-device0-sdma0-10-conversation_readback_test.log"
+    }
+  ]
+}

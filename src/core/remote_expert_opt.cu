@@ -1,6 +1,8 @@
 #include "strata/core/remote_expert_opt.hpp"
 #include "strata/core/remote_experts.hpp"
+#include "strata/core/device.hpp"
 #include "strata/core/on_device.hpp"
+#include "strata/core/remote_opt_completion.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
 #include "strata/kernels/elementwise.hpp"
 #include "strata/kernels/verify_kernels.hpp"
@@ -70,13 +72,41 @@ bool RemoteExpertOpt::init(std::string& err) {
 }
 
 RemoteExpertOpt::~RemoteExpertOpt() {
+    // The mapped h_sum_/h_mask_ storage is read by primary-device copy_rows/combine
+    // kernels, often on a stream other than any helper stream. The helper kernels
+    // also produce p.sum and may read the mapped input/output. Quiesce *both*
+    // sides before releasing any of their operands; teardown is not a hot path.
+    const bool allocated = h_sum_ != nullptr ||
+        std::any_of(peers_.begin(), peers_.end(), [](const Peer& p) { return p.sum != nullptr; });
+    int original = -1;
+    if (allocated) {
+        detail::remote_opt_check(cudaGetDevice(&original), "remote optimization get device");
+        if (h_sum_) detail::remote_opt_complete(primary_device(), "remote optimization primary completion");
+        for (const auto& p : peers_) {
+            if (p.remote->device_ < 0) {
+                // A helper closed before its optimization owns no valid device on
+                // which completion of the still-owned p.sum could be proved.
+                if (p.sum) core::transfer_terminal("remote optimization helper", "device unavailable before free");
+                continue;
+            }
+            if (h_sum_ || p.sum)
+                detail::remote_opt_complete(p.remote->device_, "remote optimization helper completion");
+        }
+    }
     for (auto& p : peers_) {
-        const OnDevice on(p.remote->device_);
-        if (p.remote->stream_) cudaStreamSynchronize(p.remote->stream_);
-        if (p.sum) cudaFree(p.sum);
+        if (p.sum) {
+            detail::remote_opt_select(p.remote->device_, "remote optimization helper free device");
+            detail::remote_opt_check(cudaFree(p.sum), "remote optimization helper free");
+            p.sum = nullptr;
+        }
         p.remote->remote_opt_ = nullptr;
     }
-    if (h_sum_) cudaFreeHost(h_sum_);
+    if (h_sum_) {
+        detail::remote_opt_select(primary_device(), "remote optimization mapped-host free device");
+        detail::remote_opt_check(cudaFreeHost(h_sum_), "remote optimization mapped-host free");
+        h_sum_ = nullptr;
+    }
+    if (allocated) detail::remote_opt_select(original, "remote optimization restore device");
 }
 
 size_t RemoteExpertOpt::metadata_bytes() { return sizeof(ReduceMeta); }
