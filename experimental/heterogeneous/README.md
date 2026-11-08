@@ -337,5 +337,25 @@ not cross-process state rollback.
 mock workers with three stages, optional logits, zero/partial/full prefix
 handling, both transports and failure injection. See
 [docs/FINAL_PIPELINE_M111.md](docs/FINAL_PIPELINE_M111.md) for the specific
-contract, validation boundary and Oberon handoff. It is **not real GPU
-inference**, and no loaded-model final-stage driver is yet implemented.
+contract, validation boundary and Oberon handoff. It was CPU-only at M1.11. See M1.12 below for the separately compiled CUDA final-stage source adapter.
+
+### M1.12 — CUDA final-stage verifier source adapter (CPU contract tested)
+
+`CudaFinalVerifierExecutor` implements `FinalStageExecutor` for the last
+CUDA stage. It passes staged activations to a backend-owned device input,
+runs Strata's actual `Verifier::run` with the supplied token IDs/position,
+and returns real head predictions with optional `copy_logits` diagnostics
+as a provisional STFR/v1 result. It uses explicit CUDA fences and defers
+positive-prefix `Verifier::commit` until the coordinator's commit request.
+
+The default exports logits so even unmarked NaN/Inf values are caught.
+Turning logits off requires the real verifier nonfinite guard to be enabled.
+Zero-prefix commit is rejected (state restoration is not implemented).
+A real final model loader, sampling configuration, prefill, GPU parity and
+mixed-vendor inference remain **not implemented or verified**.
+
+With `STRATA_HETERO_CUDA_VERIFIER=ON`, the real adapter is added to the
+existing CUDA-only archive. The standalone CPU contract test
+`strata_heterogeneous_cuda_final_verifier_contract_tests` compiles the
+same source against explicit runtime/verifier doubles. See
+[docs/CUDA_FINAL_VERIFIER_M112.md](docs/CUDA_FINAL_VERIFIER_M112.md).

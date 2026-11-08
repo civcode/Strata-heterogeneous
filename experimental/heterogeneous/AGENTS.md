@@ -317,6 +317,31 @@ bogus activation handoff, and validate CUDA hardware when available.
   CUDA/HIP final driver or numerical parity yet. Zero-prefix restoration
   still needs a real engine/state implementation and GPU validation.
 
+### M1.12 — CUDA final-stage verifier adapter (source implemented)
+
+- `CudaFinalVerifierExecutor` implements the separate `FinalStageExecutor`
+  interface. Only the final CUDA stage with a preceding activation producer
+  is accepted. It returns actual `Verifier::run` token picks, optional
+  `copy_logits` rows and nonfinite head diagnostics in `FinalStageResult`.
+- All activation H2D buffers, pinned host staging and CUDA fences are owned
+  by the CUDA-only process. The CPU host/memfd view is borrowed for one
+  window and must never escape into asynchronous CUDA work.
+- The default copies logits to detect unmarked nonfinite results. If logits
+  are disabled, require `Verifier::nan_guard_on()` before initialization.
+  Never commit a nonfinite provisional result, even if the result gate is
+  accidentally bypassed.
+- Only positive accepted prefixes can reach `Verifier::commit(n_keep)`.
+  Reject zero until a real GPU-tested rollback/restore implementation exists.
+- `STRATA_HETERO_CUDA_VERIFIER=ON` compiles this into the existing CUDA-only
+  adapter archive. New CPU-double tests cover ID/geometry, pooling, picks,
+  logits, async completion, zero, nonfinite and allocation/commit failures.
+  Run the *entire* CTest suite on Oberon as well as a native CUDA build/link.
+- This increment does **not** provide a model loader, prefill, sampling
+  configuration, inference parity, or a runnable CUDA-to-HIP model pipeline.
+  The NVIDIA device currently needs owner-approved recovery; do not reset it.
+
+See [docs/CUDA_FINAL_VERIFIER_M112.md](docs/CUDA_FINAL_VERIFIER_M112.md).
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The
@@ -384,7 +409,7 @@ when the environment permits.
 ```bash
 cmake -S experimental/heterogeneous -B /tmp/strata-hetero-build -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug
-cmake --build /tmp/strata-hetero-build
+cmake --build /tmp/strata-hetero-build --parallel 28
 ctest --test-dir /tmp/strata-hetero-build --output-on-failure
 /tmp/strata-hetero-build/strata_heterogeneous_demo \
   cuda:0:0-3,hip:0:3-7,hip:1:7-10 10 2 6 12345 8
@@ -397,7 +422,7 @@ cmake -S experimental/heterogeneous -B /tmp/strata-hetero-asan -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
-cmake --build /tmp/strata-hetero-asan
+cmake --build /tmp/strata-hetero-asan --parallel 28
 ctest --test-dir /tmp/strata-hetero-asan --output-on-failure
 ```
 

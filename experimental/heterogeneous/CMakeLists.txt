@@ -22,7 +22,7 @@ if(STRATA_HETERO_CUDA_VERIFIER)
     message(FATAL_ERROR "The verifier adapter requires a separate CUDA-only build")
   endif()
   find_package(CUDAToolkit REQUIRED)
-  add_library(strata_heterogeneous_cuda_verifier STATIC src/cuda_verifier.cpp)
+  add_library(strata_heterogeneous_cuda_verifier STATIC src/cuda_verifier.cpp src/cuda_final_verifier.cpp)
   target_include_directories(strata_heterogeneous_cuda_verifier PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_cuda_verifier PUBLIC strata_heterogeneous_host CUDA::cudart)
   target_compile_options(strata_heterogeneous_cuda_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -58,6 +58,20 @@ if(STRATA_HETERO_HOST_TESTS)
   target_compile_options(strata_heterogeneous_cuda_verifier_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME strata_heterogeneous_cuda_verifier_contract_tests COMMAND strata_heterogeneous_cuda_verifier_contract_tests)
   set_tests_properties(strata_heterogeneous_cuda_verifier_contract_tests PROPERTIES TIMEOUT 20)
+  # Compile the actual final CUDA adapter against CPU CUDA/Verifier doubles.
+  # The host/mock build remains runtime-free and no GPU is initialized.
+  add_executable(strata_heterogeneous_cuda_final_verifier_contract_tests
+    tests/cuda_final_verifier_tests.cpp src/cuda_final_verifier.cpp)
+  target_include_directories(strata_heterogeneous_cuda_final_verifier_contract_tests BEFORE PRIVATE
+    tests/cuda_final_stubs tests/cuda_stubs)
+  target_link_libraries(strata_heterogeneous_cuda_final_verifier_contract_tests PRIVATE strata_heterogeneous_host)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_cuda_final_verifier_contract_tests PRIVATE
+      -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME strata_heterogeneous_cuda_final_verifier_contract_tests
+    COMMAND strata_heterogeneous_cuda_final_verifier_contract_tests)
+  set_tests_properties(strata_heterogeneous_cuda_final_verifier_contract_tests PROPERTIES TIMEOUT 20)
   add_executable(strata_heterogeneous_host_tests tests/host_tests.cpp)
   target_link_libraries(strata_heterogeneous_host_tests PRIVATE strata_heterogeneous_host)
   target_compile_features(strata_heterogeneous_host_tests PRIVATE cxx_std_17)
