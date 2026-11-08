@@ -59,6 +59,7 @@
 #include "strata/core/uma_cache.hpp"
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/on_device.hpp"
+#include "strata/core/layer_split_stage_owner.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
 #include "strata/core/kv_grow_rules.hpp"
@@ -1635,6 +1636,7 @@ void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int
 /// lives on its device too).
 struct GpuStage {
     int dev = 0;
+    bool cleanup_armed = false;  // true before any GPU-owning stage allocation
     int64_t lb = 0, le = 0;
     double pcie_frac = 0.0;
     double link_gbps = 0.0;   ///< this card's probed host->device bandwidth (PcieAuto's per-stage share)
@@ -1656,6 +1658,9 @@ struct GpuStage {
     bool adapt_live = false;                             ///< swaps of this request are in flight on it
     int32_t* mrope = nullptr;                            ///< --vision: the image-position table on its device
 };
+// Keep the owning device selected through each member destructor. A local
+// OnDevice in ~GpuStage would restore the caller *before* its members die.
+using GpuStagePtr = std::unique_ptr<GpuStage, strata::core::LayerSplitStageDelete<GpuStage>>;
 
 // what a refusal on the RAM guard says it had: "900 MiB available, source cgroup" (the smallest of MemAvailable, the
 // cgroup limits above the engine and --memory-limit-mib; see strata/core/conversation_memory.hpp)
@@ -6249,7 +6254,7 @@ int main(int argc, char** argv) {
     }
     // ---- layer split across GPUs: each later stage's own copy of the dense weights, its session and (the last) the
     // head, made on its device before the host arena is mapped (as the drafter below, for the same WDDM reason)
-    std::vector<std::unique_ptr<GpuStage>> stages;
+    std::vector<GpuStagePtr> stages;
     // One stage's dense weights on its device (the caller has made it current): `trim` = only layers [lb, le).
     auto load_stage_weights = [&](GpuStage& st, int64_t lb, int64_t le, bool trim) -> bool {
         std::set<std::string> skip_s = skip_base;
@@ -6296,7 +6301,7 @@ int main(int argc, char** argv) {
         return true;
     };
     for (size_t i = 0; multi_gpu && i < split_devs.size(); ++i) {
-        stages.push_back(std::make_unique<GpuStage>());
+        stages.push_back(GpuStagePtr(new GpuStage()));
         GpuStage& st = *stages.back();
         st.dev = split_devs[i];
         double free_gib = 0;
@@ -6304,6 +6309,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
             return 1;
         }
+        // No stage allocations precede preflight. Once it succeeds, a later
+        // error may unwind GPU work and GPU-owning members on the wrong device.
+        st.cleanup_armed = true;
         const strata::core::OnDevice on(st.dev);
         // Later stages' weights load here (0.1.39), except `--layer-split auto` with the trim asked: those load after
         // the split search (see late_weights), so `auto` can trim them too.
@@ -14173,7 +14181,7 @@ int main(int argc, char** argv) {
         };
         struct PreLaunchOff {   // the hooks' captures die before the verifiers
             strata::core::Verifier& v;
-            std::vector<std::unique_ptr<GpuStage>>& stages;
+            std::vector<GpuStagePtr>& stages;
             strata::core::ExpertDispatch& d;
             int32_t* pairs;
             ~PreLaunchOff() {
