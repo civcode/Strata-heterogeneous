@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <sys/socket.h>
@@ -156,6 +157,22 @@ void gate_tests() {
     ok(nonfinite.poisoned(), "nonfinite head invalidates result gate");
     rejects([&] { (void)nonfinite.take_committed(); },
             "unhealthy result cannot be published");
+    for (float value : {std::numeric_limits<float>::quiet_NaN(),
+                        std::numeric_limits<float>::infinity(),
+                        -std::numeric_limits<float>::infinity()}) {
+        auto unmarked = r;
+        unmarked.logits.emplace(unmarked.rows * unmarked.vocab_size, -0.f);
+        ok(!unmarked.has_nonfinite(), "finite signed zero remains safe");
+        unmarked.logits->back() = value;
+        // Preserve diagnostic packets; publication, not transport, is forbidden.
+        auto decoded = decode_final_result(encode_final_result(unmarked));
+        ok(decoded.has_nonfinite(), "unmarked nonfinite logits detected after transport");
+        FinalResultGate unsafe_gate;
+        unsafe_gate.stage(decoded, 2, 120, 8, decoded.plan_fingerprint, 3);
+        rejects([&] { unsafe_gate.mark_committed(120, 8); }, "unmarked logits block commit gate");
+        ok(unsafe_gate.poisoned(), "unmarked logits poison gate");
+        rejects([&] { (void)unsafe_gate.take_committed(); }, "unmarked logits cannot publish");
+    }
 }
 void socket_tests() {
     int sockets[2];

@@ -42,8 +42,9 @@ buffers are host-visible, **not** CUDA/HIP device pointers.
    proof of committed model state.
 4. commit(n_keep) rejects n_keep greater than rows without contacting
    workers. Before contacting workers it rejects any nonfinite head
-   markers. It then sends commit_prefix to all stages and verifies every
-   committed_prefix acknowledgement, including the exact n_keep value.
+   markers or supplied NaN/infinity logits, even if the worker omitted
+   the corresponding markers. It then sends commit_prefix to all stages and
+   verifies every committed_prefix acknowledgement, including the exact n_keep value.
 5. The coordinator calls mark_committed and take_committed only after all
    ACKs match, returning publishable predictions. On any error, including
    partial distributed commit, it poisons the gate and shuts down every
@@ -67,14 +68,20 @@ Tests in tests/final_pipeline_tests.cpp use genuine forked and isolated
 CPU stage processes with both socket and shared-memfd modes. Coverage:
 three-stage activation-to-head transport, repeated windows, zero/partial/
 full prefixes, optional logits including signed zero, invalid prefix,
-nonfinite failure, wrong result identity, failed final commit, wrong
-final/activation handshake and mismatched prefix ACK. No GPU involved.
+marked and unmarked nonfinite failure, wrong result identity, final commit
+failure after intermediate commits, both final/activation handshake directions,
+transport-mode mismatch and mismatched prefix ACK. The final mock also checks
+all incoming activation values against the intermediate layer transforms.
+No GPU involved.
 
-Local compilation and execution used GCC, Clang, ASan and UBSan against a
-local CPU protocol shim; the exact repository source must additionally be
-compiled and tested on Oberon against the real v4 protocol implementation.
-The existing full CTest suite, root engine, CUDA and HIP hardware have not
-been exercised in the ChatGPT container for this increment.
+Oberon validation compiled the actual repository v4 protocol implementation
+with GCC and Clang 18, plus separate Clang ASan and UBSan builds. All 11
+experimental CTest checks passed in each build. A new regression first
+reproduced publication of unmarked nonfinite logits; commit now checks
+supplied logits as well as worker markers. The standalone codec still
+preserves nonfinite diagnostic packets without making them publishable.
+Logs are staged under /home/chris/tmp/strata-heterogeneous/m111.
+The root engine and CUDA/HIP hardware were not tested for this increment.
 
 ## Oberon agent handoff
 

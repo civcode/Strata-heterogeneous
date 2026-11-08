@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <poll.h>
@@ -143,6 +144,11 @@ bool recv_all(int fd, uint8_t* bytes, size_t count, Clock::time_point end, bool 
 }
 } // namespace
 
+bool FinalStageResult::has_nonfinite() const noexcept {
+    return !nonfinite_rows.empty() ||
+        (logits && std::any_of(logits->begin(), logits->end(),
+                              [](float value) { return !std::isfinite(value); }));
+}
 void validate_final_result(const FinalStageResult& result) { validate_basics(result); }
 void require_final_result_identity(const FinalStageResult& result,
                                    uint32_t final_stage_index,
@@ -264,7 +270,7 @@ void FinalResultGate::mark_committed(uint64_t request_id, uint64_t window_id) {
         poison();
         throw std::runtime_error("final result commit identity mismatch");
     }
-    if (!staged_->nonfinite_rows.empty()) {
+    if (staged_->has_nonfinite()) {
         poison();
         throw std::runtime_error("nonfinite final head result cannot be committed");
     }

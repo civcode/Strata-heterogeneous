@@ -3,6 +3,7 @@
 #include "strata_heterogeneous/shared.hpp"
 #include <iostream>
 #include <cmath>
+#include <limits>
 #include <signal.h>
 #include <stdexcept>
 #include <string>
@@ -35,6 +36,7 @@ public:
     bool bad_identity = false;
     bool nonfinite = false;
     bool fail_commit = false;
+    float unmarked_logit = 0.f;
     bool prepare(const Plan& plan, size_t i, std::string& e) override {
         index_ = static_cast<uint32_t>(i);
         plan_ = plan;
@@ -54,6 +56,18 @@ public:
     }
     bool run_final_window(const Frame& m, ActivationView input,
                           FinalStageResult& result, std::string& e) override {
+        // Verify that real intermediate protocol workers handed off every layer,
+        // not just that token metadata reached the final mock.
+        float expected = 0.25f;
+        for (uint32_t layer = 0; layer < plan_.stages[index_].first_layer; ++layer)
+            expected += static_cast<float>(layer + 1) * 0.0001f;
+        ByteRange all{input.data(), input.bytes()};
+        for (size_t i = 0; i < input.bytes() / sizeof(float); ++i) {
+            if (all.read_f32(i) != expected) {
+                e = "incorrect intermediate activation at final stage";
+                return false;
+            }
+        }
         // Host-only mock: use the ordinary stage's deterministic byte transform,
         // then fabricate token predictions strictly for transport testing.
         if (!mock_.run_staged_window(m, input, e)) return false;
@@ -65,6 +79,10 @@ public:
         result.vocab_size = 1000;
         for (int32_t token : tokens_) result.predicted_tokens.push_back((token + 17) % 1000);
         if (nonfinite) result.nonfinite_rows.push_back(1);
+        if (!std::isfinite(unmarked_logit)) {
+            result.logits.emplace(static_cast<size_t>(result.rows) * result.vocab_size, 0.f);
+            result.logits->back() = unmarked_logit;
+        }
         if (!tokens_.empty() && tokens_[0] == 9) {
             result.logits.emplace(static_cast<size_t>(result.rows) * result.vocab_size, 0.f);
             (*result.logits)[0] = -0.f;
@@ -109,7 +127,7 @@ struct WorkerGroup {
 };
 WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool nonfinite = false, bool fail_commit = false,
-                   bool wrong_mode = false) {
+                   bool wrong_mode = false, float unmarked_logit = 0.f) {
     WorkerGroup group;
     for (size_t i = 0; i < plan.stages.size(); ++i) {
         int fd[2]{};
@@ -125,6 +143,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     final.bad_identity = bad;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
+                    final.unmarked_logit = unmarked_logit;
                     serve_final_stage_worker(fd[1], plan, i, final, 1200, shared);
                 } else {
                     MockStageExecutor intermediate;
@@ -220,6 +239,30 @@ void bad_ack() {
 }
 void negative(bool shared) {
     const Plan p = parse_plan("cuda:0:0-3",3,{2,3},3719);
+    for (float value : {std::numeric_limits<float>::quiet_NaN(),
+                        std::numeric_limits<float>::infinity(),
+                        -std::numeric_limits<float>::infinity()}) {
+        WorkerGroup w = launch(p, shared, false, false, false, false, value);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        pipe.initialize();
+        auto result = pipe.execute(input_frame(p),{0,{1,2,3}});
+        check(result.nonfinite_rows.empty() && result.logits &&
+              !std::isfinite(result.logits->back()), "unmarked nonfinite diagnostics transported");
+        fails([&]{(void)pipe.commit(1);}, "unmarked nonfinite logits cannot commit even outside prefix");
+        check(pipe.poisoned() && !pipe.has_pending(), "unmarked nonfinite poisons result");
+    }
+    {
+        WorkerGroup w = launch(p, shared);
+        PipelineSession pipe(p, w.sockets, 1200, shared);
+        fails([&]{pipe.initialize();}, "activation-only coordinator rejects final handshake");
+        check(pipe.poisoned(), "reverse capability mismatch poisons session");
+    }
+    {
+        WorkerGroup w = launch(p, !shared);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        fails([&]{pipe.initialize();}, "wrong final transport mode rejected");
+        check(pipe.poisoned(), "transport mismatch poisons session");
+    }
     {
         WorkerGroup w = launch(p, shared, true);
         FinalPipelineSession pipe(p, w.sockets, 1200, shared);
@@ -237,11 +280,12 @@ void negative(bool shared) {
         check(pipe.poisoned(), "nonfinite poison permanently prevents publish");
     }
     {
-        WorkerGroup w = launch(p, shared, false, false, true);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        const Plan split = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+        WorkerGroup w = launch(split, shared, false, false, true);
+        FinalPipelineSession pipe(split, w.sockets, 1200, shared);
         pipe.initialize();
-        (void)pipe.execute(input_frame(p),{0,{1,2,3}});
-        fails([&]{(void)pipe.commit(1);}, "failed final commit not published");
+        (void)pipe.execute(input_frame(split),{0,{1,2,3}});
+        fails([&]{(void)pipe.commit(1);}, "final failure after two stage commits not published");
         check(pipe.poisoned(), "failed final commit poisons all peers");
     }
     {

@@ -227,7 +227,7 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
         throw std::logic_error("no provisional final-stage result to commit");
     if (n_keep > pending_rows_) throw std::invalid_argument("accepted prefix exceeds row count");
     try {
-        if (!gate_.provisional().nonfinite_rows.empty())
+        if (gate_.provisional().has_nonfinite())
             throw std::runtime_error("nonfinite head result cannot be committed");
         for (size_t i = 0; i < fds_.size(); ++i) {
             Frame request = control(plan_, i, Kind::commit_prefix,

@@ -34,6 +34,9 @@ struct FinalStageResult {
     // If present, exactly rows*vocab_size float32 logits, row-major. Bitwise
     // transport; not a probability distribution or post-sampler guarantee.
     std::optional<std::vector<float>> logits;
+    // Check supplied logits too: missing worker diagnostics must not permit
+    // nonfinite head output to become committed state.
+    bool has_nonfinite() const noexcept;
 };
 
 // Throws std::invalid_argument for inconsistent shapes or values.
