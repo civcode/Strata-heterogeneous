@@ -63,6 +63,7 @@
 #include "strata/core/device_owned_buffer.hpp"
 #include "strata/core/primary_early_resources.hpp"
 #include "strata/core/primary_serving_resources.hpp"
+#include "strata/core/phase11b_pipeline_resources.hpp"
 #include "strata/core/layer_split_stage_resources.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
@@ -3563,6 +3564,24 @@ int main(int argc, char** argv) {
     using PrimaryServe = strata::core::PrimaryServingResources;
     std::unique_ptr<PrimaryServe, strata::core::LayerSplitStageDelete<PrimaryServe>>
         primary_serve(new PrimaryServe());
+    // Construct before the GPU-owning local stages/verifiers: all their graphs
+    // unwind before these pipeline/refill handles are released.
+    strata::core::Phase11bPipelineResources pipeline_resources;
+    auto pipe_malloc = [&](void** dst, size_t bytes) -> cudaError_t {
+        const cudaError_t e = cudaMalloc(dst, bytes);
+        pipeline_resources.track_buffer(*dst);
+        return e;
+    };
+    auto pipe_stream = [&](cudaStream_t* dst) -> cudaError_t {
+        const cudaError_t e = cudaStreamCreateWithFlags(dst, cudaStreamNonBlocking);
+        pipeline_resources.track_stream(*dst);
+        return e;
+    };
+    auto pipe_event = [&](cudaEvent_t* dst) -> cudaError_t {
+        const cudaError_t e = cudaEventCreateWithFlags(dst, cudaEventDisableTiming);
+        pipeline_resources.track_event(*dst);
+        return e;
+    };
     // **UNBUFFERED, BECAUSE THE INTERESTING OUTPUT IS THE OUTPUT BEFORE A CRASH.**  `stdout` redirected to a
     // pipe or a file is block-buffered, so a program that dies loses every line it had already printed - which
     // turns "it crashed at step 7" into "it crashed somewhere", and the difference is a debugging session.
@@ -12509,10 +12528,10 @@ int main(int argc, char** argv) {
         };
         if (pipe) {
             bool ok_p = true;
-            ok_p = cudaStreamCreateWithFlags(&pl_stream[0], cudaStreamNonBlocking) == cudaSuccess;   // the current card
+            ok_p = pipe_stream(&pl_stream[0]) == cudaSuccess;   // the current card
             for (int st = 1; st < n_stages && ok_p; ++st) {
                 const strata::core::OnDevice on(stages[(size_t) st - 1]->dev);
-                ok_p = cudaStreamCreateWithFlags(&pl_stream[(size_t) st], cudaStreamNonBlocking) == cudaSuccess;
+                ok_p = pipe_stream(&pl_stream[(size_t) st]) == cudaSuccess;
             }
             if (!ok_p) { std::fprintf(stderr, "strata serve: --pipeline-windows: stream creation failed\n"); return 1; }
             for (int st = 0; st < n_stages; ++st)
@@ -12659,7 +12678,7 @@ int main(int argc, char** argv) {
                                  gs.dev, st + 1, err.c_str());
                     return 1;
                 }
-                if (last && !mtp_first && cudaMalloc((void**) &pl_mtp_R, (size_t) strata::kernels::kVerifyNarrowT * (size_t) (g.hc * g.n_embd) *
+                if (last && !mtp_first && pipe_malloc((void**) &pl_mtp_R, (size_t) strata::kernels::kVerifyNarrowT * (size_t) (g.hc * g.n_embd) *
                                                                sizeof(float)) != cudaSuccess) {
                     std::fprintf(stderr, "strata serve: --pipeline-windows: the drafter's row buffer does not fit\n");
                     return 1;
@@ -12667,7 +12686,7 @@ int main(int argc, char** argv) {
             }
             if (mtp_first) {   // the drafter's row buffer on its own card (the first)
                 const strata::core::OnDevice on_m(mtp.device());
-                if (cudaMalloc((void**) &pl_mtp_R, (size_t) strata::kernels::kVerifyNarrowT * (size_t) (g.hc * g.n_embd) *
+                if (pipe_malloc((void**) &pl_mtp_R, (size_t) strata::kernels::kVerifyNarrowT * (size_t) (g.hc * g.n_embd) *
                                                        sizeof(float)) != cudaSuccess) {
                     std::fprintf(stderr, "strata serve: --pipeline-windows: the drafter's row buffer does not fit\n");
                     return 1;
@@ -12927,7 +12946,7 @@ int main(int argc, char** argv) {
                 sn.bytes = gdn_snapshot_bytes(sst);
                 sn.state = (void*) sst.gdn_state;
                 const strata::core::OnDevice on(sn.dev);
-                if (cudaMalloc((void**) &sn.buf[0], sn.bytes) != cudaSuccess) {
+                if (pipe_malloc((void**) &sn.buf[0], sn.bytes) != cudaSuccess) {
                     std::fprintf(stderr, "strata serve: --pipeline-windows 2: the GDN snapshot of stage %d (%.1f MiB) does "
                                          "not fit; the decode stays serial\n", st + 1, (double) sn.bytes / 1048576.0);
                     cudaGetLastError();
@@ -12936,11 +12955,11 @@ int main(int argc, char** argv) {
                     break;
                 }
                 if (pl_snap_overlap) {
-                    bool ok_s = cudaMalloc((void**) &sn.buf[1], sn.bytes) == cudaSuccess &&
-                                cudaStreamCreateWithFlags(&sn.side, cudaStreamNonBlocking) == cudaSuccess;
+                    bool ok_s = pipe_malloc((void**) &sn.buf[1], sn.bytes) == cudaSuccess &&
+                                pipe_stream(&sn.side) == cudaSuccess;
                     for (int i = 0; i < 2 && ok_s; ++i)
-                        ok_s = cudaEventCreateWithFlags(&sn.pre[i], cudaEventDisableTiming) == cudaSuccess &&
-                               cudaEventCreateWithFlags(&sn.ev[i], cudaEventDisableTiming) == cudaSuccess;
+                        ok_s = pipe_event(&sn.pre[i]) == cudaSuccess &&
+                               pipe_event(&sn.ev[i]) == cudaSuccess;
                     if (!ok_s) {
                         cudaGetLastError();
                         pl_snap_overlap = false;
@@ -12974,7 +12993,7 @@ int main(int argc, char** argv) {
             if (o.pipeline_windows >= 2 && pl_snap_ok && !mtp.prepare_chain(e)) return false;
             const strata::core::OnDevice on(mtp.device());
             for (cudaEvent_t& ev : pl_mtp_ev)
-                if (ev == nullptr && cudaEventCreateWithFlags(&ev, cudaEventDisableTiming) != cudaSuccess) {
+                if (ev == nullptr && pipe_event(&ev) != cudaSuccess) {
                     e = "pipeline: event creation failed";
                     return false;
                 }
@@ -14062,7 +14081,7 @@ int main(int argc, char** argv) {
         }
         Clock::time_point profile_saved_at = Clock::now();
         cudaStream_t adapt_stream = nullptr;
-        if (cudaStreamCreateWithFlags(&adapt_stream, cudaStreamNonBlocking) != cudaSuccess) {
+        if (pipe_stream(&adapt_stream) != cudaSuccess) {
             std::fprintf(stderr, "strata serve: cannot create the refill stream\n");
             return 1;
         }
@@ -14071,7 +14090,10 @@ int main(int argc, char** argv) {
         int pending_age = 0;   // the windows the pending swaps have waited (adapt_lag)
         std::vector<void*> pin_live;   // the swaps' locked arena pages (pin_blob), unlocked once they have landed
         cudaEvent_t adapt_ev = nullptr;
-        cudaEventCreateWithFlags(&adapt_ev, cudaEventDisableTiming);
+        if (pipe_event(&adapt_ev) != cudaSuccess) {
+            std::fprintf(stderr, "strata serve: cannot create the refill completion event\n");
+            return 1;
+        }
         // 0.1.43 STRATA_ADAPT_OVERLAP=1 (adapt_overlap above): the single-GPU, plain-RAM-arena decode loop only
         strata::core::AdaptGate agate;
         bool aflipped = false;   // the pending swaps are in the tables and their copies may still be landing
