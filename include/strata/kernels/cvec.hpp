@@ -43,6 +43,11 @@ const Cvec& cvec();
 bool cvec_upload(const std::vector<float>& dir, const std::vector<float>& s, int mode, int first, int last,
                  int64_t n_embd, int64_t hc, std::string& err);
 
+/// Release all device tables on their allocating devices after engine-owned
+/// streams, graphs and stages have unwound. No-op without loaded tables.
+/// On uncertain completion/release, terminate without continuing cleanup.
+void cvec_release_all() noexcept;
+
 /// A layer split: put the loaded vector's tables on the CURRENT device too (cvec_apply uses the tables of the device
 /// it runs on).  No-op without a vector or when this device has them already.
 bool cvec_replicate(std::string& err);

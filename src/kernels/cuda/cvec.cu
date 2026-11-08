@@ -1,5 +1,6 @@
 // src/kernels/cuda/cvec.cu - see include/strata/kernels/cvec.hpp.
 #include "strata/kernels/cvec.hpp"
+#include "strata/kernels/cvec_owner.hpp"
 
 #include <cuda_runtime.h>
 
@@ -33,7 +34,8 @@ bool upload_here(std::string& err) {
         cudaMemcpy(t.s, g_s_host.data(), g_s_host.size() * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess ||
         cudaMemcpy(t.on, &flag, sizeof(int), cudaMemcpyHostToDevice) != cudaSuccess) {
         err = "control vector: device allocation failed";
-        t = DevTables{};
+        // A partial upload may have allocated one or two tables.
+        detail::cvec_release_here(t);
         return false;
     }
     return true;
@@ -98,22 +100,21 @@ __global__ void cvec_kernel(float* __restrict__ R, const float* __restrict__ dir
 
 const Cvec& cvec() { return g_cvec; }
 
+void cvec_release_all() noexcept {
+    detail::cvec_release_devices(g_dev);
+    g_cvec = Cvec{};
+    g_on_host = false;
+    g_dir_host.clear();
+    g_s_host.clear();
+}
+
 bool cvec_upload(const std::vector<float>& dir, const std::vector<float>& s, int mode, int first, int last,
                  int64_t n_embd, int64_t hc, std::string& err) {
     if (n_embd < 1 || n_embd > (int64_t) THREADS * MAXK) { err = "control vector: unsupported n_embd"; return false; }
     if (s.empty() || dir.size() != s.size() * (size_t) n_embd) { err = "control vector: bad table sizes"; return false; }
-    int prev = 0;   // a new vector replaces the old one on every device
-    cudaGetDevice(&prev);
-    for (int d = 0; d < kDevices; ++d) {
-        if (g_dev[d].dir == nullptr) continue;
-        cudaSetDevice(d);
-        cudaDeviceSynchronize();
-        cudaFree(g_dev[d].dir);
-        cudaFree(g_dev[d].s);
-        cudaFree(g_dev[d].on);
-        g_dev[d] = DevTables{};
-    }
-    cudaSetDevice(prev);
+    // Replacement and shutdown use the same checked, owner-device cleanup.
+    detail::cvec_release_devices(g_dev);
+    g_cvec = Cvec{};
     g_dir_host = dir;
     g_s_host = s;
     g_on_host = true;

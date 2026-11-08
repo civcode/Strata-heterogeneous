@@ -60,6 +60,7 @@
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/on_device.hpp"
 #include "strata/core/layer_split_stage_owner.hpp"
+#include "strata/core/device_owned_buffer.hpp"
 #include "strata/core/layer_split_stage_resources.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
@@ -3544,6 +3545,13 @@ static int engine_main(int argc, char** argv) {   // main() is at the end of thi
 #else
 int main(int argc, char** argv) {
 #endif
+#if !defined(STRATA_GPU_METAL)
+    // Created before GPU-owning locals: release process-global control-vector
+    // tables only AFTER stage, verifier and other automatic cleanup.
+    struct CvecShutdownGuard {
+        ~CvecShutdownGuard() noexcept { strata::kernels::cvec_release_all(); }
+    } cvec_shutdown_guard;
+#endif
     // **UNBUFFERED, BECAUSE THE INTERESTING OUTPUT IS THE OUTPUT BEFORE A CRASH.**  `stdout` redirected to a
     // pipe or a file is block-buffered, so a program that dies loses every line it had already printed - which
     // turns "it crashed at step 7" into "it crashed somewhere", and the difference is a debugging session.
@@ -6256,6 +6264,11 @@ int main(int argc, char** argv) {
     }
     // ---- layer split across GPUs: each later stage's own copy of the dense weights, its session and (the last) the
     // head, made on its device before the host arena is mapped (as the drafter below, for the same WDDM reason)
+    // Declared before stages so its owner-device fence/free runs after stage
+    // verifiers and other GPU-owning member destructors on every return path.
+    using HistoryBuffer = strata::core::DeviceOwnedBuffer<int32_t>;
+    std::unique_ptr<HistoryBuffer, strata::core::LayerSplitStageDelete<HistoryBuffer>>
+        history_owner(new HistoryBuffer());
     std::vector<GpuStagePtr> stages;
     // One stage's dense weights on its device (the caller has made it current): `trim` = only layers [lb, le).
     auto load_stage_weights = [&](GpuStage& st, int64_t lb, int64_t le, bool trim) -> bool {
@@ -12366,7 +12379,23 @@ int main(int argc, char** argv) {
         int32_t* d_hist = nullptr;
         std::vector<int32_t> hist_stage(kHistSlots, -1);
         const int hist_dev = last_st ? last_st->dev : -1;   // with the head: the last stage's device
-        if (const strata::core::OnDevice on_h(hist_dev); cudaMalloc(&d_hist, kHistSlots * sizeof(int32_t)) != cudaSuccess) {
+        cudaError_t hist_alloc = cudaSuccess;
+        bool hist_device_ok = false;
+        {
+            const strata::core::OnDevice on_h(hist_dev);
+            hist_alloc = cudaGetDevice(&history_owner->dev);
+            hist_device_ok = hist_alloc == cudaSuccess &&
+                             (hist_dev < 0 || history_owner->dev == hist_dev);
+            if (hist_device_ok) {
+                hist_alloc = cudaMalloc(&d_hist, kHistSlots * sizeof(int32_t));
+                // Capture even a partial allocation before any early return.
+                if (d_hist != nullptr) {
+                    history_owner->ptr = d_hist;
+                    history_owner->cleanup_armed = true;
+                }
+            }
+        }
+        if (!hist_device_ok || hist_alloc != cudaSuccess || !history_owner->ptr) {
             std::fprintf(stderr, "strata serve: the penalty-history allocation failed\n");
             return 1;
         }
