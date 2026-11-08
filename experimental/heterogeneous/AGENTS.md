@@ -27,7 +27,7 @@ The code in this directory is presently a **CPU-only Linux host prototype**.
 It includes:
 
 - a validated stage plan with backend-local ordinals;
-- a v3 Unix-socket protocol with opt-in memfd-backed activation handoff, stage identity handshake and commit acknowledgments;
+- a v4 Unix-socket protocol with opt-in memfd-backed activation handoff, stage identity handshake and commit acknowledgments;
 - separately compiled, backend-tagged CPU mock worker executables launched with posix_spawn/exec by the coordinator;
 - exact-shape, integrity, timeout, failure-propagation, and subprocess tests.
 
@@ -341,6 +341,31 @@ bogus activation handoff, and validate CUDA hardware when available.
   The NVIDIA device currently needs owner-approved recovery; do not reset it.
 
 See [docs/CUDA_FINAL_VERIFIER_M112.md](docs/CUDA_FINAL_VERIFIER_M112.md).
+
+### M1.13 — CPU-native index plan for stage-local weights
+
+- `plan_stage_weights()` parses the native 19-column pack index and returns
+  a conservative `StageWeightPlan::skip` set for out-of-range `blk.N.*`
+  tensors. Every unknown/global tensor stays selected. It does not load a
+  model, allocate GPU memory, initialize verifier state or derive identity.
+- Before allocating the real CUDA weight arena, compare
+  `StageWeightPlan::selected_pool_bytes` against the actual
+  `core::WeightTable::pool_bytes(pack, native_bytes, err, &skip)` result.
+  Reject mismatches; pass the **same** skip set to `WeightTable::load`.
+- Validate every owned layer has indexed tensors, stage-carved session
+  storage, expert pool, head/embedding residency, and native loader
+  compatibility before any real verifier execution. Do not assume that
+  duplicate global tensor loading or a planned arena fits GPU VRAM.
+- Run the `strata_heterogeneous_stage_weights_tests` and all existing
+  CTest tests on Oberon (GCC, Clang, ASan/UBSan, CUDA-enabled builds).
+  Use `cmake --build "$build" --parallel 28`. Compare planner accounting
+  to the actual native weight loader with a trusted local pack, if present.
+- No GPU reset/reboot, automatic GitHub Actions, or unrelated `Strata-dev`
+  directory access. See `docs/STAGE_WEIGHT_PLAN_M113.md`.
+
+**Next:** add a CUDA-only stage resource owner that actually loads the
+selected dense weights, carves session state and binds a live expert pool
+before constructing the existing nonfinal/final verifier adapters.
 
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 

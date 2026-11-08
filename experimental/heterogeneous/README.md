@@ -359,3 +359,26 @@ existing CUDA-only archive. The standalone CPU contract test
 `strata_heterogeneous_cuda_final_verifier_contract_tests` compiles the
 same source against explicit runtime/verifier doubles. See
 [docs/CUDA_FINAL_VERIFIER_M112.md](docs/CUDA_FINAL_VERIFIER_M112.md).
+
+### M1.13 — Stage-local native pack selection (CPU-only)
+
+`StageWeightPlan` and `plan_stage_weights(plan,index,pack/index.txt,...)`
+read the exact 19-column index produced by Strata's `tools/pack_index.py`.
+Only `blk.<layer>.*` weights **outside** a stage's contiguous layer range
+are excluded. Unknown and global weights stay selected to avoid silently
+dropping embeddings, output-head weights or other shared tensors.
+
+The parser validates index headers, count, unique tensor names, exact numeric
+fields, layer coverage, offsets, alignment and overflow. It reports the
+stage's compact weight-arena size using the **same per-row alignment
+calculation** as `core::WeightTable::pool_bytes(pack,&skip)`. The returned
+`skip` set is intended to be passed without modification to both
+`WeightTable::pool_bytes` and `WeightTable::load`. Do not allocate CUDA memory
+until the real native result matches the estimate.
+
+This is a model-loader **planning component**, not a model-loading worker:
+it does not allocate device memory, load weights, initialize stage-local
+KV/GDN/PLE state, construct the expert pool or establish model fingerprints.
+A source-level test of the existing host `Plan` and parser passes locally;
+the complete native CTest suite and loaded-model validation belong on
+Oberon. See [docs/STAGE_WEIGHT_PLAN_M113.md](docs/STAGE_WEIGHT_PLAN_M113.md).
