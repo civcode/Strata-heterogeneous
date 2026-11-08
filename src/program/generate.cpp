@@ -62,6 +62,7 @@
 #include "strata/core/layer_split_stage_owner.hpp"
 #include "strata/core/device_owned_buffer.hpp"
 #include "strata/core/primary_early_resources.hpp"
+#include "strata/core/primary_serving_resources.hpp"
 #include "strata/core/layer_split_stage_resources.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
@@ -3558,6 +3559,10 @@ int main(int argc, char** argv) {
     using PrimaryRaw = strata::core::PrimaryEarlyResources;
     std::unique_ptr<PrimaryRaw, strata::core::LayerSplitStageDelete<PrimaryRaw>>
         primary_raw(new PrimaryRaw());
+    // Ordinary serving scratch outlives every dependent graph/session owner.
+    using PrimaryServe = strata::core::PrimaryServingResources;
+    std::unique_ptr<PrimaryServe, strata::core::LayerSplitStageDelete<PrimaryServe>>
+        primary_serve(new PrimaryServe());
     // **UNBUFFERED, BECAUSE THE INTERESTING OUTPUT IS THE OUTPUT BEFORE A CRASH.**  `stdout` redirected to a
     // pipe or a file is block-buffered, so a program that dies loses every line it had already printed - which
     // turns "it crashed at step 7" into "it crashed somewhere", and the difference is a debugging session.
@@ -5655,6 +5660,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     primary_raw->dev = primary_alloc_device;
+    primary_serve->dev = primary_alloc_device;
     void* arena = nullptr;
     const cudaError_t arena_alloc = cudaMalloc(&arena, pool_bytes);
     primary_raw->weight_arena = arena;
@@ -7360,7 +7366,10 @@ int main(int argc, char** argv) {
             strata::core::qsa_set_kv_elastic(on, iv != nullptr && std::atoll(iv) > 0 ? std::atoll(iv) : 16384);
             strata::core::ExpertCache::set_vmm(on);
         }
-        if (cudaMalloc(&sbuf, strata::core::session_bytes(g, o.max_context, K, 0, hi0)) != cudaSuccess) {
+        const cudaError_t primary_session_alloc = cudaMalloc(&sbuf, strata::core::session_bytes(g, o.max_context, K, 0, hi0));
+        primary_serve->session_arena = sbuf;
+        primary_serve->cleanup_armed = sbuf != nullptr;
+        if (primary_session_alloc != cudaSuccess) {
             std::fprintf(stderr, "strata generate: session state allocation failed\n");
             return 1;
         }
@@ -7952,7 +7961,9 @@ int main(int argc, char** argv) {
         return bytes;
     };
     float* d_logits = nullptr;
-    if (cudaMalloc(&d_logits, (size_t) n_vocab * 4) != cudaSuccess) {
+    const cudaError_t logits_alloc = cudaMalloc(&d_logits, (size_t) n_vocab * 4);
+    primary_serve->logits = d_logits;
+    if (logits_alloc != cudaSuccess) {
         (void) cudaGetLastError();
         std::fprintf(stderr, "strata generate: the logits buffer failed%s\n", vram_free_note().c_str());
         return 1;
@@ -9767,15 +9778,24 @@ int main(int argc, char** argv) {
     float* d_hit_out = nullptr;
     if (o.expert_cache > 0 && !o.no_pool) {
         const uint64_t sb = strata::kernels::moe_hit_grouped_scratch_bytes(K, g.n_embd, strata::kernels::cpu::FF);
-        if (cudaMalloc(&hit_scratch, (size_t) sb) != cudaSuccess ||
-            cudaMalloc((void**) &d_hit_slot, (size_t) K * sizeof(int32_t)) != cudaSuccess ||
-            cudaMalloc((void**) &d_hit_dst, (size_t) K * sizeof(int32_t)) != cudaSuccess ||
-            cudaMalloc((void**) &d_hit_q8, (size_t) (g.n_embd / 32) * 34) != cudaSuccess ||
+        const bool hit_buffers_ok =
+            cudaMalloc(&hit_scratch, (size_t) sb) == cudaSuccess &&
+            cudaMalloc((void**) &d_hit_slot, (size_t) K * sizeof(int32_t)) == cudaSuccess &&
+            cudaMalloc((void**) &d_hit_dst, (size_t) K * sizeof(int32_t)) == cudaSuccess &&
+            cudaMalloc((void**) &d_hit_q8, (size_t) (g.n_embd / 32) * 34) == cudaSuccess &&
             // R4.2h: the fp32 activation scales.  Without this the GPU's hits use the block's fp16 `d`
             // while the CPU's misses use `ActQ::scale`, which is fp32 - a 4.761e-04 relative disagreement on
             // every chunk, and the reason enabling the cache changed the tokens.
-            cudaMalloc((void**) &d_hit_q8_scale, (size_t) (g.n_embd / 32) * sizeof(float)) != cudaSuccess ||
-            cudaMalloc((void**) &d_hit_out, (size_t) K * g.n_embd * 4) != cudaSuccess) {
+            cudaMalloc((void**) &d_hit_q8_scale, (size_t) (g.n_embd / 32) * sizeof(float)) == cudaSuccess &&
+            cudaMalloc((void**) &d_hit_out, (size_t) K * g.n_embd * 4) == cudaSuccess;
+        // Capture partially initialized allocations before any error return.
+        primary_serve->hit_scratch = hit_scratch;
+        primary_serve->hit_slot = d_hit_slot;
+        primary_serve->hit_destination = d_hit_dst;
+        primary_serve->hit_q8 = d_hit_q8;
+        primary_serve->hit_q8_scale = d_hit_q8_scale;
+        primary_serve->hit_output = d_hit_out;
+        if (!hit_buffers_ok) {
             std::fprintf(stderr, "strata generate: the R4 hit path could not allocate its device buffers\n");
             return 1;
         }
@@ -9795,7 +9815,9 @@ int main(int argc, char** argv) {
         drive.d.d_dst = d_hit_dst;
         drive.d.h_slot.resize((size_t) K);
         cudaEvent_t hit_done = nullptr;
-        if (cudaEventCreate(&hit_done) != cudaSuccess) {
+        const cudaError_t hit_event_create = cudaEventCreate(&hit_done);
+        primary_serve->hit_done = hit_done;
+        if (hit_event_create != cudaSuccess) {
             std::fprintf(stderr, "strata generate: the hit path could not create its probe event\n");
             return 1;
         }
@@ -9933,7 +9955,9 @@ int main(int argc, char** argv) {
                native_head.run(ss.block.mixed, d_logits, stream, err);
     };
     float* d_emb = nullptr;
-    if (cudaMalloc(&d_emb, (size_t) g.n_embd * 4) != cudaSuccess) {
+    const cudaError_t embedding_alloc = cudaMalloc(&d_emb, (size_t) g.n_embd * 4);
+    primary_serve->embedding = d_emb;
+    if (embedding_alloc != cudaSuccess) {
         std::fprintf(stderr, "strata generate: the embedding buffer failed\n");
         return 1;
     }
@@ -9942,7 +9966,9 @@ int main(int argc, char** argv) {
     // error surfaces at the NEXT synchronising call, which here was the next token's `embed_row`, reporting an
     // illegal access on a weight plane.  Nothing in the parameter names said device.
     int* d_next = nullptr;
-    if (cudaMalloc(&d_next, sizeof(int)) != cudaSuccess) {
+    const cudaError_t next_alloc = cudaMalloc(&d_next, sizeof(int));
+    primary_serve->next_token = d_next;
+    if (next_alloc != cudaSuccess) {
         std::fprintf(stderr, "strata generate: the sampler output buffer failed\n");
         return 1;
     }
@@ -10208,7 +10234,7 @@ int main(int argc, char** argv) {
         std::printf("  three sum slightly above it because each launch carries the driver's gap.\n");
         strata::core::session_graphs_free(gr);
         strata::core::doorbell_free(db);
-        cudaFree(d_next);
+        // primary_serve retains d_next until every dependent graph has unwound.
         return 0;
     }
 
@@ -10343,9 +10369,13 @@ int main(int argc, char** argv) {
                 host_res[(size_t) (l * g.n_expert + e)] = slot;
                 if (slot != strata::core::kNotResident) ++resident;
             }
-        if (cudaMalloc((void**) &d_res, host_res.size() * sizeof(int32_t)) != cudaSuccess ||
-            cudaMalloc((void**) &d_hit_count, sizeof(int32_t)) != cudaSuccess ||
-            res_put(d_res) != cudaSuccess) {
+        const bool residency_ready =
+            cudaMalloc((void**) &d_res, host_res.size() * sizeof(int32_t)) == cudaSuccess &&
+            cudaMalloc((void**) &d_hit_count, sizeof(int32_t)) == cudaSuccess &&
+            res_put(d_res) == cudaSuccess;
+        primary_serve->residency = d_res;
+        primary_serve->hit_count = d_hit_count;
+        if (!residency_ready) {
             std::fprintf(stderr, "strata generate: the device residency table could not be staged\n");
             return 1;
         }
@@ -23159,12 +23189,8 @@ int main(int argc, char** argv) {
 
     strata::core::session_graphs_free(gr);
     strata::core::doorbell_free(db);
-    cudaFree(d_next);
-    cudaFree(d_logits);
-    cudaFree(d_emb);
-    // The primary_raw owner releases d_parts, arena and other early raw
-    // allocations after dependent GPU objects have unwound, on all exits.
-    cudaFree(sbuf);
+    // PrimaryServe and PrimaryRaw release these allocations after dependent
+    // GPU owners unwind, on both serving and non-serving exits.
     return 0;
 }
 
