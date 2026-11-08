@@ -61,6 +61,7 @@
 #include "strata/core/on_device.hpp"
 #include "strata/core/layer_split_stage_owner.hpp"
 #include "strata/core/device_owned_buffer.hpp"
+#include "strata/core/primary_early_resources.hpp"
 #include "strata/core/layer_split_stage_resources.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
@@ -3552,6 +3553,11 @@ int main(int argc, char** argv) {
         ~CvecShutdownGuard() noexcept { strata::kernels::cvec_release_all(); }
     } cvec_shutdown_guard;
 #endif
+    // First automatic GPU owner: its release happens after all subsequently
+    // declared engine/stage objects have destroyed their captured graphs.
+    using PrimaryRaw = strata::core::PrimaryEarlyResources;
+    std::unique_ptr<PrimaryRaw, strata::core::LayerSplitStageDelete<PrimaryRaw>>
+        primary_raw(new PrimaryRaw());
     // **UNBUFFERED, BECAUSE THE INTERESTING OUTPUT IS THE OUTPUT BEFORE A CRASH.**  `stdout` redirected to a
     // pipe or a file is block-buffered, so a program that dies loses every line it had already printed - which
     // turns "it crashed at step 7" into "it crashed somewhere", and the difference is a debugging session.
@@ -5641,8 +5647,19 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "strata generate: %s\n", err.c_str());
         return 1;
     }
+    // Verify the owner before the first device allocation. The custom deleter
+    // synchronizes this exact GPU on every subsequent early return.
+    int primary_alloc_device = -1;
+    if (cudaGetDevice(&primary_alloc_device) != cudaSuccess || primary_alloc_device != primary_device) {
+        std::fprintf(stderr, "strata generate: primary GPU allocation device unavailable\n");
+        return 1;
+    }
+    primary_raw->dev = primary_alloc_device;
     void* arena = nullptr;
-    if (const cudaError_t ce = cudaMalloc(&arena, pool_bytes); ce != cudaSuccess) {
+    const cudaError_t arena_alloc = cudaMalloc(&arena, pool_bytes);
+    primary_raw->weight_arena = arena;
+    primary_raw->cleanup_armed = arena != nullptr;
+    if (const cudaError_t ce = arena_alloc; ce != cudaSuccess) {
         // #486: the arena is the first large allocation and its size does not depend on the context, so what is
         // missing is held by something else: say how much was free
         cudaGetLastError();
@@ -5776,7 +5793,9 @@ int main(int argc, char** argv) {
         mrope_host.resize((size_t) cells * 3);
         for (int64_t c = 0; c < cells; ++c)
             mrope_host[(size_t) c * 3] = mrope_host[(size_t) c * 3 + 1] = mrope_host[(size_t) c * 3 + 2] = (int32_t) c;
-        if (cudaMalloc(&d_mrope, mrope_host.size() * sizeof(int32_t)) != cudaSuccess ||
+        const cudaError_t mrope_alloc = cudaMalloc(&d_mrope, mrope_host.size() * sizeof(int32_t));
+        primary_raw->vision_table = d_mrope;
+        if (mrope_alloc != cudaSuccess ||
             cudaMemcpy(d_mrope, mrope_host.data(), mrope_host.size() * sizeof(int32_t), cudaMemcpyHostToDevice) !=
                 cudaSuccess) {
             std::fprintf(stderr, "strata generate: cannot allocate the image position table\n");
@@ -5811,7 +5830,9 @@ int main(int argc, char** argv) {
     // `bench/micro/graph_node_cost.cu` measures the same kernels on a real stream at 3.63 us ungrapped and
     // 0.805 us inside a graph.  **That is an ~8x penalty on every launch in the engine.**
     cudaStream_t main_stream = nullptr;
-    if (cudaStreamCreateWithFlags(&main_stream, cudaStreamNonBlocking) != cudaSuccess) {
+    const cudaError_t primary_stream_create = cudaStreamCreateWithFlags(&main_stream, cudaStreamNonBlocking);
+    primary_raw->main_stream = main_stream;
+    if (primary_stream_create != cudaSuccess) {
         std::fprintf(stderr, "strata generate: cannot create the main stream\n");
         return 1;
     }
@@ -6069,8 +6090,13 @@ int main(int argc, char** argv) {
         // `ss.ple.hist` and the ready() check wait for `session_init`, which carves the history - the session is
         // now allocated after the layer-split search (see the carve), and the wiring lands there
         ss.ple.emb_host = ple_emb_host.data();
-        if (cudaMalloc((void**) &ple_emb_dev, (size_t) strata::kernels::NG_N_EMBD * 4) != cudaSuccess ||
-            cudaMalloc((void**) &ple_scratch, strata::core::ple_run_scratch_bytes()) != cudaSuccess) {
+        cudaError_t ple_alloc = cudaMalloc((void**) &ple_emb_dev, (size_t) strata::kernels::NG_N_EMBD * 4);
+        primary_raw->ple_embedding = ple_emb_dev;
+        if (ple_alloc == cudaSuccess) {
+            ple_alloc = cudaMalloc((void**) &ple_scratch, strata::core::ple_run_scratch_bytes());
+            primary_raw->ple_scratch = ple_scratch;
+        }
+        if (ple_alloc != cudaSuccess) {
             std::fprintf(stderr, "strata generate: the PLE buffers failed\n");
             return 1;
         }
@@ -6083,7 +6109,9 @@ int main(int argc, char** argv) {
     }
 
     float* d_parts = nullptr;
-    if (cudaMalloc(&d_parts, (size_t) K * g.n_embd * 4) != cudaSuccess ||
+    const cudaError_t parts_alloc = cudaMalloc(&d_parts, (size_t) K * g.n_embd * 4);
+    primary_raw->expert_partials = d_parts;
+    if (parts_alloc != cudaSuccess ||
         cudaMemset(d_parts, 0, (size_t) K * g.n_embd * 4) != cudaSuccess) {
         std::fprintf(stderr, "strata generate: the parts buffer failed\n");
         return 1;
@@ -23134,9 +23162,9 @@ int main(int argc, char** argv) {
     cudaFree(d_next);
     cudaFree(d_logits);
     cudaFree(d_emb);
-    cudaFree(d_parts);
+    // The primary_raw owner releases d_parts, arena and other early raw
+    // allocations after dependent GPU objects have unwound, on all exits.
     cudaFree(sbuf);
-    cudaFree(arena);
     return 0;
 }
 
