@@ -7,8 +7,8 @@
 
 namespace {
 int device = 0, gets = 0, switches = 0, syncs[3] = {}, released[3] = {}, failed = 0;
-bool completed[3] = {};
-int sequence[20] = {}, nseq = 0;
+bool completed[3] = {}, mixed_owners = false;
+int sequence[20] = {}, nseq = 0, fence_attempts = 0;
 void require(bool v, const char* why) {
     if (!v) { std::fprintf(stderr, "ASSERTION_FAILED %s\n", why); std::_Exit(98); }
 }
@@ -24,6 +24,10 @@ int dev_of(void* p) {
 void release(void* p, int kind) {
     const int owner = dev_of(p);
     require(owner == device && completed[owner], "wrong owner or missing completion fence");
+    // A queue on one device may still be using storage on the other.
+    // The first destruction is legal only AFTER every owner is fenced.
+    require(!mixed_owners || (completed[0] && completed[1]),
+            "released a cross-device resource before all owner fences");
     require(nseq < 20, "release sequence overflow");
     sequence[nseq++] = kind;
     ++released[kind];
@@ -39,7 +43,11 @@ extern "C" cudaError_t cudaSetDevice(int d) {
     ++switches; device = d; return cudaSuccess;
 }
 extern "C" cudaError_t cudaDeviceSynchronize(void) {
-    if (failed == 3) return cudaErrorUnknown;
+    ++fence_attempts;
+    if (failed == 3 || (failed == 8 && fence_attempts == 2)) {
+        require(nseq == 0, "released resources before a later owner fence failed");
+        return cudaErrorUnknown;
+    }
     ++syncs[device]; completed[device] = true; return cudaSuccess;
 }
 extern "C" cudaError_t cudaFree(void* p) {
@@ -63,6 +71,7 @@ int main(int argc, char** argv) {
     if (mode == "fail-track") failed = 1;
     if (mode == "fail-set") failed = 2;
     if (mode == "fail-sync") failed = 3;
+    if (mode == "fail-sync-second") failed = 8;
     if (mode == "fail-free") failed = 4;
     if (mode == "fail-stream") failed = 5;
     if (mode == "fail-event") failed = 6;
@@ -80,6 +89,7 @@ int main(int argc, char** argv) {
         } else if (mode == "partial" || mode == "fail-restore") {
             device = 1; p.track_buffer(handle(1, 1)); device = 0;
         } else {
+            mixed_owners = true;
             p.track_stream(reinterpret_cast<cudaStream_t>(handle(0, 1)));
             device = 1;
             p.track_stream(reinterpret_cast<cudaStream_t>(handle(1, 2)));

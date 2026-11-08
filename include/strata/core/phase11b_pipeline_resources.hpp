@@ -21,6 +21,18 @@ public:
         check(cudaGetDevice(&previous), "pipeline cleanup query device");
         int current = previous;
         std::array<bool, kMaxDevices> completed{};
+        // Fence ALL owners before releasing anything: work on one GPU may
+        // still read another GPU's allocations after its local queue drains.
+        for (std::size_t i = count_; i != 0; --i) {
+            const Entry& e = entries_[i - 1];
+            if (completed[static_cast<std::size_t>(e.device)]) continue;
+            if (current != e.device) {
+                check(cudaSetDevice(e.device), "pipeline cleanup select owner");
+                current = e.device;
+            }
+            check(cudaDeviceSynchronize(), "pipeline cleanup completion");
+            completed[static_cast<std::size_t>(e.device)] = true;
+        }
         // Reverse creation order: refill event/stream, drafter events,
         // snapshots and side streams, rows, then stage streams.
         for (std::size_t i = count_; i != 0; --i) {
@@ -28,10 +40,6 @@ public:
             if (current != e.device) {
                 check(cudaSetDevice(e.device), "pipeline cleanup select owner");
                 current = e.device;
-            }
-            if (!completed[static_cast<std::size_t>(e.device)]) {
-                check(cudaDeviceSynchronize(), "pipeline cleanup completion");
-                completed[static_cast<std::size_t>(e.device)] = true;
             }
             switch (e.kind) {
                 case Kind::buffer:

@@ -26,7 +26,7 @@ class PipelineResourcesTest(unittest.TestCase):
             )
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             modes = ("empty", "partial", "normal", "fail-get", "fail-set",
-                     "fail-sync", "fail-free", "fail-stream", "fail-event",
+                     "fail-sync", "fail-sync-second", "fail-free", "fail-stream", "fail-event",
                      "fail-restore", "fail-track", "fail-invalid", "fail-overflow")
             for mode in modes:
                 with self.subTest(compiler=compiler, flags=flags, mode=mode):

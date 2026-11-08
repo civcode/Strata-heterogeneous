@@ -22,8 +22,10 @@ and refill creation sites call `pipe_malloc`, `pipe_stream`, and `pipe_event`;
 each records the actual current device immediately after creation, even if
 a failed API returned a nonnull partially initialized handle. The registry
 is inert when unused. On exit, after dependent graph objects unwind, it
-selects each recorded device, fences each device once, and releases handles
-in reverse creation order, checking every release and device restoration.
+fences every recorded owner device once before releasing any resource, then
+releases handles in reverse creation order, checking every release and
+device restoration. This avoids releasing an allocation while queued work on
+another GPU could still be using it.
 Any get/set/sync/release failure invokes the established terminal boundary
 instead of continuing through uncertain ownership.
 
@@ -35,10 +37,11 @@ or model/config/driver setting is modified.
 
 ## Local tests (NOT native qualification)
 
-CPU fake-runtime cases: GCC and Clang Release plus ASan/UBSan, 13 scenarios
-each (52 child scenarios, four Python methods). Exercises two-device ownership,
-reverse creation order, per-device synchronization, partial startup, inert
-uninitialized registry, and terminal get/set/sync/free/stream/event/restore,
+CPU fake-runtime cases: GCC and Clang Release plus ASan/UBSan, 14 scenarios
+each (56 child scenarios, four Python methods). Exercises two-device ownership,
+reverse creation order, synchronization of every owner before the first release,
+failure of the second owner-device fence before any release, partial startup,
+inert uninitialized registry, and terminal get/set/sync/free/stream/event/restore,
 invalid-device and capacity controls. Positive cases use sanitizer leak
 detection; intentional terminal cases disable it because `_Exit` is expected.
 
