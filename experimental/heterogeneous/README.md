@@ -402,3 +402,24 @@ native GPU loading until owner-approved NVIDIA recovery. The default
 CPU-only build runs `strata_heterogeneous_cuda_stage_resources_contract_tests`
 with runtime and engine doubles. See
 [docs/CUDA_STAGE_RESOURCES_M114.md](docs/CUDA_STAGE_RESOURCES_M114.md).
+
+### M1.15 — Real Q2_0 file-expert source and static CUDA residency
+
+`CudaFileExperts` implements M1.14's `CudaStageExperts` interface with
+the native Strata `FileExpertSource`, `ExpertCache`,
+`kernels::cpu::ExpertPool` and `expert_pool_dispatch_multi`. It maps the
+actual canonical Q2_0 `experts.bin`, fills profile-selected GPU slots with
+real blobs, verifies each slot by reading it back, publishes matched host
+and device residency tables, and computes all other routed experts with
+the native CPU pool. No synthetic expert values are used.
+
+A trusted STRP/v1 expert profile or explicitly ranked stage-local
+`(layer, expert)` pairs is **required**; empty/fabricated placements
+are not silently accepted. The provider refuses native/IQ expert formats
+and enforces a GPU-memory reserve. Failed source/pool callbacks terminate
+the worker rather than releasing partially computed GPU state.
+
+This is **not yet a runnable worker executable**. Live GPU loading,
+expert numerical parity, watchdog/failed-CUDA teardown and mixed CUDA/HIP
+inference remain untested or unimplemented. See
+[docs/CUDA_FILE_EXPERTS_M115.md](docs/CUDA_FILE_EXPERTS_M115.md).

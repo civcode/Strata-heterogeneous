@@ -394,6 +394,33 @@ explicit worker-owned provider to be implemented before runnable inference.
 - See `docs/CUDA_STAGE_RESOURCES_M114.md`. Build with
   `cmake --build "$build" --parallel 28`. No GitHub Actions or reboot.
 
+### M1.15 — Canonical Q2_0 expert source and static CUDA cache
+
+- `CudaFileExperts` implements `CudaStageExperts` using the **native**
+  `FileExpertSource`, `ExpertCache`, `ExpertPool` and
+  `expert_pool_dispatch_multi`; it loads **real** expert blobs from an
+  authorized canonical Q2_0 `experts.bin`.
+- A trusted STRP/v1 profile or explicitly ranked unique layer/expert pairs
+  is required. Filter to the stage, verify every filled slot's bytes,
+  publish exactly matching host/device residency maps. Never invent hits,
+  use an empty/sentinel cache, or count a source failure as a zero expert.
+- The provider implements the CPU callback contract of the real verifier;
+  it exits the isolated worker with status 75 if a native expert source or
+  pool fails. No in-process rollback or safe GPU teardown is claimed.
+- The verifier MUST be shut down before `CudaStageResources`; the latter
+  owns/destroys the expert provider and its CUDA cache and host source.
+- Only canonical Q2_0 is supported; IQ3_XXS/native packed experts require
+  separate code. The caller supplies authorized pack and profile paths.
+- The new CPU-double test compiles the same production source with mock
+  CUDA/core APIs, but native CUDA build/link, live expert loading, GPU
+  parity and driver-fault teardown remain Oberon validation gates.
+- The verified Q2_0 input may be read at
+  `/home/chris/workspace/Strata-data/packs/q2_0` only when needed;
+  never modify it. Use `cmake --build "$build" --parallel 28`.
+  Leave the existing untracked diagnostic probe intact. Do not run GitHub
+  Actions or initiate NVIDIA recovery.
+- See `docs/CUDA_FILE_EXPERTS_M115.md`.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

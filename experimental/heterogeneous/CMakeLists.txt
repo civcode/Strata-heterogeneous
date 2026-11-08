@@ -23,7 +23,8 @@ if(STRATA_HETERO_CUDA_VERIFIER)
   endif()
   find_package(CUDAToolkit REQUIRED)
   add_library(strata_heterogeneous_cuda_verifier STATIC
-    src/cuda_verifier.cpp src/cuda_final_verifier.cpp src/cuda_stage_resources.cpp)
+    src/cuda_verifier.cpp src/cuda_final_verifier.cpp src/cuda_stage_resources.cpp
+    src/cuda_file_experts.cpp)
   target_include_directories(strata_heterogeneous_cuda_verifier PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_cuda_verifier PUBLIC strata_heterogeneous_host CUDA::cudart)
   target_compile_options(strata_heterogeneous_cuda_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -73,6 +74,21 @@ if(STRATA_HETERO_HOST_TESTS)
   add_test(NAME strata_heterogeneous_cuda_final_verifier_contract_tests
     COMMAND strata_heterogeneous_cuda_final_verifier_contract_tests)
   set_tests_properties(strata_heterogeneous_cuda_final_verifier_contract_tests PROPERTIES TIMEOUT 20)
+  # M1.15: compile the production file/cache/pool provider source against
+  # explicit CUDA, expert-source, cache and CPU-pool doubles (no GPU).
+  add_executable(strata_heterogeneous_cuda_file_experts_contract_tests
+    tests/cuda_file_experts_tests.cpp src/cuda_file_experts.cpp)
+  target_include_directories(strata_heterogeneous_cuda_file_experts_contract_tests BEFORE PRIVATE
+    tests/cuda_expert_stubs)
+  target_link_libraries(strata_heterogeneous_cuda_file_experts_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_cuda_file_experts_contract_tests PRIVATE
+      -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME strata_heterogeneous_cuda_file_experts_contract_tests
+    COMMAND strata_heterogeneous_cuda_file_experts_contract_tests)
+  set_tests_properties(strata_heterogeneous_cuda_file_experts_contract_tests PROPERTIES TIMEOUT 20)
   # Native pack/index.txt stage selection: CPU-only, does not initialize CUDA.
   # M1.14: compile the actual CUDA resource owner against CPU-only CUDA,
   # WeightTable and session doubles; do not initialize the GPU.
