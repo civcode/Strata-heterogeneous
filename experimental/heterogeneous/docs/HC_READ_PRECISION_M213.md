@@ -2,38 +2,38 @@
 
 **Baseline:** M2.12 showed exact embedding agreement and exact
 HIP-split-versus-unsplit agreement. CUDA stage zero first differs
-at \`hc_mixed\` (relative L2 0.006630, RMSE 0.004182, max
+at `hc_mixed` (relative L2 0.006630, RMSE 0.004182, max
 absolute 0.143806 at positions 0/1), before Q8_1 and QKV.
 Full M2.10 head KL remains FAIL: 0.003376 / 0.039019 > 0.001.
 Do not change the threshold or claim numerical parity.
 
 ## Source findings
 
-- \`src/core/native_dense.cpp::hc_q8_env()\`: HIP gfx12 defaults
-  \`STRATA_HC_Q8\` to **on**, loading Q8_0 HC projection copies.
+- `src/core/native_dense.cpp::hc_q8_env()`: HIP gfx12 defaults
+  `STRATA_HC_Q8` to **on**, loading Q8_0 HC projection copies.
   CUDA defaults to **off**, using BF16 HC projection rows.
-- \`src/kernels/cuda/fused_gr.cu::fused_gr_read_multi_slice\`:
-  Q8_0 selects \`launch_q8\`, with a different summation order from
+- `src/kernels/cuda/fused_gr.cu::fused_gr_read_multi_slice`:
+  Q8_0 selects `launch_q8`, with a different summation order from
   the BF16 read. Under BF16, the gfx12 fast norm is default-on
-  (\`STRATA_GR_NORM_FAST\`); CUDA's is default-off. The selected
+  (`STRATA_GR_NORM_FAST`); CUDA's is default-off. The selected
   split/staged GR variant may also differ.
-- M2.10 tried \`STRATA_HC_Q8=0\` and **final-logit KL still failed**,
+- M2.10 tried `STRATA_HC_Q8=0` and **final-logit KL still failed**,
   but no layer-zero STL0 capture was made for that mode. We cannot
   conclude the original HC-read discrepancy survived that override.
 
 M2.13 changes **no kernel arithmetic**. With manually enabled
-\`--layer0-probe\` the verifier prints a \`STRATA_GR0_PATH\` line
+`--layer0-probe` the verifier prints a `STRATA_GR0_PATH` line
 showing actual Q8-down/up pointers, scale availability, qfuse and
 HC/GR environment variables. A CPU-only two-run comparator
-(\`tools/heterogeneous_hc_mode_compare.py\`) validates complete,
+(`tools/heterogeneous_hc_mode_compare.py`) validates complete,
 checksummed M2.12 STL0/STFR artifacts and compares the exact
 embedding, HC-mixed, raw Q8_1 input and QKV projections. It rejects
 misaligned model, pack, profile, token, stage or position identities.
 
 ## Scope
 
-Only work under \`/home/chris/workspace/Strata-heterogeneous\` and
-\`/home/chris/tmp/strata-heterogeneous\`. Do not touch either
+Only work under `/home/chris/workspace/Strata-heterogeneous` and
+`/home/chris/tmp/strata-heterogeneous`. Do not touch either
 Strata-dev directory. No GitHub Actions, GPU resets/reboots,
 driver unload or disruptive recovery. Local builds <=28 jobs,
 isolated CUDA and HIP worker processes. Keep all model,
@@ -131,8 +131,8 @@ run_arm() {
 run_arm bf16 STRATA_HC_Q8=0
 ~~~
 
-**STOP and inspect** \`$OUT/bf16-hc.json\`: if the layer-zero
-\`hc_mixed\` output matches exactly (or falls to near numerical noise)
+**STOP and inspect** `$OUT/bf16-hc.json`: if the layer-zero
+`hc_mixed` output matches exactly (or falls to near numerical noise)
 with Q8 disabled, the original first discrepancy is attributable
 primarily to **unequal Q8 vs BF16 projection paths**, not yet proof of
 a bug. The full-head KL may still fail due to later divergence.
@@ -143,7 +143,7 @@ investigating further. Do not run the next control unnecessarily.
 
 Force the plain BF16 GR path and disable architecture-selected fast
 normalization (and other GR optimizations) for both workers, while
-keeping \`STRATA_HC_Q8=0\`. This differentiates kernel-variant effects
+keeping `STRATA_HC_Q8=0`. This differentiates kernel-variant effects
 from a residual CUDA/HIP arithmetic discrepancy.
 
 ~~~bash
@@ -153,7 +153,7 @@ run_arm bf16-plain STRATA_HC_Q8=0 \
   STRATA_GR_FAST=0 STRATA_GR_UP_WIDE=0
 ~~~
 
-Check \`STRATA_GR0_PATH\` and \`strata hc:\` logs for the actually
+Check `STRATA_GR0_PATH` and `strata hc:` logs for the actually
 selected mode; the source's default-path details are architecture
 dependent. If B converges while A differs, isolate the changing
 GR flag in a subsequent one-variable-at-a-time test. If both still
@@ -164,7 +164,7 @@ down/up subprojection tensors, not assume a particular kernel bug.
 
 - First different STL0 component and HC relative L2, RMSE, max abs
   for each position and executed arm.
-- Actual \`STRATA_GR0_PATH\` flags from HIP0 and CUDA0.
+- Actual `STRATA_GR0_PATH` flags from HIP0 and CUDA0.
 - Final-head KL results, including whether they remain >0.001.
 - The first STLT layer divergence under the new matched modes if
   it can be computed without extra runs.
