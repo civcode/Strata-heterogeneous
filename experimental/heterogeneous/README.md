@@ -605,3 +605,28 @@ Native GPU initialization and cross-backend correctness are **not yet
 validated on Oberon**. The full manual compilation, preflight, socket,
 shared-memory and successive-window test sequence is in
 [docs/LIVE_GPU_HANDOFF_M29.md](docs/LIVE_GPU_HANDOFF_M29.md).
+
+
+### M2.10 — Native unsplit HIP numerical reference (manual execution)
+
+A single `hip:0:0-48` native worker can now run the entire canonical
+Q2_0 verifier using its layer-zero token embedding path. This makes an
+**unsplit same-engine HIP numerical reference** available on one R9700,
+subject to actual VRAM, GGUF/profile/source validation and successful
+native loading. Both backend final verifiers support the same mode.
+
+`strata_heterogeneous_live_smoke` now accepts `--tokens` for exact
+per-window input tokens and `--capture-prefix` for complete committed
+STFR/v1 FP32-logit packets, source/position manifests and a run-completion
+marker. `tools/heterogeneous_reference_config.py` prepares the one-stage
+HIP v2 config without altering original inputs or preserving the obsolete
+12-layer artificial arena cap. `tools/heterogeneous_compare_parity.py`
+computes aligned prediction/top-1 agreement, KL(reference||heterogeneous),
+logit RMSE and maximum absolute difference, refusing corrupt or
+incomplete dumps. Its synthetic tests are CPU-only; no live GPU test is
+registered with CTest or Actions.
+
+**M2.9 hardware smoke PASSED on Oberon** at commit `28446b0`
+(socket, shared memory, and two sequential windows). **M2.10 numerical
+parity has not yet been run or established.** See
+[docs/NUMERICAL_PARITY_M210.md](docs/NUMERICAL_PARITY_M210.md).
