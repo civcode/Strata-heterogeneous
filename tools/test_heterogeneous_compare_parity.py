@@ -64,6 +64,15 @@ class ParityFixtures(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["max_kl_ref_to_hetero"], 0.0)
 
+    def test_trivial_self_comparison_is_rejected(self):
+        with self.assertRaisesRegex(parity.ParityError, "unsplit 48-layer"):
+            run = parity.read_run(self.het)
+            parity.compare(run, run, 0.001)
+
+    def test_swapped_reference_direction_is_rejected(self):
+        with self.assertRaisesRegex(parity.ParityError, "unsplit 48-layer"):
+            parity.compare(parity.read_run(self.het), parity.read_run(self.ref), 0.001)
+
     def test_two_windows_at_contiguous_positions_pass(self):
         self.write_run(self.ref, "hip:0:0-48", count=2)
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48", count=2)
