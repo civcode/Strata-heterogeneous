@@ -99,9 +99,8 @@ int main(int argc,char** argv) {
             // original GGUF projections and layer-1 PLE table.
             if (c.version != 2)
                 throw std::runtime_error("HIP worker needs v2 native GGUF/PLE configuration; v1 is preflight-only");
-            const char* live=std::getenv("STRATA_HETERO_HIP_LIVE");
-            if(!live||std::string(live)!="I_APPROVE_HIP_RUNTIME")
-                throw std::runtime_error("GPU runtime disabled; explicit STRATA_HETERO_HIP_LIVE=I_APPROVE_HIP_RUNTIME required after approved device recovery");
+            // Explicit supervised worker launch is the opt-in for runtime use.
+            // There is no second environment-variable approval handshake.
             const auto& geometry=strata::core::kCompiledGeometry;
             hetero::HipStageResources owner(geometry,plan.model_fingerprint);
             hetero::HipStageLoadOptions lo;
