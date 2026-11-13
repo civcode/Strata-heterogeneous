@@ -174,3 +174,23 @@ Expected output is the first above-threshold layer per position,
 per-layer metrics near layers 11/12 and 29/30, and a specific next
 code-level hypothesis. M2.10 numerical parity remains FAIL until
 a separately passing full-logit comparison.
+
+
+## Development-side validation (CPU only)
+
+- **13/13** STLT/v1 and layer-divergence synthetic Python tests passed
+  locally, including an end-to-end generated M2.10 STFR completion marker
+  plus all four STLT stages at the real 2560-element embedding width.
+- **14/14** existing M2.10 Python parity tests passed again.
+- Confirmed the local Python comparator, tests, and native STLT recorder
+  header match the committed GitHub blob hashes exactly.
+- Compiled the native STLT recorder header against a minimal fake
+  Verifier/Plan using both GCC and Clang, with C++17 and
+  `-Wall -Wextra -Wpedantic -Werror`. Ran a host-only writer, then
+  decoded and checksummed its binary using the actual Python STLT reader.
+  Verified exclusive-create rejects overwrites and the legacy
+  STRATA_TAP_FILE conflict fails closed.
+
+**This is not a CUDA/HIP build or live M2.11 run.** All actual
+gpu-backed verifier tap allocations, native builds and numerical layer
+measurements still require the user-directed Oberon hardware test above.
