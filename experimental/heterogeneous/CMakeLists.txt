@@ -158,6 +158,13 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_compare_parity.py)
     set_tests_properties(strata_heterogeneous_parity_capture_tests PROPERTIES TIMEOUT 30)
+    # M2.12: pure-Python exact layer-zero STL0 records and two-stage
+    # HIP control config; never spawns GPU workers.
+    add_test(NAME strata_heterogeneous_layer0_arithmetic_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_layer0_arithmetic.py)
+    set_tests_properties(strata_heterogeneous_layer0_arithmetic_tests PROPERTIES TIMEOUT 30)
     # M2.11: entirely CPU-only versioned STLT tap integrity and stage
     # first-divergence localization; never launches a native GPU worker.
     add_test(NAME strata_heterogeneous_layer_divergence_tests
