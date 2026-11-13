@@ -889,3 +889,38 @@ download huge model files merely to validate the CPU transport.
   HC output converges. GPU M2.13 unverified. No GitHub Actions,
   GPU reset, driver unload, or Strata-dev access. Build <=28 jobs.
   Full runbook: `docs/HC_READ_PRECISION_M213.md`.
+
+
+### M2.14 — Bounded matched-BF16 stage-zero phase localization
+
+- M2.13 Oberon hardware: `STRATA_HC_Q8=0` on both worker
+  backends reduced stage-zero HC mixed relative L2 from 0.006630
+  to **7.27e-8** (max abs 7.15e-7). Both Q8 input and QKV
+  were identical. No plain-BF16 second arm was necessary.
+- Stage-zero remaining post-layer divergence appears at layer 8,
+  position 0, and layer 6, position 1 (diagnostic L2>0.001).
+  Full-head KL still FAILS (0.005003 and 0.037718 vs 0.001).
+  Do not relax threshold or declare parity.
+- Opt-in `set_stage0_phase_probe` in native core Verifier copies
+  FP32 first HC mixed, main GDN/QSA bo, second HC mixed, MoE bo
+  for layers 0–11 with T=1, no default GPU allocation/copy nodes.
+  Both final and nonfinal CUDA/HIP adapters support a fail-closed
+  `Stage0PhaseRecorder` and exclusive, checksum-protected
+  `PREFIX.stage0.wN.stp0` files.
+- Host-only `strata_heterogeneous_live_smoke --stage0-phases`
+  requires `--capture-prefix` and one row. Without `--run`
+  it remains pure CPU preflight. It clears stale inherited
+  stage-zero probe env if the flag is not selected.
+- CPU-only `tools/heterogeneous_stage0_phases.py` requires
+  completed STFR/manifest identity and validates 12×4×2560
+  finite values, checksum, model sources and token/position.
+  It reports earliest **observed** phase threshold crossing
+  and per-phase metrics; it does not identify the first
+  causal operation in the presence of growing subthreshold drift.
+- **64/64 local synthetic/regression tests passed**, including
+  14 new M2.14 tests. No native CUDA/HIP build or M2.14
+  hardware execution has been performed in this environment.
+  Oberon must build and run the scoped diagnostic.
+- No Actions, GPU resets/reboots/driver unload, Strata-dev access,
+  or automatic triggers. Separate CUDA/HIP builds, <=28 jobs.
+  Full instructions: `docs/STAGE0_PHASE_LOCALIZATION_M214.md`.
