@@ -119,6 +119,12 @@ class GateTests(unittest.TestCase):
     def test_valid_model(self):
         self.check()
 
+    def test_native_preflight_executable_is_optional(self):
+        # The cross-stage GGUF/index/profile checks remain active without
+        # requiring a separately built HIP-named CPU preflight executable.
+        gate.validate("cuda:0:0-12,hip:0:12-30,hip:1:30-48",
+                      48, 4, 2560, 2026111301, self.configs, None)
+
     def test_generator_header_after_descriptive_comment(self):
         lines = (self.pack / "index.txt").read_text().splitlines()
         self.assertTrue(lines[0].startswith("# strata pack index v3"))
