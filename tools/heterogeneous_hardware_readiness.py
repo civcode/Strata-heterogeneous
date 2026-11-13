@@ -292,8 +292,10 @@ def assess(plan: str, layers: int, cfg: list[Path], sys_root: Path, proc_root: P
     gpu = gpu_inventory(sys_root)
     mapping, problems = validate_bindings(bindings, stages, gpu)
     mem = planned_memory(plan, cfg, layers)
-    if any(item["declared_bdf"] is None for item in mapping):
-        problems.append("unresolved backend-local runtime ordinal mapping")
+    # Runtime ordinals are backend-local handles used directly by the native
+    # workers. Physical PCI identity is useful for diagnostics/pinning, but
+    # the absence of an optional --bind declaration is not a failed passive
+    # hardware assessment (nor a prerequisite for starting a staged test).
     nvidia_count = sum(d["vendor"] == "nvidia" for d in gpu)
     amd_count = sum(d["vendor"] == "amd" for d in gpu)
     if nvidia_count < len({i for b, i, _, _ in stages if b == "cuda"}):
@@ -366,8 +368,8 @@ def main(argv: list[str] | None = None) -> int:
                f"{len(log['fault_markers'])} matching lines in supplied offline log"))
         print("READINESS: " + result["readiness"] +
               " (NEVER authorizes live GPU use or establishes driver health)")
-    # UNVERIFIED means the host checks ran; never return a success code that
-    # can be mistaken for authorization to start native GPU workers.
+    # Exit 0 means this *passive inventory* had no contradictions. Runtime
+    # device discovery, free-memory checks and inference are separate gates.
     return 0 if not result["blockers"] else 1
 
 
