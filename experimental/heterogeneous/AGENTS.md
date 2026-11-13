@@ -699,7 +699,8 @@ download huge model files merely to validate the CPU transport.
 - `tools/heterogeneous_hardware_readiness.py` reads only bounded PCI
   sysfs and module procfs metadata, stage config files and the Q2_0
   pack index. Optional kernel fault history requires a pre-exported log.
-- Device mappings are declarations only (`--bind`); never infer actual
+- Optional device mappings are declarations only (`--bind`); missing
+  declarations do not block a consistent passive assessment. Never infer
   CUDA/HIP runtime ordinals, available VRAM or GPU health from BDF order,
   DRM numbering, PCI BAR sizes or bound-driver visibility.
 - Memory arithmetic covers compact selected weights and canonical Q2_0
@@ -722,13 +723,15 @@ download huge model files merely to validate the CPU transport.
 - Reject incomplete, missing, duplicate or contradictory ordinal/BDF
   evidence. Do not infer HIP ordinals from BDF or DRM order, particularly
   with Oberon's additional AMD PCI function (0x13c0).
-- No evidence means `BLOCKED`. Full agreement only means
-  `IDENTITY_CORRELATED_ONLY`, not verified host/boot provenance,
-  free VRAM, driver health or permission to start GPU workers.
-- Runtime identity evidence collection itself is **NOT AUTHORIZED**.
-  It may initialize CUDA/HIP even if it only enumerates devices. Any
-  runtime probe, memory query, worker start, model load, reset, or live
-  inference requires a separate explicit authorization.
+- No evidence means `BLOCKED` for the optional identity reconciliation
+  check **only**; not for the overall integration-test plan. Full agreement
+  only means `IDENTITY_CORRELATED_ONLY`, not verified host/boot provenance,
+  free VRAM, driver health or proven inference correctness.
+- Runtime enumeration can initialize CUDA/HIP. Run it as part of a
+  user-initiated GPU test or equivalent scoped agent instruction; that
+  instruction is sufficient authorization for its scope. Do not
+  independently initiate GPU tests. Reboots, device resets and other
+  disruptive recovery remain outside scope unless specifically requested.
 - 23 local CPU-only synthetic tests pass. One standalone CTest is added
   (30 total when Python3 is available). No Oberon work or Actions run.
   See docs/ORDINAL_EVIDENCE_M28.md.
