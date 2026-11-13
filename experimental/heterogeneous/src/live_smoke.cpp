@@ -14,6 +14,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include <utility>
 #include <unistd.h>
 
 namespace hetero = strata::heterogeneous;
@@ -55,12 +56,12 @@ std::string required_value(int& i, int argc, char** argv, const char* option) {
 }
 void usage() {
     std::cerr <<
-        "usage: strata_heterogeneous_live_smoke --plan <spec> --fingerprint <id>\\n"
-        "  --config <cuda0.cfg> --config <hip0.cfg> --config <hip1.cfg>\\n"
-        "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\\n"
-        "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\\n"
-        "  [--rows 1] [--windows 1] [--timeout-ms 120000] [--shared] [--run]\\n"
-        "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\\n";
+        "usage: strata_heterogeneous_live_smoke --plan <spec> --fingerprint <id>\n"
+        "  --config <cuda0.cfg> --config <hip0.cfg> --config <hip1.cfg>\n"
+        "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
+        "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
+        "  [--rows 1] [--windows 1] [--timeout-ms 120000] [--shared] [--run]\n"
+        "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
 Options parse(int argc, char** argv) {
     Options o;
@@ -90,7 +91,7 @@ Options parse(int argc, char** argv) {
         } else throw std::invalid_argument("unknown option: " + key);
     }
     if (o.plan.empty() || !o.fingerprint || o.rows == 0 || o.rows > 8 ||
-        o.windows == 0 || o.windows > 8 || o.token > INT32_MAX ||
+        o.windows == 0 || o.windows > 8 || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
     return o;
