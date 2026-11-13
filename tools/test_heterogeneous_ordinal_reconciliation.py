@@ -17,6 +17,12 @@ class IdentityReconciliationTests(unittest.TestCase):
         self.inventory = {
             "schema": ordinal.INVENTORY_SCHEMA, "passive_only": True,
             "runtime_initialized": False,
+            "blockers": ["unresolved backend-local runtime ordinal mapping"],
+            "ordinal_declarations": [
+                {"backend": "cuda", "ordinal": 0, "declared_bdf": None},
+                {"backend": "hip", "ordinal": 0, "declared_bdf": None},
+                {"backend": "hip", "ordinal": 1, "declared_bdf": None},
+            ],
             "pci_graphics": [
                 {"pci_bdf": "0000:04:00.0", "vendor": "nvidia", "bound_driver": "nvidia"},
                 {"pci_bdf": "0000:03:00.0", "vendor": "amd", "bound_driver": "amdgpu"},
@@ -54,6 +60,18 @@ class IdentityReconciliationTests(unittest.TestCase):
         out = self.report([])
         self.assertEqual("BLOCKED", out["readiness"])
         self.assertEqual(2, len(out["blockers"]))
+
+    def test_prior_nonidentity_blocker_is_preserved(self):
+        self.inventory["blockers"].append("fewer AMD graphics functions than planned HIP ordinals")
+        result = self.report()
+        self.assertEqual("BLOCKED", result["readiness"])
+        self.assertIn("M2.7 retained blocker", str(result["blockers"]))
+
+    def test_runtime_disagrees_with_prior_declared_mapping(self):
+        self.inventory["ordinal_declarations"][1]["declared_bdf"] = "0000:07:00.0"
+        result = self.report()
+        self.assertEqual("BLOCKED", result["readiness"])
+        self.assertIn("disagrees with M2.7 declaration", str(result["blockers"]))
 
     def test_one_backend_missing(self):
         self.assertIn("missing hip", str(self.report([self.cuda])["blockers"]))
