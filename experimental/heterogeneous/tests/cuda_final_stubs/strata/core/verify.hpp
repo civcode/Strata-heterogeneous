@@ -6,6 +6,12 @@
 #include <vector>
 namespace strata::kernels { constexpr int kVerifyMaxT = 8; }
 namespace strata::core {
+// Fail-closed M2.12 diagnostic contract for CPU-only native test doubles.
+struct LayerZeroArithmetic {
+    uint32_t n_embd = 0, qkv_channels = 0;
+    std::vector<float> embedded, mixed, qkv;
+    std::vector<uint8_t> q8_bytes;
+};
 struct WeightTable {};
 struct ModelGeometry { int64_t n_layers=4, hc=2, n_embd=3, n_vocab=100; };
 struct SessionState { int64_t layer_lo=3, layer_hi=4, max_cells=32; };
@@ -31,6 +37,10 @@ inline void reset() {
 }
 class Verifier {
 public:
+    void set_layer_zero_arithmetic_probe(bool) {}
+    bool copy_layer_zero_arithmetic(LayerZeroArithmetic&, std::string& e) const {
+        e="layer-zero probe unsupported in CPU stub"; return false;
+    }
     void set_taps(const std::vector<int>&) {}
     bool gather_taps_host(float*, int, int, std::string& err) {
         err = "tap collection is not implemented by this test double";
