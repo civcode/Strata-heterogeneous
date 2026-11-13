@@ -732,6 +732,7 @@ Verifier::~Verifier() {
     if (qcnt_) cudaFree(qcnt_);
     if (layer_zero_mixed_) cudaFree(layer_zero_mixed_);
     if (layer_zero_q8_) cudaFree(layer_zero_q8_);
+    if (stage0_phase_dev_) cudaFree(stage0_phase_dev_);
     if (d_spec_) cudaFree(d_spec_);
     if (tap_file_) std::fclose(tap_file_);
 #if !defined(STRATA_GPU_METAL)   // (on Metal tap_dev_ is the window's unified-memory buffer, not an allocation of this object)
@@ -1128,6 +1129,20 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         if (cudaMalloc((void**) &layer_zero_mixed_, (size_t) T * g.n_embd * sizeof(float)) != cudaSuccess ||
             cudaMalloc((void**) &layer_zero_q8_, (size_t) T * q8stride) != cudaSuccess) {
             err = "layer-zero arithmetic probe GPU buffer allocation failed";
+            return false;
+        }
+    }
+    if (stage0_phase_on_) {
+        if (lb_ != 0 || le_ < kStage0ProbeLayers || g.n_layers < kStage0ProbeLayers ||
+            g.n_embd <= 0 || T < 1 || T > 16) {
+            err = "stage-zero phase probe requires a layer-0 stage containing layers 0..11";
+            return false;
+        }
+        const size_t values = (size_t) T * kStage0ProbeLayers *
+                              kStage0ProbePhases * g.n_embd;
+        if (values > (16u << 20) / sizeof(float) ||
+            cudaMalloc((void**) &stage0_phase_dev_, values * sizeof(float)) != cudaSuccess) {
+            err = "stage-zero phase probe exceeds 16 MiB or allocation failed";
             return false;
         }
     }
@@ -1644,6 +1659,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                 (int) (l * kProfPer + (half == 0 ? 27 : 30)));
         };
         const bool q8_attn = gr_read_group(0, pending, inj2_, inj_);   // true: xq_ holds mixed's q8_1 (STRATA_QFUSE)
+        if (!stage0_phase_capture(l, tb, n, 0, mixed_, cs, err)) return false;
         if (layer_zero_probe_on_ && l == 0 &&
             cudaMemcpyAsync(layer_zero_mixed_ + (size_t) tb * N, mixed_ + (size_t) tb * N,
                             (size_t) n * N * sizeof(float), cudaMemcpyDeviceToDevice, cs) != cudaSuccess) {
@@ -2219,7 +2235,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             return false;
         }
         stamp(l, 16, grp);
+        if (!stage0_phase_capture(l, tb, n, 1, bo_, cs, err)) return false;
         const bool q8_ffn = gr_read_group(1, true, inj_, inj2_);   // true: nat_xq_ holds the MoE input's q8_1 (STRATA_QFUSE)
+        if (!stage0_phase_capture(l, tb, n, 2, mixed_, cs, err)) return false;
         stamp(l, 32, grp);   // the profile only: the FFN-side read ends here, the router starts
         // with CPU experts in the window the shared expert forks off once the doorbell is published (it no longer
         // competes with it for the GPU's first microseconds); STRATA_SH_FORK_LATE=0 forks at the top as before
@@ -2524,6 +2542,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         if (remote_opt_) remote_opt_->combine(bo_ + tb * N, y_dummy_ + tb * N, tb, n,
                               device_plan_ ? skip_ + grp : nullptr, ring, cs);
         stamp(l, 24, grp);
+        if (!stage0_phase_capture(l, tb, n, 3, bo_, cs, err)) return false;
         if (tap_on_ && (!batch_rec_ || tap_batch_) && l < (int64_t) tap_slot_.size() && tap_slot_[(size_t) l] >= 0) {
             // the layer's completed output: R with this FFN half's write applied (the next layer's read would fold it), the mean of
             // the hc streams, all rows of the group in one launch
@@ -5172,6 +5191,54 @@ void Verifier::note_nonfinite(int T, const int64_t* pos_b) {
     for (int t = 0; t < T && nf_row_ < 0; ++t)
         if ((nf_mask_ >> t) & 1u) nf_row_ = t;
     if (nf_row_ >= 0) nf_pos_ = pos_b != nullptr ? pos_b[nf_row_] : last_pos0_ + nf_row_;
+}
+
+bool Verifier::stage0_phase_capture(int64_t layer, int row0, int rows, int phase,
+                                    const float* source, cudaStream_t stream,
+                                    std::string& err) const {
+    if (!stage0_phase_on_ || layer < 0 || layer >= kStage0ProbeLayers)
+        return true;
+    if (!stage0_phase_dev_ || !source || !g_ || phase < 0 ||
+        phase >= kStage0ProbePhases || row0 < 0 || rows <= 0 ||
+        row0 + rows > max_t_) {
+        err = "invalid stage-zero phase capture arguments";
+        return false;
+    }
+    const size_t N = (size_t) g_->n_embd;
+    for (int row = row0; row < row0 + rows; ++row) {
+        float* dst = stage0_phase_dev_ +
+            (((size_t) row * kStage0ProbeLayers + (size_t) layer) *
+             kStage0ProbePhases + (size_t) phase) * N;
+        if (cudaMemcpyAsync(dst, source + (size_t) row * N,
+                            N * sizeof(float), cudaMemcpyDeviceToDevice,
+                            stream) != cudaSuccess) {
+            err = "stage-zero phase GPU snapshot failed at layer " +
+                  std::to_string(layer) + " phase " + std::to_string(phase);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Verifier::copy_stage0_phase_probe(std::vector<float>& values,
+                                      std::string& err) const {
+    if (!stage0_phase_on_ || !stage0_phase_dev_ || !g_ ||
+        lb_ != 0 || last_t_ != 1 || g_->n_embd <= 0) {
+        err = "stage-zero phase export requires completed single-token stage-zero window";
+        return false;
+    }
+    const OnDevice on_device(device_);
+    const size_t count = (size_t) kStage0ProbeLayers *
+                         kStage0ProbePhases * (size_t) g_->n_embd;
+    values.resize(count);
+    const cudaError_t e = cudaMemcpy(values.data(), stage0_phase_dev_,
+                                      count * sizeof(float), cudaMemcpyDeviceToHost);
+    if (e != cudaSuccess) {
+        err = std::string("stage-zero phase export failed: ") +
+              cudaGetErrorString(e);
+        return false;
+    }
+    return true;
 }
 
 bool Verifier::copy_layer_zero_arithmetic(LayerZeroArithmetic& result,
