@@ -50,7 +50,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     }
     const Stage& stage = plan.stages[index];
     if (stage.backend != Backend::hip || stage.ordinal > INT_MAX ||
-        stage.first_layer == 0 || stage.end_layer != plan.total_layers ||
+        stage.end_layer != plan.total_layers ||
         plan.total_layers != g.n_layers ||
         plan.geometry.hc != g.hc || plan.geometry.n_embd != g.n_embd ||
         plan.model_fingerprint != bindings_.model_fingerprint ||
@@ -75,13 +75,17 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     index_ = index;
     device_ = static_cast<int>(stage.ordinal);
     state_ = State::initializing; // cleanup also handles partial initialization
+    // An unsplit [0,n_layers) reference embeds tokens inside Verifier and
+    // has no prior activation handoff; never upload the dummy input.
     if (!select_device(error) ||
-        !check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity_), error) ||
-        !check(cudaMallocHost(&staging_, capacity_), error) ||
+        (stage.first_layer != 0 &&
+         (!check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity_), error) ||
+          !check(cudaMallocHost(&staging_, capacity_), error))) ||
         !check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error))
         return false;
     verifier_ = std::make_unique<core::Verifier>();
-    verifier_->set_stage(stage.first_layer, stage.end_layer, input_, nullptr);
+    verifier_->set_stage(stage.first_layer, stage.end_layer,
+                         stage.first_layer ? input_ : nullptr, nullptr);
     verifier_->set_handoff_rows(bindings_.max_t);
     verifier_->set_next(nullptr, nullptr);
     verifier_->set_handoff_flags(nullptr, nullptr, nullptr, nullptr);
@@ -159,11 +163,13 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         error = "HIP final verifier stage/activation identity mismatch";
         return false;
     }
-    const size_t bytes = input.bytes();
-    std::memcpy(staging_, input.data(), bytes); // raw memfd bytes, not float[]
-    if (!check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice,
-                               verifier_->stream()), error) ||
-        !fence(error) || !wait_fence(error)) return false;
+    if (plan_.stages[index_].first_layer != 0) {
+        const size_t bytes = input.bytes();
+        std::memcpy(staging_, input.data(), bytes); // raw memfd bytes, not float[]
+        if (!check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice,
+                                   verifier_->stream()), error) ||
+            !fence(error) || !wait_fence(error)) return false;
+    } // layer-zero native Verifier uses token embeddings, not handoff bytes
 
     std::vector<int32_t> predictions(spec_.token_ids.size());
     if (!verifier_->run(static_cast<int>(predictions.size()), spec_.token_ids.data(),
