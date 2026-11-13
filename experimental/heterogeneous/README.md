@@ -477,3 +477,13 @@ mock-worker protocol behavior is unchanged when no limits are supplied.
 The CPU-only unit and forked-worker tests bring the experimental suite to
 **20 CTest targets**. No live GPU inference was run. See
 [docs/WINDOW_ADMISSION_M118.md](docs/WINDOW_ADMISSION_M118.md).
+
+### M2.0 — HIP subprocess bootstrap (CPU only)
+
+The supervisor now supports independent per-stage `--config` paths without
+changing the legacy CUDA-only config argument or unconfigured mock workers.
+A strict, host-only HIP invocation parser checks plan/identity, command
+syntax, backend index and absolute path before any HIP runtime exists.
+The process suite probes real exec argv routing in socket/shared modes.
+M2.0 does not implement a HIP model loader or mixed-vendor inference.
+See [docs/HIP_BOOTSTRAP_M20.md](docs/HIP_BOOTSTRAP_M20.md).

@@ -25,13 +25,16 @@ public:
 
     // Each process receives only its backend's executable; a worker gets
     // a dedicated inherited socket on fd 3. Paths must be absolute.
-    // The optional CUDA config path is passed ONLY as --config to CUDA
-    // children; HIP/mock workers retain their original argv exactly.
+    // Legacy CUDA config applies ONLY to CUDA children. Optional per-stage
+    // paths override that mode and pass --config only to their corresponding
+    // worker. An empty stage path retains unconfigured mock-worker argv.
+    // Paths are validated before spawning any process; no config is read here.
     static WorkerProcessGroup launch(const Plan& plan,
                                      const std::string& cuda_executable,
                                      const std::string& hip_executable,
                                      bool shared_memory = false,
-                                     const std::string& cuda_config_path = {});
+                                     const std::string& cuda_config_path = {},
+                                     const std::vector<std::string>& stage_config_paths = {});
     std::vector<int> sockets() const;
     size_t size() const { return children_.size(); }
 

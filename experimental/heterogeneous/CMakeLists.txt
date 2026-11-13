@@ -8,7 +8,7 @@ endif()
 option(STRATA_HETERO_HOST_TESTS "Build CPU-only cross-backend host protocol tests" ON)
 add_library(strata_heterogeneous_host STATIC src/host.cpp src/session.cpp src/process.cpp src/shared.cpp src/activation.cpp src/device.cpp src/final_result.cpp src/final_pipeline.cpp src/stage_weights.cpp
   src/cuda_worker_config.cpp src/cuda_worker_bootstrap.cpp
-  src/window_admission.cpp)
+  src/hip_worker_bootstrap.cpp src/window_admission.cpp)
 target_include_directories(strata_heterogeneous_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(strata_heterogeneous_host PUBLIC cxx_std_17)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -70,6 +70,21 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M2.0: host-only HIP startup and actual process argv routing.
+  add_executable(strata_heterogeneous_hip_worker_bootstrap_tests
+    tests/hip_worker_bootstrap_tests.cpp)
+  target_link_libraries(strata_heterogeneous_hip_worker_bootstrap_tests PRIVATE
+    strata_heterogeneous_host)
+  add_executable(strata_heterogeneous_worker_argv_probe tests/worker_argv_probe.cpp)
+  target_link_libraries(strata_heterogeneous_worker_argv_probe PRIVATE
+    strata_heterogeneous_host)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_hip_worker_bootstrap_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(strata_heterogeneous_worker_argv_probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME strata_heterogeneous_hip_worker_bootstrap_tests
+    COMMAND strata_heterogeneous_hip_worker_bootstrap_tests)
+  set_tests_properties(strata_heterogeneous_hip_worker_bootstrap_tests PROPERTIES TIMEOUT 20)
   # M1.18: bounded protocol gate and forked CPU worker failures.
   add_executable(strata_heterogeneous_window_admission_tests
     tests/window_admission_tests.cpp)
@@ -238,6 +253,7 @@ if(STRATA_HETERO_HOST_TESTS)
   add_executable(strata_heterogeneous_hang_worker tests/hang_worker.cpp)
   add_executable(strata_heterogeneous_process_tests tests/process_tests.cpp)
   target_link_libraries(strata_heterogeneous_process_tests PRIVATE strata_heterogeneous_host)
+  add_dependencies(strata_heterogeneous_process_tests strata_heterogeneous_worker_argv_probe)
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(strata_heterogeneous_process_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   endif()

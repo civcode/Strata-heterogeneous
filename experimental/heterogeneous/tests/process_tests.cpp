@@ -83,6 +83,37 @@ int main() {
         check(shared_group.finish(error, 1000), "all shared workers finish and are reaped");
         check(shared_group.size() == 0, "shared process cleanup");
 
+        // M2.0: stage-specific argv must reach only its own worker process.
+        const std::string probe = dir + "/strata_heterogeneous_worker_argv_probe";
+        const std::vector<std::string> paths = {
+            "/tmp/m20-stage-0.cfg", "/tmp/m20-stage-1.cfg", "/tmp/m20-stage-2.cfg"
+        };
+        auto routed = WorkerProcessGroup::launch(plan, probe, probe, false, {}, paths);
+        check(routed.size() == 3, "three stage-indexed children launched");
+        check(routed.finish(error, 1000), "correct config in every child process");
+        auto routed_shared = WorkerProcessGroup::launch(plan, probe, probe, true, {}, paths);
+        check(routed_shared.finish(error, 1000), "stage config routes in shared mode");
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(plan, probe, probe, false, {},
+                                             {paths[0]});
+        }, "missing stage entries refused before any spawn");
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(plan, probe, probe, false,
+                                             "/tmp/legacy.cfg", paths);
+        }, "mixed legacy/per-stage config refused");
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(plan, probe, probe, false, {},
+                                             {"relative.cfg", paths[1], paths[2]});
+        }, "relative stage config refused");
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(plan, probe, probe, false, {},
+                                             {paths[0], "/tmp/../bad.cfg", paths[2]});
+        }, "parent directory component refused");
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(plan, probe, probe, false, {},
+                                             {paths[0], "/tmp/hip\n.cfg", paths[2]});
+        }, "newline stage config refused");
+
         // Mismatched data transport modes must fail closed rather than hang.
         auto mismatched = WorkerProcessGroup::launch(plan, cuda, hip, true);
         PipelineSession no_shared(plan, mismatched.sockets(), 200, false);

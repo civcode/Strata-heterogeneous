@@ -502,6 +502,14 @@ explicit worker-owned provider to be implemented before runnable inference.
   GPU reset or reboot. Preserve the untracked probe and stash.
 - See `docs/WINDOW_ADMISSION_M118.md`.
 
+### M2.0 — CPU-only HIP startup integration (preparatory slice)
+
+- Adds per-stage supervisor --config path routing and strict HIP worker
+  invocation validation. No HIP runtime initialization or model loading.
+- Existing CUDA-only config routing and mock worker argv remain unchanged.
+- New host-only CTest target brings the standalone suite to **21 tests**.
+- See docs/HIP_BOOTSTRAP_M20.md for scope and limits.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

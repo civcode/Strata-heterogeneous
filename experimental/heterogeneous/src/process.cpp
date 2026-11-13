@@ -4,6 +4,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <filesystem>
 #include <fcntl.h>
 #include <spawn.h>
 #include <stdexcept>
@@ -28,6 +29,20 @@ void reap(pid_t pid) noexcept {
     if (pid <= 0) return;
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+}
+
+// CPU-only path boundary: validate all explicit per-stage paths before spawn.
+void validate_stage_config_path(const std::string& path) {
+    if (path.empty()) return; // legacy mock worker requires no --config
+    if (path.size() < 2 || path.size() > 4096 || path.front() != '/' ||
+        path.find('\0') != std::string::npos ||
+        path.find('\n') != std::string::npos ||
+        path.find('\r') != std::string::npos)
+        throw std::invalid_argument("stage config path must be absolute and bounded");
+    for (const auto& part : std::filesystem::path(path)) {
+        if (part == "." || part == "..")
+            throw std::invalid_argument("stage config path contains dot segment");
+    }
 }
 
 struct SpawnActions {
@@ -88,7 +103,8 @@ WorkerProcessGroup& WorkerProcessGroup::operator=(WorkerProcessGroup&& other) no
 WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_executable,
                                             const std::string& hip_executable, bool shared_memory,
-                                            const std::string& cuda_config_path) {
+                                            const std::string& cuda_config_path,
+                                            const std::vector<std::string>& stage_config_paths) {
     plan.validate();
     if (cuda_executable.empty() || hip_executable.empty() ||
         cuda_executable.front() != '/' || hip_executable.front() != '/')
@@ -97,7 +113,14 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
         cuda_config_path.find('\n') != std::string::npos ||
         cuda_config_path.find('\r') != std::string::npos))
         throw std::invalid_argument("CUDA worker config path must be absolute and contain no line breaks");
+    if (!stage_config_paths.empty()) {
+        if (stage_config_paths.size() != plan.stages.size() ||
+            !cuda_config_path.empty())
+            throw std::invalid_argument("stage configs must match plan and cannot mix with legacy CUDA config");
+        for (const auto& path : stage_config_paths) validate_stage_config_path(path);
+    }
     const std::string spec = plan_spec(plan);
+    const std::string no_config;
     WorkerProcessGroup group;
     group.children_.reserve(plan.stages.size()); // no allocation after a successful spawn
     for (size_t i = 0; i < plan.stages.size(); ++i) {
@@ -123,9 +146,12 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                 std::to_string(plan.geometry.hc), std::to_string(plan.geometry.n_embd),
                 std::to_string(plan.model_fingerprint), std::to_string(i)
             };
-            if (!cuda_config_path.empty() && plan.stages[i].backend == Backend::cuda) {
+            const std::string& config_path = !stage_config_paths.empty()
+                ? stage_config_paths[i]
+                : (plan.stages[i].backend == Backend::cuda ? cuda_config_path : no_config);
+            if (!config_path.empty()) {
                 args.push_back("--config");
-                args.push_back(cuda_config_path);
+                args.push_back(config_path);
             }
             std::vector<char*> argv;
             for (auto& a : args) argv.push_back(a.data());
