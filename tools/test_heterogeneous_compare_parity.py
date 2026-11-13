@@ -11,7 +11,7 @@ from heterogeneous_reference_config import make_reference
 
 
 def packet(pred=3, logits=(0.0, 1.0, 2.0, 4.0),
-           window=1, plan_fp=123, include_logits=True):
+           window=1, plan_fp=123, include_logits=True, stage=2):
     rows = 1
     vocab = 4
     payload = struct.pack("<iI", pred, 0)
@@ -19,7 +19,7 @@ def packet(pred=3, logits=(0.0, 1.0, 2.0, 4.0),
         payload += struct.pack("<4f", *logits)
     h = bytearray(parity.HEADER.pack(
         parity.MAGIC, 1, 1 if include_logits else 0,
-        2, rows, vocab, 0, 1, window, plan_fp, len(payload), 0, 0))
+        stage, rows, vocab, 0, 1, window, plan_fp, len(payload), 0, 0))
     blob = bytearray(h + payload)
     checksum = 2166136261
     for i, byte in enumerate(blob):
@@ -57,7 +57,7 @@ class ParityFixtures(unittest.TestCase):
             Path(f"{prefix}.w{i}.stfr").write_bytes(packet(
                 pred=predictions[i - 1] if predictions is not None else 3,
                 logits=logits if logits is not None else (0.0, 1.0, 2.0, 4.0),
-                window=i, include_logits=include_logits))
+                window=i, include_logits=include_logits, stage=plan.count(",")))
 
     def test_identical_logits_and_predictions_pass(self):
         result = parity.compare(parity.read_run(self.ref), parity.read_run(self.het), 0.001)
