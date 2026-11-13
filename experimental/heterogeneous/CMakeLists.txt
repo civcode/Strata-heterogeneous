@@ -68,7 +68,8 @@ if(STRATA_HETERO_HIP_VERIFIER)
      NOT TARGET strata_hip_runtime)
     message(FATAL_ERROR "HIP verifier needs the separate wave32 HIP-only parent engine")
   endif()
-  add_library(strata_heterogeneous_hip_verifier STATIC src/hip_verifier.cpp)
+  add_library(strata_heterogeneous_hip_verifier STATIC
+    src/hip_verifier.cpp src/hip_final_verifier.cpp)
   target_include_directories(strata_heterogeneous_hip_verifier PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_hip_verifier PUBLIC
@@ -100,6 +101,22 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M2.3: final HIP verifier/head and STFR response gate, same actual
+  # source compiled against CPU-only verifier/runtime doubles.
+  add_executable(strata_heterogeneous_hip_final_verifier_contract_tests
+    tests/hip_final_verifier_tests.cpp src/hip_final_verifier.cpp)
+  target_include_directories(strata_heterogeneous_hip_final_verifier_contract_tests BEFORE
+    PRIVATE tests/cuda_final_stubs tests/cuda_stubs)
+  target_link_libraries(strata_heterogeneous_hip_final_verifier_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  target_compile_definitions(strata_heterogeneous_hip_final_verifier_contract_tests PRIVATE STRATA_USE_HIP=1)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_hip_final_verifier_contract_tests PRIVATE
+      -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME strata_heterogeneous_hip_final_verifier_contract_tests
+    COMMAND strata_heterogeneous_hip_final_verifier_contract_tests)
+  set_tests_properties(strata_heterogeneous_hip_final_verifier_contract_tests PROPERTIES TIMEOUT 20)
   # M2.2: actual HIP adapter source with CPU CUDA-shaped API doubles.
   add_executable(strata_heterogeneous_hip_verifier_contract_tests
     tests/hip_verifier_tests.cpp src/hip_verifier.cpp)

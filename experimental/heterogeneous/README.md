@@ -510,3 +510,13 @@ is opt-in (`STRATA_ENABLE_HIP=ON` and
 `STRATA_BUILD_HETERO_HIP_VERIFIER=ON`), separate from any CUDA build.
 This is not a model loader, final-stage adapter, actual HIP inference or
 numerical parity. See [docs/HIP_VERIFIER_M22.md](docs/HIP_VERIFIER_M22.md).
+
+### M2.3 — HIP final-stage head and accepted-prefix adapter
+
+A separate `HipFinalVerifierExecutor` now implements the STFR final-result
+boundary with real verifier head predictions, optional bounded logits,
+nonfinite guards and positive-prefix commit; the code uses only the HIP
+runtime shim in a native HIP build. CPU doubles cover failure/replay/final
+results without running hardware. This is still **not** a runnable HIP
+model-loading worker and numerical parity is unverified. See
+[docs/HIP_FINAL_M23.md](docs/HIP_FINAL_M23.md).

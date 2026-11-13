@@ -534,6 +534,17 @@ explicit worker-owned provider to be implemented before runnable inference.
   validation, mixed GPU inference and parity remain open.
 - See docs/HIP_VERIFIER_M22.md.
 
+### M2.3 — HIP final-stage verifier/head adapter (no live run)
+
+- Final HIP stages use a separate `HipFinalVerifierExecutor` returning
+  STFR predictions/logits rather than activation frames. Head output,
+  nonfinite guard, identity and committed positive prefix are constrained
+  just as for the CUDA final adapter, with no cross-runtime pointers.
+- **24 standalone CTest targets** expected, including the HIP final-stage
+  CPU-double contract. Native HIP compilation and GPU parity still unverified.
+- No HIP model-loading worker, state owner or live execution is added yet.
+  See docs/HIP_FINAL_M23.md.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The
