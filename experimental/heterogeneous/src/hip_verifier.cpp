@@ -80,6 +80,7 @@ bool HipVerifierDriver::prepare(const Plan& plan, size_t index, std::string& err
     // pool publication, so an actual live pool is mandatory even if resident.
     verifier_->set_always_publish(true);
     verifier_->set_head_sampling(false);
+    if (!taps_.configure(*verifier_, plan, index, error)) return false;
     if (!verifier_->init(bindings_.weights, g, bindings_.session, bindings_.hits,
                           nullptr, bindings_.max_t, error)) return false;
     next_position_ = bindings_.initial_position;
@@ -137,6 +138,9 @@ bool HipVerifierDriver::enqueue_execute(const Frame& frame, std::string& error) 
 }
 bool HipVerifierDriver::wait_execute(std::string& error) {
     if (!expect(State::executing, error) || !wait(error)) return false;
+    // The compute stream completed. Gather post-layer diagnostics before
+    // an accepted-prefix commit can overwrite the verifier's tap buffers.
+    if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     state_ = State::executed; return true;
 }
 bool HipVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::string& error) {
