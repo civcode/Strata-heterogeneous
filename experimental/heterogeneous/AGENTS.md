@@ -795,3 +795,33 @@ download huge model files merely to validate the CPU transport.
 - **M2.10 execution and numerical parity remain UNTESTED until the
   Oberon native reference and heterogeneous captures complete.**
   Full commands: `docs/NUMERICAL_PARITY_M210.md`.
+
+
+### M2.11 — Diagnostic post-layer tap capture following M2.10 parity failure
+
+- M2.10 GPU runs completed all commits, with matching predictions/top-1
+  at both positions. KL ref||het = 0.003376 at position 0 and 0.039019
+  at position 1, exceeding the declared 0.001 threshold. A diagnostic
+  STRATA_HC_Q8=0 rerun also failed (0.005003 and 0.037718). Maintain
+  **numerical parity FAIL**; do not broaden windows or raise tolerance.
+- M2.11 reuses native Verifier::set_taps/gather_taps_host for every
+  post-layer **HC-mean completed residual**, including pending GR write,
+  for layers 0..46. These are not full R|bo|inject handoffs, so an
+  observed divergence is a localization clue, not a proof of cause.
+- The host-only live smoke `--layer-taps` requires `--capture-prefix`;
+  without `--run` it remains CPU-only. It passes one explicit per-run
+  output prefix to each exec-isolated native worker. Worker STLT/v1
+  records are bounded and exclusive; corrupt/nonfinite recordings
+  fail closed, and the host completion marker is published only after
+  all worker commits and shutdown succeed.
+- The CPU-only `tools/heterogeneous_layer_divergence.py` compares
+  completed reference/heterogeneous runs and cross-checks every
+  stage/pos/window/model/tap checksum, reporting per-layer relative L2,
+  RMSE, max abs delta and first layer above a **diagnostic** threshold.
+  That threshold does not replace the M2.10 logit KL criterion.
+- Run on Oberon under the existing user-requested hardware test scope.
+  No GitHub Actions, no reset/reboot/driver unload, build <=28 jobs,
+  separate CUDA/HIP workers, never touch either Strata-dev directory.
+  Do not combine STRATA_TAP_FILE with M2.11 --layer-taps.
+- **No M2.11 live GPU tap measurements exist yet.** See exact commands
+  and stop conditions: `docs/LAYER_DIVERGENCE_M211.md`.
