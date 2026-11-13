@@ -28,6 +28,14 @@ public:
                    size_t stage_index, std::string& error) {
         const char* raw = std::getenv("STRATA_HETERO_LAYER_TAP_PREFIX");
         if (!raw || !*raw) return true;
+        // Verifier::init gives STRATA_TAP_FILE priority over set_taps().
+        // Reject a conflicting legacy dump rather than silently capturing
+        // only its custom layer subset under the STLT full-layer label.
+        const char* legacy = std::getenv("STRATA_TAP_FILE");
+        if (legacy && *legacy) {
+            error = "disable STRATA_TAP_FILE when collecting STLT full-layer taps";
+            return false;
+        }
         if (stage_index >= plan.stages.size()) {
             error = "tap stage index out of range"; return false;
         }
