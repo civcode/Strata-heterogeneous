@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <limits>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 
@@ -82,12 +83,32 @@ bool HipStageResources::load(const Plan& plan, size_t index,
             return false;
         }
         device_ = requested_device;
+        // Diagnostic only: identity discovery never gates an otherwise valid
+        // backend ordinal. It is collected in the already-running child, not
+        // in the host coordinator and not in a separate preflight ritual.
+        int visible_devices = -1;
+        if (cudaGetDeviceCount(&visible_devices) != cudaSuccess) visible_devices = -1;
+        cudaDeviceProp device_properties{};
+        const bool properties_known =
+            cudaGetDeviceProperties(&device_properties, requested_device) == cudaSuccess;
+        char pci_bus_id[32]{};
+        const bool pci_known =
+            hipDeviceGetPCIBusId(pci_bus_id, sizeof(pci_bus_id), requested_device) == cudaSuccess;
         size_t free_bytes = 0, total_bytes = 0;
         if (!check_cuda(cudaMemGetInfo(&free_bytes, &total_bytes), "cudaMemGetInfo", error) ||
             total > free_bytes || options.free_reserve_bytes > free_bytes - total) {
             if (error.empty()) error = "insufficient free HIP memory for arenas and safety reserve";
             shutdown(); return false;
         }
+        std::cerr << "STRATA_DEVICE backend=HIP"
+                  << " stage=" << index
+                  << " ordinal=" << requested_device
+                  << " runtime_visible=" << visible_devices
+                  << " name=" << (properties_known ? device_properties.name : "unknown")
+                  << " pci=" << (pci_known ? pci_bus_id : "unknown")
+                  << " free_mib=" << (free_bytes >> 20)
+                  << " total_mib=" << (total_bytes >> 20)
+                  << '\n';
         weight_bytes_ = native_bytes;
         session_bytes_ = session_bytes;
         if (!check_cuda(cudaMalloc(&weight_arena_, static_cast<size_t>(weight_bytes_)),
