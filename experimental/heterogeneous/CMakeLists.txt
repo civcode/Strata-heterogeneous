@@ -158,6 +158,13 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_compare_parity.py)
     set_tests_properties(strata_heterogeneous_parity_capture_tests PROPERTIES TIMEOUT 30)
+    # M2.13: CPU-only matched-HC-mode reference versus mixed STL0
+    # comparison; no runtime or GPU worker is launched by CTest.
+    add_test(NAME strata_heterogeneous_hc_mode_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_hc_mode_compare.py)
+    set_tests_properties(strata_heterogeneous_hc_mode_tests PROPERTIES TIMEOUT 30)
     # M2.12: pure-Python exact layer-zero STL0 records and two-stage
     # HIP control config; never spawns GPU workers.
     add_test(NAME strata_heterogeneous_layer0_arithmetic_tests
