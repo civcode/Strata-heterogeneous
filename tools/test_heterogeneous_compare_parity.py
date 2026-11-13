@@ -103,7 +103,7 @@ class ParityFixtures(unittest.TestCase):
     def test_wrong_token_sequence_fails(self):
         path = Path(f"{self.het}.w1.json")
         meta = json.loads(path.read_text())
-        meta["token_ids"] = [99]
+        meta["token_ids"] = [2]  # valid token ID, but mismatched sequence
         path.write_text(json.dumps(meta))
         with self.assertRaisesRegex(parity.ParityError, "token_ids"):
             parity.compare(parity.read_run(self.ref), parity.read_run(self.het), 0.001)
