@@ -7,7 +7,9 @@
 #include "strata_heterogeneous/host.hpp"
 #include "strata/core/verify.hpp"
 
+#include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
