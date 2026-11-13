@@ -559,3 +559,16 @@ complete STRP/v1 profile. Stage-device ordinals remain backend-local.
 This is structural validation, **not** a full-model authenticated hash,
 native runtime test or numerical-parity claim. No model files are modified.
 See [docs/MODEL_PLAN_GATE_M26.md](docs/MODEL_PLAN_GATE_M26.md).
+
+### M2.7 — Passive GPU/driver readiness inventory
+
+The CPU-only `tools/heterogeneous_hardware_readiness.py` reports Linux
+PCI functions, bound driver metadata, optional owner-supplied offline
+kernel-fault markers, and per-stage Q2_0 compact weight/cache planning
+figures from the actual pack index. It does **not** initialize CUDA/HIP,
+run `nvidia-smi`/`rocminfo`, load models, or infer runtime ordinals.
+Unbound `--bind` declarations are deliberately reported as blockers;
+even declared mappings remain *runtime unverified*. Session/native
+weights and free VRAM are not measured. The 19 synthetic fixture tests
+are the standalone suite's **29th CTest** if Python3 is available.
+See [docs/HARDWARE_READINESS_M27.md](docs/HARDWARE_READINESS_M27.md).

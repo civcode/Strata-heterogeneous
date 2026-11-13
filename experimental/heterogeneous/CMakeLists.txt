@@ -131,8 +131,15 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_model_gate.py)
     set_tests_properties(strata_heterogeneous_model_plan_gate_tests PROPERTIES TIMEOUT 30)
+    # M2.7: entirely passive Linux PCI/sysfs and stage-memory evaluation.
+    # Synthetic /sys and /proc fixture only: never touches actual device nodes.
+    add_test(NAME strata_heterogeneous_hardware_readiness_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_hardware_readiness.py)
+    set_tests_properties(strata_heterogeneous_hardware_readiness_tests PROPERTIES TIMEOUT 30)
   else()
-    message(WARNING "Python3 not found: M2.6 model-plan gate CTest unavailable")
+    message(WARNING "Python3 not found: M2.6/M2.7 model/plan and hardware-readiness CTests unavailable")
   endif()
   # M2.4: HIP-only stage weights/session/NativeDense/PLE/file-experts
   # sources, with the same API compiled against CPU-only core/runtime doubles.

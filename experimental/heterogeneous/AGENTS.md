@@ -693,3 +693,22 @@ download huge model files merely to validate the CPU transport.
 - This gate does NOT verify the bytes of all GGUF shards or
   dense/embd/experts binaries; no GPU inference authorized or performed.
   See docs/MODEL_PLAN_GATE_M26.md.
+
+### M2.7 — Passive PCI/driver and stage-memory readiness
+
+- `tools/heterogeneous_hardware_readiness.py` reads only bounded PCI
+  sysfs and module procfs metadata, stage config files and the Q2_0
+  pack index. Optional kernel fault history requires a pre-exported log.
+- Device mappings are declarations only (`--bind`); never infer actual
+  CUDA/HIP runtime ordinals, available VRAM or GPU health from BDF order,
+  DRM numbering, PCI BAR sizes or bound-driver visibility.
+- Memory arithmetic covers compact selected weights and canonical Q2_0
+  cache slots/residency plus configured safety reserve. Device session
+  state, native GGUF/PLE, verifier allocations and runtime overhead
+  remain unknown. Do not report a VRAM-fit verdict.
+- 19 synthetic fixture unittests are registered as one additional
+  CPU-only standalone CTest when Python3 is available (**29** total).
+  Oberon real host inventory has not yet been collected by ChatGPT.
+- No GPU driver API, runtime, `nvidia-smi`, `rocminfo`, model load,
+  reset, reboot, Actions, or unrelated workspace access is permitted.
+  See docs/HARDWARE_READINESS_M27.md.
