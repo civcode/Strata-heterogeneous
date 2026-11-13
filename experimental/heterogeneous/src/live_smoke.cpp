@@ -43,6 +43,7 @@ struct Options {
     bool run = false;
     bool shared = false;
     bool layer_taps = false;
+    bool layer_zero_probe = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -70,7 +71,7 @@ void usage() {
         "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
         "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
-        "  [--layer-taps]  (requires capture prefix; GPU post-layer STLT/v1 diagnostics)\n"
+        "  [--layer-taps] [--layer0-probe]  (requires capture prefix; opt-in GPU diagnostics)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -80,6 +81,7 @@ Options parse(int argc, char** argv) {
         const std::string key = argv[i];
         if (key == "--run") o.run = true;
         else if (key == "--layer-taps") o.layer_taps = true;
+        else if (key == "--layer0-probe") o.layer_zero_probe = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
@@ -123,6 +125,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
     if (o.layer_taps && o.capture_prefix.empty())
         throw std::invalid_argument("--layer-taps requires --capture-prefix");
+    if (o.layer_zero_probe && (o.capture_prefix.empty() || o.rows != 1))
+        throw std::invalid_argument("--layer0-probe requires --capture-prefix and --rows 1");
     if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     return o;
@@ -201,6 +205,10 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                 throw std::invalid_argument("capture already completed; use a fresh prefix");
             for (uint32_t n = 1; n <= o.windows; ++n) {
                 const std::string base = o.capture_prefix + ".w" + std::to_string(n);
+                if (o.layer_zero_probe &&
+                    std::filesystem::exists(o.capture_prefix + ".stage0.w" +
+                                            std::to_string(n) + ".stl0"))
+                    throw std::invalid_argument("layer-zero probe already exists; use fresh prefix");
                 if (o.layer_taps)
                     for (size_t stage = 0; stage < plan.stages.size(); ++stage)
                         if (std::filesystem::exists(o.capture_prefix + ".stage" +
@@ -278,6 +286,9 @@ int execute(const Options& o, const hetero::Plan& plan) {
     if (o.layer_taps && ::setenv("STRATA_HETERO_LAYER_TAP_PREFIX",
                                  o.capture_prefix.c_str(), 1) != 0)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
+    if (o.layer_zero_probe && ::setenv("STRATA_HETERO_L0_PROBE_PREFIX",
+                                       o.capture_prefix.c_str(), 1) != 0)
+        throw std::runtime_error("cannot configure native layer-zero arithmetic probe");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared);
