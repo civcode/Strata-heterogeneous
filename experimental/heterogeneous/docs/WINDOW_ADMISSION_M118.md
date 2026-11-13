@@ -1,5 +1,12 @@
 # M1.18 — Bounded supervised CUDA stage windows (GPU-free integration)
 
+
+> **M2.9 update:** The historical I_APPROVE_* runtime environment-variable
+> gate described below was removed. An explicitly launched native worker is
+> the runtime opt-in. See [LIVE_GPU_HANDOFF_M29.md](LIVE_GPU_HANDOFF_M29.md)
+> for the current manual live GPU test sequence. Earlier milestone notes
+> below are retained for historical context.
+
 **Baseline:** M1.17 `9b33ee648a827d17f4cf55ff4a1570deb57f1d24`.
 **Scope:** CPU-only window admission, provisional output and positive-prefix
 commit checks around both existing CUDA verifier servers. No new CUDA kernels,
