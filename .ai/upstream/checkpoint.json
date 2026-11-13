@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "Niko1221/Strata",
+  "observed_upstream_sha": "13eedf552417a6a791a7d13c6597e24300ee3a09",
+  "observed_on": "2026-11-13",
+  "working_branch_at_observation": "feature/heterogeneous-cuda-window-admission",
+  "working_sha_at_observation": "6b3b6be30a81d7d35d3b577e1f13b3c5c31aebfe",
+  "merge_base_at_observation": "146df3c468739147f520ac3816de806f71232571",
+  "integration_status": "assessment_only_no_upstream_commits_imported"
+}
