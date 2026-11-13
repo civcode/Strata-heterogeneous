@@ -2,6 +2,7 @@
 
 // CUDA-worker-only header. Never include/link this in a HIP worker or host.
 #include "strata_heterogeneous/device.hpp"
+#include "strata_heterogeneous/layer_taps.hpp"
 #include "strata/core/verify.hpp"
 #include <memory>
 
@@ -59,6 +60,7 @@ private:
     cudaEvent_t fence_ = nullptr;
     uint8_t* download_host_ = nullptr;
     WindowSpec spec_;
+    LayerTapRecorder taps_;
     uint64_t request_ = 0, window_ = 0;
     size_t bytes_ = 0;
     int device_ = -1;
