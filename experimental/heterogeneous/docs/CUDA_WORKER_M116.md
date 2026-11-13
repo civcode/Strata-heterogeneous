@@ -1,5 +1,12 @@
 # M1.16 — supervised CUDA model-loading worker (opt-in, GPU execution gated)
 
+
+> **M2.9 update:** The historical I_APPROVE_* runtime environment-variable
+> gate described below was removed. An explicitly launched native worker is
+> the runtime opt-in. See [LIVE_GPU_HANDOFF_M29.md](LIVE_GPU_HANDOFF_M29.md)
+> for the current manual live GPU test sequence. Earlier milestone notes
+> below are retained for historical context.
+
 **Status:** Source-implemented CUDA-only worker executable plus CPU-only
 configuration/argv contracts. Buildable only as an explicitly requested
 native-engine target; there is no default engine behavior change. Real NVIDIA
