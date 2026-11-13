@@ -522,6 +522,18 @@ explicit worker-owned provider to be implemented before runnable inference.
 - See docs/HIP_PREFLIGHT_M21.md. No HIP device runtime or mixed inference
   has been implemented. Hardware requires separate authorization.
 
+### M2.2 — HIP non-final verifier adapter (native compilation pending)
+
+- One opt-in HIP-only adapter uses the backend-neutral DeviceDriver
+  interface, the real core::Verifier and Strata's HIP runtime shim.
+- The CUDA-shaped calls map to HIP inside a dedicated HIP build; never
+  link this archive into the coordinator or a CUDA executable.
+- The standalone host suite now expects **23 CTest targets** including
+  a CPU-double lifecycle/fault-injection test compiling the HIP source.
+- A real HIP worker, model/session owner, final-stage head, HIP build/link
+  validation, mixed GPU inference and parity remain open.
+- See docs/HIP_VERIFIER_M22.md.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

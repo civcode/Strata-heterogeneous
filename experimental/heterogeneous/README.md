@@ -498,3 +498,15 @@ own GPU state, or claim any successful stage execution. The executable is
 built for host tests or opt-in with
 `STRATA_HETERO_BUILD_HIP_PREFLIGHT=ON`. See
 [docs/HIP_PREFLIGHT_M21.md](docs/HIP_PREFLIGHT_M21.md).
+
+### M2.2 — Non-final HIP verifier adapter (opt-in, not hardware-validated)
+
+The HIP-only `HipVerifierDriver` now implements the existing `DeviceDriver`
+interface on the real `core::Verifier` and stage-local HIP runtime. It uses
+backend-owned H2D/D2H buffers, pinned staging and event fences, and only
+acknowledges a matching positive prefix after commit completion. Standalone
+CPU-double tests reuse the tested lifecycle and fault cases. Native compile
+is opt-in (`STRATA_ENABLE_HIP=ON` and
+`STRATA_BUILD_HETERO_HIP_VERIFIER=ON`), separate from any CUDA build.
+This is not a model loader, final-stage adapter, actual HIP inference or
+numerical parity. See [docs/HIP_VERIFIER_M22.md](docs/HIP_VERIFIER_M22.md).

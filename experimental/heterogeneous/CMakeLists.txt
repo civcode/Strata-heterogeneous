@@ -60,6 +60,25 @@ if(STRATA_HETERO_HOST_TESTS OR STRATA_HETERO_BUILD_HIP_PREFLIGHT)
   endif()
 endif()
 
+# M2.2: HIP-only non-final verifier archive, opt-in, native HIP engine only.
+option(STRATA_HETERO_HIP_VERIFIER "Compile HIP non-final verifier adapter" OFF)
+if(STRATA_HETERO_HIP_VERIFIER)
+  if(NOT STRATA_ENABLE_HIP OR STRATA_ENABLE_CUDA OR STRATA_HIP_GFX906 OR
+     STRATA_HETERO_CUDA_VERIFIER OR NOT TARGET strata_engine OR
+     NOT TARGET strata_hip_runtime)
+    message(FATAL_ERROR "HIP verifier needs the separate wave32 HIP-only parent engine")
+  endif()
+  add_library(strata_heterogeneous_hip_verifier STATIC src/hip_verifier.cpp)
+  target_include_directories(strata_heterogeneous_hip_verifier PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+  target_link_libraries(strata_heterogeneous_hip_verifier PUBLIC
+    strata_heterogeneous_host strata_engine strata_hip_runtime)
+  target_compile_features(strata_heterogeneous_hip_verifier PUBLIC cxx_std_17)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_hip_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endif()
+
 # Two independent CPU mock executables. They deliberately do not initialize
 # either GPU runtime, but verify that each worker has a backend-specific image.
 foreach(_mock_backend IN ITEMS cuda hip)
@@ -81,6 +100,20 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M2.2: actual HIP adapter source with CPU CUDA-shaped API doubles.
+  add_executable(strata_heterogeneous_hip_verifier_contract_tests
+    tests/hip_verifier_tests.cpp src/hip_verifier.cpp)
+  target_include_directories(strata_heterogeneous_hip_verifier_contract_tests BEFORE
+    PRIVATE tests/cuda_stubs)
+  target_link_libraries(strata_heterogeneous_hip_verifier_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  target_compile_definitions(strata_heterogeneous_hip_verifier_contract_tests PRIVATE STRATA_USE_HIP=1)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_hip_verifier_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+  add_test(NAME strata_heterogeneous_hip_verifier_contract_tests
+    COMMAND strata_heterogeneous_hip_verifier_contract_tests)
+  set_tests_properties(strata_heterogeneous_hip_verifier_contract_tests PROPERTIES TIMEOUT 20)
   # M2.1: reuses strict v2 GGUF/pack config preflight, checks HIP-only
   # stage identity and refuses to advertise a working native HIP stage.
   add_executable(strata_heterogeneous_hip_worker_config_tests tests/hip_worker_config_tests.cpp)

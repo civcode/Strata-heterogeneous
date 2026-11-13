@@ -3065,6 +3065,17 @@ if(STRATA_BUILD_SPLIT)
   add_subdirectory(src/split)
 endif()
 
+# ---- Experimental heterogeneous HIP verifier: opt-in, no execution ----
+option(STRATA_BUILD_HETERO_HIP_VERIFIER "Build HIP non-final verifier archive (no execution)" OFF)
+if(STRATA_BUILD_HETERO_HIP_VERIFIER)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT STRATA_ENABLE_HIP OR
+     STRATA_ENABLE_CUDA OR STRATA_HIP_GFX906 OR STRATA_ENABLE_SYCL OR STRATA_ENABLE_METAL)
+    message(FATAL_ERROR "The heterogeneous HIP verifier requires a Linux wave32 HIP-only build")
+  endif()
+  set(STRATA_HETERO_HIP_VERIFIER ON)
+  add_subdirectory(experimental/heterogeneous)
+endif()
+
 # ---- Experimental heterogeneous CUDA worker: manually opted in, CUDA-only ----
 # Adds a new executable and its CPU protocol contracts. No default engine path
 # or GPU process starts during the build. HIP workers are separate images.
