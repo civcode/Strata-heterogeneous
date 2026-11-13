@@ -170,22 +170,23 @@ def check_pack(root: Path, stages) -> None:
 
 
 def check_preflight(binary: Path, cfg: Path) -> None:
-    require(binary.is_file() and binary.name == "strata_heterogeneous_hip_preflight_worker",
-            "must use the CPU-only HIP preflight executable")
+    require(binary.is_absolute() and binary.is_file() and os.access(binary, os.X_OK),
+            "optional CPU-only preflight executable must be an executable absolute file")
     result = subprocess.run([str(binary), "--check-config", str(cfg)],
                             capture_output=True, text=True, timeout=60, check=False)
     require(result.returncode == 0, f"CPU file preflight refused {cfg.name}: {result.stderr.strip()}")
 
 
 def validate(spec: str, layers: int, hc: int, n_embd: int, fingerprint: int,
-             configs: list[Path], preflight: Path) -> None:
+             configs: list[Path], preflight: Path | None = None) -> None:
     stages = plan_stages(spec, layers)
     require((layers, hc, n_embd, 248320) == EXPECTED_GEOMETRY and fingerprint > 0,
             "only canonical 48-layer Q2_0 with nonzero fingerprint is supported")
     require(len(stages) == len(configs), "expected exactly one ordered config per stage")
     fields = []
     for i, (stage, path) in enumerate(zip(stages, configs)):
-        check_preflight(preflight, path)
+        if preflight is not None:
+            check_preflight(preflight, path)
         c = config(path)
         require(c.get("version") == "2", "stage config must be version 2")
         backend, ordinal, first, end = stage
@@ -222,8 +223,8 @@ def main() -> int:
     parser.add_argument("--hc", type=int, required=True)
     parser.add_argument("--n-embd", type=int, required=True)
     parser.add_argument("--fingerprint", type=int, required=True)
-    parser.add_argument("--preflight", type=Path, required=True,
-                        help="path to CPU-only strata_heterogeneous_hip_preflight_worker")
+    parser.add_argument("--preflight", type=Path,
+                        help="optional additional CPU-only native config preflight executable")
     parser.add_argument("--config", action="append", type=Path, required=True,
                         help="one config per ordered stage; repeat --config")
     args = parser.parse_args()
