@@ -286,9 +286,15 @@ int execute(const Options& o, const hetero::Plan& plan) {
     if (o.layer_taps && ::setenv("STRATA_HETERO_LAYER_TAP_PREFIX",
                                  o.capture_prefix.c_str(), 1) != 0)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
-    if (o.layer_zero_probe && ::setenv("STRATA_HETERO_L0_PROBE_PREFIX",
-                                       o.capture_prefix.c_str(), 1) != 0)
-        throw std::runtime_error("cannot configure native layer-zero arithmetic probe");
+    if (o.layer_zero_probe) {
+        if (::setenv("STRATA_HETERO_L0_PROBE_PREFIX",
+                     o.capture_prefix.c_str(), 1) != 0)
+            throw std::runtime_error("cannot configure native layer-zero arithmetic probe");
+    } else if (::unsetenv("STRATA_HETERO_L0_PROBE_PREFIX") != 0) {
+        // Prevent a stale environment variable from silently changing a
+        // non-diagnostic manually launched inference session.
+        throw std::runtime_error("cannot clear inherited native layer-zero probe");
+    }
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared);
