@@ -567,8 +567,9 @@ PCI functions, bound driver metadata, optional owner-supplied offline
 kernel-fault markers, and per-stage Q2_0 compact weight/cache planning
 figures from the actual pack index. It does **not** initialize CUDA/HIP,
 run `nvidia-smi`/`rocminfo`, load models, or infer runtime ordinals.
-Unbound `--bind` declarations are deliberately reported as blockers;
-even declared mappings remain *runtime unverified*. Session/native
+Missing optional `--bind` declarations no longer block passive inventory;
+contradictory supplied bindings or insufficient device counts still do.
+Even declared mappings remain *runtime unverified*. Session/native
 weights and free VRAM are not measured. The 19 synthetic fixture tests
 are the standalone suite's **29th CTest** if Python3 is available.
 See [docs/HARDWARE_READINESS_M27.md](docs/HARDWARE_READINESS_M27.md).
@@ -579,9 +580,11 @@ The CPU-only `tools/heterogeneous_ordinal_reconciliation.py` correlates
 a pre-exported M2.7 JSON PCI inventory with separate, operator-supplied
 CUDA and HIP runtime ordinal-to-BDF evidence **only after such probes are
 separately authorized and collected**. It never touches driver APIs or
-devices itself. With absent evidence, readiness remains `BLOCKED`; even
-consistent complete evidence yields only `IDENTITY_CORRELATED_ONLY`,
-never permission for GPU execution. The 23 synthetic tests are registered
+devices itself. With absent evidence, this **optional identity check**
+reports `BLOCKED`; this is not a prerequisite to starting controlled
+runtime/inference integration. Even consistent evidence yields only
+`IDENTITY_CORRELATED_ONLY`, not a GPU-health or numerical-parity claim.
+The 23 synthetic tests are registered
 as the standalone project's **30th CTest** when Python3 is present.
 
 See [docs/ORDINAL_EVIDENCE_M28.md](docs/ORDINAL_EVIDENCE_M28.md).
