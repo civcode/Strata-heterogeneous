@@ -30,7 +30,14 @@ struct SessionState {
     QsaState* qsa_states=nullptr;
 };
 struct VerifyHits {const int32_t* d_res=nullptr;};
-class Verifier {};
+class Verifier {
+public:
+    void set_taps(const std::vector<int>&) {}
+    bool gather_taps_host(float*, int, int, std::string& err) {
+        err = "tap collection is not implemented by this test double";
+        return false;
+    }
+};
 using PoolMultiFn=void(*)(void*,const float*,const int32_t*,int64_t,int64_t,float*,int64_t);
 class WeightTable {
 public:

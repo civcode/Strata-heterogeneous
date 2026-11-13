@@ -31,6 +31,11 @@ inline void reset() {
 }
 class Verifier {
 public:
+    void set_taps(const std::vector<int>&) {}
+    bool gather_taps_host(float*, int, int, std::string& err) {
+        err = "tap collection is not implemented by this test double";
+        return false;
+    }
     static bool nan_guard_on() {return fake_final::guard_on;}
     void set_stage(int64_t b,int64_t e,const float* in,float* out) {
         fake_final::begin=b;fake_final::end=e;fake_final::input=in;fake_final::output=out;
