@@ -158,6 +158,13 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_compare_parity.py)
     set_tests_properties(strata_heterogeneous_parity_capture_tests PROPERTIES TIMEOUT 30)
+    # M2.15: CPU-only STB0 native layer-5 routing/expert and layer-6
+    # GDN substep identity, checksum and divergence fixtures.
+    add_test(NAME strata_heterogeneous_branch_probe_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_stage_branch.py)
+    set_tests_properties(strata_heterogeneous_branch_probe_tests PROPERTIES TIMEOUT 30)
     # M2.14: CPU-only four-phase stage-zero STP0 wire and divergence
     # localization fixtures; never launch GPU worker processes.
     add_test(NAME strata_heterogeneous_stage0_phase_tests
