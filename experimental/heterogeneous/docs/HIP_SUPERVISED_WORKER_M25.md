@@ -1,5 +1,12 @@
 # M2.5 — Isolated supervised HIP Q2_0 worker (opt-in, not hardware validated)
 
+
+> **M2.9 update:** The historical I_APPROVE_* runtime environment-variable
+> gate described below was removed. An explicitly launched native worker is
+> the runtime opt-in. See [LIVE_GPU_HANDOFF_M29.md](LIVE_GPU_HANDOFF_M29.md)
+> for the current manual live GPU test sequence. Earlier milestone notes
+> below are retained for historical context.
+
 **Baseline:** M2.4 `f80107c2`. This is source-level assembly of a
 full HIP-only worker, pending native compile/link and runtime validation.
 
