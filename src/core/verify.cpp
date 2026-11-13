@@ -733,6 +733,8 @@ Verifier::~Verifier() {
     if (layer_zero_mixed_) cudaFree(layer_zero_mixed_);
     if (layer_zero_q8_) cudaFree(layer_zero_q8_);
     if (stage0_phase_dev_) cudaFree(stage0_phase_dev_);
+    if (branch_probe_dev_) cudaFree(branch_probe_dev_);
+    if (branch_ids_dev_) cudaFree(branch_ids_dev_);
     if (d_spec_) cudaFree(d_spec_);
     if (tap_file_) std::fclose(tap_file_);
 #if !defined(STRATA_GPU_METAL)   // (on Metal tap_dev_ is the window's unified-memory buffer, not an allocation of this object)
@@ -1129,6 +1131,35 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         if (cudaMalloc((void**) &layer_zero_mixed_, (size_t) T * g.n_embd * sizeof(float)) != cudaSuccess ||
             cudaMalloc((void**) &layer_zero_q8_, (size_t) T * q8stride) != cudaSuccess) {
             err = "layer-zero arithmetic probe GPU buffer allocation failed";
+            return false;
+        }
+    }
+    if (branch_probe_on_) {
+        if (lb_ != 0 || le_ <= 6 || g.n_layers < 7 ||
+            g.n_embd != 2560 || g.n_expert != 512 || ss.k != 10 ||
+            is_qsa_layer(g, 6) || g.ssm_conv_channels <= 0 ||
+            g.ssm_v_heads <= 0 || g.ssm_value_dim <= 0) {
+            err = "M2.15 branch probe requires Q2_0 stage0, MoE layer 5 and GDN layer 6";
+            return false;
+        }
+        const size_t sizes[kBranchFields] = {
+            (size_t) g.n_expert, (size_t) ss.k, (size_t) g.n_embd,
+            (size_t) ss.k * g.n_embd, (size_t) g.n_embd,
+            (size_t) g.ssm_conv_channels, (size_t) g.ssm_conv_channels,
+            (size_t) g.ssm_v_heads, (size_t) g.ssm_v_heads,
+            (size_t) g.ssm_value_dim, (size_t) g.ssm_value_dim,
+            (size_t) g.n_embd
+        };
+        branch_floats_ = 0;
+        for (size_t field = 0; field < kBranchFields; ++field) {
+            branch_offsets_[field] = branch_floats_;
+            branch_lengths_[field] = sizes[field];
+            branch_floats_ += sizes[field];
+        }
+        if (branch_floats_ == 0 || branch_floats_ > (1u << 20) / sizeof(float) ||
+            cudaMalloc((void**) &branch_probe_dev_, branch_floats_ * sizeof(float)) != cudaSuccess ||
+            cudaMalloc((void**) &branch_ids_dev_, (size_t) ss.k * sizeof(int32_t)) != cudaSuccess) {
+            err = "M2.15 branch probe GPU allocation failed or exceeds 1 MiB";
             return false;
         }
     }
@@ -1767,6 +1798,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 strata::dispatch::notef("gdn layer: conv+ab fused=%ld batch_rows=%ld", (long) fuse_ab, (long) batch_rec_);
                 if (!side_proj) mm(wqkv, qkv + (size_t) tb * C, (int) N, (int) C);   // with side_proj: above, first
                 stamp(l, 2, grp);
+                if (l == 6 && grp == 0 &&
+                    !branch_capture(l, 5, qkv + (size_t) tb * C, cs, err)) return false;
                 if (batch_rec_) {   // contiguous rows may be proposals for the same slot
                     for (int t = tb; t < te;) {
                         const int first = t;
@@ -1789,6 +1822,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 gdn_conv_l2_multi(conv, qkv, (const float*) wc->data, hb, (int) C, (int) (2 * HK), EPS, n, cs, tb,
                                   self_commit);
                 stamp(l, 3, grp);
+                if (l == 6 && grp == 0 &&
+                    !branch_capture(l, 6, hb + (size_t) tb * C, cs, err)) return false;
                 if (br) {   // gate, beta and z, before the recurrence reads them
                     join(0);
                     join(1);
@@ -1809,6 +1844,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                     return false;
                 }
                 }
+                if (l == 6 && grp == 0 &&
+                    (!branch_capture(l, 7, gate + (size_t) tb * HV, cs, err) ||
+                     !branch_capture(l, 8, beta + (size_t) tb * HV, cs, err) ||
+                     !branch_capture(l, 9, z_ + (size_t) tb * ZV, cs, err))) return false;
                 // the recurrence from the untouched state over tokens [0, te); outputs only for this group's
                 static const bool gdn_groups_on = [] {   // STRATA_BATCH_GDN_GROUPS=1, all slots in one launch
                     const char* v = std::getenv("STRATA_BATCH_GDN_GROUPS");
@@ -1844,11 +1883,15 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 gdn_step_norm_multi(state, hb, (int) C, gate, beta, z_, (const float*) wnm->data, EPS, y_, (int) HK,
                                     (int) HV, te, self_commit ? one_ : nullptr, cs, tb, g_qfuse() ? (void*) xq_ : nullptr);
                 stamp(l, 6, grp);
+                if (l == 6 && grp == 0 &&
+                    !branch_capture(l, 10, y_ + (size_t) tb * ZV, cs, err)) return false;
                 // STRATA_QFUSE: done above by gdn_step_norm_multi - but a batch's per-slot recurrence passes it no q8_1
                 // destination (#1139: the out-projection read stale bytes), so that case quantizes here as without it
                 if (!g_qfuse() || batch_rec_) quant_in(y_ + (size_t) tb * ZV, (int) ZV);
                 else il_ready = false;
                 mm(wout, bo_ + tb * N, (int) ZV, (int) N);
+                if (l == 6 && grp == 0 &&
+                    !branch_capture(l, 11, bo_ + tb * N, cs, err)) return false;
             } else {
                 // ======================= QSA =======================
                 const int64_t qi = qsa_idx[(size_t) l];
@@ -2302,6 +2345,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                       rr_stats_ != nullptr ? rr_stats_ + (n <= 8 ? 4 : 0) : nullptr, cs);
             } catch (const std::exception& e) { err = "verify route-resident: " + std::string(e.what()); return false; }
         }
+        if (l == 5 && grp == 0 &&
+            (!branch_capture(l, 0, logits_ + tb * NE, cs, err) ||
+             !branch_capture(l, 1, w_ + tb * K, cs, err) ||
+             !branch_capture(l, 12, ids_ + tb * K, cs, err))) return false;
         if (rs_on_ && G == 1 && n <= 16 && T <= 16)
             strata::kernels::route_marginal_stats(ids_ + tb * K, n, (int) K, rs_dev_ + ((size_t) T * (size_t) g.n_layers + (size_t) l) * 16, cs);
         if (ar_on()) {
@@ -2517,6 +2564,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         if (sh_stream_on() && !prof_on_ && sh_cs_ != nullptr && ev_fork_ != nullptr && ev_join_ != nullptr) {
             cudaStreamWaitEvent(cs, ev_join_, 0);
         }
+        if (l == 5 && grp == 0 &&
+            (!branch_capture(l, 2, shared_ + tb * N, cs, err) ||
+             !branch_capture(l, 3, parts_out, cs, err))) return false;
         strata::dispatch::notef("combine layer: kind %ld (0 per-token, 1 multi, 2 multi+hits, 3 multi+hits gated)", (long) (sg_gated_[grp] ? 3 : hits_in_combine ? 2 : (dec_batch && n > 1 && native_moe_combine_enabled()) ? 1 : 0));
         if (sg_gated_[grp]) {   // STRATA_LFUSE: the shared expert's gate was not applied: the combine applies it (all rows are hits)
             try {
@@ -2542,6 +2592,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         if (remote_opt_) remote_opt_->combine(bo_ + tb * N, y_dummy_ + tb * N, tb, n,
                               device_plan_ ? skip_ + grp : nullptr, ring, cs);
         stamp(l, 24, grp);
+        if (l == 5 && grp == 0 &&
+            !branch_capture(l, 4, bo_ + tb * N, cs, err)) return false;
         if (!stage0_phase_capture(l, tb, n, 3, bo_, cs, err)) return false;
         if (tap_on_ && (!batch_rec_ || tap_batch_) && l < (int64_t) tap_slot_.size() && tap_slot_[(size_t) l] >= 0) {
             // the layer's completed output: R with this FFN half's write applied (the next layer's read would fold it), the mean of
@@ -5236,6 +5288,68 @@ bool Verifier::copy_stage0_phase_probe(std::vector<float>& values,
     if (e != cudaSuccess) {
         err = std::string("stage-zero phase export failed: ") +
               cudaGetErrorString(e);
+        return false;
+    }
+    return true;
+}
+
+bool Verifier::branch_capture(int64_t layer, int phase, const void* src,
+                              cudaStream_t stream, std::string& err) const {
+    if (!branch_probe_on_ || (layer != 5 && layer != 6)) return true;
+    if (!src || !branch_probe_dev_ || !branch_ids_dev_ ||
+        phase < 0 || phase > 12 || (layer == 5 && phase > 4 && phase != 12) ||
+        (layer == 6 && phase < 5)) {
+        err = "M2.15 invalid native branch snapshot phase";
+        return false;
+    }
+    if (phase == 12) {
+        if (layer != 5 || cudaMemcpyAsync(branch_ids_dev_, src, 10 * sizeof(int32_t),
+                                           cudaMemcpyDeviceToDevice, stream) != cudaSuccess) {
+            err = "M2.15 native router ID snapshot failed";
+            return false;
+        }
+        return true;
+    }
+    const size_t index = static_cast<size_t>(phase);
+    if (cudaMemcpyAsync(branch_probe_dev_ + branch_offsets_[index], src,
+                        branch_lengths_[index] * sizeof(float),
+                        cudaMemcpyDeviceToDevice, stream) != cudaSuccess) {
+        err = "M2.15 branch snapshot failed: layer " + std::to_string(layer) +
+              " field " + std::to_string(phase);
+        return false;
+    }
+    return true;
+}
+
+bool Verifier::copy_stage_branch_probe(StageBranchProbe& result,
+                                      std::string& err) const {
+    if (!branch_probe_on_ || !branch_probe_dev_ || !branch_ids_dev_ ||
+        !g_ || !ss_ || lb_ != 0 || last_t_ != 1 ||
+        branch_floats_ == 0 || branch_lengths_[3] != (size_t) ss_->k * g_->n_embd) {
+        err = "M2.15 branch export requires completed single-token stage-zero window";
+        return false;
+    }
+    const OnDevice on_device(device_);
+    result.n_embd = (uint32_t) g_->n_embd;
+    result.n_expert = (uint32_t) g_->n_expert;
+    result.k = (uint32_t) ss_->k;
+    result.conv_channels = (uint32_t) g_->ssm_conv_channels;
+    result.value_heads = (uint32_t) g_->ssm_v_heads;
+    result.value_dim = (uint32_t) g_->ssm_value_dim;
+    result.data.resize(branch_floats_);
+    result.ids.resize(result.k);
+    const cudaError_t f = cudaMemcpy(result.data.data(), branch_probe_dev_,
+                                      branch_floats_ * sizeof(float),
+                                      cudaMemcpyDeviceToHost);
+    if (f != cudaSuccess) {
+        err = std::string("M2.15 branch FP32 export: ") + cudaGetErrorString(f);
+        return false;
+    }
+    const cudaError_t i = cudaMemcpy(result.ids.data(), branch_ids_dev_,
+                                      result.k * sizeof(int32_t),
+                                      cudaMemcpyDeviceToHost);
+    if (i != cudaSuccess) {
+        err = std::string("M2.15 branch router ID export: ") + cudaGetErrorString(i);
         return false;
     }
     return true;
