@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -41,6 +42,7 @@ struct Options {
     int timeout_ms = 120000;
     bool run = false;
     bool shared = false;
+    bool layer_taps = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -68,6 +70,7 @@ void usage() {
         "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
         "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
+        "  [--layer-taps]  (requires capture prefix; GPU post-layer STLT/v1 diagnostics)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -76,6 +79,7 @@ Options parse(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::string key = argv[i];
         if (key == "--run") o.run = true;
+        else if (key == "--layer-taps") o.layer_taps = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
@@ -117,6 +121,8 @@ Options parse(int argc, char** argv) {
         o.windows == 0 || o.windows > 8 || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
+    if (o.layer_taps && o.capture_prefix.empty())
+        throw std::invalid_argument("--layer-taps requires --capture-prefix");
     if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     return o;
@@ -195,6 +201,11 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                 throw std::invalid_argument("capture already completed; use a fresh prefix");
             for (uint32_t n = 1; n <= o.windows; ++n) {
                 const std::string base = o.capture_prefix + ".w" + std::to_string(n);
+                if (o.layer_taps)
+                    for (size_t stage = 0; stage < plan.stages.size(); ++stage)
+                        if (std::filesystem::exists(o.capture_prefix + ".stage" +
+                                std::to_string(stage) + ".w" + std::to_string(n) + ".stlt"))
+                            throw std::invalid_argument("layer tap already exists; use fresh prefix");
                 if (std::filesystem::exists(base + ".json") ||
                     std::filesystem::exists(base + ".stfr"))
                     throw std::invalid_argument("capture output already exists; use a fresh prefix");
@@ -262,6 +273,11 @@ void capture_window(const Options& o, const hetero::Plan& plan,
     if (!manifest) throw std::runtime_error("parity window manifest write failed");
 }
 int execute(const Options& o, const hetero::Plan& plan) {
+    // No device calls in coordinator. Child workers alone see this opt-in;
+    // no tap allocations/copies occur for ordinary M2.9/M2.10 tests.
+    if (o.layer_taps && ::setenv("STRATA_HETERO_LAYER_TAP_PREFIX",
+                                 o.capture_prefix.c_str(), 1) != 0)
+        throw std::runtime_error("cannot configure native worker layer-tap capture");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared);
