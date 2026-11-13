@@ -924,3 +924,37 @@ download huge model files merely to validate the CPU transport.
 - No Actions, GPU resets/reboots/driver unload, Strata-dev access,
   or automatic triggers. Separate CUDA/HIP builds, <=28 jobs.
   Full instructions: `docs/STAGE0_PHASE_LOCALIZATION_M214.md`.
+
+
+### M2.15 — Targeted layer-5 MoE and layer-6 GDN native probes
+
+- Confirmed M2.14 matched-BF16 phase crossings:
+  position 0 layer 5 moe_bo relative L2=0.001073, with preceding
+  HC1 mixed relative L2=1.64e-7; position 1 layer 6
+  attention_gdn_bo relative L2=0.002753, with preceding HC0
+  mixed=2.70e-7. First above threshold is not root cause.
+- M2.10 full-head KL remains FAIL (0.005003 / 0.037718 >0.001).
+  Predictions 198/271 and accepted commits continue to pass.
+- Opt-in native Verifier set_stage_branch_probe captures layer-5
+  router logits, expert IDs/weights, shared output, individual
+  expert parts and combined bo; layer-6 GDN QKV, conv, gate,
+  beta, z, recurrent y and output bo. The capture is limited
+  to one token row and layer-zero stage containing layers 5/6;
+  geometry unsupported or OOM fails closed, no default GPU cost.
+- The branch recorder writes <=1-MiB STB0/v1 binary data with
+  checksum, request/window/position/plan identity, token, shape
+  and fixed-order vectors. New host CLI --branch-probe requires
+  --capture-prefix and rows=1; stale inherited branch-probe
+  environment is cleared when absent.
+- CPU-only tools/heterogeneous_stage_branch.py compares two
+  fully committed same-input runs, reports router ID/weight
+  differences, per-expert slots and GDN substeps. Never infer
+  an expert arithmetic bug from comparing slots with different
+  selected expert IDs.
+- 19 synthetic M2.15 fixtures are registered in host CTest.
+  Existing 64 M2.10-M2.14 tests passed locally again, but the
+  new M2.15 tests and native CUDA/HIP compilation must still
+  be validated on Oberon. M2.15 GPU results are pending.
+- No GitHub Actions, GPU reset/reboot/driver unload, Strata-dev
+  access or new kernel precision changes. Local build <=28 jobs.
+  Exact handoff docs/STAGE_BRANCH_LOCALIZATION_M215.md.
