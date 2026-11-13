@@ -18,12 +18,14 @@ python3 tools/heterogeneous_hardware_readiness.py \
   --config "$PWD/build-q2-stage-configs/hip-stage2.cfg"
 ```
 
-The first run deliberately prints `READINESS: BLOCKED` (exit 1) for
-**unresolved backend-local runtime ordinal mapping**. It should list
-passively observed NVIDIA/AMD PCI graphics functions, kernel-bound driver
-names, DRM card directories, configured reserves, and per-stage compact
-pack-weight and canonical Q2_0 cache planning estimates. A nonzero exit
-code here is expected and **not** evidence of a driver fault.
+With a consistent passive inventory, the first run prints
+`READINESS: UNVERIFIED` (exit 0), **even without optional PCI bindings**.
+It lists the passively observed NVIDIA/AMD functions, kernel-bound drivers,
+DRM card directories, reserves and per-stage compact weight/cache planning
+estimates. The runtime device ordinals remain backend-local and are used
+directly by the workers. Their mapping to physical PCI functions is optional
+diagnostic information, not a prerequisite for a staged test. Contradictory
+supplied bindings or missing planned GPU functions remain blockers.
 
 The repository's expected inventory is one RTX 4070 Ti SUPER (nominal
 16 GiB) and two AI PRO R9700 (nominal 32 GiB each). These are user/repo
@@ -32,8 +34,8 @@ function with NVIDIA/AMD vendor and appropriate bound driver is not
 proof of working runtime access or device ordinal assignment. BDF order,
 DRM card numbering, and ROCm/CUDA ordinals are not interchangeable.
 
-Once the correct BDFs have been verified from the passive PCI inventory,
-repeat the same command with three **declarative** bindings:
+For optional diagnostic correlation, repeat the same command with
+**declarative** bindings only after independently verifying their meaning:
 
 ```text
 --bind cuda:0=<verified-NVIDIA-BDF>
@@ -43,9 +45,10 @@ repeat the same command with three **declarative** bindings:
 
 These declarations check only that the named PCI function exists, is the
 right vendor, and has the expected `nvidia` / `amdgpu` driver symlink.
-Even a clean result is `UNVERIFIED`, **never** live-GPU-ready: runtime
-ordinals, health, memory availability, topology, and correctness are not
-established without a separate explicitly authorized runtime test.
+Even a clean result is `UNVERIFIED`: it does not claim runtime
+enumeration, device health, available VRAM, topology or numerical correctness.
+This tool is only an inventory and cannot decide whether an integration test
+is permitted. Runtime device selection should be checked at worker startup.
 
 ## Optional historical NVIDIA/AMD fault context
 
