@@ -853,9 +853,12 @@ download huge model files merely to validate the CPU transport.
   `tools/heterogeneous_layer0_arithmetic.py` refuses incomplete or
   mismatched sources, parses exact probe values and compares three
   completed runs to localize the first divergent arithmetic component.
-- 15 CPU-only M2.12 test cases are registered with CTest. Run them
-  locally before live GPUs. **Live native M2.12 correctness is
-  unverified** until Oberon executes the dedicated handoff.
+- 15 CPU-only M2.12 test cases are registered with CTest and
+  **passed locally**, alongside the prior 27 M2.10/M2.11 fixtures
+  (42/42 total). The exact committed STL0 recorder compiled in
+  isolated GCC/Clang C++17 fake-verifier tests and its binary output
+  decoded successfully in Python. Rerun all tests on Oberon before
+  native execution. **Live native M2.12 correctness is unverified.**
 - No GitHub Actions, GPU reset/reboot/driver unload, or Strata-dev
   access. Builds <=28 jobs; separate CUDA and HIP builds. Preserve
   M2.10 KL<=0.001 and all model, finite and prefix-commit invariants.
