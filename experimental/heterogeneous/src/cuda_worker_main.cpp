@@ -59,12 +59,8 @@ bool check_compiled_geometry(const hetero::CudaWorkerConfig& c,const hetero::Pla
         error="CUDA worker config does not match the compiled canonical Q2_0 geometry";
         return false;
     }
-    // The v4 first-stage verifier uses token embeddings. The final-stage
-    // verifier requires a prior stage handing over R|bo|inject activations.
-    if(index+1==plan.stages.size()&&plan.stages[index].first_layer==0){
-        error="standalone CUDA final stage has no handoff input; prefill/embedding path not implemented";
-        return false;
-    }
+    // A single [0,n_layers) native reference stage now embeds tokens in
+    // the final verifier (no earlier activation handoff is required).
     return true;
 }
 } // namespace
