@@ -3,23 +3,23 @@
 **Baseline:** Oberon M2.0–M2.5 compile/link result `d3a8aa61`.
 No GPU runtime or model file mutation is part of this change.
 
-Run the **existing CPU-only** `strata_heterogeneous_hip_preflight_worker
---check-config` on each configuration, then use this new script
-(`tools/heterogeneous_model_gate.py`) for cross-stage consistency:
+Run `tools/heterogeneous_model_gate.py` for independent cross-stage
+consistency checks. An additional native CPU-only config preflight is
+optional (use --preflight /absolute/path if desired):
 
 ```bash
 cd /home/chris/workspace/Strata-heterogeneous
 python3 tools/heterogeneous_model_gate.py \
   --plan cuda:0:0-12,hip:0:12-30,hip:1:30-48 \
   --layers 48 --hc 4 --n-embd 2560 --fingerprint 2026111301 \
-  --preflight "$PWD/build-q2-preflight/strata_heterogeneous_hip_preflight_worker" \
-  --config "$PWD/build-q2-stage-configs/cuda-stage0.cfg" \
+   --config "$PWD/build-q2-stage-configs/cuda-stage0.cfg" \
   --config "$PWD/build-q2-stage-configs/hip-stage1.cfg" \
   --config "$PWD/build-q2-stage-configs/hip-stage2.cfg"
 ```
 
-Requires ordered **absolute** config paths and an explicitly supplied
-CPU-only preflight executable (not a native CUDA/HIP worker).
+Requires ordered **absolute** config paths. The additional CPU-only
+--preflight executable is **optional** and its filename need not be
+HIP-specific. It does not replace the core Python GGUF/pack/profile checks.
 Stage ordinals are backend-local: CUDA 0 and HIP 0 are distinct.
 
 ## Checks
