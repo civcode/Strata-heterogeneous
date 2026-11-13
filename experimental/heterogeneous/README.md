@@ -712,3 +712,36 @@ The conditional manual handoff
 first runs both backends with `STRATA_HC_Q8=0`; only if the HC
 mismatch survives does it force a matched plain BF16 GR path.
 **M2.13 GPU tests have not yet run; M2.10 numerical parity remains FAIL.**
+
+
+### M2.14 — Stage-zero phase probe after matched-BF16 convergence
+
+M2.13 live hardware evidence: matching STRATA_HC_Q8=0 on
+CUDA and HIP reduces the original layer-0 HC mixed difference from
+relative L2 0.006630 to **7.27e-8**. The layer-0 embedding,
+raw Q8_1 input and GDN QKV match exactly; the HIP split and unsplit
+control also matched exactly. The first M2.11 post-layer residual
+above diagnostic relative L2 0.001 is now **layer 8 (position 0)**
+and **layer 6 (position 1)**, both before the CUDA→HIP boundary.
+Full-head KL still fails at **0.005003 / 0.037718**, versus 0.001.
+The M2.13 optional plain-BF16 arm was correctly not run.
+
+The new manual `--stage0-phases --capture-prefix ... --run`
+instruments the real CUDA/HIP verifier (only stage zero, layers
+0–11) at four FP32 vector points per layer: first HC mixed,
+attention/GDN branch output, second HC mixed and final MoE
+combination. Checksummed STP0/v1 records are stored as
+`PREFIX.stage0.wN.stp0`. When disabled there is no new
+GPU buffer or device-to-device snapshot.
+
+`tools/heterogeneous_stage0_phases.py` is a CPU-only
+integrity-checked reader that requires completed STFR results,
+exact Q2_0 model/pack/profile and tokens/positions. It reports
+the first measured phase exceeding **diagnostic** relative L2
+0.001, plus per-phase RMSE, max abs and exact mismatched values.
+This is not an M2.10 numerical-parity PASS or proof of a specific
+kernel bug. All **64/64** local synthetic/regression Python tests
+passed (14 new for STP0).
+
+No M2.14 live GPU test has been run yet. The exact Oberon runbook:
+[docs/STAGE0_PHASE_LOCALIZATION_M214.md](docs/STAGE0_PHASE_LOCALIZATION_M214.md).
