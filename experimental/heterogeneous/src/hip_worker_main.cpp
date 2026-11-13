@@ -11,6 +11,7 @@
 #include "strata_heterogeneous/device.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata/core/geometry.hpp"
+#include "native_worker_defaults.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -101,6 +102,7 @@ int main(int argc,char** argv) {
                 throw std::runtime_error("HIP worker needs v2 native GGUF/PLE configuration; v1 is preflight-only");
             // Explicit supervised worker launch is the opt-in for runtime use.
             // There is no second environment-variable approval handshake.
+            strata_heterogeneous_native_worker_defaults();
             const auto& geometry=strata::core::kCompiledGeometry;
             hetero::HipStageResources owner(geometry,plan.model_fingerprint);
             hetero::HipStageLoadOptions lo;
