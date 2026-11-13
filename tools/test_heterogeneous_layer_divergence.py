@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 import heterogeneous_layer_divergence as layers
+from test_heterogeneous_compare_parity import packet
 
 
 def stlt(*, stage=0, first=0, count=47, width=4,
@@ -110,6 +111,38 @@ class LayerTapContract(unittest.TestCase):
         ref, het = runs(self.root, perturb_layer=11, perturb=0.1)
         r = layers.compare(ref, het, 0.001)
         self.assertEqual(r["rows"][0]["first_layer_above_diagnostic_threshold"], 11)
+
+    def test_complete_stfr_and_stlt_run_integration(self):
+        # Exercise the real M2.10 completion/identity verifier and M2.11
+        # per-stage STLT decoder with the canonical embedding width.
+        reference = self.root / "ref-live"
+        hetero = self.root / "het-live"
+        for prefix, plan, ranges in (
+            (reference, "hip:0:0-48", [(0, 47)]),
+            (hetero, "cuda:0:0-12,hip:0:12-30,hip:1:30-48",
+             [(0, 12), (12, 18), (30, 17)]),
+        ):
+            Path(f"{prefix}.complete.json").write_text(json.dumps({
+                "schema": "strata-heterogeneous-parity/v1",
+                "windows": 1, "plan": plan,
+                "model_fingerprint": 2026111301}))
+            Path(f"{prefix}.w1.json").write_text(json.dumps({
+                "schema": "strata-heterogeneous-parity/v1",
+                "plan": plan, "model_fingerprint": 2026111301,
+                "plan_fingerprint": 123, "pack_index_sha256": "a" * 64,
+                "gguf_shards": "/m/a.gguf;/m/b.gguf",
+                "profile_path": "/p/strp", "window_id": 1,
+                "pos0": 0, "rows": 1, "n_keep": 1, "token_ids": [1]}))
+            Path(f"{prefix}.w1.stfr").write_bytes(
+                packet(stage=len(ranges) - 1))
+            for index, (first, count) in enumerate(ranges):
+                Path(f"{prefix}.stage{index}.w1.stlt").write_bytes(stlt(
+                    stage=index, first=first, count=count, width=2560))
+        ref = layers.load_run(reference)
+        het = layers.load_run(hetero)
+        output = layers.compare(ref, het, 0.001)
+        self.assertEqual(output["rows"][0]["first_layer_above_diagnostic_threshold"], None)
+        self.assertEqual(len(output["layer_metrics"]), 47)
 
     def test_model_source_mismatch_fails(self):
         ref, het = runs(self.root)
