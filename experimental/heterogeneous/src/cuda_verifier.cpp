@@ -82,6 +82,7 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     verifier_->set_head_sampling(false);
     if (!taps_.configure(*verifier_, plan, index, error)) return false;
     if (!layer_zero_.configure(*verifier_, plan, index, error)) return false;
+    if (!stage0_phases_.configure(*verifier_, plan, index, error)) return false;
     if (!verifier_->init(bindings_.weights, g, bindings_.session, bindings_.hits,
                           nullptr, bindings_.max_t, error)) return false;
     next_position_ = bindings_.initial_position;
@@ -143,6 +144,7 @@ bool CudaVerifierDriver::wait_execute(std::string& error) {
     // an accepted-prefix commit can overwrite the verifier's tap buffers.
     if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     if (!layer_zero_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+    if (!stage0_phases_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     state_ = State::executed; return true;
 }
 bool CudaVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::string& error) {
