@@ -684,3 +684,31 @@ counts. It does not change kernel precision or numerical thresholds.
 
 **M2.12 real hardware diagnosis has not yet been executed.**
 See [docs/LAYER0_ARITHMETIC_M212.md](docs/LAYER0_ARITHMETIC_M212.md).
+
+
+### M2.13 — HC Q8-vs-BF16 precision and kernel-path diagnosis
+
+M2.12 established that both HIP configurations have **identical**
+layer-zero embeddings, HC mixed outputs, Q8_1 inputs and QKV projections.
+The first CUDA-vs-HIP difference is the layer-zero HC read
+(`hc_mixed` relative L2 0.006630), before activation Q8 quantization.
+
+The source explains a concrete default-mode mismatch: HIP gfx12
+loads Q8_0 HC weight copies by default, while CUDA sm89 uses BF16 HC
+weight rows. The HIP BF16 path can additionally use an architecture-
+specific fast normalization and split variant. M2.10's prior
+`STRATA_HC_Q8=0` head KL still failed, but no early HC output was
+measured in that arm, so it is not evidence against the Q8-weight
+mismatch as the first layer-0 divergence.
+
+Opt-in `--layer0-probe` now logs `STRATA_GR0_PATH` with actual
+Q8 projection pointer/scale availability and the HC/GR controls.
+CPU-only `tools/heterogeneous_hc_mode_compare.py` validates
+complete reference/mixed STL0 captures and compares their embedded,
+HC-mixed, Q8_1 and QKV components. Eight CPU contract tests added.
+
+The conditional manual handoff
+[docs/HC_READ_PRECISION_M213.md](docs/HC_READ_PRECISION_M213.md)
+first runs both backends with `STRATA_HC_Q8=0`; only if the HC
+mismatch survives does it force a matched plain BF16 GR path.
+**M2.13 GPU tests have not yet run; M2.10 numerical parity remains FAIL.**
