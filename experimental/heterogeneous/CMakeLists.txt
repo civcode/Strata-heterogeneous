@@ -120,6 +120,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(strata_heterogeneous_demo PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Host-only manual launcher: performs CPU config preflight by default;
+# --run launches native CUDA/HIP children and is never wired into CTest.
+add_executable(strata_heterogeneous_live_smoke src/live_smoke.cpp)
+target_link_libraries(strata_heterogeneous_live_smoke PRIVATE strata_heterogeneous_host)
+target_compile_features(strata_heterogeneous_live_smoke PRIVATE cxx_std_17)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(strata_heterogeneous_live_smoke PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
   # M2.6: CPU-only cross-stage model/plan and canonical Q2_0 input gate.
