@@ -712,3 +712,23 @@ download huge model files merely to validate the CPU transport.
 - No GPU driver API, runtime, `nvidia-smi`, `rocminfo`, model load,
   reset, reboot, Actions, or unrelated workspace access is permitted.
   See docs/HARDWARE_READINESS_M27.md.
+
+### M2.8 — CPU-only offline ordinal reconciliation
+
+- `tools/heterogeneous_ordinal_reconciliation.py` reads only bounded
+  pre-exported M2.7 JSON and separately collected backend-local runtime
+  identity evidence; **does not invoke CUDA, HIP, device APIs, utilities,
+  sysfs, GPU processes or model files**.
+- Reject incomplete, missing, duplicate or contradictory ordinal/BDF
+  evidence. Do not infer HIP ordinals from BDF or DRM order, particularly
+  with Oberon's additional AMD PCI function (0x13c0).
+- No evidence means `BLOCKED`. Full agreement only means
+  `IDENTITY_CORRELATED_ONLY`, not verified host/boot provenance,
+  free VRAM, driver health or permission to start GPU workers.
+- Runtime identity evidence collection itself is **NOT AUTHORIZED**.
+  It may initialize CUDA/HIP even if it only enumerates devices. Any
+  runtime probe, memory query, worker start, model load, reset, or live
+  inference requires a separate explicit authorization.
+- 21 local CPU-only synthetic tests pass. One standalone CTest is added
+  (30 total when Python3 is available). No Oberon work or Actions run.
+  See docs/ORDINAL_EVIDENCE_M28.md.
