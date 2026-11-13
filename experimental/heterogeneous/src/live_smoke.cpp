@@ -107,6 +107,9 @@ void preflight(const Options& o, const hetero::Plan& plan) {
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
     const uint64_t needed = uint64_t(o.rows) * o.windows;
+    const uint64_t stride = plan.geometry.floats_per_row();
+    if (stride > hetero::max_payload_bytes / (sizeof(float) * o.rows))
+        throw std::invalid_argument("requested activation geometry exceeds bounded 16 MiB transport");
     for (size_t index = 0; index < plan.stages.size(); ++index) {
         std::string error;
         hetero::CudaWorkerConfig config;
