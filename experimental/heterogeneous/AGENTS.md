@@ -729,6 +729,6 @@ download huge model files merely to validate the CPU transport.
   It may initialize CUDA/HIP even if it only enumerates devices. Any
   runtime probe, memory query, worker start, model load, reset, or live
   inference requires a separate explicit authorization.
-- 21 local CPU-only synthetic tests pass. One standalone CTest is added
+- 23 local CPU-only synthetic tests pass. One standalone CTest is added
   (30 total when Python3 is available). No Oberon work or Actions run.
   See docs/ORDINAL_EVIDENCE_M28.md.
