@@ -763,3 +763,35 @@ download huge model files merely to validate the CPU transport.
   remains pending.
 - Full commands and test evidence checklist:
   `docs/LIVE_GPU_HANDOFF_M29.md`.
+
+
+### M2.10 — Unsplit same-engine HIP reference and full-logit parity
+
+- M2.9 real CUDA→HIP→HIP execution PASS: initial socket and shared
+  memory predicted token 198; two-window predicted 198,271; 31/31
+  host CTest on Oberon, commit `28446b0`. This is not numerical parity.
+- Both final verifier adapters now support a single [0,48) stage on
+  one backend-local ordinal; stage 0 embeds tokens internally and does
+  not read or allocate a handoff buffer. Native geometry/source/VRAM
+  constraints, positive prefix ACK and finite checks are unchanged.
+- The host-only live smoke launcher accepts `--tokens` and
+  `--capture-prefix` and writes committed STFR with full FP32 logits,
+  a window input manifest, and a completion marker after successful
+  process shutdown. Use fresh prefixes; partial failures lack the marker.
+- `tools/heterogeneous_reference_config.py` creates a new 48-layer
+  HIP config from trusted stage-0 source. Sets obsolete staged
+  arena_budget_bytes to 0, which removes only the artificial stage
+  budget, NOT real VRAM checks or free-reserve requirements.
+- `tools/heterogeneous_compare_parity.py` requires exact Q2_0 input
+  source, tokens, positions, STFR checksums, finite logits and committed
+  results. The provisional numerical criterion is exact prediction and
+  greedy top-1 agreement plus each row KL(ref||hetero) <=0.001.
+  Do not silently waive deviations due to HIP Q8 hyper-connection.
+- Run M2.10 only under an explicit user-initiated GPU test or equivalent
+  scoped agent instruction. The user has already requested this
+  milestone; no secondary environment approval ritual. Never run Actions,
+  reset/reboot a GPU, unload a driver, or touch either Strata-dev dir.
+  Builds max 28 CPU jobs; CUDA/HIP executables must remain separate.
+- **M2.10 execution and numerical parity remain UNTESTED until the
+  Oberon native reference and heterogeneous captures complete.**
+  Full commands: `docs/NUMERICAL_PARITY_M210.md`.
