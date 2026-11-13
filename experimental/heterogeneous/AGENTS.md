@@ -863,3 +863,29 @@ download huge model files merely to validate the CPU transport.
   access. Builds <=28 jobs; separate CUDA and HIP builds. Preserve
   M2.10 KL<=0.001 and all model, finite and prefix-commit invariants.
   Full handoff: `docs/LAYER0_ARITHMETIC_M212.md`.
+
+
+### M2.13 — Experimental isolation of the layer-zero HC-read mode
+
+- M2.12's HIP split vs unsplit HIP matches all measured stage-zero
+  components exactly. CUDA's first mismatch is `hc_mixed` (relative
+  L2 0.006630), before Q8_1 and GDN QKV.
+- Source audit: HIP gfx12 `STRATA_HC_Q8` defaults ON (Q8_0 HC
+  weights + `launch_q8`), while CUDA sm89 defaults OFF (BF16 HC
+  rows). gfx12 BF16 additionally defaults on fast normalization.
+  Do not mistake different default precisions for a proven bug.
+- M2.13 keeps kernel arithmetic untouched and adds opt-in
+  `STRATA_GR0_PATH` logging of actual stage-zero Q8 pointers,
+  scale pointers and GR environment controls.
+- CPU-only `tools/heterogeneous_hc_mode_compare.py` aligns
+  native unsplit HIP vs mixed CUDA/HIP/STL0 evidence, verifies
+  model/window/packet identity and reports exact per-component
+  discrepancies. Eight CPU-only tests registered with CTest.
+- New hardware sequence is **conditional**: matched HC BF16
+  `STRATA_HC_Q8=0` on both backends first; if early HC still
+  diverges, force plain BF16 GR plus `STRATA_GR_NORM_FAST=0`.
+  Do NOT run unnecessary further arms if Arm A resolves HC.
+- M2.10 numerical KL<=0.001 remains unchanged, even if early
+  HC output converges. GPU M2.13 unverified. No GitHub Actions,
+  GPU reset, driver unload, or Strata-dev access. Build <=28 jobs.
+  Full runbook: `docs/HC_READ_PRECISION_M213.md`.
