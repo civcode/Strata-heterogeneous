@@ -730,6 +730,8 @@ Verifier::~Verifier() {
     if (dc_arena_) cudaFree(dc_arena_);
     if (h_commitd_) cudaFreeHost(h_commitd_);
     if (qcnt_) cudaFree(qcnt_);
+    if (layer_zero_mixed_) cudaFree(layer_zero_mixed_);
+    if (layer_zero_q8_) cudaFree(layer_zero_q8_);
     if (d_spec_) cudaFree(d_spec_);
     if (tap_file_) std::fclose(tap_file_);
 #if !defined(STRATA_GPU_METAL)   // (on Metal tap_dev_ is the window's unified-memory buffer, not an allocation of this object)
@@ -1115,6 +1117,20 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         return false;
     }
     cudaMemset(arena_, 0, count.used);
+    if (layer_zero_probe_on_) {
+        // M2.12 probes are only for the canonical GDN first layer.
+        if (lb_ != 0 || g.n_embd <= 0 || g.n_embd % 32 != 0 ||
+            g.ssm_conv_channels <= 0 || is_qsa_layer(g, 0)) {
+            err = "layer-zero arithmetic probe requires a layer-zero GDN stage";
+            return false;
+        }
+        const size_t q8stride = (size_t) (g.n_embd / 32) * 36;
+        if (cudaMalloc((void**) &layer_zero_mixed_, (size_t) T * g.n_embd * sizeof(float)) != cudaSuccess ||
+            cudaMalloc((void**) &layer_zero_q8_, (size_t) T * q8stride) != cudaSuccess) {
+            err = "layer-zero arithmetic probe GPU buffer allocation failed";
+            return false;
+        }
+    }
     if (hflag_out_d_ != nullptr && hcount_d_ == nullptr) {   // the overlapped split's hand-off counter
         if (cudaMalloc((void**) &hcount_d_, 64) != cudaSuccess) { err = "verify: hand-off counter allocation failed"; return false; }
         cudaMemset(hcount_d_, 0, 64);
@@ -1612,6 +1628,11 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                 (int) (l * kProfPer + (half == 0 ? 27 : 30)));
         };
         const bool q8_attn = gr_read_group(0, pending, inj2_, inj_);   // true: xq_ holds mixed's q8_1 (STRATA_QFUSE)
+        if (layer_zero_probe_on_ && l == 0 &&
+            cudaMemcpyAsync(layer_zero_mixed_ + (size_t) tb * N, mixed_ + (size_t) tb * N,
+                            (size_t) n * N * sizeof(float), cudaMemcpyDeviceToDevice, cs) != cudaSuccess) {
+            err = "layer-zero arithmetic probe mixed snapshot failed"; return false;
+        }
         {   // measurement only: STRATA_DUMMY_NODES=k adds k empty kernel nodes per layer (what one node costs in a window)
             static const int dummy = [] { const char* e = std::getenv("STRATA_DUMMY_NODES"); return e != nullptr ? std::atoi(e) : 0; }();
             for (int d = 0; d < dummy; ++d) gpu_noop(cs);
@@ -1678,6 +1699,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                     if (cudaEventRecord(mjoin_, side_) != cudaSuccess) { err = "verify: the GDN gates' branch could not join"; return false; }
                 }
                 if (!q8_attn) quant_in(xm, (int) N);
+                if (layer_zero_probe_on_ && l == 0 &&
+                    cudaMemcpyAsync(layer_zero_q8_ + (size_t) tb * ((size_t) N / 32) * 36,
+                                    xq_, (size_t) n * ((size_t) N / 32) * 36,
+                                    cudaMemcpyDeviceToDevice, cs) != cudaSuccess) {
+                    err = "layer-zero arithmetic probe Q8 snapshot failed"; return false;
+                }
                 if (side_proj) {   // the gate projection (compute-bound for i-quants) beside qkv and the conv
                     // the branch reads F4's interleaved copy too (written on cs before the fork; bitwise native_mmvq's
                     // output), and qkv is recorded before the branch's launch, so its grid is dispatched first and the
@@ -5129,6 +5156,42 @@ void Verifier::note_nonfinite(int T, const int64_t* pos_b) {
     for (int t = 0; t < T && nf_row_ < 0; ++t)
         if ((nf_mask_ >> t) & 1u) nf_row_ = t;
     if (nf_row_ >= 0) nf_pos_ = pos_b != nullptr ? pos_b[nf_row_] : last_pos0_ + nf_row_;
+}
+
+bool Verifier::copy_layer_zero_arithmetic(LayerZeroArithmetic& result,
+                                           std::string& err) const {
+#if defined(STRATA_GPU_METAL)
+    err = "layer-zero arithmetic probe is CUDA/HIP-only";
+    return false;
+#else
+    if (!layer_zero_probe_on_ || lb_ != 0 || layer_zero_mixed_ == nullptr ||
+        layer_zero_q8_ == nullptr || emb_ == nullptr || qkv_L_ == nullptr ||
+        last_t_ != 1 || g_ == nullptr || g_->n_embd <= 0 ||
+        g_->n_embd % 32 != 0 || g_->ssm_conv_channels <= 0) {
+        err = "layer-zero arithmetic requires completed single-token GDN window";
+        return false;
+    }
+    const OnDevice on_device(device_);
+    const size_t N = static_cast<size_t>(g_->n_embd);
+    const size_t C = static_cast<size_t>(g_->ssm_conv_channels);
+    const size_t Q = (N / 32) * 36;
+    result.n_embd = static_cast<uint32_t>(N);
+    result.qkv_channels = static_cast<uint32_t>(C);
+    result.embedded.resize(N);
+    result.mixed.resize(N);
+    result.q8_bytes.resize(Q);
+    result.qkv.resize(C);
+    auto copy = [&](void* host, const void* device, size_t bytes, const char* label) {
+        const cudaError_t status = cudaMemcpy(host, device, bytes, cudaMemcpyDeviceToHost);
+        if (status == cudaSuccess) return true;
+        err = std::string("layer-zero ") + label + ": " + cudaGetErrorString(status);
+        return false;
+    };
+    return copy(result.embedded.data(), emb_, N * sizeof(float), "embedding download") &&
+           copy(result.mixed.data(), layer_zero_mixed_, N * sizeof(float), "HC mixed download") &&
+           copy(result.q8_bytes.data(), layer_zero_q8_, Q, "Q8 input download") &&
+           copy(result.qkv.data(), qkv_L_, C * sizeof(float), "QKV projection download");
+#endif
 }
 
 bool Verifier::copy_logits(int t, float* host) const {
