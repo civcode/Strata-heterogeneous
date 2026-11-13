@@ -106,9 +106,13 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_config_path,
                                             const std::vector<std::string>& stage_config_paths) {
     plan.validate();
-    if (cuda_executable.empty() || hip_executable.empty() ||
-        cuda_executable.front() != '/' || hip_executable.front() != '/')
-        throw std::invalid_argument("worker executable paths must be absolute");
+    // An unsplit native reference uses one backend. Only the worker
+    // executable(s) named by this plan must exist; mixed plans need both.
+    for (const auto& stage : plan.stages) {
+        const auto& path = stage.backend == Backend::cuda ? cuda_executable : hip_executable;
+        if (path.empty() || path.front() != '/')
+            throw std::invalid_argument("planned worker executable path must be absolute");
+    }
     if (!cuda_config_path.empty() && (cuda_config_path.front() != '/' ||
         cuda_config_path.find('\n') != std::string::npos ||
         cuda_config_path.find('\r') != std::string::npos))
