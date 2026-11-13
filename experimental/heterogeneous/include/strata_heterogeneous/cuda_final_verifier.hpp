@@ -6,6 +6,7 @@
 #include "strata_heterogeneous/cuda_verifier.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/layer_taps.hpp"
+#include "strata_heterogeneous/layer_zero_probe.hpp"
 
 #include <memory>
 
@@ -56,6 +57,7 @@ private:
     size_t capacity_ = 0;
     WindowSpec spec_;
     LayerTapRecorder taps_;
+    LayerZeroProbeRecorder layer_zero_;
     uint64_t request_ = 0, window_ = 0;
     int64_t next_position_ = 0;
     uint32_t keep_ = 0;
