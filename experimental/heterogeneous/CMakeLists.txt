@@ -158,6 +158,13 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_compare_parity.py)
     set_tests_properties(strata_heterogeneous_parity_capture_tests PROPERTIES TIMEOUT 30)
+    # M2.14: CPU-only four-phase stage-zero STP0 wire and divergence
+    # localization fixtures; never launch GPU worker processes.
+    add_test(NAME strata_heterogeneous_stage0_phase_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_stage0_phases.py)
+    set_tests_properties(strata_heterogeneous_stage0_phase_tests PROPERTIES TIMEOUT 30)
     # M2.13: CPU-only matched-HC-mode reference versus mixed STL0
     # comparison; no runtime or GPU worker is launched by CTest.
     add_test(NAME strata_heterogeneous_hc_mode_tests
