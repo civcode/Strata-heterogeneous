@@ -151,6 +151,13 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_hardware_readiness.py)
     set_tests_properties(strata_heterogeneous_hardware_readiness_tests PROPERTIES TIMEOUT 30)
+    # M2.10: committed STFR FP32-logit parity decoder and unsplit
+    # reference-config generator; synthetic CPU fixtures only.
+    add_test(NAME strata_heterogeneous_parity_capture_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_compare_parity.py)
+    set_tests_properties(strata_heterogeneous_parity_capture_tests PROPERTIES TIMEOUT 30)
     # M2.8: offline JSON evidence reconciliation; pure Python fixtures only.
     add_test(NAME strata_heterogeneous_ordinal_reconciliation_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
