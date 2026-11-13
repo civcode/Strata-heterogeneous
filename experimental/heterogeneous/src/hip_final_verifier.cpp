@@ -91,6 +91,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     verifier_->set_handoff_flags(nullptr, nullptr, nullptr, nullptr);
     verifier_->set_always_publish(true); // prevent T=1 self-commit
     verifier_->set_head_sampling(true); // predictions are required
+    if (!taps_.configure(*verifier_, plan, index, error)) return false;
     if (!verifier_->init(bindings_.weights, g, bindings_.session, bindings_.hits,
                          nullptr, bindings_.max_t, error)) return false;
     if (verifier_->vocab() != g.n_vocab) {
@@ -176,6 +177,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
                         spec_.pos0, bindings_.pool, bindings_.pool_user,
                         predictions.data(), error) ||
         !fence(error) || !wait_fence(error)) return false;
+    if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     FinalStageResult pending;
     pending.stage_index = static_cast<uint32_t>(index_);
     pending.request_id = request_;
