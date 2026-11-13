@@ -93,6 +93,7 @@ bool CudaFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     verifier_->set_head_sampling(true); // predictions are required
     if (!taps_.configure(*verifier_, plan, index, error)) return false;
     if (!layer_zero_.configure(*verifier_, plan, index, error)) return false;
+    if (!stage0_phases_.configure(*verifier_, plan, index, error)) return false;
     if (!verifier_->init(bindings_.weights, g, bindings_.session, bindings_.hits,
                          nullptr, bindings_.max_t, error)) return false;
     if (verifier_->vocab() != g.n_vocab) {
@@ -180,6 +181,7 @@ bool CudaFinalVerifierExecutor::run_final_window(const Frame& metadata,
         !fence(error) || !wait_fence(error)) return false;
     if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     if (!layer_zero_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+    if (!stage0_phases_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     FinalStageResult pending;
     pending.stage_index = static_cast<uint32_t>(index_);
     pending.request_id = request_;
