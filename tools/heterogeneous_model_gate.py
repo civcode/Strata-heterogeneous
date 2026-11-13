@@ -127,13 +127,30 @@ def check_pack(root: Path, stages) -> None:
     require(index.stat().st_size <= 8 * 1024 * 1024, "oversized index.txt")
     names = set()
     coverage = set()
-    lines = index.read_text(encoding="ascli").splitlines()
-    require(bool(lines) and re.fullmatch(r"# align [0-9]+ pool [0-9]+ tensors [0-9]+", lines[0]),
-            "invalid canonical index header")
-    tensor_count = int(lines[0].split()[-1])
-    for line in lines[1:]:
+    lines = index.read_text(encoding="ascii").splitlines()
+    header = re.compile(r"# align ([0-9]+) pool ([0-9]+) tensors ([0-9]+)")
+    tensor_count = None
+    seen_rows = False
+    for line in lines:
+        # Match the actual pack_index.py layout: a descriptive comment,
+        # then '# align ...', then a column-label comment and tensor rows.
+        # Strata's stage_weights.cpp also permits other leading comments.
+        require(bool(line) and len(line) < 1023,
+                "blank or overlong canonical pack index row")
         if line.startswith("#"):
+            match = header.fullmatch(line)
+            if match:
+                require(tensor_count is None and not seen_rows,
+                        "duplicate or misplaced canonical index header")
+                alignment, pool_bytes, tensor_count = map(int, match.groups())
+                require(0 < alignment <= 1 << 20 and pool_bytes > 0 and
+                        tensor_count > 0, "invalid canonical index header values")
+            elif line.startswith("# align "):
+                raise ValueError("malformed canonical index header")
             continue
+        require(tensor_count is not None,
+                "canonical pack index has tensor rows before its header")
+        seen_rows = True
         fields = line.split()
         require(len(fields) == 19 and fields[0] not in names,
                 "index row must have 19 columns and unique tensor name")
@@ -143,6 +160,8 @@ def check_pack(root: Path, stages) -> None:
             layer = int(match.group(1))
             require(layer < 48 and str(layer) == match.group(1), "noncanonical index layer")
             coverage.add(layer)
+    require(tensor_count is not None and seen_rows,
+            "missing canonical pack index header or tensor rows")
     require(len(names) == tensor_count and coverage == set(range(48)),
             "canonical pack index does not cover all 48 model layers")
     for _backend, _ordinal, first, end in stages:
