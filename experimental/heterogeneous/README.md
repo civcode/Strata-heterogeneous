@@ -581,7 +581,7 @@ CUDA and HIP runtime ordinal-to-BDF evidence **only after such probes are
 separately authorized and collected**. It never touches driver APIs or
 devices itself. With absent evidence, readiness remains `BLOCKED`; even
 consistent complete evidence yields only `IDENTITY_CORRELATED_ONLY`,
-never permission for GPU execution. The 21 synthetic tests are registered
+never permission for GPU execution. The 23 synthetic tests are registered
 as the standalone project's **30th CTest** when Python3 is present.
 
 See [docs/ORDINAL_EVIDENCE_M28.md](docs/ORDINAL_EVIDENCE_M28.md).
