@@ -435,8 +435,8 @@ Startup validates a versioned, operator-authored configuration file,
 pack-index SHA-256, expert profile header, stage/plan identity and compiled
 model geometry before **any CUDA runtime call**. The supervisor passes
 `--config /absolute/path` only to CUDA child executables. No paths are
-searched or inferred. A live worker also requires the independent environment
-approval gate `STRATA_HETERO_CUDA_LIVE=I_APPROVE_CUDA_RUNTIME`.
+searched or inferred. As of M2.9, an explicitly launched supervised
+worker no longer needs an additional approval environment variable.
 
 CPU-only configuration and argv tests run in standalone builds. To build the
 CUDA worker executable from the top-level native CUDA engine, explicitly
@@ -540,10 +540,9 @@ real Q2_0 file-backed experts, and either a non-final HIP verifier or an
 STFR final-stage HIP verifier. The worker uses the existing v4 bounded
 window admission with fail-closed commits.
 
-**Runtime initialization remains disabled** unless
-`STRATA_HETERO_HIP_LIVE=I_APPROVE_HIP_RUNTIME` is explicitly provided
-following separate device/model authorization. With no approval the
-supervised worker returns a failure frame and exits nonzero.
+As of M2.9, an explicitly launched supervised HIP worker starts its native
+runtime without an additional approval environment variable. CPU preflight
+does not start the worker or initialize a GPU.
 Native HIP builds are opt-in via `STRATA_BUILD_HETERO_HIP_WORKER=ON`,
 which is OFF by default. Compilation/link and all GPU results remain
 unverified until Oberon validation. See
@@ -551,8 +550,8 @@ unverified until Oberon validation. See
 
 ### M2.6 — Plan-aware canonical Q2_0 asset gate (no GPU)
 
-`tools/heterogeneous_model_gate.py` runs the existing CPU-only worker
-file preflight for every stage and then checks the complete cross-stage
+tools/heterogeneous_model_gate.py` can optionally invoke an additional
+CPU-only native file preflight; it independently checks the complete cross-stage
 plan, per-stage identity, ordered original GGUF shards, Q2_0 expert types,
 correct PLE-bearing shard, canonical expert pack size/layout and
 complete STRP/v1 profile. Stage-device ordinals remain backend-local.
@@ -578,8 +577,8 @@ See [docs/HARDWARE_READINESS_M27.md](docs/HARDWARE_READINESS_M27.md).
 
 The CPU-only `tools/heterogeneous_ordinal_reconciliation.py` correlates
 a pre-exported M2.7 JSON PCI inventory with separate, operator-supplied
-CUDA and HIP runtime ordinal-to-BDF evidence **only after such probes are
-separately authorized and collected**. It never touches driver APIs or
+CUDA and HIP runtime ordinal-to-BDF evidence collected during an
+explicitly initiated GPU test. It never touches driver APIs or
 devices itself. With absent evidence, this **optional identity check**
 reports `BLOCKED`; this is not a prerequisite to starting controlled
 runtime/inference integration. Even consistent evidence yields only
@@ -588,3 +587,21 @@ The 23 synthetic tests are registered
 as the standalone project's **30th CTest** when Python3 is present.
 
 See [docs/ORDINAL_EVIDENCE_M28.md](docs/ORDINAL_EVIDENCE_M28.md).
+
+### M2.9 — Manual native three-GPU smoke launcher
+
+The host-only `strata_heterogeneous_live_smoke` executable performs
+CPU-only v2 config/plan checks by default. **Only an explicit `--run`**
+starts the separate CUDA/HIP native workers, exercises one or more real
+Q2_0 token windows, and requires an STFR final result plus acknowledged
+positive-prefix commits. CUDA/HIP native workers no longer require the
+redundant `I_APPROVE_*_RUNTIME` environment variables. On worker startup,
+each stage reports backend-local ordinal, actual runtime GPU name, PCI
+function when available and free VRAM. This is observability, not a new
+PCI identity gate. The new host-only CLI help test is registered as CTest;
+**no live GPU test is registered in CTest or Actions**.
+
+Native GPU initialization and cross-backend correctness are **not yet
+validated on Oberon**. The full manual compilation, preflight, socket,
+shared-memory and successive-window test sequence is in
+[docs/LIVE_GPU_HANDOFF_M29.md](docs/LIVE_GPU_HANDOFF_M29.md).
