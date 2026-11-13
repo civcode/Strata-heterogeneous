@@ -38,6 +38,12 @@ struct SessionState {
 struct VerifyHits {const int32_t* d_res=nullptr;};
 class Verifier {
 public:
+    static constexpr int kStage0ProbeLayers = 12;
+    static constexpr int kStage0ProbePhases = 4;
+    void set_stage0_phase_probe(bool) {}
+    bool copy_stage0_phase_probe(std::vector<float>&, std::string& e) const {
+        e = "stage0 phase probe unsupported in CPU test double"; return false;
+    }
     void set_layer_zero_arithmetic_probe(bool) {}
     bool copy_layer_zero_arithmetic(LayerZeroArithmetic&, std::string& e) const {
         e="layer-zero probe unsupported in CPU stub"; return false;
