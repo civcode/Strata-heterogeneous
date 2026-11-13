@@ -11,6 +11,12 @@
 #include <vector>
 namespace strata::kernels { constexpr int kVerifyMaxT=8; }
 namespace strata::core {
+struct StageBranchProbe {
+    uint32_t n_embd = 0, n_expert = 0, k = 0;
+    uint32_t conv_channels = 0, value_heads = 0, value_dim = 0;
+    std::vector<float> data;
+    std::vector<int32_t> ids;
+};
 // Fail-closed M2.12 diagnostic contract for CPU-only native test doubles.
 struct LayerZeroArithmetic {
     uint32_t n_embd = 0, qkv_channels = 0;
@@ -63,6 +69,10 @@ class Verifier {
 public:
     static constexpr int kStage0ProbeLayers = 12;
     static constexpr int kStage0ProbePhases = 4;
+    void set_stage_branch_probe(bool) {}
+    bool copy_stage_branch_probe(StageBranchProbe&, std::string& e) const {
+        e = "branch probe unavailable in CPU test double"; return false;
+    }
     void set_stage0_phase_probe(bool) {}
     bool copy_stage0_phase_probe(std::vector<float>&, std::string& e) const {
         e = "stage0 phase probe unsupported in CPU test double"; return false;
