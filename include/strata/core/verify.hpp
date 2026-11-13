@@ -33,6 +33,7 @@
 
 #include <cuda_runtime.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -53,6 +54,17 @@ struct LayerZeroArithmetic {
     std::vector<float> mixed;
     std::vector<uint8_t> q8_bytes;
     std::vector<float> qkv;
+};
+
+// M2.15: the exact native layer-5 routed-expert and layer-6 GDN
+// intermediates from one completed token window. Diagnostic-only.
+struct StageBranchProbe {
+    uint32_t n_embd = 0, n_expert = 0, k = 0;
+    uint32_t conv_channels = 0, value_heads = 0, value_dim = 0;
+    // Floating fields are concatenated in the public fixed field order.
+    // The fixed count/offset metadata is checked by the native recorder.
+    std::vector<float> data;
+    std::vector<int32_t> ids;
 };
 
 /// 0.1.43 (STRATA_ADAPT_OVERLAP): the adaptive tier's copies still landing while a decode window runs.  The window's
@@ -233,6 +245,10 @@ public:
     static constexpr int kStage0ProbePhases = 4;
     void set_stage0_phase_probe(bool on) { stage0_phase_on_ = on; }
     bool copy_stage0_phase_probe(std::vector<float>& values, std::string& err) const;
+    // M2.15: optional layer-5 route/experts and layer-6 GDN substeps.
+    // Set before init. Extra device memory and memcpy nodes exist ONLY when enabled.
+    void set_stage_branch_probe(bool on) { branch_probe_on_ = on; }
+    bool copy_stage_branch_probe(StageBranchProbe& result, std::string& err) const;
     /// Is the zero-doorbell graph the one a batch window would run now (every expert of the stage in VRAM by the host
     /// table)?  Looks at the table, as each window does.  (STRATA_ADMIT_MERGE_FIRST's gate.)
     bool ar_live() { refresh_ar(); return ar_on(); }
@@ -664,6 +680,15 @@ private:
     bool layer_zero_probe_on_ = false;
     float* layer_zero_mixed_ = nullptr;   // snapshot before first GDN Q8 quantization
     uint8_t* layer_zero_q8_ = nullptr;    // snapshot of first GDN Q8_1 image
+    static constexpr size_t kBranchFields = 12;
+    bool branch_probe_on_ = false;
+    float* branch_probe_dev_ = nullptr;  // sequential per-field snapshots
+    int32_t* branch_ids_dev_ = nullptr; // 10 selected expert IDs at layer 5
+    std::array<size_t, kBranchFields> branch_offsets_{};
+    std::array<size_t, kBranchFields> branch_lengths_{};
+    size_t branch_floats_ = 0;
+    bool branch_capture(int64_t layer, int phase, const void* src,
+                        cudaStream_t stream, std::string& err) const;
     bool stage0_phase_on_ = false;
     float* stage0_phase_dev_ = nullptr;   // [T][12 layers][4 phases][n_embd]
     bool stage0_phase_capture(int64_t layer, int row0, int rows, int phase,
