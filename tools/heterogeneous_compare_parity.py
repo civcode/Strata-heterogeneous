@@ -88,6 +88,7 @@ def read_run(prefix: Path) -> list[tuple[dict, dict]]:
         meta = json.loads(manifest_path.read_text(encoding="utf-8"))
         packet = read_stfr(Path(str(path) + ".stfr"))
         require(meta.get("schema") == SCHEMA and
+                packet["stage"] == len(marker["plan"].split(",")) - 1 and
                 meta.get("plan") == marker["plan"] and
                 meta.get("model_fingerprint") == marker["model_fingerprint"] and
                 meta.get("plan_fingerprint") == packet["fingerprint"] and
