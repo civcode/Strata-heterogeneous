@@ -745,3 +745,36 @@ passed (14 new for STP0).
 
 No M2.14 live GPU test has been run yet. The exact Oberon runbook:
 [docs/STAGE0_PHASE_LOCALIZATION_M214.md](docs/STAGE0_PHASE_LOCALIZATION_M214.md).
+
+
+### M2.15 — Layer-5 routing/experts versus layer-6 GDN intermediate probe
+
+M2.14 real GPU measurements under STRATA_HC_Q8=0 on both backends
+found the first stage-zero relative-L2>0.001 phase crossings at
+layer 5 moe_bo (position 0: 0.001073, previous HC1 mixed 1.64e-7)
+and layer 6 attention_gdn_bo (position 1: 0.002753, previous HC0
+mixed 2.70e-7). Both are amplification sites, not proven first
+causal operations. The full-head KL remains FAIL (0.005003 and
+0.037718 versus 0.001), despite matching predictions 198,271
+and complete prefix commits.
+
+The manual native `--branch-probe` captures fixed, bounded FP32
+intermediates from stage zero: layer-5 router logits, final top-10
+IDs/weights, shared expert, individual expert parts, combined bo;
+layer-6 GDN QKV, convolution, gate/beta, z projection, recurrence
+output y and final bo. No device allocation or extra copy when
+disabled. The first-stage worker writes integrity-protected STB0/v1
+packets to `PREFIX.stage0.wN.stb0`.
+
+The CPU-only `tools/heterogeneous_stage_branch.py` requires
+completed STFR and the same GGUF/pack/profile/token/window inputs,
+then compares router IDs, weights, individual expert row outputs
+and GDN steps independently. If route IDs differ, expert slot
+outputs are not directly interpretable as a kernel mismatch.
+
+This is diagnostic instrumentation, not a new numerical tolerance,
+new kernel or readiness proof. See
+[docs/STAGE_BRANCH_LOCALIZATION_M215.md](docs/STAGE_BRANCH_LOCALIZATION_M215.md).
+Native M2.15 GPU execution remains UNVERIFIED. Prior M2.10–M2.14
+CPU regression fixtures still pass locally (64/64); new M2.15
+fixtures require Oberon build/test validation.
