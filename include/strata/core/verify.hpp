@@ -226,6 +226,13 @@ public:
     // Export only after a completed T=1 window; never during graph execution.
     void set_layer_zero_arithmetic_probe(bool enabled) { layer_zero_probe_on_ = enabled; }
     bool copy_layer_zero_arithmetic(LayerZeroArithmetic& result, std::string& err) const;
+    // M2.14: opt-in snapshots at four internal stage-zero phase boundaries
+    // (HC0 mixed, attention/GDN bo, HC1 mixed, MoE bo), layers 0..11.
+    // Set before init; export only after a completed single-token window.
+    static constexpr int kStage0ProbeLayers = 12;
+    static constexpr int kStage0ProbePhases = 4;
+    void set_stage0_phase_probe(bool on) { stage0_phase_on_ = on; }
+    bool copy_stage0_phase_probe(std::vector<float>& values, std::string& err) const;
     /// Is the zero-doorbell graph the one a batch window would run now (every expert of the stage in VRAM by the host
     /// table)?  Looks at the table, as each window does.  (STRATA_ADMIT_MERGE_FIRST's gate.)
     bool ar_live() { refresh_ar(); return ar_on(); }
@@ -657,6 +664,11 @@ private:
     bool layer_zero_probe_on_ = false;
     float* layer_zero_mixed_ = nullptr;   // snapshot before first GDN Q8 quantization
     uint8_t* layer_zero_q8_ = nullptr;    // snapshot of first GDN Q8_1 image
+    bool stage0_phase_on_ = false;
+    float* stage0_phase_dev_ = nullptr;   // [T][12 layers][4 phases][n_embd]
+    bool stage0_phase_capture(int64_t layer, int row0, int rows, int phase,
+                              const float* source, cudaStream_t stream,
+                              std::string& err) const;
     float* ple_key_ = nullptr;   ///< STRATA_PLE_BATCH: the window rows' PLE key / value projections
     float* ple_val_ = nullptr;
     int last_t_ = 0;
