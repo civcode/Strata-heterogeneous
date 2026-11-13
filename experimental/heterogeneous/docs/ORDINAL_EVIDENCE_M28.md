@@ -90,6 +90,6 @@ environment. A stale snapshot can be misleading.
 
     python3 -m unittest discover -s tools -p 'test_heterogeneous_ordinal_reconciliation.py' -v
 
-All 21 synthetic tests passed locally without a GPU runtime. The
+All 23 synthetic tests passed locally without a GPU runtime. The
 standalone CTest registers this as an additional Python-only test when
 Python3 is present. **Oberon runtime ordinal mapping remains unresolved.**
