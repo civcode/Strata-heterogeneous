@@ -545,6 +545,20 @@ explicit worker-owned provider to be implemented before runnable inference.
 - No HIP model-loading worker, state owner or live execution is added yet.
   See docs/HIP_FINAL_M23.md.
 
+### M2.4 — HIP stage resources / native PLE / Q2_0 file experts
+
+- In the opt-in HIP-only engine build, the stage owner uses a carved
+  `SessionState`, bounded pack/weight arena, and strictly ordered teardown.
+  `HipNativeStage` binds NativeDense and the mandatory layer-1 PLE table.
+  `HipFileExperts` owns a canonical Q2_0 file source, resident ExpertCache
+  and CPU fallback pool; no fabricated expert outputs are allowed.
+- Real sources compile in the HIP-only adapter archive. Each owner has a
+  separate CPU-double contract test (27 standalone CTest targets expected).
+- This source-level adaptation is **unverified on native HIP**; do not claim
+  model loading or inference without successful compilation, correct live
+  model assets, expert byte parity and separately approved GPU execution.
+- See docs/HIP_STAGE_OWNERS_M24.md.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

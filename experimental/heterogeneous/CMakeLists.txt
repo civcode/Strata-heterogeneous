@@ -69,7 +69,9 @@ if(STRATA_HETERO_HIP_VERIFIER)
     message(FATAL_ERROR "HIP verifier needs the separate wave32 HIP-only parent engine")
   endif()
   add_library(strata_heterogeneous_hip_verifier STATIC
-    src/hip_verifier.cpp src/hip_final_verifier.cpp)
+    src/hip_verifier.cpp src/hip_final_verifier.cpp
+    src/hip_stage_resources.cpp src/hip_native_stage.cpp
+    src/hip_file_experts.cpp)
   target_include_directories(strata_heterogeneous_hip_verifier PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_hip_verifier PUBLIC
@@ -101,6 +103,37 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # M2.4: HIP-only stage weights/session/NativeDense/PLE/file-experts
+  # sources, with the same API compiled against CPU-only core/runtime doubles.
+  add_executable(strata_heterogeneous_hip_stage_resources_contract_tests
+    tests/hip_stage_resources_tests.cpp src/hip_stage_resources.cpp)
+  target_include_directories(strata_heterogeneous_hip_stage_resources_contract_tests BEFORE
+    PRIVATE tests/cuda_resource_stubs)
+  target_link_libraries(strata_heterogeneous_hip_stage_resources_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  add_executable(strata_heterogeneous_hip_native_stage_contract_tests
+    tests/hip_native_stage_tests.cpp src/hip_native_stage.cpp src/hip_stage_resources.cpp)
+  target_include_directories(strata_heterogeneous_hip_native_stage_contract_tests BEFORE
+    PRIVATE tests/cuda_native_stubs)
+  target_link_libraries(strata_heterogeneous_hip_native_stage_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  add_executable(strata_heterogeneous_hip_file_experts_contract_tests
+    tests/hip_file_experts_tests.cpp src/hip_file_experts.cpp)
+  target_include_directories(strata_heterogeneous_hip_file_experts_contract_tests BEFORE
+    PRIVATE tests/cuda_expert_stubs)
+  target_link_libraries(strata_heterogeneous_hip_file_experts_contract_tests PRIVATE
+    strata_heterogeneous_host)
+  foreach(_test IN ITEMS
+          strata_heterogeneous_hip_stage_resources_contract_tests
+          strata_heterogeneous_hip_native_stage_contract_tests
+          strata_heterogeneous_hip_file_experts_contract_tests)
+    target_compile_definitions(${_test} PRIVATE STRATA_USE_HIP=1)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+      target_compile_options(${_test} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME ${_test} COMMAND ${_test})
+    set_tests_properties(${_test} PROPERTIES TIMEOUT 20)
+  endforeach()
   # M2.3: final HIP verifier/head and STFR response gate, same actual
   # source compiled against CPU-only verifier/runtime doubles.
   add_executable(strata_heterogeneous_hip_final_verifier_contract_tests

@@ -520,3 +520,13 @@ runtime shim in a native HIP build. CPU doubles cover failure/replay/final
 results without running hardware. This is still **not** a runnable HIP
 model-loading worker and numerical parity is unverified. See
 [docs/HIP_FINAL_M23.md](docs/HIP_FINAL_M23.md).
+
+### M2.4 — HIP stage resource and native Q2_0 owner (compile pending)
+
+The opt-in HIP adapter archive now includes stage-owned pack weights,
+carved session state, native GGUF dense projections, layer-1 PLE and a
+canonical Q2_0 file-backed expert cache/CPU pool. The CUDA architecture and
+lifecycle sources were adapted to a distinct wave32 HIP-only build,
+with three additional CPU-double contract targets. This is not a runnable
+HIP worker; native HIP builds and real model/device execution have **not**
+been validated. See [docs/HIP_STAGE_OWNERS_M24.md](docs/HIP_STAGE_OWNERS_M24.md).
