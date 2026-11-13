@@ -132,3 +132,19 @@ Do not bypass memory, model identity or runtime safety checks.
 Numerical parity with unsplit native Strata remains UNVERIFIED until
 the operator actually runs these tests. Prompt prefill, long context,
 external llama.cpp correctness, and throughput are separate milestones.
+
+## Current validation evidence
+
+Locally ran `python3 -m unittest -v test_heterogeneous_compare_parity.py`
+against source files verified byte-for-byte identical to the GitHub
+branch blobs: **14/14 CPU-only synthetic tests PASS**. These cover
+full-logit identity, two successive positions, corrupt STFR checksums,
+nonfinite logits, missing completion/packets, missing logits, incorrect
+model source/input sequence, emitted-prediction mismatches, KL mismatch,
+reference config generation, and rejection of trivial self-comparisons
+or swapped reference arguments. No CUDA/HIP runtime was initialized.
+
+C++ native builds and the live unsplit/heterogeneous runs have **not**
+been executed in this ChatGPT environment; their exact execution
+commands are provided above for Oberon. Actual numerical parity remains
+**UNVERIFIED**, independent of the passing synthetic parser tests.
