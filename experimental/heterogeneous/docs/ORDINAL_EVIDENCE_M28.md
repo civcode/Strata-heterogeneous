@@ -27,7 +27,9 @@ Run only on pre-exported JSON files:
     python3 tools/heterogeneous_ordinal_reconciliation.py --inventory /path/to/m27.json --json
 
 M2.7 must have produced the input with its existing --json mode. With no
-runtime identity evidence, M2.8 reports **BLOCKED** (exit code **1**).
+runtime identity evidence, this optional M2.8 diagnostic reports
+**BLOCKED** (exit code **1**) *for identity correlation only*. This
+does not block an otherwise operator-initiated GPU integration test.
 Malformed, missing, duplicate, incomplete and contradictory data are
 rejected. The consumer does not query hardware or call runtime APIs,
 including in fallback paths. Each JSON input is capped at 1 MiB.
@@ -37,9 +39,11 @@ scoped backend-isolated probe may enumerate the runtime-visible ordinals
 and obtain PCI bus IDs using CUDA's cudaGetDeviceCount and
 cudaDeviceGetPCIBusId, or HIP's hipGetDeviceCount and
 hipDeviceGetPCIBusId. Even enumeration can initialize a GPU runtime.
-**These calls have not been authorized.** Do not run nvidia-smi,
-rocminfo, native workers or other live GPU tools as substitutes for
-authorization, and do not initialize both runtimes in one process.
+These calls initialize the runtime and should only happen when the user
+initiates the corresponding GPU test or grants an equivalent scoped
+instruction. That instruction is sufficient authorization for the test;
+a second authorization ritual is unnecessary. Keep CUDA and HIP runtimes
+in separate worker processes.
 
 After authorization, obtain two separately executed and reviewed
 **complete** JSON reports. An illustrative CUDA example follows;
