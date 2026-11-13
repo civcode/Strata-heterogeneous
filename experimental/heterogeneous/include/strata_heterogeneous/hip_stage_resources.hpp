@@ -1,7 +1,7 @@
 #pragma once
 
 // HIP-worker-only, opt-in owner of a stage's native pack arena and carved
-// sequence session. Never include/link in a HIP or coordinator process.
+// sequence session. Never include/link in a CUDA or coordinator process.
 #include "strata_heterogeneous/hip_verifier.hpp"
 #include "strata_heterogeneous/stage_weights.hpp"
 

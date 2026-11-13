@@ -186,10 +186,10 @@ void HipVerifierDriver::shutdown() noexcept {
     if (state_ != State::fresh && state_ != State::ready && state_ != State::dead) abort();
     if (device_ >= 0 && cudaSetDevice(device_) != cudaSuccess) std::_Exit(70);
     verifier_.reset(); // graphs/streams must die BEFORE their captured pointers
-    if (fence_) { cudaEventDestroy(fence_); fence_ = nullptr; }
-    if (input_) { cudaFree(input_); input_ = nullptr; }
-    if (output_) { cudaFree(output_); output_ = nullptr; }
-    if (staging_) { cudaFreeHost(staging_); staging_ = nullptr; }
+    if (fence_) { if (cudaEventDestroy(fence_) != cudaSuccess) std::_Exit(70); fence_ = nullptr; }
+    if (input_) { if (cudaFree(input_) != cudaSuccess) std::_Exit(70); input_ = nullptr; }
+    if (output_) { if (cudaFree(output_) != cudaSuccess) std::_Exit(70); output_ = nullptr; }
+    if (staging_) { if (cudaFreeHost(staging_) != cudaSuccess) std::_Exit(70); staging_ = nullptr; }
     device_ = -1;
     state_ = State::dead;
 }
