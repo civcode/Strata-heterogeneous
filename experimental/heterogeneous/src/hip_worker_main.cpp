@@ -1,5 +1,5 @@
-// Exec-isolated HIP worker. NEVER link this executable into an AMD/HIP
-// process, the coordinator, or the default Strata executable.
+// Exec-isolated HIP worker. NEVER link this executable into a CUDA process,
+// the coordinator, or Strata's default engine executable.
 #include "strata_heterogeneous/hip_worker_bootstrap.hpp"
 #include "strata_heterogeneous/hip_worker_config.hpp"
 #include "strata_heterogeneous/hip_stage_resources.hpp"
@@ -136,7 +136,7 @@ int main(int argc,char** argv) {
             auto bindings=owner.make_bindings();
             const hetero::WindowLimits window_limits{
                 0, static_cast<int64_t>(c.max_cells),
-                static_cast<int64_t>(config.n_vocab), c.max_t};
+                static_cast<int64_t>(c.n_vocab), c.max_t};
             if(index+1==plan.stages.size()) {
                 hetero::HipFinalVerifierExecutor final(bindings);
                 hetero::serve_final_stage_worker(3,plan,index,final,
