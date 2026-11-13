@@ -119,7 +119,15 @@ def read_run(prefix: Path) -> list[tuple[dict, dict]]:
 
 def compare(reference: list[tuple[dict, dict]],
             heterogeneous: list[tuple[dict, dict]], max_kl: float) -> dict:
-    require(len(reference) == len(heterogeneous), "different window counts")
+    require(len(reference) == len(heterogeneous) and bool(reference),
+            "different or empty window counts")
+    ref_plan = reference[0][0]["plan"].split(",")
+    het_plan = heterogeneous[0][0]["plan"].split(",")
+    require(len(ref_plan) == 1 and ref_plan[0].split(":")[0] in ("cuda", "hip") and
+            ref_plan[0].endswith(":0-48") and
+            len(het_plan) >= 2 and
+            {stage.split(":")[0] for stage in het_plan} == {"cuda", "hip"},
+            "parity requires one unsplit 48-layer reference and a mixed CUDA/HIP pipeline")
     require(math.isfinite(max_kl) and max_kl >= 0, "invalid KL threshold")
     rows = 0
     prediction_disagreements = 0
