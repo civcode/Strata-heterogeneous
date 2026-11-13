@@ -145,7 +145,7 @@ if(STRATA_HETERO_HOST_TESTS)
         -p test_heterogeneous_ordinal_reconciliation.py)
     set_tests_properties(strata_heterogeneous_ordinal_reconciliation_tests PROPERTIES TIMEOUT 30)
   else()
-    message(WARNING "Python3 not found: M2.6/M2.7 model/plan and hardware-readiness CTests unavailable")
+    message(WARNING "Python3 not found: M2.6/M2.7/M2.8 CPU-only gate CTests unavailable")
   endif()
   # M2.4: HIP-only stage weights/session/NativeDense/PLE/file-experts
   # sources, with the same API compiled against CPU-only core/runtime doubles.
