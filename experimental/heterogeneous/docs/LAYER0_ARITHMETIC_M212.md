@@ -212,3 +212,29 @@ STL0, STLT, STFR, manifests and all logs for repeatable analysis.
 Passing input/probe checks does NOT establish M2.10 numerical parity.
 Numerical parity remains FAIL until the full head-logit test meets its
 original KL<=0.001 criterion at every requested position.
+
+
+## Development-side validation evidence
+
+The actual committed M2.12 Python source files were copied into the
+isolated local workspace and verified byte-for-byte by Git blob SHA:
+
+- `tools/heterogeneous_hip_control.py` — `40f1f0c6681714b5c578c96aa74b38e6c7a2f83f`
+- `tools/heterogeneous_layer0_arithmetic.py` — `15bd57c7d822c066b04cbce2b8a5d36398a34c63`
+- `tools/test_heterogeneous_layer0_arithmetic.py` — `bc28f8123fbe75c78a02706230b70a1bf7ab5210`
+
+**42/42 local CPU synthetic tests pass:** M2.10 14, M2.11 13,
+M2.12 15. All four Python comparator/generator files passed py_compile.
+
+The exact committed STL0/v1 C++ recorder header (Git blob
+`d7794ef4eb366500a169cb7704ef0599bfed11bc`) compiled against
+an interface-compatible CPU fake Verifier using **both GCC and Clang
+C++17** under `-Wall -Wextra -Wpedantic -Werror`. Both host-only
+executables emitted real STL0/v1 files; the exact M2.12 Python parser
+verified their checksum, token, dimensions and FP32/Q8 samples.
+A second exclusive-create attempt failed closed as intended.
+
+These tests validate the diagnostic protocol and the CPU comparison
+contract, NOT GPU compilation, actual QKV tensor values, or numerical
+parity. Full native CUDA/HIP compilation and the sequential three-run
+hardware comparison are still pending on Oberon.
