@@ -11,6 +11,12 @@
 #include <vector>
 namespace strata::kernels { constexpr int kVerifyMaxT=8; }
 namespace strata::core {
+// Fail-closed M2.12 diagnostic contract for CPU-only native test doubles.
+struct LayerZeroArithmetic {
+    uint32_t n_embd = 0, qkv_channels = 0;
+    std::vector<float> embedded, mixed, qkv;
+    std::vector<uint8_t> q8_bytes;
+};
 namespace fake_resource {
 inline int pool_calls=0,load_calls=0, session_init_calls=0, zero_calls=0;
 inline int rope_releases=0,session_releases=0,qsa_live=0,provider_destroys=0;
@@ -53,7 +59,13 @@ struct SessionState {
     PleRun ple{};
 };
 struct VerifyHits {const int32_t* d_res=nullptr;};
-class Verifier {};
+class Verifier {
+public:
+    void set_layer_zero_arithmetic_probe(bool) {}
+    bool copy_layer_zero_arithmetic(LayerZeroArithmetic&, std::string& e) const {
+        e="layer-zero probe unsupported in CPU stub"; return false;
+    }
+};
 using PoolMultiFn=void(*)(void*,const float*,const int32_t*,int64_t,int64_t,float*,int64_t);
 enum class WeightKind {Verbatim=0,Bf16InF32=1,F32=2,F16InF32=3};
 struct WeightRef {
