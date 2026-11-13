@@ -1605,6 +1605,22 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         }
         auto gr_read_group = [&](int half, bool apply, float* inj_prev, float* inj_out) {
             strata::dispatch::notef("hc read: weights Q8_0 copies=%ld (0 = bf16 rows), half=%ld, qfuse=%ld", (long) (wd[half]->hc_q8 != nullptr), (long) half, (long) (qcnt_ != nullptr));
+            if (layer_zero_probe_on_ && l == 0 && half == 0 && grp == 0) {
+                auto env_value = [](const char* name) -> const char* {
+                    const char* value = std::getenv(name);
+                    return value && *value ? value : "(unset)";
+                };
+                std::fprintf(stderr,
+                    "STRATA_GR0_PATH down_q8=%d up_q8=%d down_scale=%d up_scale=%d "
+                    "qfuse=%d hc_q8_env=%s hc_split=%s gr_v3=%s "
+                    "gr_norm_fast=%s gr_fast=%s gr_up_wide=%s\n",
+                    wd[0]->hc_q8 != nullptr, wu[0]->hc_q8 != nullptr,
+                    wd[0]->q8_scale != nullptr, wu[0]->q8_scale != nullptr,
+                    qcnt_ != nullptr, env_value("STRATA_HC_Q8"),
+                    env_value("STRATA_HC_SPLIT"), env_value("STRATA_GR_V3"),
+                    env_value("STRATA_GR_NORM_FAST"), env_value("STRATA_GR_FAST"),
+                    env_value("STRATA_GR_UP_WIDE"));
+            }
             FusedGrArgs fa[kFusedGrWideT];
             for (int t = tb; t < te; ++t) {
                 FusedGrArgs& a = fa[t - tb];
