@@ -5,9 +5,13 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/process.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -24,6 +28,8 @@ struct Options {
     std::string cuda_worker;
     std::string hip_worker;
     std::vector<std::string> configs;
+    std::vector<int32_t> tokens;
+    std::string capture_prefix;
     uint32_t layers = 48;
     uint32_t hc = 4;
     uint32_t n_embd = 2560;
@@ -60,7 +66,8 @@ void usage() {
         "  --config <cuda0.cfg> --config <hip0.cfg> --config <hip1.cfg>\n"
         "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
-        "  [--rows 1] [--windows 1] [--timeout-ms 120000] [--shared] [--run]\n"
+        "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
+        "  [--timeout-ms 120000] [--shared] [--run]\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
 Options parse(int argc, char** argv) {
@@ -73,6 +80,21 @@ Options parse(int argc, char** argv) {
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
         else if (key == "--hip-worker") o.hip_worker = required_value(i, argc, argv, "--hip-worker");
         else if (key == "--config") o.configs.push_back(required_value(i, argc, argv, "--config"));
+        else if (key == "--capture-prefix")
+            o.capture_prefix = required_value(i, argc, argv, "--capture-prefix");
+        else if (key == "--tokens") {
+            const std::string value = required_value(i, argc, argv, "--tokens");
+            std::istringstream input(value);
+            std::string item;
+            while (std::getline(input, item, ',')) {
+                const uint32_t token = u32(item, "tokens");
+                if (token > static_cast<uint32_t>(INT32_MAX) || o.tokens.size() >= 64)
+                    throw std::invalid_argument("bounded token sequence invalid");
+                o.tokens.push_back(static_cast<int32_t>(token));
+            }
+            if (value.empty() || value.back() == ',')
+                throw std::invalid_argument("invalid comma-separated tokens");
+        }
         else if (key == "--fingerprint")
             o.fingerprint = decimal(required_value(i, argc, argv, "--fingerprint"), "fingerprint");
         else if (key == "--layers") o.layers = u32(required_value(i, argc, argv, "--layers"), "layers");
@@ -94,6 +116,8 @@ Options parse(int argc, char** argv) {
         o.windows == 0 || o.windows > 8 || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
+    if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
+        throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     return o;
 }
 void require_executable(const std::string& path, const char* label) {
@@ -124,8 +148,12 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                    !hetero::validate_cuda_worker_config(config, plan, index, error)) {
             throw std::runtime_error("stage " + std::to_string(index) + ": " + error);
         }
+        const bool invalid_token = o.tokens.empty()
+            ? config.n_vocab <= o.token
+            : std::any_of(o.tokens.begin(), o.tokens.end(),
+                          [&](int32_t token) { return token >= static_cast<int32_t>(config.n_vocab); });
         if (config.version != 2 || config.max_cells < needed ||
-            config.max_t < o.rows || config.n_vocab <= o.token)
+            config.max_t < o.rows || invalid_token)
             throw std::invalid_argument("stage " + std::to_string(index) +
                 ": v2, context, window or token bounds cannot serve smoke-test request");
         std::cout << "PREFLIGHT stage=" << index
@@ -136,9 +164,88 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                   << " max_t=" << config.max_t << '\n';
     }
     if (o.run) {
-        require_executable(o.cuda_worker, "CUDA worker");
-        require_executable(o.hip_worker, "HIP worker");
+        for (const auto& stage : plan.stages) {
+            if (stage.backend == hetero::Backend::cuda)
+                require_executable(o.cuda_worker, "CUDA worker");
+            else require_executable(o.hip_worker, "HIP worker");
+        }
+        if (!o.capture_prefix.empty()) {
+            const std::filesystem::path prefix(o.capture_prefix);
+            std::error_code ec;
+            if (!prefix.is_absolute() || o.capture_prefix.size() > 4096 ||
+                o.capture_prefix.find('\n') != std::string::npos ||
+                o.capture_prefix.find('\r') != std::string::npos ||
+                !std::filesystem::is_directory(prefix.parent_path(), ec))
+                throw std::invalid_argument("capture prefix must be an absolute path in an existing directory");
+            if (std::filesystem::exists(o.capture_prefix + ".complete.json"))
+                throw std::invalid_argument("capture already completed; use a fresh prefix");
+            for (uint32_t n = 1; n <= o.windows; ++n) {
+                const std::string base = o.capture_prefix + ".w" + std::to_string(n);
+                if (std::filesystem::exists(base + ".json") ||
+                    std::filesystem::exists(base + ".stfr"))
+                    throw std::invalid_argument("capture output already exists; use a fresh prefix");
+            }
+        }
     }
+}
+// Strict JSON escaping is needed because model paths are recorded as metadata.
+std::string json_string(const std::string& value) {
+    std::ostringstream out;
+    out << '"';
+    constexpr char hex[] = "0123456789abcdef";
+    for (const unsigned char c : value) {
+        if (c == '"' || c == '\\') { out << '\\' << c; }
+        else if (c < 0x20) out << "\\u00" << hex[c >> 4] << hex[c & 15];
+        else out << static_cast<char>(c);
+    }
+    out << '"';
+    return out.str();
+}
+void capture_window(const Options& o, const hetero::Plan& plan,
+                    const hetero::WindowSpec& spec,
+                    const hetero::FinalStageResult& committed) {
+    if (!committed.logits || committed.logits->empty())
+        throw std::runtime_error("parity capture requires full final-stage FP32 logits");
+    hetero::CudaWorkerConfig source;
+    std::string error;
+    if (!hetero::read_cuda_worker_config(o.configs[0], source, error))
+        throw std::runtime_error("parity capture config: " + error);
+    const std::string base = o.capture_prefix + ".w" + std::to_string(committed.window_id);
+    const auto packet = hetero::encode_final_result(committed);
+    std::ofstream stfr(base + ".stfr", std::ios::binary);
+    if (!stfr) throw std::runtime_error("cannot create parity STFR packet");
+    stfr.write(reinterpret_cast<const char*>(packet.data()),
+               static_cast<std::streamsize>(packet.size()));
+    stfr.flush();
+    if (!stfr) throw std::runtime_error("parity STFR packet write failed");
+    std::ofstream manifest(base + ".json", std::ios::binary);
+    if (!manifest) throw std::runtime_error("cannot create parity window manifest");
+    manifest << "{\"schema\":\"strata-heterogeneous-parity/v1\""
+             << ",\"plan\":" << json_string(hetero::plan_spec(plan))
+             << ",\"model_fingerprint\":" << o.fingerprint
+             << ",\"plan_fingerprint\":" << committed.plan_fingerprint
+             << ",\"pack_index_sha256\":" << json_string(source.index_sha256)
+             << ",\"gguf_shards\":" << json_string([&]() {
+                   std::string combined;
+                   for (const auto& shard : source.gguf_shards) {
+                       if (!combined.empty()) combined += ';';
+                       combined += shard;
+                   }
+                   return combined;
+               }())
+             << ",\"profile_path\":" << json_string(source.profile_path)
+             << ",\"window_id\":" << committed.window_id
+             << ",\"pos0\":" << spec.pos0
+             << ",\"rows\":" << committed.rows
+             << ",\"n_keep\":" << o.rows
+             << ",\"token_ids\":[";
+    for (size_t t = 0; t < spec.token_ids.size(); ++t) {
+        if (t) manifest << ',';
+        manifest << spec.token_ids[t];
+    }
+    manifest << "]}\n";
+    manifest.flush();
+    if (!manifest) throw std::runtime_error("parity window manifest write failed");
 }
 int execute(const Options& o, const hetero::Plan& plan) {
     auto workers = hetero::WorkerProcessGroup::launch(
@@ -149,7 +256,9 @@ int execute(const Options& o, const hetero::Plan& plan) {
     for (uint32_t n = 0; n < o.windows; ++n) {
         hetero::WindowSpec spec;
         spec.pos0 = static_cast<int64_t>(uint64_t(n) * o.rows);
-        spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
+        if (o.tokens.empty()) spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
+        else spec.token_ids.assign(o.tokens.begin() + static_cast<size_t>(n) * o.rows,
+                                   o.tokens.begin() + static_cast<size_t>(n + 1) * o.rows);
         hetero::Frame initial;
         initial.kind = hetero::Kind::data;
         initial.request_id = 1;
@@ -166,6 +275,7 @@ int execute(const Options& o, const hetero::Plan& plan) {
         const hetero::FinalStageResult committed = session.commit(o.rows);
         if (committed.predicted_tokens.size() != o.rows || committed.has_nonfinite())
             throw std::runtime_error("committed head predictions malformed or nonfinite");
+        if (!o.capture_prefix.empty()) capture_window(o, plan, spec, committed);
         std::cout << "LIVE PASS window=" << n + 1 << " pos0=" << spec.pos0
                   << " committed=" << o.rows << " predictions=";
         for (const int32_t token : committed.predicted_tokens)
@@ -175,6 +285,15 @@ int execute(const Options& o, const hetero::Plan& plan) {
     std::string error;
     if (!workers.finish(error))
         throw std::runtime_error("worker shutdown failed: " + error);
+    if (!o.capture_prefix.empty()) {
+        std::ofstream complete(o.capture_prefix + ".complete.json", std::ios::binary);
+        if (!complete) throw std::runtime_error("cannot create parity completion marker");
+        complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"windows\":"
+                 << o.windows << ",\"model_fingerprint\":" << o.fingerprint
+                 << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
+        complete.flush();
+        if (!complete) throw std::runtime_error("parity completion marker write failed");
+    }
     std::cout << "LIVE PASS: all " << o.windows
               << " window(s) committed on actual CUDA/HIP worker chain\n";
     return 0;
