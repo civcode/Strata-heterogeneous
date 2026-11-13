@@ -5,6 +5,7 @@
 // No CUDA/HIP runtime objects cross process boundaries.
 #include "strata_heterogeneous/cuda_verifier.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/layer_taps.hpp"
 
 #include <memory>
 
@@ -54,6 +55,7 @@ private:
     cudaEvent_t fence_ = nullptr;
     size_t capacity_ = 0;
     WindowSpec spec_;
+    LayerTapRecorder taps_;
     uint64_t request_ = 0, window_ = 0;
     int64_t next_position_ = 0;
     uint32_t keep_ = 0;
