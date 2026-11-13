@@ -44,6 +44,7 @@ struct Options {
     bool shared = false;
     bool layer_taps = false;
     bool layer_zero_probe = false;
+    bool stage0_phases = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -71,7 +72,7 @@ void usage() {
         "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
         "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
-        "  [--layer-taps] [--layer0-probe]  (requires capture prefix; opt-in GPU diagnostics)\n"
+        "  [--layer-taps] [--layer0-probe] [--stage0-phases]  (opt-in GPU diagnostics)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -82,6 +83,7 @@ Options parse(int argc, char** argv) {
         if (key == "--run") o.run = true;
         else if (key == "--layer-taps") o.layer_taps = true;
         else if (key == "--layer0-probe") o.layer_zero_probe = true;
+        else if (key == "--stage0-phases") o.stage0_phases = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
@@ -127,6 +129,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--layer-taps requires --capture-prefix");
     if (o.layer_zero_probe && (o.capture_prefix.empty() || o.rows != 1))
         throw std::invalid_argument("--layer0-probe requires --capture-prefix and --rows 1");
+    if (o.stage0_phases && (o.capture_prefix.empty() || o.rows != 1))
+        throw std::invalid_argument("--stage0-phases requires --capture-prefix and --rows 1");
     if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     return o;
@@ -209,6 +213,10 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                     std::filesystem::exists(o.capture_prefix + ".stage0.w" +
                                             std::to_string(n) + ".stl0"))
                     throw std::invalid_argument("layer-zero probe already exists; use fresh prefix");
+                if (o.stage0_phases &&
+                    std::filesystem::exists(o.capture_prefix + ".stage0.w" +
+                                            std::to_string(n) + ".stp0"))
+                    throw std::invalid_argument("stage-zero phase record exists; use fresh prefix");
                 if (o.layer_taps)
                     for (size_t stage = 0; stage < plan.stages.size(); ++stage)
                         if (std::filesystem::exists(o.capture_prefix + ".stage" +
@@ -294,6 +302,13 @@ int execute(const Options& o, const hetero::Plan& plan) {
         // Prevent a stale environment variable from silently changing a
         // non-diagnostic manually launched inference session.
         throw std::runtime_error("cannot clear inherited native layer-zero probe");
+    }
+    if (o.stage0_phases) {
+        if (::setenv("STRATA_HETERO_STAGE0_PHASE_PREFIX",
+                     o.capture_prefix.c_str(), 1) != 0)
+            throw std::runtime_error("cannot configure native stage-zero phase probe");
+    } else if (::unsetenv("STRATA_HETERO_STAGE0_PHASE_PREFIX") != 0) {
+        throw std::runtime_error("cannot clear inherited native stage-zero phase probe");
     }
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
