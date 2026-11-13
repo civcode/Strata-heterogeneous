@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""CPU-only M2.6 model/plan gate contract tests; synthetic, sparse fixtures."""
+import hashlib
+import os
+from pathlib import Path
+import struct
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# In the real repo gguf_reader.py is an adjacent tool.
+import heterogeneous_model_gate as gate
+
+
+class Tensor:
+    def __init__(self, name, typ="Q2_0", shape=None):
+        self.name, self.type_name, self.shape = name, typ, shape or [2560, 640]
+
+
+class FakeGGUF:
+    expert_type = "Q2_0"
+    ple_type = "IQ4_NL"
+    omit = None
+
+    def __init__(self, path):
+        if path.name == "primary.gguf":
+            self.metadata = {"general.architecture": "qwen4exp"}
+            self.tensors = [Tensor(f"blk.{layer}.ffn_{part}_exps.weight", self.expert_type)
+                            for layer in range(48) for part in gate.EXPERT_PARTS
+                            if (layer, part) != self.omit]
+        else:
+            self.metadata = {}
+            self.tensors = [Tensor("per_layer_token_embd.weight", self.ple_type,
+                                   [160, 320001536])]
+
+
+def profile(path):
+    with path.open("wb") as f:
+        f.write(b"STRP" + struct.pack("<5I", 1, 48, 512, 24576, 24576))
+        for e in range(512):
+            for l in range(48):
+                f.write(struct.pack("<HH", l, e))
+        for l in range(48):
+            for e in range(512):
+                f.write(struct.pack("<I", e * 48 + l))
+
+
+def pack_index():
+    lines = ["# align 256 pool 65536 tensors 49"]
+    for i in range(-1, 48):
+        name = "output.weight" if i < 0 else f"blk.{i}.test.weight"
+        fields = [0, 0, 0, 256, (i + 1) * 256, 256, 2560, 2560] + [0] * 10
+        lines.append(name + " " + " ".join(map(str, fields)))
+    return "\n".join(lines) + "\n"
+
+
+class GateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="m26-")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.pack = root / "pack"
+        self.pack.mkdir()
+        (self.pack / "index.txt").write_text(pack_index())
+        for name in ("dense.bin", "embd.bin"):
+            (self.pack / name).write_bytes(b"fixture")
+        with (self.pack / "experts.bin").open("wb") as f:
+            f.truncate(gate.EXPECTED_EXPERTS)
+        self.profile = root / "profile.strp"
+        profile(self.profile)
+        self.shards = [root / "primary.gguf", root / "ple.gguf"]
+        for shard in self.shards:
+            shard.write_bytes(b"GGUF")
+        common = dict(version="2", pack_dir=str(self.pack), profile_path=str(self.profile),
+                      index_sha256=hashlib.sha256(pack_index().encode()).hexdigest(),
+                      model_fingerprint="2026111301", n_layers="48", hc="4",
+                      n_embd="2560", n_vocab="248320",
+                      gguf_shards=";".join(map(str, self.shards)))
+        self.configs = []
+        for i, (first, end, ordinal) in enumerate(((0, 12, 0), (12, 30, 0), (30, 48, 1))):
+            c = dict(common, stage_index=str(i), device_ordinal=str(ordinal),
+                     first_layer=str(first), end_layer=str(end))
+            if i == 0:
+                c["ple_gguf_path"] = str(self.shards[1])
+            path = root / f"stage{i}.cfg"
+            self.configs.append(path)
+            self.write(path, c)
+        self.preflight = root / "strata_heterogeneous_hip_preflight_worker"
+        self.preflight.write_bytes(b"fake")
+        self.patcher = patch.object(gate, "GGUFFile", FakeGGUF)
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+        self.patcher2 = patch.object(gate, "check_preflight", return_value=None)
+        self.patcher2.start()
+        self.addCleanup(self.patcher2.stop)
+        FakeGGUF.expert_type = "Q2_0"
+        FakeGGUF.ple_type = "IQ4_NL"
+        FakeGGUF.omit = None
+
+    @staticmethod
+    def write(path, fields):
+        path.write_text("".join(f"{k}={v}\n" for k, v in fields.items()))
+
+    def check(self, configs=None, plan="cuda:0:0-12,hip:0:12-30,hip:1:30-48",
+              fingerprint=2026111301):
+        return gate.validate(plan, 48, 4, 2560, fingerprint,
+                             configs if configs is not None else self.configs, self.preflight)
+
+    def change(self, stage, field, value):
+        path = self.configs[stage]
+        c = gate.config(path)
+        c[field] = value
+        self.write(path, c)
+
+    def test_valid_model(self):
+        self.check()
+
+    def test_missing_and_reordered_stages(self):
+        with self.assertRaises(ValueError): self.check(configs=self.configs[:2])
+        with self.assertRaises(ValueError): self.check(configs=self.configs[::-1])
+        with self.assertRaises(ValueError): self.check(plan="cuda:0:0-12,hip:0:13-30,hip:1:30-48")
+
+    def test_wrong_device(self):
+        self.change(1, "device_ordinal", "8")
+        with self.assertRaises(ValueError): self.check()
+
+    def test_wrong_model_identity(self):
+        self.change(2, "model_fingerprint", "77")
+        with self.assertRaises(ValueError): self.check()
+
+    def test_wrong_common_inputs(self):
+        self.change(1, "profile_path", str(self.shards[0]))
+        with self.assertRaises(ValueError): self.check()
+
+    def test_wrong_ple_shard(self):
+        self.change(0, "ple_gguf_path", str(self.shards[0]))
+        with self.assertRaises(ValueError): self.check()
+
+    def test_noncanonical_expert_source(self):
+        FakeGGUF.expert_type = "IQ3_XXS"
+        with self.assertRaises(ValueError): self.check()
+
+    def test_missing_expert_role(self):
+        FakeGGUF.omit = (47, "down")
+        with self.assertRaises(ValueError): self.check()
+
+    def test_wrong_ple_type(self):
+        FakeGGUF.ple_type = "Q8_0"
+        with self.assertRaises(ValueError): self.check()
+
+    def test_native_iq_pack_rejected(self):
+        (self.pack / "native_experts.txt").write_text("native")
+        with self.assertRaises(ValueError): self.check()
+
+    def test_bad_expert_file_size(self):
+        with (self.pack / "experts.bin").open("wb") as f: f.truncate(10)
+        with self.assertRaises(ValueError): self.check()
+
+    def test_bad_profile_inverse(self):
+        with self.profile.open("r+b") as f:
+            f.seek(24 + 24576 * 4)
+            f.write(struct.pack("<I", 24576))
+        with self.assertRaises(ValueError): self.check()
+
+    def test_index_tamper(self):
+        with (self.pack / "index.txt").open("ab") as f:
+            f.write(b"bad index modification\n")
+        with self.assertRaises(ValueError): self.check()
+
+
+if __name__ == "__main__":
+    unittest.main()

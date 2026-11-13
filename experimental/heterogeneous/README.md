@@ -548,3 +548,14 @@ Native HIP builds are opt-in via `STRATA_BUILD_HETERO_HIP_WORKER=ON`,
 which is OFF by default. Compilation/link and all GPU results remain
 unverified until Oberon validation. See
 [docs/HIP_SUPERVISED_WORKER_M25.md](docs/HIP_SUPERVISED_WORKER_M25.md).
+
+### M2.6 — Plan-aware canonical Q2_0 asset gate (no GPU)
+
+`tools/heterogeneous_model_gate.py` runs the existing CPU-only worker
+file preflight for every stage and then checks the complete cross-stage
+plan, per-stage identity, ordered original GGUF shards, Q2_0 expert types,
+correct PLE-bearing shard, canonical expert pack size/layout and
+complete STRP/v1 profile. Stage-device ordinals remain backend-local.
+This is structural validation, **not** a full-model authenticated hash,
+native runtime test or numerical-parity claim. No model files are modified.
+See [docs/MODEL_PLAN_GATE_M26.md](docs/MODEL_PLAN_GATE_M26.md).

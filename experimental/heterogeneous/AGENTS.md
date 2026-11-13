@@ -679,3 +679,17 @@ download huge model files merely to validate the CPU transport.
 - End each coding task with: changed paths; exact commits; tests
   **passed / failed / not run**; known limitations; GPU-only validation
   needed; and the next smallest safe increment.
+
+### M2.6 — CPU-only Q2_0 model/plan validation gate
+
+- `tools/heterogeneous_model_gate.py` uses the repository's GGUF
+  header reader and CPU-only HIP preflight executable to check each
+  per-stage config against an explicit coordinator plan.
+- Requires the canonical 48-layer Q2_0 experts, exact 48x512 STRP
+  profile, one original IQ4_NL PLE shard and a complete stage partition.
+  Rejects native/IQ expert packs, stage identity mismatches and tampering.
+- Local Python test fixture uses synthetic GGUF metadata and sparse
+  expert files. Standalone CTest count **28** when Python3 is available.
+- This gate does NOT verify the bytes of all GGUF shards or
+  dense/embd/experts binaries; no GPU inference authorized or performed.
+  See docs/MODEL_PLAN_GATE_M26.md.
