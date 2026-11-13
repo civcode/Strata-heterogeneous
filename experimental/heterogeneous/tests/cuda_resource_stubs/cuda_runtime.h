@@ -15,6 +15,16 @@ inline void reset() {malloc_calls=free_calls=set_calls=sync_calls=info_calls=0;
     fail_malloc_at=fail_set_at=fail_sync_at=0;fail_meminfo=false;
     free_bytes=total_bytes=1ull<<34;current_device=-1;}
 }
+struct cudaDeviceProp { char name[256] = "fake device"; };
+inline cudaError_t cudaGetDeviceCount(int* n) { *n = 2; return cudaSuccess; }
+inline cudaError_t cudaGetDeviceProperties(cudaDeviceProp*, int) { return cudaSuccess; }
+inline cudaError_t cudaDeviceGetPCIBusId(char* id, int len, int) {
+    if (len > 0) id[0] = '\0';
+    return cudaSuccess;
+}
+inline cudaError_t hipDeviceGetPCIBusId(char* id, int len, int device) {
+    return cudaDeviceGetPCIBusId(id, len, device);
+}
 inline const char* cudaGetErrorString(cudaError_t){return "injected CUDA failure";}
 inline cudaError_t cudaSetDevice(int n) { ++fake_cuda::set_calls;
     if (fake_cuda::set_calls==fake_cuda::fail_set_at) return 2;
