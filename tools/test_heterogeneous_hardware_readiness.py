@@ -93,10 +93,13 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual([], doc["blockers"])
         self.assertFalse(any(m["runtime_ordinal_confirmed"] for m in doc["ordinal_declarations"]))
 
-    def test_default_no_binding_fails_closed(self):
+    def test_default_no_binding_is_not_an_hardware_failure(self):
         doc = self.assess([])
-        self.assertEqual("BLOCKED", doc["readiness"])
-        self.assertIn("unresolved backend-local runtime ordinal mapping", doc["blockers"])
+        self.assertEqual("UNVERIFIED", doc["readiness"])
+        self.assertEqual([], doc["blockers"])
+        self.assertTrue(all(x["declared_bdf"] is None for x in doc["ordinal_declarations"]))
+        self.assertTrue(all(x["runtime_ordinal_confirmed"] is False
+                            for x in doc["ordinal_declarations"]))
 
     def test_memory_selection(self):
         memory = hw.planned_memory(self.plan, self.cfg, 48)
@@ -194,14 +197,19 @@ class ReadinessTests(unittest.TestCase):
             params.extend(["--config", str(cfg)])
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
             code = hw.main(params)
-        self.assertEqual(1, code)  # unbound runtimes blocked
-        self.assertEqual("BLOCKED", json.loads(out.getvalue())["readiness"])
+        self.assertEqual(0, code)  # no optional binding is not a PCI fault
+        self.assertEqual("UNVERIFIED", json.loads(out.getvalue())["readiness"])
         for b in self.bind:
             params.extend(["--bind", b])
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
             code = hw.main(params)
         self.assertEqual(0, code)
         self.assertEqual("UNVERIFIED", json.loads(out.getvalue())["readiness"])
+        params.extend(["--bind", "hip:0=0000:01:00.0"])
+        with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
+            code = hw.main(params)
+        self.assertEqual(1, code)
+        self.assertEqual("BLOCKED", json.loads(out.getvalue())["readiness"])
 
 
 if __name__ == "__main__":
