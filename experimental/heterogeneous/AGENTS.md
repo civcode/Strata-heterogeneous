@@ -431,10 +431,10 @@ explicit worker-owned provider to be implemented before runnable inference.
   SHA-256 of the authorized pack's `index.txt`, and STRP/v1 expert profile
   header. The model fingerprint comes from the **trusted caller**, not an
   index hash or a claim of binary attestation. No config/profile discovery.
-- Inference runtime requires the explicit opt-in gate
-  `STRATA_HETERO_CUDA_LIVE=I_APPROVE_CUDA_RUNTIME`, after a separate owner
-  approval to recover NVIDIA. No developer/agent should set this gate during
-  CPU or build-only validation.
+- **M2.9 supersedes the historical approval gate:** explicit supervised
+  CUDA worker launch is the runtime opt-in. There is no separate
+  I_APPROVE_CUDA_RUNTIME environment variable check. CPU-only preflight
+  never launches native GPU workers.
 - The worker creates `CudaStageResources`, then attaches real
   `CudaFileExperts`, then creates a `CudaVerifierDriver` (nonfinal) or
   `CudaFinalVerifierExecutor` (final with prior handoff stage). The verifier
@@ -494,7 +494,7 @@ explicit worker-owned provider to be implemented before runnable inference.
   real restoration and is refused. All failures poison worker state.
 - `STRATA_HETERO_WINDOW_TRACE=1` is opt-in and prints only stage, request,
   window, position, row count and status, not token IDs or model contents.
-  Never set `STRATA_HETERO_CUDA_LIVE` for CPU-only validation.
+  CPU-only validation must not start any native GPU worker.
 - Existing mock and HIP code paths omit WindowLimits and retain their
   legacy semantics. Expect 20 standalone CTest targets (2 new CPU-only
   tests). Native compilation/link and any live CUDA numerical verification
@@ -564,10 +564,9 @@ explicit worker-owned provider to be implemented before runnable inference.
 - An independent opt-in HIP-only executable composes HIP stage resources,
   NativeDense/PLE and Q2_0 file experts with non-final/final verifier
   adapters and the M1.18 bounded v4/STFR window admissions.
-- HIP startup validates config/identity/compiled Q2_0 geometry first, then
-  refuses **all** HIP runtime use unless
-  `STRATA_HETERO_HIP_LIVE=I_APPROVE_HIP_RUNTIME`. This environment
-  gate does NOT itself grant user approval for a live model run.
+- HIP startup validates config/identity/compiled Q2_0 geometry first.
+  **M2.9 removes the redundant I_APPROVE_HIP_RUNTIME environment gate**;
+  an explicitly invoked supervised worker launches its own runtime.
 - Never link CUDA into this HIP image, or HIP into CUDA/supervisor.
   Native HIP compile/link remains unverified until Oberon. No GPUs,
   inference, parity or session restoration were executed.
@@ -735,3 +734,32 @@ download huge model files merely to validate the CPU transport.
 - 23 local CPU-only synthetic tests pass. One standalone CTest is added
   (30 total when Python3 is available). No Oberon work or Actions run.
   See docs/ORDINAL_EVIDENCE_M28.md.
+
+### M2.9 — Manually launched GPU test path (current instructions)
+
+- Explicit invocation of the user-requested hardware test (or equivalent
+  user-directed agent instruction) authorizes runtime enumeration, allocation,
+  native model loading and inference *for that test*. No second authorization
+  exchange or I_APPROVE_* environment variable is needed. Do not start live
+  tests spontaneously or in unattended CI.
+- `strata_heterogeneous_live_smoke` is a host-only coordinator. Without
+  `--run` it performs CPU-only plan/config checks; with `--run` it launches
+  the separate native CUDA and HIP workers and performs a real cross-backend
+  STFR smoke test. It is **never** in GPU-enabled CTest or GitHub Actions.
+- Workers emit STRATA_DEVICE with backend-local ordinal, PCI function when
+  available, runtime GPU name and free/total VRAM. This is an observability
+  log, not an optional PCI mapping prerequisite. Verify stage 0 chooses the
+  NVIDIA GPU, and HIP stage 1 and 2 choose the two different R9700s.
+- The canonical Q2_0 GGUF/profile/PLE geometry, model fingerprints, stage
+  identity, mem bounds, finite activations, and positive-prefix ACK checks
+  still protect correctness; do not relax them merely to obtain a PASS.
+- Stop on actual device/runtime faults, wrong physical GPU, OOM/reserve,
+  model-asset mismatch, nonfinite output, timeout or failed commit. Do not
+  reset/reboot GPUs or unload drivers by default. Limit builds to 28 jobs,
+  use separate CUDA/HIP toolchains, and never touch the two Strata-dev dirs.
+- Test in order: native CPU-only preflight; 1-token socket live test;
+  1-token shared-memory live test; two consecutive 1-token windows. No GPU
+  tests have been run by ChatGPT in M2.9; Oberon compilation/live output
+  remains pending.
+- Full commands and test evidence checklist:
+  `docs/LIVE_GPU_HANDOFF_M29.md`.
