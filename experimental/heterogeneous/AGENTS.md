@@ -510,6 +510,18 @@ explicit worker-owned provider to be implemented before runnable inference.
 - New host-only CTest target brings the standalone suite to **21 tests**.
 - See docs/HIP_BOOTSTRAP_M20.md for scope and limits.
 
+### M2.1 — HIP v2 config and fail-closed preflight executable
+
+- Reuse the rigorously bounded CUDA v2 GGUF/pack config reader for a
+  separate HIP startup preflight. Require v2 and verify the HIP stage
+  (backend-local ordinal, layer interval, geometry, model fingerprint).
+- The independent CPU-only preflight executable **always fails closed**
+  in supervised worker mode. It must never send ready, load ROCm or
+  claim inference. A dedicated CPU config CTest and forked refusal test
+  bring the standalone suite to **22 CTest targets**.
+- See docs/HIP_PREFLIGHT_M21.md. No HIP device runtime or mixed inference
+  has been implemented. Hardware requires separate authorization.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

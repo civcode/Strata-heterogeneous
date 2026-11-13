@@ -487,3 +487,14 @@ syntax, backend index and absolute path before any HIP runtime exists.
 The process suite probes real exec argv routing in socket/shared modes.
 M2.0 does not implement a HIP model loader or mixed-vendor inference.
 See [docs/HIP_BOOTSTRAP_M20.md](docs/HIP_BOOTSTRAP_M20.md).
+
+### M2.1 — HIP native-input preflight without runtime
+
+An independent, CPU-only `strata_heterogeneous_hip_preflight_worker` now
+parses the supervisor's HIP stage argv, reuses the strict v2 GGUF shard/PLE
+and pack-index SHA-256 config format, verifies backend-local stage identity,
+and **always refuses supervised inference**. It does not initialize ROCm,
+own GPU state, or claim any successful stage execution. The executable is
+built for host tests or opt-in with
+`STRATA_HETERO_BUILD_HIP_PREFLIGHT=ON`. See
+[docs/HIP_PREFLIGHT_M21.md](docs/HIP_PREFLIGHT_M21.md).

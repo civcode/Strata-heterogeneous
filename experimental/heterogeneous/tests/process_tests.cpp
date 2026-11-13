@@ -114,6 +114,19 @@ int main() {
                                              {paths[0], "/tmp/hip\n.cfg", paths[2]});
         }, "newline stage config refused");
 
+        // The intentionally CPU-only HIP preflight executable must never
+        // signal ready or produce inference, even in supervised mode.
+        const Plan hip_only = parse_plan("hip:0:0-10", 10, {2, 6}, 999);
+        const std::string preflight = dir + "/strata_heterogeneous_hip_preflight_worker";
+        auto refused = WorkerProcessGroup::launch(
+            hip_only, cuda, preflight, false, {},
+            {"/tmp/strata-m21-intentionally-nonexistent-config.cfg"});
+        PipelineSession preflight_session(hip_only, refused.sockets(), 500);
+        should_throw([&] { preflight_session.initialize(); },
+                     "preflight-only HIP child refuses supervisor handshake");
+        check(preflight_session.poisoned(), "HIP preflight refusal poisons session");
+        check(!refused.finish(error, 500), "HIP preflight reports nonzero child exit");
+
         // Mismatched data transport modes must fail closed rather than hang.
         auto mismatched = WorkerProcessGroup::launch(plan, cuda, hip, true);
         PipelineSession no_shared(plan, mismatched.sockets(), 200, false);
