@@ -131,6 +131,10 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # Only exercises host CLI parsing/help; live GPU mode is never a CTest.
+  add_test(NAME strata_heterogeneous_live_smoke_help
+    COMMAND strata_heterogeneous_live_smoke --help)
+  set_tests_properties(strata_heterogeneous_live_smoke_help PROPERTIES TIMEOUT 10)
   # M2.6: CPU-only cross-stage model/plan and canonical Q2_0 input gate.
   # Python tests use tiny GGUF doubles and sparse files, never GPU runtime.
   find_package(Python3 COMPONENTS Interpreter QUIET)
