@@ -14,6 +14,7 @@
 #include <sstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -134,6 +135,7 @@ void preflight(const Options& o, const hetero::Plan& plan) {
     const uint64_t stride = plan.geometry.floats_per_row();
     if (stride > hetero::max_payload_bytes / (sizeof(float) * o.rows))
         throw std::invalid_argument("requested activation geometry exceeds bounded 16 MiB transport");
+    std::optional<hetero::CudaWorkerConfig> common_model;
     for (size_t index = 0; index < plan.stages.size(); ++index) {
         std::string error;
         hetero::CudaWorkerConfig config;
@@ -148,6 +150,18 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                    !hetero::validate_cuda_worker_config(config, plan, index, error)) {
             throw std::runtime_error("stage " + std::to_string(index) + ": " + error);
         }
+        // All stages must use one canonical pack/profile/original GGUF
+        // source. Capture metadata is otherwise insufficient to prove that
+        // each worker computed against the same source model.
+        if (common_model) {
+            if (config.pack_dir != common_model->pack_dir ||
+                config.profile_path != common_model->profile_path ||
+                config.index_sha256 != common_model->index_sha256 ||
+                config.gguf_shards != common_model->gguf_shards ||
+                config.n_vocab != common_model->n_vocab ||
+                config.model_fingerprint != common_model->model_fingerprint)
+                throw std::invalid_argument("cross-stage Q2_0 model source identity mismatch");
+        } else common_model = config;
         const bool invalid_token = o.tokens.empty()
             ? config.n_vocab <= o.token
             : std::any_of(o.tokens.begin(), o.tokens.end(),
