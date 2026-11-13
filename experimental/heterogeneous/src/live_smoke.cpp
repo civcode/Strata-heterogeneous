@@ -1,0 +1,200 @@
+// Manually launched, backend-neutral CUDA->HIP STFR smoke test.
+// The coordinator never links CUDA or HIP; each child owns its runtime.
+#include "strata_heterogeneous/cuda_worker_config.hpp"
+#include "strata_heterogeneous/hip_worker_config.hpp"
+#include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/process.hpp"
+
+#include <charconv>
+#include <cstdint>
+#include <filesystem>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <vector>
+#include <unistd.h>
+
+namespace hetero = strata::heterogeneous;
+namespace {
+struct Options {
+    std::string plan;
+    std::string cuda_worker;
+    std::string hip_worker;
+    std::vector<std::string> configs;
+    uint32_t layers = 48;
+    uint32_t hc = 4;
+    uint32_t n_embd = 2560;
+    uint64_t fingerprint = 0;
+    uint32_t token = 1;
+    uint32_t rows = 1;
+    uint32_t windows = 1;
+    int timeout_ms = 120000;
+    bool run = false;
+    bool shared = false;
+};
+uint64_t decimal(const std::string& str, const char* key) {
+    if (str.empty() || str[0] == '-' || str[0] == '+')
+        throw std::invalid_argument(std::string("invalid ") + key);
+    uint64_t value = 0;
+    const auto result = std::from_chars(str.data(), str.data() + str.size(), value);
+    if (result.ec != std::errc{} || result.ptr != str.data() + str.size())
+        throw std::invalid_argument(std::string("invalid ") + key);
+    return value;
+}
+uint32_t u32(const std::string& str, const char* key) {
+    const uint64_t n = decimal(str, key);
+    if (n > std::numeric_limits<uint32_t>::max())
+        throw std::invalid_argument(std::string("out-of-range ") + key);
+    return static_cast<uint32_t>(n);
+}
+std::string required_value(int& i, int argc, char** argv, const char* option) {
+    if (i + 1 >= argc) throw std::invalid_argument(std::string("missing value for ") + option);
+    return argv[++i];
+}
+void usage() {
+    std::cerr <<
+        "usage: strata_heterogeneous_live_smoke --plan <spec> --fingerprint <id>\\n"
+        "  --config <cuda0.cfg> --config <hip0.cfg> --config <hip1.cfg>\\n"
+        "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\\n"
+        "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\\n"
+        "  [--rows 1] [--windows 1] [--timeout-ms 120000] [--shared] [--run]\\n"
+        "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\\n";
+}
+Options parse(int argc, char** argv) {
+    Options o;
+    for (int i = 1; i < argc; ++i) {
+        const std::string key = argv[i];
+        if (key == "--run") o.run = true;
+        else if (key == "--shared") o.shared = true;
+        else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
+        else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
+        else if (key == "--hip-worker") o.hip_worker = required_value(i, argc, argv, "--hip-worker");
+        else if (key == "--config") o.configs.push_back(required_value(i, argc, argv, "--config"));
+        else if (key == "--fingerprint")
+            o.fingerprint = decimal(required_value(i, argc, argv, "--fingerprint"), "fingerprint");
+        else if (key == "--layers") o.layers = u32(required_value(i, argc, argv, "--layers"), "layers");
+        else if (key == "--hc") o.hc = u32(required_value(i, argc, argv, "--hc"), "hc");
+        else if (key == "--n-embd") o.n_embd = u32(required_value(i, argc, argv, "--n-embd"), "n-embd");
+        else if (key == "--token") o.token = u32(required_value(i, argc, argv, "--token"), "token");
+        else if (key == "--rows") o.rows = u32(required_value(i, argc, argv, "--rows"), "rows");
+        else if (key == "--windows") o.windows = u32(required_value(i, argc, argv, "--windows"), "windows");
+        else if (key == "--timeout-ms") {
+            const auto v = decimal(required_value(i, argc, argv, "--timeout-ms"), "timeout-ms");
+            if (v < 100 || v > 600000) throw std::invalid_argument("timeout-ms outside 100..600000");
+            o.timeout_ms = static_cast<int>(v);
+        } else if (key == "--help") {
+            usage();
+            throw std::invalid_argument("help requested");
+        } else throw std::invalid_argument("unknown option: " + key);
+    }
+    if (o.plan.empty() || !o.fingerprint || o.rows == 0 || o.rows > 8 ||
+        o.windows == 0 || o.windows > 8 || o.token > INT32_MAX ||
+        !o.layers || !o.hc || !o.n_embd)
+        throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
+    return o;
+}
+void require_executable(const std::string& path, const char* label) {
+    std::error_code ec;
+    if (path.empty() || path[0] != '/' ||
+        !std::filesystem::is_regular_file(path, ec) || ec ||
+        ::access(path.c_str(), X_OK) != 0)
+        throw std::invalid_argument(std::string(label) + " must be an executable absolute file");
+}
+void preflight(const Options& o, const hetero::Plan& plan) {
+    if (o.configs.size() != plan.stages.size())
+        throw std::invalid_argument("one ordered --config is required per planned stage");
+    const uint64_t needed = uint64_t(o.rows) * o.windows;
+    for (size_t index = 0; index < plan.stages.size(); ++index) {
+        std::string error;
+        hetero::CudaWorkerConfig config;
+        const bool is_hip = plan.stages[index].backend == hetero::Backend::hip;
+        if (is_hip) {
+            hetero::HipWorkerConfig hip;
+            if (!hetero::read_hip_worker_config(o.configs[index], hip, error) ||
+                !hetero::validate_hip_worker_config(hip, plan, index, error))
+                throw std::runtime_error("stage " + std::to_string(index) + ": " + error);
+            config = std::move(hip.fields);
+        } else if (!hetero::read_cuda_worker_config(o.configs[index], config, error) ||
+                   !hetero::validate_cuda_worker_config(config, plan, index, error)) {
+            throw std::runtime_error("stage " + std::to_string(index) + ": " + error);
+        }
+        if (config.version != 2 || config.max_cells < needed ||
+            config.max_t < o.rows || config.n_vocab <= o.token)
+            throw std::invalid_argument("stage " + std::to_string(index) +
+                ": v2, context, window or token bounds cannot serve smoke-test request");
+        std::cout << "PREFLIGHT stage=" << index
+                  << " backend=" << (is_hip ? "HIP" : "CUDA")
+                  << " ordinal=" << config.device_ordinal
+                  << " layers=[" << config.first_layer << ',' << config.end_layer << ')'
+                  << " max_cells=" << config.max_cells
+                  << " max_t=" << config.max_t << '\n';
+    }
+    if (o.run) {
+        require_executable(o.cuda_worker, "CUDA worker");
+        require_executable(o.hip_worker, "HIP worker");
+    }
+}
+int execute(const Options& o, const hetero::Plan& plan) {
+    auto workers = hetero::WorkerProcessGroup::launch(
+        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
+    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared);
+    session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
+    std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket") << '\n';
+    for (uint32_t n = 0; n < o.windows; ++n) {
+        hetero::WindowSpec spec;
+        spec.pos0 = static_cast<int64_t>(uint64_t(n) * o.rows);
+        spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
+        hetero::Frame initial;
+        initial.kind = hetero::Kind::data;
+        initial.request_id = 1;
+        initial.window_id = uint64_t(n) + 1;
+        initial.plan_fingerprint = plan.fingerprint();
+        initial.rows = o.rows;
+        initial.geometry = plan.geometry;
+        // Layer-zero verifier embeds token_ids; it intentionally ignores
+        // the placeholder initial activation. Later stages receive real
+        // native GPU output from the immediately preceding stage.
+        initial.payload.assign(
+            static_cast<size_t>(plan.geometry.floats_per_row()) * o.rows, 0.0f);
+        (void)session.execute(std::move(initial), spec); // provisional only
+        const hetero::FinalStageResult committed = session.commit(o.rows);
+        if (committed.predicted_tokens.size() != o.rows || committed.has_nonfinite())
+            throw std::runtime_error("committed head predictions malformed or nonfinite");
+        std::cout << "LIVE PASS window=" << n + 1 << " pos0=" << spec.pos0
+                  << " committed=" << o.rows << " predictions=";
+        for (const int32_t token : committed.predicted_tokens)
+            std::cout << token << ',';
+        std::cout << '\n';
+    }
+    std::string error;
+    if (!workers.finish(error))
+        throw std::runtime_error("worker shutdown failed: " + error);
+    std::cout << "LIVE PASS: all " << o.windows
+              << " window(s) committed on actual CUDA/HIP worker chain\n";
+    return 0;
+}
+} // namespace
+
+int main(int argc, char** argv) {
+    try {
+        if (argc == 2 && std::string(argv[1]) == "--help") {
+            usage();
+            return 0;
+        }
+        const Options opts = parse(argc, argv);
+        const hetero::Plan plan = hetero::parse_plan(
+            opts.plan, opts.layers, {opts.hc, opts.n_embd}, opts.fingerprint);
+        preflight(opts, plan); // always CPU-only; no runtime in coordinator.
+        if (!opts.run) {
+            std::cout << "PASS: CPU-only native stage preflight. "
+                         "No workers or GPU runtimes started; add --run for live test.\n";
+            return 0;
+        }
+        return execute(opts, plan);
+    } catch (const std::exception& ex) {
+        std::cerr << "heterogeneous live smoke: " << ex.what() << '\n';
+        return 1;
+    }
+}
