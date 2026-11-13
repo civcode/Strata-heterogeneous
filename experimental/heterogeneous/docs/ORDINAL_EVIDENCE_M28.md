@@ -34,8 +34,8 @@ Malformed, missing, duplicate, incomplete and contradictory data are
 rejected. The consumer does not query hardware or call runtime APIs,
 including in fallback paths. Each JSON input is capped at 1 MiB.
 
-**Only after separate explicit GPU runtime authorization**, a narrowly
-scoped backend-isolated probe may enumerate the runtime-visible ordinals
+During a user-initiated GPU test, an isolated backend worker can enumerate
+runtime-visible ordinals
 and obtain PCI bus IDs using CUDA's cudaGetDeviceCount and
 cudaDeviceGetPCIBusId, or HIP's hipGetDeviceCount and
 hipDeviceGetPCIBusId. Even enumeration can initialize a GPU runtime.
@@ -84,11 +84,11 @@ environment. A stale snapshot can be misleading.
    cache/residency, verifier buffers, pinned transfers, and runtime overhead.
    The native allocator rounds many projections to allocation granules,
    so GGUF payload bytes alone may understate the requirement.
-3. Verify free VRAM through separately authorized narrow mechanisms.
+3. Verify free VRAM from the live, explicitly launched native stage worker.
    PCI BAR sizes or nominal card capacity are not free VRAM.
-4. Obtain separate authorization for any live GPU step. Begin with
-   one backend/stage before cross-vendor handoff and parity experiments.
-   Do not run GitHub Actions.
+4. Explicitly run the manual native CUDA→HIP smoke launcher from
+   LIVE_GPU_HANDOFF_M29.md. The user-initiated test is sufficient authorization;
+   no additional environment approval flags are required. Do not run Actions.
 
 ## Partial source-backed session-state floor
 
