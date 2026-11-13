@@ -530,3 +530,21 @@ lifecycle sources were adapted to a distinct wave32 HIP-only build,
 with three additional CPU-double contract targets. This is not a runnable
 HIP worker; native HIP builds and real model/device execution have **not**
 been validated. See [docs/HIP_STAGE_OWNERS_M24.md](docs/HIP_STAGE_OWNERS_M24.md).
+
+### M2.5 — Supervised HIP model-loading worker (opt-in, not executed)
+
+The first separate HIP-only executable now composes the M2.0–M2.4
+components: parsed stage argv, v2 GGUF/pack/profile config, compiled model
+geometry, a stage-local weight/session owner, NativeDense/PLE lifetime,
+real Q2_0 file-backed experts, and either a non-final HIP verifier or an
+STFR final-stage HIP verifier. The worker uses the existing v4 bounded
+window admission with fail-closed commits.
+
+**Runtime initialization remains disabled** unless
+`STRATA_HETERO_HIP_LIVE=I_APPROVE_HIP_RUNTIME` is explicitly provided
+following separate device/model authorization. With no approval the
+supervised worker returns a failure frame and exits nonzero.
+Native HIP builds are opt-in via `STRATA_BUILD_HETERO_HIP_WORKER=ON`,
+which is OFF by default. Compilation/link and all GPU results remain
+unverified until Oberon validation. See
+[docs/HIP_SUPERVISED_WORKER_M25.md](docs/HIP_SUPERVISED_WORKER_M25.md).

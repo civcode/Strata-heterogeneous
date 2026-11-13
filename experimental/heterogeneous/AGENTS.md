@@ -559,6 +559,20 @@ explicit worker-owned provider to be implemented before runnable inference.
   model assets, expert byte parity and separately approved GPU execution.
 - See docs/HIP_STAGE_OWNERS_M24.md.
 
+### M2.5 — Supervised HIP worker integration, unverified hardware
+
+- An independent opt-in HIP-only executable composes HIP stage resources,
+  NativeDense/PLE and Q2_0 file experts with non-final/final verifier
+  adapters and the M1.18 bounded v4/STFR window admissions.
+- HIP startup validates config/identity/compiled Q2_0 geometry first, then
+  refuses **all** HIP runtime use unless
+  `STRATA_HETERO_HIP_LIVE=I_APPROVE_HIP_RUNTIME`. This environment
+  gate does NOT itself grant user approval for a live model run.
+- Never link CUDA into this HIP image, or HIP into CUDA/supervisor.
+  Native HIP compile/link remains unverified until Oberon. No GPUs,
+  inference, parity or session restoration were executed.
+- See docs/HIP_SUPERVISED_WORKER_M25.md.
+
 ### M2 — First actual CUDA -> HIP inference (needs GPU validation)
 
 - Build a CUDA stage worker and a HIP stage worker separately. The

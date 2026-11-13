@@ -82,6 +82,25 @@ if(STRATA_HETERO_HIP_VERIFIER)
   endif()
 endif()
 
+# M2.5: model-loading HIP worker (HIP runtime is separately gated inside main).
+# Build/link does not initialize a device. Host-only standalone builds refuse
+# the native executable unless the parent HIP engine and adapter are enabled.
+option(STRATA_HETERO_BUILD_HIP_WORKER "Build supervised HIP model-loading worker (no automatic execution)" OFF)
+if(STRATA_HETERO_BUILD_HIP_WORKER)
+  if(NOT STRATA_HETERO_HIP_VERIFIER OR NOT TARGET strata_engine OR
+     NOT TARGET strata_heterogeneous_hip_verifier)
+    message(FATAL_ERROR "Native HIP worker requires a separate HIP engine and HIP verifier target")
+  endif()
+  add_executable(strata_heterogeneous_hip_worker src/hip_worker_main.cpp)
+  target_link_libraries(strata_heterogeneous_hip_worker PRIVATE
+    strata_heterogeneous_hip_verifier strata_engine)
+  target_compile_features(strata_heterogeneous_hip_worker PRIVATE cxx_std_17)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_hip_worker PRIVATE
+      -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endif()
+
 # Two independent CPU mock executables. They deliberately do not initialize
 # either GPU runtime, but verify that each worker has a backend-specific image.
 foreach(_mock_backend IN ITEMS cuda hip)
