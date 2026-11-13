@@ -7,6 +7,7 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/layer_taps.hpp"
 #include "strata_heterogeneous/layer_zero_probe.hpp"
+#include "strata_heterogeneous/stage0_phase_probe.hpp"
 
 #include <memory>
 
@@ -58,6 +59,7 @@ private:
     WindowSpec spec_;
     LayerTapRecorder taps_;
     LayerZeroProbeRecorder layer_zero_;
+    Stage0PhaseRecorder stage0_phases_;
     uint64_t request_ = 0, window_ = 0;
     int64_t next_position_ = 0;
     uint32_t keep_ = 0;
