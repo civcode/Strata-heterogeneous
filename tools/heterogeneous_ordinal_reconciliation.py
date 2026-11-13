@@ -107,6 +107,25 @@ def reconcile(inventory: dict[str, Any], probes: list[dict[str, Any]]) -> dict[s
         require(backend not in mappings, f"duplicate identity probe for {backend}")
         mappings[backend] = mapping
     problems: list[str] = []
+    # An identity cross-check must not erase an unrelated passive M2.7 blocker.
+    # The single ordinal-missing marker can be addressed by complete probe
+    # evidence; all other M2.7 blockers survive this stage unchanged.
+    prior = inventory.get("blockers", [])
+    require(type(prior) is list and all(type(x) is str for x in prior),
+            "malformed M2.7 blocker list")
+    for reason in prior:
+        if reason != "unresolved backend-local runtime ordinal mapping":
+            problems.append("M2.7 retained blocker: " + reason)
+    declarations = inventory.get("ordinal_declarations", [])
+    require(type(declarations) is list, "malformed M2.7 ordinal declarations")
+    declared = {}
+    for d in declarations:
+        require(type(d) is dict and d.get("backend") in ("cuda", "hip")
+                and type(d.get("ordinal")) is int, "malformed M2.7 ordinal declaration")
+        key = (d["backend"], d["ordinal"])
+        require(key not in declared, "duplicate M2.7 ordinal declaration")
+        declared[key] = (normalize_bdf(d["declared_bdf"])
+                         if d.get("declared_bdf") is not None else None)
     resolved: list[dict[str, Any]] = []
     seen_bdf = set()
     for stage in stages:
@@ -127,6 +146,9 @@ def reconcile(inventory: dict[str, Any], probes: list[dict[str, Any]]) -> dict[s
                 problems.append(f"{backend}:{ordinal} PCI vendor mismatch at {bdf}")
             if entry.get("bound_driver") != required_driver:
                 problems.append(f"{backend}:{ordinal} bound-driver mismatch at {bdf}")
+        recorded = declared.get((backend, ordinal))
+        if recorded is not None and bdf is not None and recorded != bdf:
+            problems.append(f"{backend}:{ordinal} runtime PCI {bdf} disagrees with M2.7 declaration {recorded}")
         if bdf is not None:
             if bdf in seen_bdf:
                 problems.append(f"PCI {bdf} claimed by multiple runtime stages")
