@@ -825,3 +825,38 @@ download huge model files merely to validate the CPU transport.
   Do not combine STRATA_TAP_FILE with M2.11 --layer-taps.
 - **No M2.11 live GPU tap measurements exist yet.** See exact commands
   and stop conditions: `docs/LAYER_DIVERGENCE_M211.md`.
+
+
+### M2.12 — First-operation isolation of layer-zero arithmetic
+
+- M2.11 real hardware result: layer-zero post-write HC-mean residual
+  differs by relative-L2 0.011669/0.012537 for positions 0/1.
+  M2.10 numerical parity remains FAIL at head-logit KL
+  0.003376/0.039019; STRATA_HC_Q8=0 did not resolve it.
+- Use the *same HIP0 R9700* for native unsplit reference hip:0:0-48
+  and stage 0 of all-HIP split hip:0:0-12,hip:1:12-48;
+  then compare both with original mixed CUDA:0:0-12/HIP0/HIP1.
+- The opt-in core Verifier `set_layer_zero_arithmetic_probe` snapshots
+  layer-zero FP32 native embeddings, first GR HC-mixed activations,
+  raw Q8_1 bytes used by the native GDN QKV MMVQ and projected QKV
+  FP32 values, before the first-layer GDN/FFN/MoE remainder.
+  Single-token windows only; no extra kernel/VRAM cost when disabled.
+- All isolated workers support the fail-closed
+  `STRATA_HETERO_L0_PROBE_PREFIX` diagnostic, set by the host-only
+  `--layer0-probe --capture-prefix ... --run` explicit manual launcher.
+  Unique STL0/v1 files are bounded, checksummed, full input/plan/window
+  identified and emitted before prefix commit; the usual complete-run
+  marker requires successful worker shutdown.
+- `tools/heterogeneous_hip_control.py` creates new all-HIP stage
+  configs without touching originals, preserves canonical model
+  sources and VRAM reserve, and removes obsolete stage-only budget caps.
+  `tools/heterogeneous_layer0_arithmetic.py` refuses incomplete or
+  mismatched sources, parses exact probe values and compares three
+  completed runs to localize the first divergent arithmetic component.
+- 15 CPU-only M2.12 test cases are registered with CTest. Run them
+  locally before live GPUs. **Live native M2.12 correctness is
+  unverified** until Oberon executes the dedicated handoff.
+- No GitHub Actions, GPU reset/reboot/driver unload, or Strata-dev
+  access. Builds <=28 jobs; separate CUDA and HIP builds. Preserve
+  M2.10 KL<=0.001 and all model, finite and prefix-commit invariants.
+  Full handoff: `docs/LAYER0_ARITHMETIC_M212.md`.
