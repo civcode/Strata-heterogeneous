@@ -655,3 +655,32 @@ divergence**, not definitive root cause or a parity PASS.
 No M2.11 GPU run has been performed in this development increment.
 The exact manually invoked Oberon run and boundary-focused triage are
 in [docs/LAYER_DIVERGENCE_M211.md](docs/LAYER_DIVERGENCE_M211.md).
+
+
+### M2.12 — Native layer-zero arithmetic cross-backend control
+
+M2.11 live GPU diagnostics confirmed the first observed HC-mean residual
+difference at layer zero (positions 0/1 relative L2 0.011669/0.012537);
+the CUDA→HIP boundary introduced no comparable new jump. The original
+M2.10 full-logit comparison still **fails** (KL 0.003376/0.039019
+against <=0.001), even though all native runs commit and agree on greedy
+tokens. STRATA_HC_Q8=0 did not fix that failure.
+
+The **manual opt-in** `strata_heterogeneous_live_smoke --layer0-probe`
+captures the actual layer-zero token embedding, HC-mixed projection
+activation, raw Q8_1 input to GDN attn_qkv and native GDN QKV output
+from each isolated GPU worker's core Verifier. Each completed T=1
+window writes a bounded checksummed STL0/v1 record at
+`PREFIX.stage0.wN.stl0` along with its ordinary STFR/JSON completion
+capture. Without this option, there is no new GPU allocation or copy.
+
+The CPU-only `tools/heterogeneous_hip_control.py` prepares an
+all-HIP split control (hip:0:0-12,hip:1:12-48) from the trusted existing
+stage configs. `tools/heterogeneous_layer0_arithmetic.py`
+compares the three fully committed runs — unsplit HIP, split HIP and
+CUDA→HIP→HIP — and identifies the first nonidentical arithmetic
+component per position with numeric norms and Q8 byte-difference
+counts. It does not change kernel precision or numerical thresholds.
+
+**M2.12 real hardware diagnosis has not yet been executed.**
+See [docs/LAYER0_ARITHMETIC_M212.md](docs/LAYER0_ARITHMETIC_M212.md).
