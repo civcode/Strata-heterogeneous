@@ -630,3 +630,28 @@ registered with CTest or Actions.
 (socket, shared memory, and two sequential windows). **M2.10 numerical
 parity has not yet been run or established.** See
 [docs/NUMERICAL_PARITY_M210.md](docs/NUMERICAL_PARITY_M210.md).
+
+
+### M2.11 — Localize the failed M2.10 numerical comparison
+
+The M2.10 full-logit comparison ran successfully on Oberon but **failed
+numerical parity**: at positions 0/1 with input token 1 the unsplit and
+three-GPU runs both predicted 198/271, while KL(ref||het) was
+0.003376/0.039019 (>0.001), max absolute FP32-logit differences were
+0.471658/1.206786 and RMSE was 0.079767/0.223623. Rerunning
+with `STRATA_HC_Q8=0` still failed (KL 0.005003/0.037718).
+Do not relax the threshold; hardware inference and commits remain proven.
+
+`strata_heterogeneous_live_smoke --layer-taps --capture-prefix ... --run`
+now activates the existing native post-layer tap kernel in each isolated
+worker, recording bounded STLT/v1 packet(s) for layers 0..46 along with
+the original committed STFR output. The CPU-only
+`tools/heterogeneous_layer_divergence.py` compares those layer residual
+statistics from the full HIP reference and the mixed CUDA/HIP chain,
+checking model/window/position identity, checksum, finite values and
+completed commits. This identifies **first observed tapped-layer
+divergence**, not definitive root cause or a parity PASS.
+
+No M2.11 GPU run has been performed in this development increment.
+The exact manually invoked Oberon run and boundary-focused triage are
+in [docs/LAYER_DIVERGENCE_M211.md](docs/LAYER_DIVERGENCE_M211.md).
