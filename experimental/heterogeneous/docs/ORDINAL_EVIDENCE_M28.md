@@ -86,6 +86,27 @@ environment. A stale snapshot can be misleading.
    one backend/stage before cross-vendor handoff and parity experiments.
    Do not run GitHub Actions.
 
+## Partial source-backed session-state floor
+
+Reviewing src/core/session.cpp and the compiled ModelGeometry defaults also
+gives a conservative portion of each stage's session memory: each owned GDN
+layer requires 128 * 48 * 128 floating-point recurrence elements plus
+10,240 * 3 floating-point convolution history elements. At 4 bytes per
+element this is exactly **3,268,608 bytes (3.1171875 MiB) per GDN layer**.
+
+| Stage | Owned GDN layers | Per-layer GDN state alone |
+| --- | ---: | ---: |
+| CUDA 0, layers 0–11 | 9 | 28.05 MiB |
+| HIP 0, layers 12–29 | 14 | 43.64 MiB |
+| HIP 1, layers 30–47 | 13 | 40.52 MiB |
+
+These amounts are an identified **subset** of the unpriced session arena,
+not the full core::session_bytes result and not independently allocated
+on top of a future complete session estimate. One shared GDN scratch area,
+QSA KV/indexer states and scratch, MoE/block scratch, PLE history, native
+dense projections, verifier allocations and runtime overhead are still
+unaccounted for in M2.7. No free-VRAM or fit verdict follows from this floor.
+
 ## CPU-only tests
 
     python3 -m unittest discover -s tools -p 'test_heterogeneous_ordinal_reconciliation.py' -v
