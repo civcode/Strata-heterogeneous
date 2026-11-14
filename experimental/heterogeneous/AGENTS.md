@@ -951,10 +951,10 @@ download huge model files merely to validate the CPU transport.
   differences, per-expert slots and GDN substeps. Never infer
   an expert arithmetic bug from comparing slots with different
   selected expert IDs.
-- 19 synthetic M2.15 fixtures are registered in host CTest.
-  Existing 64 M2.10-M2.14 tests passed locally again, but the
-  new M2.15 tests and native CUDA/HIP compilation must still
-  be validated on Oberon. M2.15 GPU results are pending.
+- The 19 M2.15 fixtures passed on Oberon along with the other
+  64 tests (**83/83**); host CTest **37/37**, separate native
+  CUDA/HIP builds and real two-window M2.15 GPU runs passed.
+  Numerical parity remains FAIL and M2.16 remains pending.
 - No GitHub Actions, GPU reset/reboot/driver unload, Strata-dev
   access or new kernel precision changes. Local build <=28 jobs.
   Exact handoff docs/STAGE_BRANCH_LOCALIZATION_M215.md.
