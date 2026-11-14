@@ -23,7 +23,7 @@ MAGIC = 0x304D5453  # STM0
 REF_PLAN = branch.REF_PLAN
 HET_PLAN = branch.HET_PLAN
 FIELDS = ("shared_input", "gate_raw", "up_raw", "down_unscaled",
-          "gate_scale", "shared_final", "layer6_qkv",
+          "gate_logit", "shared_final", "layer6_qkv",
           "layer6_conv_history", "layer6_conv_output")
 Q8_FIELDS = ("shared_input_q8", "swiglu_q8")
 
@@ -153,7 +153,7 @@ def compare(reference: list[tuple[dict, dict]],
             measurements[key] = {"mismatched_bytes": sum(x != y for x, y in zip(a, b)),
                                  "first_different_byte": first, "total_bytes": len(a)}
         ordered = ("shared_input", "shared_input_q8", "gate_raw", "up_raw",
-                   "swiglu_q8", "down_unscaled", "gate_scale", "shared_final",
+                   "swiglu_q8", "down_unscaled", "gate_logit", "shared_final",
                    "layer6_qkv", "layer6_conv_history", "layer6_conv_output")
         def mismatched(key: str) -> bool:
             return (measurements[key]["mismatched_bytes"] > 0 if key in Q8_FIELDS
