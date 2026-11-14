@@ -147,6 +147,30 @@ int main() {
             if (accept) REQUIRE(driver.begin_window({2,{3}}, 7, 2, error));
             driver.shutdown();
         }
+        // Mapped egress exercises the native publisher contract with a CPU double.
+        const auto mixed = parse_plan("cuda:0:0-2,hip:0:2-3,hip:1:3-4",4,{2,3},123);
+        {
+            auto b = bindings(); b.zero_session = [](auto&, const auto&, void*) {};
+            CudaVerifierDriver driver(b,true); DeviceStageExecutor executor(driver);
+            REQUIRE(executor.prepare(mixed,0,error));
+            REQUIRE(fv::output_flag && fake_cuda::allocations==2);
+            REQUIRE(executor.reset_request(1,error));
+            REQUIRE(executor.begin_window({0,{1,2}},1,1,error));
+            Frame in; in.stage_index=0; in.request_id=1; in.window_id=1; in.rows=2;
+            in.plan_fingerprint=mixed.fingerprint(); in.geometry=mixed.geometry; in.payload.assign(22,0);
+            const int copies=fake_cuda::copies;
+            Frame out;
+            REQUIRE(executor.run_window(in,out,error) && out.payload==std::vector<float>(22,42));
+            REQUIRE(fake_cuda::copies==copies);
+            REQUIRE(executor.commit_prefix(1,1,1,error));
+            REQUIRE(executor.begin_window({1,{2,3}},1,2,error));
+            in.window_id=2;
+            fv::omit_publish=true;
+            REQUIRE(!executor.run_window(in,out,error) && executor.poisoned());
+            fv::omit_publish=false;
+            executor.shutdown();
+            REQUIRE(fake_cuda::allocations==0);
+        }
         geometry.hc = 1000000000; geometry.n_embd = 1000000000;
         {
             auto huge = plan; huge.geometry = {1000000000,1000000000};

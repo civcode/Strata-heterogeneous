@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/cuda_verifier.hpp"
+#include "strata_heterogeneous/cuda_mapped_egress.hpp"
 #include "strata_heterogeneous/boundary_capture.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #if defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
@@ -11,6 +12,9 @@
 #include <thread>
 
 namespace strata::heterogeneous {
+CudaVerifierDriver::CudaVerifierDriver(CudaVerifierBindings bindings, bool mapped_egress)
+    : bindings_(bindings), mapped_egress_(mapped_egress) {}
+CudaVerifierDriver::~CudaVerifierDriver() { shutdown(); }
 bool CudaVerifierDriver::check(cudaError_t code, std::string& error) {
     if (code == cudaSuccess) return true;
     error = std::string("CUDA verifier: ") + cudaGetErrorString(code);
@@ -55,6 +59,13 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
         error = "CUDA verifier requires matching loaded non-final stage, carved session, pool and limits";
         return false;
     }
+    if (mapped_egress_ && (index != 0 || stage.first_layer != 0 ||
+                           plan.stages.size() != 3 ||
+                           plan.stages[1].backend != Backend::hip || plan.stages[2].backend != Backend::hip ||
+                           std::getenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX"))) {
+        error = "mapped CUDA egress requires the three-stage entry and no device readback diagnostic";
+        return false;
+    }
     const uint64_t row_floats = plan.geometry.floats_per_row();
     if (row_floats > max_payload_bytes / (sizeof(float) * bindings_.max_t)) {
         error = "CUDA verifier handoff exceeds protocol cap"; return false;
@@ -66,18 +77,26 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     // The layer-zero stage embeds tokens and never reads handoff_in.
     // Reserve an activation input only for later stages. Keep the output
     // and pinned host staging allocations for every non-final stage.
-    if (!check(cudaSetDevice(device_), error) ||
-        (stage.first_layer != 0 &&
-         !check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity), error)) ||
-        !check(cudaMalloc(reinterpret_cast<void**>(&output_), capacity), error) ||
-        !check(cudaMallocHost(&staging_, capacity), error) ||
-        !check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error)) return false;
+    if (!check(cudaSetDevice(device_), error)) return false;
+    if (mapped_egress_) {
+        mapped_output_ = std::make_unique<CudaMappedEgress>();
+        if (!mapped_output_->allocate(capacity)) {
+            error = "CUDA mapped egress allocation/alias failed"; return false;
+        }
+        output_ = mapped_output_->device_payload();
+    } else if ((stage.first_layer != 0 &&
+                !check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity), error)) ||
+               !check(cudaMalloc(reinterpret_cast<void**>(&output_), capacity), error) ||
+               !check(cudaMallocHost(&staging_, capacity), error)) return false;
+    if (!check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error)) return false;
     verifier_ = std::make_unique<core::Verifier>();
     verifier_->set_stage(stage.first_layer, stage.end_layer,
                          stage.first_layer ? input_ : nullptr, output_);
     verifier_->set_handoff_rows(bindings_.max_t);
     verifier_->set_next(nullptr, nullptr); // no in-process device chain
-    verifier_->set_handoff_flags(nullptr, nullptr, nullptr, nullptr);
+    verifier_->set_handoff_flags(nullptr, nullptr,
+        mapped_output_ ? mapped_output_->host_flag() : nullptr,
+        mapped_output_ ? mapped_output_->device_flag() : nullptr);
     // Prevent T=1 from committing GDN/indexer state inside run(). Also forces
     // pool publication, so an actual live pool is mandatory even if resident.
     verifier_->set_always_publish(true);
@@ -179,6 +198,7 @@ bool CudaVerifierDriver::enqueue_execute(const Frame& frame, std::string& error)
         error = "CUDA verifier execution metadata mismatch"; return false;
     }
     state_ = State::executing;
+    if (mapped_egress_ && !mapped_output_->reset()) { error = "CUDA mapped egress reset refused"; return false; }
     int32_t ignored[strata::kernels::kVerifyMaxT] = {};
     return verifier_->run(static_cast<int>(spec_.token_ids.size()), spec_.token_ids.data(),
                           spec_.pos0, bindings_.pool, bindings_.pool_user, ignored, error) && record(error);
@@ -201,11 +221,24 @@ bool CudaVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::stri
     if (!host || bytes != bytes_) { error = "CUDA verifier download shape mismatch"; return false; }
     download_host_ = host;
     state_ = State::downloading;
+    // Native run + wait_execute already drained the publisher. No second DMA
+    // or completion event is needed in this explicit local mapped mode.
+    if (mapped_egress_) return true;
     return check(cudaMemcpyAsync(staging_, output_, bytes, cudaMemcpyDeviceToHost, verifier_->stream()), error) && record(error);
 }
 bool CudaVerifierDriver::wait_download(std::string& error) {
     PerformanceSpan perf("worker", "wait_download", index_, request_, window_, spec_.token_ids.size());
-    if (!expect(State::downloading, error) || !wait(error)) return false;
+    if (!expect(State::downloading, error)) return false;
+    if (mapped_egress_) {
+        PerformanceSpan copy("worker", "mapped_egress_copy", index_, request_, window_, spec_.token_ids.size());
+        if (!mapped_output_->copy_completed(download_host_, bytes_)) {
+            error = "CUDA mapped egress not published for this completed window"; return false;
+        }
+        download_host_ = nullptr;
+        state_ = State::downloaded;
+        return true;
+    }
+    if (!wait(error)) return false;
     if (!capture_device_handoff(output_, staging_, bytes_, index_, request_,
                                 window_, "out", verifier_->stream(),
                                 [this](std::string& e) { return record(e) && wait(e); },
@@ -257,7 +290,10 @@ void CudaVerifierDriver::shutdown() noexcept {
     verifier_.reset(); // graphs/streams must die BEFORE their captured pointers
     if (fence_) { cudaEventDestroy(fence_); fence_ = nullptr; }
     if (input_) { cudaFree(input_); input_ = nullptr; }
-    if (output_) { cudaFree(output_); output_ = nullptr; }
+    if (output_ && !mapped_egress_) cudaFree(output_);
+    output_ = nullptr;
+    if (mapped_output_ && !mapped_output_->release()) std::_Exit(70);
+    mapped_output_.reset();
     if (staging_) { cudaFreeHost(staging_); staging_ = nullptr; }
     device_ = -1;
     state_ = State::dead;

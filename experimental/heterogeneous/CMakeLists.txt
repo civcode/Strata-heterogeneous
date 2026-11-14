@@ -442,11 +442,16 @@ if(STRATA_HETERO_HOST_TESTS)
   # tests validate contract/lifecycle only, never CUDA or model numerics.
   add_executable(strata_heterogeneous_cuda_verifier_contract_tests
     tests/cuda_verifier_tests.cpp src/cuda_verifier.cpp)
-  target_include_directories(strata_heterogeneous_cuda_verifier_contract_tests BEFORE PRIVATE tests/cuda_stubs)
+  target_include_directories(strata_heterogeneous_cuda_verifier_contract_tests BEFORE PRIVATE tests/cuda_stubs ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_cuda_verifier_contract_tests PRIVATE strata_heterogeneous_host)
   target_compile_options(strata_heterogeneous_cuda_verifier_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME strata_heterogeneous_cuda_verifier_contract_tests COMMAND strata_heterogeneous_cuda_verifier_contract_tests)
   set_tests_properties(strata_heterogeneous_cuda_verifier_contract_tests PROPERTIES TIMEOUT 20)
+  add_executable(strata_heterogeneous_cuda_mapped_egress_tests tests/cuda_mapped_egress_tests.cpp)
+  target_include_directories(strata_heterogeneous_cuda_mapped_egress_tests BEFORE PRIVATE tests/cuda_stubs ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+  target_link_libraries(strata_heterogeneous_cuda_mapped_egress_tests PRIVATE strata_heterogeneous_host)
+  target_compile_options(strata_heterogeneous_cuda_mapped_egress_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME strata_heterogeneous_cuda_mapped_egress_tests COMMAND strata_heterogeneous_cuda_mapped_egress_tests)
   # Compile the actual final CUDA adapter against CPU CUDA/Verifier doubles.
   # The host/mock build remains runtime-free and no GPU is initialized.
   add_executable(strata_heterogeneous_cuda_final_verifier_contract_tests

@@ -33,6 +33,8 @@ inline int runs = 0, commits = 0, aborted = 0, keep = 0;
 inline bool publish = false, initialized = false, fail_run = false, fail_commit = false;
 inline const float* input = nullptr;
 inline float* output = nullptr;
+inline uint32_t* output_flag = nullptr;
+inline bool omit_publish = false;
 inline int rows = 0;
 inline int64_t begin = 0, end = 0, pos = 0;
 inline std::vector<int32_t> tokens;
@@ -68,7 +70,7 @@ public:
     }
     void set_handoff_rows(int n) { fake_verify::rows = n; }
     void set_next(Verifier*, void*) {}
-    void set_handoff_flags(uint32_t*, uint32_t*, uint32_t*, uint32_t*) {}
+    void set_handoff_flags(uint32_t*, uint32_t*, uint32_t* host, uint32_t*) { fake_verify::output_flag = host; }
     void set_always_publish(bool b) { fake_verify::publish = b; }
     void set_head_sampling(bool) {}
     bool init(const WeightTable&, const ModelGeometry&, SessionState&, const VerifyHits&, const void*, int, std::string&) {
@@ -80,6 +82,8 @@ public:
         pool(user, nullptr, nullptr, n, 0, nullptr, fake_verify::begin);
         for (int i = 0; i < n * 11; ++i)
             fake_verify::output[i] = fake_verify::input ? fake_verify::input[i] + 1 : 42;
+        if (fake_verify::output_flag && !fake_verify::omit_publish && !fake_verify::fail_run)
+            *fake_verify::output_flag = 1;
         return !fake_verify::fail_run;
     }
     bool commit(int keep, std::string&) { ++fake_verify::commits; fake_verify::keep = keep; return !fake_verify::fail_commit; }

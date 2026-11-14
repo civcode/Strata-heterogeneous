@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
@@ -59,6 +60,8 @@ struct Options {
     bool group_hip = false;
     bool hip_split_overlap = false;
     bool receiver_arm = false;
+    bool cuda_mapped_egress = false;
+    uint32_t warmup_windows = 0;
     bool layer_taps = false;
     bool layer_zero_probe = false;
     bool stage0_phases = false;
@@ -99,7 +102,8 @@ void usage() {
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
-        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--run]\n"
+        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--run]\n"
+        "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
         "  --native-prefill-chunk N (grouped HIP resident native prefill, 1..2048)\n"
@@ -174,6 +178,12 @@ Options parse(int argc, char** argv) {
         else if (key == "--group-native-hip") o.group_hip = true;
         else if (key == "--hip-split-overlap") o.hip_split_overlap = true;
         else if (key == "--receiver-arm") o.receiver_arm = true;
+        else if (key == "--cuda-mapped-egress") o.cuda_mapped_egress = true;
+        else if (key == "--warmup-windows") {
+            o.warmup_windows = u32(required_value(i,argc,argv,"--warmup-windows"),"warmup-windows");
+            if (!o.warmup_windows) throw std::invalid_argument("warmup-windows must be positive");
+            smoke_shape = true;
+        }
         else if (key == "--prefill-state-capture") o.prefill_state_capture = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
@@ -265,14 +275,14 @@ Options parse(int argc, char** argv) {
         } else throw std::invalid_argument("unknown option: " + key);
     }
     if (o.plan.empty() || !o.fingerprint || o.rows == 0 || o.rows > 8 ||
-        o.windows == 0 || o.windows > (o.placement_capture ? 128u : 8u) || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+        o.windows == 0 || o.windows > ((o.placement_capture || o.warmup_windows) ? 128u : 8u) || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
     if (o.placement_capture && (o.generate || o.describe_source || o.resident || o.rows != 1 ||
         o.tokens.empty() || o.capture_prefix.empty() || o.layer_taps || o.layer_zero_probe ||
         o.stage0_phases || o.branch_probe || o.micro_probe || o.boundary_capture))
         throw std::invalid_argument("placement capture requires explicit one-row tokens, full STFR and no other probes");
-    if (!o.placement_capture && !o.generate && o.tokens.size() > 64)
+    if (!o.placement_capture && !o.warmup_windows && !o.generate && o.tokens.size() > 64)
         throw std::invalid_argument("ordinary smoke token sequence exceeds 64");
     if (!o.keep) o.keep = o.rows;
     if (o.keep > o.rows) throw std::invalid_argument("--keep cannot exceed --rows");
@@ -298,6 +308,14 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.cuda_mapped_egress && (!o.receiver_arm || o.native_prefill_chunk || o.boundary_capture ||
+        o.prefill_parity_at || o.describe_source))
+        throw std::invalid_argument("mapped CUDA egress requires receiver arm, serial prefill and no device boundary capture");
+    if (o.warmup_windows && (!o.group_hip || o.generate || o.describe_source || o.capture_prefix.size() ||
+        o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe || o.micro_probe ||
+        o.boundary_capture || o.placement_capture || o.warmup_windows >= o.windows ||
+        uint64_t(o.rows)*o.windows > 128 || o.tokens.size() != uint64_t(o.rows)*o.windows))
+        throw std::invalid_argument("timed smoke requires grouped fixed tokens, 1..127 warm windows and <=128 evaluated tokens, no probes/captures");
     if (o.receiver_arm && (!o.hip_split_overlap || !o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
@@ -619,12 +637,17 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     }
     if (::setenv("STRATA_HETERO_HIP_SPLIT_OVERLAP", o.hip_split_overlap ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit HIP split overlap mode");
+    if (::setenv("STRATA_HETERO_CUDA_MAPPED_EGRESS", o.cuda_mapped_egress ? "1" : "0", 1) != 0)
+        throw std::runtime_error("cannot configure explicit mapped CUDA egress mode");
     if (::setenv("STRATA_HETERO_RECEIVER_ARM", o.receiver_arm ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit receiver arm mode");
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
     (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
+    if (o.warmup_windows && (hetero::performance_trace() || hetero::performance_flag("STRATA_HETERO_OVERLAP_TRACE") ||
+        hetero::performance_flag("STRATA_HETERO_WINDOW_TRACE") || std::getenv("STRATA_VERIFY_TRACE")))
+        throw std::invalid_argument("timed smoke requires tracing disabled (unset STRATA_VERIFY_TRACE)");
     if (compact && (!o.generate || o.prefill_parity_at || o.receiver_arm))
         throw std::invalid_argument("compact head results are not supported in diagnostic modes");
     // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
@@ -637,7 +660,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
-              << " hip_split_overlap=" << o.hip_split_overlap << " receiver_arm=" << o.receiver_arm << '\n';
+              << " hip_split_overlap=" << o.hip_split_overlap << " receiver_arm=" << o.receiver_arm
+              << " cuda_mapped_egress=" << o.cuda_mapped_egress << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
     auto initial_frame = [&](const hetero::WindowSpec& spec, uint64_t id) {
@@ -848,6 +872,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         out << "]}\n";
         std::cout << out.str() << std::flush;
     };
+    std::vector<int64_t> measured_ns;
     if (o.resident) {
         // Negotiate actual reset support before announcing readiness.
         session.begin_request(request_id);
@@ -888,7 +913,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             if (o.tokens.empty()) spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
             else spec.token_ids.assign(o.tokens.begin() + static_cast<size_t>(n) * o.rows,
                                        o.tokens.begin() + static_cast<size_t>(n + 1) * o.rows);
+            const auto start = std::chrono::steady_clock::now();
             const auto committed = run_window(spec, uint64_t(n) + 1, o.keep);
+            if (o.warmup_windows && n >= o.warmup_windows)
+                measured_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - start).count());
             if (!o.capture_prefix.empty()) capture_window(o, plan, spec, committed);
             std::cout << "LIVE PASS window=" << n + 1 << " pos0=" << spec.pos0
                       << " committed=" << o.keep << " predictions=";
@@ -918,6 +947,31 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
         complete.flush();
         if (!complete) throw std::runtime_error("parity completion marker write failed");
+    }
+    if (o.warmup_windows) {
+        // Report only after all commits and successful worker shutdown.
+        // Kept teacher-forced rows are NOT accepted generated output tokens.
+        std::cout << "HETERO_FIXED_WINDOW_TIMING {\"schema\":\"strata-fixed-window-timing/v1\","
+                  << "\"plan_fingerprint\":" << plan.fingerprint()
+                  << ",\"model_fingerprint\":" << plan.model_fingerprint
+                  << ",\"windows\":" << o.windows
+                  << ",\"warmup_windows\":" << o.warmup_windows
+                  << ",\"rows\":" << o.rows << ",\"keep\":" << o.keep
+                  << ",\"shared\":" << (o.shared ? "true" : "false")
+                  << ",\"hip_overlap\":" << (o.hip_split_overlap ? "true" : "false")
+                  << ",\"receiver_arm\":" << (o.receiver_arm ? "true" : "false")
+                  << ",\"cuda_mapped_egress\":" << (o.cuda_mapped_egress ? "true" : "false")
+                  << ",\"token_ids\":[";
+        for (size_t i=0;i<o.tokens.size();++i) {
+            if (i) std::cout << ',';
+            std::cout << o.tokens[i];
+        }
+        std::cout << "],\"elapsed_ns\":[";
+        for (size_t i=0;i<measured_ns.size();++i) {
+            if (i) std::cout << ',';
+            std::cout << measured_ns[i];
+        }
+        std::cout << "]}\n";
     }
     std::cout << "LIVE PASS: all " << o.windows
               << " window(s) committed on actual CUDA/HIP worker chain\n";

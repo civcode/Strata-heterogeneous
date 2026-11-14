@@ -101,6 +101,10 @@ int main(int argc,char** argv) {
             // There is no second environment-variable approval handshake.
             const int startup_wait_ms = hetero::worker_startup_wait_ms();
             const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
+            const bool mapped_egress = hetero::performance_flag("STRATA_HETERO_CUDA_MAPPED_EGRESS");
+            if (mapped_egress && (index != 0 || index+1==plan.stages.size() || compact ||
+                                 !hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM")))
+                throw std::runtime_error("mapped CUDA egress requires entry stage, receiver arm and full logits");
             (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
             (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
             if(compact && index+1==plan.stages.size() && !strata::core::Verifier::nan_guard_on())
@@ -153,7 +157,8 @@ int main(int argc,char** argv) {
                 hetero::PrefillStateCapture state_capture;
                 if (!state_capture.configure(index, bindings.session, bindings.geometry, error))
                     throw std::runtime_error("prefix state diagnostic: " + error);
-                hetero::CudaVerifierDriver driver(bindings);
+                hetero::CudaVerifierDriver driver(bindings, mapped_egress);
+                std::cerr << "HETERO_CUDA_MAPPED_EGRESS enabled=" << mapped_egress << '\n';
                 if (state_capture.active())
                     driver.set_prefix_observer([&](uint64_t request, int64_t position, std::string& e) {
                         return state_capture.observe(request, position, bindings.session, bindings.geometry, e);
@@ -163,7 +168,7 @@ int main(int argc,char** argv) {
                     static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
                     &window_limits, startup_wait_ms,
                     [&](const hetero::Frame& cmd,int fd,std::string& e) {
-                        if (index!=0) { e="native prefill requires CUDA entry stage"; return false; }
+                        if (mapped_egress || index!=0) { e="native prefill incompatible with mapped egress or nonentry stage"; return false; }
                         return hetero::run_native_prefill_domain(cmd,fd,
                             {{bindings.weights,bindings.geometry,bindings.session,pf_resources,
                               config.free_reserve_bytes,config.arena_budget_bytes}},

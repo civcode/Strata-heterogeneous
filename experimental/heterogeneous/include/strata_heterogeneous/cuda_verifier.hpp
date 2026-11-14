@@ -13,6 +13,7 @@
 #include <utility>
 
 namespace strata::heterogeneous {
+class CudaMappedEgress;
 
 // Already loaded, exclusively owned by this worker. All referenced objects,
 // residency tables, expert-pool context and device allocations must outlive
@@ -38,8 +39,8 @@ struct CudaVerifierBindings {
 // Zero-prefix commit is unsupported and fails closed, never acknowledged.
 class CudaVerifierDriver final : public DeviceDriver {
 public:
-    explicit CudaVerifierDriver(CudaVerifierBindings bindings) : bindings_(bindings) {}
-    ~CudaVerifierDriver() override { shutdown(); }
+    explicit CudaVerifierDriver(CudaVerifierBindings bindings, bool mapped_egress = false);
+    ~CudaVerifierDriver() override;
     CudaVerifierDriver(const CudaVerifierDriver&) = delete;
     CudaVerifierDriver& operator=(const CudaVerifierDriver&) = delete;
     bool prepare(const Plan&, size_t, std::string&) override;
@@ -65,6 +66,8 @@ private:
     enum class State { fresh, ready, begun, uploading, uploaded, executing,
                        executed, downloading, downloaded, committing, dead };
     CudaVerifierBindings bindings_;
+    bool mapped_egress_ = false;
+    std::unique_ptr<CudaMappedEgress> mapped_output_;
     std::unique_ptr<core::Verifier> verifier_;
     Plan plan_;
     size_t index_ = 0;
