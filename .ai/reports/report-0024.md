@@ -1,6 +1,21 @@
-# Report 0024 — staged multi-milestone preparation (Oberon pending)
+# Report 0024 — variable-prefix qualification and remaining blockers
 
-Base GPU-qualified commit 6c0ccaef0a95cef84f958a11ec0d7e0a58f44ddb. Previous prepared but unpublished 0023 commit ecf76ea3d460dbc09a2b2c93a07267bd77c5f39b is the parent of this follow-up. **No new native GPU results.**
+## Oberon qualification at d8b1dc111baafda7daa0c861acbf22f8cf36f52c
+
+**PASS, bounded two-prompt diagnostic matrix only**, after report 0023 passed. Six-token prompt `[248045,846,198,2523,513,32767]`: one independent untraced and one independently traced set on each transport, all four fresh checkpoints per set, **4/4 sets and 16/16 checkpoints PASS**. Actual accepted-draft pattern `[0,1,0]`, with 1 accepted and 11 rejected candidates per run; checkpoint prefix lengths 6, 7, 9, 10. Both transports and trace modes agreed. Accepted target logits and proposals, including final unsubmitted offer, were exact; traced committed R/K/V histories, older K/V and all 22 front fields were exact. Trace-free state was not measured.
+
+Raw-evidence `heterogeneous_mtp_qualification.py --manifest /home/chris/tmp/strata-heterogeneous/m7-0024/matrix.json` **PASS**: 12 sets across the two prompts, all evaluated rows including discarded rows exact within each prompt, ordered offers and source/transport continuity verified. Each transport/trace stratum covered two natural patterns `[1,0,0]` and `[0,1,0]`, acceptance and rejection. Trace-free strata each covered 4 accepted/44 rejected; traced strata each 2 accepted/22 rejected. See `matrix-gate.json`, exact process command JSON, raw logs, STFR, trace bytes, `*-gate.json` and `run-variable.py` under `/home/chris/tmp/strata-heterogeneous/m7-0024/`; baseline evidence is in `m7-0023/`. All 20 variable-case processes completed and produced three full-resident/zero-host-miss records each. No settings, inference arithmetic or hardware changes, forced predictions, Actions or performance campaign. Logs are manually paired, not cryptographic provenance; bounded observed state is not physical rollback or production qualification.
+
+## Remaining milestones 0025–0028
+
+- **0025 native generation:** diagnostic gates pass, but exact target checkpoint provenance is unverified. Audit vanilla `MtpDrafter`, `pipeline_window`, terminal probe/cursor, `FinalPipelineSession` and target-authoritative positive prefix ACK. A separate reviewed nonresident opt-in must reuse native scheduling and stop/length/commit/sampling policy, then establish exact natural output/target parity, catch-up/state/next-proposal parity and normal no-MTP regression. No teacher-forced generation claim or general enablement.
+- **0026 resident/rollback:** blocked on native generation and a supported state-owner/reset contract. Reuse actual vanilla snapshot/restore or native accepted-prefix handling; test fresh/resident A/B/A, committed-boundary cancellation, state isolation, request identity, stop/length, all-domain ACK and teardown. CPU resident tests do not qualify native MTP or physical suffix erasure.
+- **0027 native bulk prefill:** remains independently failing and disabled. Read-only historical cut correlation at `m7-0024/prefill-localization.json` returned FAIL as expected: serial repeat and bridge exact, captured CUDA state differs at cut 1, native logit gate fails at cut 2. Inputs are `m7-0013/captures/A02-p1-c1` and `A02-p2-c1`. Earliest tested cut is not root cause; distinguish initialization, source residual, readiness/adoption and CUDA-local native prefill versus verifier before alleging cross-runtime corruption. No new GPU campaign.
+- **0028 consolidation:** wait for separately implemented and qualified generation, resident/reset and bulk; then run focused host/native regressions and both transports, retaining immutable raw evidence, explicit flags and limitations. No throughput claim or premature removal of diagnostic gates.
+
+## Historical preparation record
+
+At preparation time, base GPU-qualified commit was 6c0ccaef0a95cef84f958a11ec0d7e0a58f44ddb, with 0023 commit ecf76ea3d460dbc09a2b2c93a07267bd77c5f39b as parent; no new GPU results had yet been obtained. The table below records that historical status.
 
 | Iteration | Preparation | Hardware status |
 | --- | --- | --- |
