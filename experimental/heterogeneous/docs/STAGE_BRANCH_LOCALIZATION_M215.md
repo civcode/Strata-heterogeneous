@@ -112,7 +112,7 @@ HIP_WORKER="$PWD/build-hetero-smoke-hip/experimental/heterogeneous/strata_hetero
 
 common=(--layers 48 --hc 4 --n-embd 2560 --fingerprint 2026111301
         --rows 1 --windows 2 --tokens 1,1 --timeout-ms 120000
-        --branch-probe --stage0-phases --layer-taps)
+        --branch-probe --stage0-phases --layer-taps --layer0-probe)
 ref=(--plan hip:0:0-48 --hip-worker "$HIP_WORKER"
      --config "$PWD/build-q2-stage-configs/hip-reference-full-m210.cfg")
 het=(--plan cuda:0:0-12,hip:0:12-30,hip:1:30-48
