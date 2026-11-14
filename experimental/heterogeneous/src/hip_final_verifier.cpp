@@ -252,6 +252,13 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
                             predictions.data(), error) ||
             !fence(error) || !wait_fence(error)) return false;
     }
+    if (options_.native_split_overlap && !chain_stages_.empty() &&
+        performance_flag("STRATA_HETERO_OVERLAP_TRACE")) {
+        std::fprintf(stderr, "HETERO_HIP_OVERLAP_TRACE request=%llu window=%llu handoff_flag=%u\n",
+                     static_cast<unsigned long long>(request_), static_cast<unsigned long long>(window_),
+                     chain_.trace_handoff_flag());
+        chain_.last().trace_dump(stderr);
+    }
     if (chain_stages_.empty()) {
         if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
         if (!layer_zero_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;

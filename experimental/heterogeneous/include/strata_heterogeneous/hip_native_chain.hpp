@@ -141,6 +141,10 @@ public:
     core::Verifier& first() { return at(0); }
     core::Verifier& last() { return at(nodes_.empty() ? 0 : nodes_.size() - 1); }
     bool ready() const noexcept { return ready_; }
+    uint32_t trace_handoff_flag() const noexcept {
+        return hands_.empty() || !hands_[0].flag_host ? 0u :
+            *reinterpret_cast<volatile const uint32_t*>(hands_[0].flag_host);
+    }
     // On a failed window, release every native wait before freeing anything.
     void abort(int timeout_ms) noexcept {
         for (const auto& n : nodes_)

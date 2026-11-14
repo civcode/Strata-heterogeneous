@@ -60,6 +60,7 @@ class Verifier {
     int device_=0;
     int64_t begin_=0;
 public:
+    void trace_dump(std::FILE*) const {}
     static constexpr int kStage0ProbeLayers = 12;
     static constexpr int kStage0ProbePhases = 4;
     void set_stage_micro_probe(bool) {}
