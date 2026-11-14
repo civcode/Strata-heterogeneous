@@ -120,3 +120,32 @@ Prepare the local `.venv/` using the pinned runtime requirements above before ex
 ## Next: existing server, not a new server
 
 The current stage worker admission is deliberately fresh-session/single-request, and the coordinator launches and reaps workers per CLI invocation. A server adapter that reloads the full model per HTTP request, or pretends an existing worker can safely accept another request, would be an unsuitable substitute for the existing resident Strata server. After Oberon generation succeeds, identify the smallest reusable model-versus-session lifetime separation using existing Strata session initialization/reset, explicit multi-stage lifecycle acknowledgments and safe cancellation/poisoned-session recovery. Then integrate with the existing server `Engine.generate(ids, max_new, sampling, cancel)` interface and normal readiness/ownership controls; do not create a parallel HTTP service. Sampling beyond the existing greedy head and concurrent/multi-turn requests need their own explicit qualification.
+
+### M3.5 implementation roadmap
+
+M3.1–M3.4 are bounded hardware PASS as reported above. Work in this order;
+reuse the successful one-shot CLI for regression and extract only what is
+required for the existing resident server.
+
+| Step | Implementation | Acceptance gate |
+| --- | --- | --- |
+| M3.5a — Lifetime audit | Separate loaded native weights/expert resources from request-local verifier/session state; identify existing reset/initialization and server engine lifecycle APIs. | Document reset coverage, ownership and any actual gaps before adding code. |
+| M3.5b — Resident workers | Retain the same independently loaded CUDA/HIP workers; add only required request begin/end/reset coordination with matching acknowledgments across stages. | Two different requests and a repeated first request on the same workers, with no model reload, no stale state and fresh-session control comparisons. |
+| M3.5c — Safe request lifecycle | Reuse existing admission, commit, timeout, poison and shutdown paths; support cooperative cancellation at safe window boundaries and reject invalid/replayed requests. | CPU protocol/lifecycle checks; real sequential requests and ordinary cancellation/recovery on Oberon. Never inject GPU faults. A poisoned worker set is not reused; no claim of rollback. |
+| M3.5d — Existing server adapter | Reuse the committed generation loop behind the existing Engine interface; expose an explicit experimental heterogeneous configuration in the existing Strata server. Start with one active text request, greedy sampling and bounded context. Reject unsupported options instead of silently ignoring them. | Existing server authentication/readiness/ownership and request validation remain in force; ordinary single-backend modes are unchanged. |
+| M3.5e — End-to-end qualification | Exercise the existing API and CLI client against multiple sequential prompts, normal stop/length limits, cancellation and orderly shutdown; verify resident process identities and no model reload. | Actual responses, token/commit traces, isolation and lifecycle evidence on Oberon; existing CPU and native builds pass. |
+
+Do not implement another inference engine, sampler, HTTP server, or temporary
+numerical fixture. Prefer no source changes where existing code suffices.
+Streaming, concurrency, persistent conversational caches, wider sampling,
+long-context performance and native fault handling are separate qualification
+items; do not advertise them before supported and verified. Report PASS /
+FAIL / UNVERIFIED separately for host and hardware.
+
+Every Oberon handoff must include the local Python venv preflight explicitly:
+create the ignored checkout-local `.venv` only if absent, install the existing
+pinned `requirements.txt` when first created or changed, run
+`.venv/bin/python -m pip check`, and use `.venv/bin/python` for every Python
+command. Verify CMake's Python test interpreter follows the same convention.
+See the one-time environment procedure above. No system Python or other
+checkout's venv, no GPU resets, no GitHub Actions.

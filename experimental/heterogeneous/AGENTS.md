@@ -40,6 +40,13 @@ other worktrees' environments, unpinned installs or full model setup for
 Python dependencies. Build/monitor/FP4 requirement files are optional for
 their respective tasks, not baseline inference requirements. Keep the venv
 out of Git and refresh pinned dependencies only when needed.
+Every Oberon handoff must explicitly include this venv setup/reuse check,
+`pip check`, and the checkout-local interpreter for Python commands.
+
+Follow the [M3.5 resident-worker/server roadmap](docs/GENERATION_M31_M35.md#m35-implementation-roadmap): audit model/session lifetime, qualify resident
+request boundaries and cancellation, then adapt the existing server Engine
+interface. Start with one active greedy text request; use the existing server
+and CLI, not a separate HTTP service or inference implementation.
 
 ## Mission and current state
 
