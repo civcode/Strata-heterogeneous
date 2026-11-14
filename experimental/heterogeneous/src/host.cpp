@@ -260,10 +260,7 @@ void validate_wire_frame(const Frame& f) { check_host(); validate_frame(f); }
 std::vector<uint8_t> encode(const Frame& f) {
     validate_wire_frame(f);
     std::vector<uint8_t> payload;
-    if (f.kind == Kind::data) {
-        payload.resize(f.payload.size() * sizeof(float));
-        std::memcpy(payload.data(), f.payload.data(), payload.size());
-    } else if (f.kind == Kind::failure) payload.assign(f.error.begin(), f.error.end());
+    if (f.kind == Kind::failure) payload.assign(f.error.begin(), f.error.end());
     else if (f.kind == Kind::hello || f.kind == Kind::hello_shared ||
              f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final)
         for (uint32_t word : f.identity) add_u32(payload, word);
@@ -274,15 +271,22 @@ std::vector<uint8_t> encode(const Frame& f) {
         for (int32_t token : f.window->token_ids) add_u32(payload, static_cast<uint32_t>(token));
     } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix)
         add_u32(payload, f.keep_count);
+    // Data is already little-endian float32 (validate_wire_frame).
+    // Hash and append directly from the original frame; avoid a temporary
+    // activation-sized allocation and memcpy. Control payloads are unchanged.
+    const auto* data = f.kind == Kind::data
+        ? reinterpret_cast<const uint8_t*>(f.payload.data()) : payload.data();
+    const size_t size = f.kind == Kind::data
+        ? f.payload.size() * sizeof(float) : payload.size();
     std::vector<uint8_t> bytes;
-    bytes.reserve(wire_header_bytes + payload.size());
+    bytes.reserve(wire_header_bytes + size);
     add_u32(bytes, magic); add_u16(bytes, version); add_u16(bytes, static_cast<uint16_t>(f.kind));
     add_u32(bytes, f.stage_index); add_u32(bytes, f.rows);
     add_u32(bytes, f.geometry.hc); add_u32(bytes, f.geometry.n_embd);
     add_u64(bytes, f.request_id); add_u64(bytes, f.window_id); add_u64(bytes, f.plan_fingerprint);
-    add_u32(bytes, static_cast<uint32_t>(payload.size())); add_u32(bytes, checksum(payload.data(), payload.size()));
+    add_u32(bytes, static_cast<uint32_t>(size)); add_u32(bytes, checksum(data, size));
     if (bytes.size() != wire_header_bytes) throw std::logic_error("wire header size mismatch");
-    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    if (size) bytes.insert(bytes.end(), data, data + size);
     return bytes;
 }
 Frame decode(const std::vector<uint8_t>& bytes) {

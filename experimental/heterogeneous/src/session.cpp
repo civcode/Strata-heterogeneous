@@ -127,7 +127,7 @@ bool StageExecutor::run_staged_window(const Frame& metadata, ActivationView view
         output.geometry.hc != metadata.geometry.hc ||
         output.geometry.n_embd != metadata.geometry.n_embd)
         throw std::runtime_error("staged fallback returned incorrect window metadata");
-    (void) encode(output); // validate exact output shape *before* mutating mapping
+    validate_wire_frame(output); // validate exact output shape *before* mutating mapping
     if (output.payload.size() * sizeof(float) != view.bytes())
         throw std::runtime_error("staged fallback changed activation byte length");
     std::memcpy(view.data(), output.payload.data(), view.bytes());
@@ -326,7 +326,7 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                     if (!executor.run_window(*request, output, error))
                         throw std::runtime_error(error.empty() ? "worker execution failed" : error);
                     require_match(output, *request, Kind::data);
-                    (void) encode(output); // validate exact shape before publication
+                    validate_wire_frame(output); // validate exact shape before publication
                     if (gate && !gate->provisional(
                             reinterpret_cast<const uint8_t*>(output.payload.data()),
                             output.payload.size() * sizeof(float), error))
@@ -421,12 +421,12 @@ Frame PipelineSession::execute_impl(Frame initial, const WindowSpec* spec) {
             initial.geometry.hc != plan_.geometry.hc ||
             initial.geometry.n_embd != plan_.geometry.n_embd)
             throw std::invalid_argument("initial frame doesn't match plan");
-        (void) encode(initial); // reject malformed payload before worker contact
+        validate_wire_frame(initial); // reject malformed payload before worker contact
         if (initial.request_id == last_request_ && initial.window_id <= last_window_)
             throw std::invalid_argument("stale or replayed window ID");
         if (spec) spec->validate(initial.rows);
         const size_t floats = static_cast<size_t>(initial.rows) * plan_.geometry.floats_per_row();
-        const size_t bytes = floats * sizeof(float); // capped by encode(initial)
+        const size_t bytes = floats * sizeof(float); // capped by validate_wire_frame(initial)
         if (shared_memory_) {
             shared_->store(initial.payload);
             initial.payload.clear();

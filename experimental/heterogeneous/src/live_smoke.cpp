@@ -576,6 +576,15 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             throw std::runtime_error("committed head predictions malformed or nonfinite");
         return committed;
     };
+    // Emitted only after successful all-stage commit and result validation.
+    auto trace_committed = [&](const char* phase, const hetero::WindowSpec& spec,
+                               uint64_t window, uint32_t keep) {
+        if (!hetero::performance_trace()) return;
+        std::fprintf(stderr, "HETERO_PERF_COMMITTED request=%llu window=%llu phase=%s rows=%zu keep=%u pos0=%lld\n",
+                     static_cast<unsigned long long>(request_id),
+                     static_cast<unsigned long long>(window), phase, spec.token_ids.size(),
+                     keep, static_cast<long long>(spec.pos0));
+    };
     std::vector<int32_t> generated;
     bool stopped = false, cancelled = false, input_closed = false;
     int32_t stop_token = -1;
@@ -612,6 +621,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             spec.pos0 = pos;
             spec.token_ids.assign(prompt.begin() + offset, prompt.begin() + offset + count);
             next = run_window(spec, ++window, static_cast<uint32_t>(count)).predicted_tokens.back();
+            trace_committed("prefill", spec, window, static_cast<uint32_t>(count));
             offset += count;
             pos += static_cast<int64_t>(count);
             if (!checkpoint()) return;
@@ -676,6 +686,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             } else {
                 next = run_window(spec, ++window, 1).predicted_tokens.back();
             }
+            trace_committed("decode", spec, window, keep);
             if (lookup) lookup->append(spec.token_ids.data(), keep);
             pos += keep;
             if (!checkpoint()) { generated.clear(); report_lookup(); return; }

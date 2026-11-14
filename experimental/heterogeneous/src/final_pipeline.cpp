@@ -129,10 +129,16 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 const size_t floats = static_cast<size_t>(request->rows) * plan.geometry.floats_per_row();
                 const size_t bytes = floats * sizeof(float);
                 // encode()/decode() bound the activation window to the 16MiB cap.
-                Frame metadata = *data;
+                // The decoded data frame is already validated. Borrow its
+                // activation below; copy only the identity fields, not the payload.
+                Frame metadata;
                 metadata.kind = Kind::data;
-                metadata.payload.clear();
-                metadata.shared_checksum = 0;
+                metadata.stage_index = data->stage_index;
+                metadata.request_id = data->request_id;
+                metadata.window_id = data->window_id;
+                metadata.plan_fingerprint = data->plan_fingerprint;
+                metadata.rows = data->rows;
+                metadata.geometry = data->geometry;
                 FinalStageResult result;
                 if (shared_memory) {
                     if (shared.checksum(bytes) != data->shared_checksum)
@@ -302,18 +308,34 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             Frame context = control(plan_, i, Kind::window_spec,
                                     initial.request_id, initial.window_id, initial.rows);
             context.window = spec;
-            send_frame(fds_[i], context, timeout_ms_);
+            {
+                PerformanceSpan send("coordinator", "stage_send_spec", i, initial.request_id,
+                                     initial.window_id, initial.rows);
+                send_frame(fds_[i], context, timeout_ms_);
+            }
             initial.stage_index = static_cast<uint32_t>(i);
-            send_frame(fds_[i], initial, timeout_ms_);
+            {
+                PerformanceSpan send("coordinator", "stage_send_activation", i, initial.request_id,
+                                     initial.window_id, initial.rows);
+                send_frame(fds_[i], initial, timeout_ms_);
+            }
             if (i + 1 == fds_.size()) {
-                auto response = receive_final_result(fds_[i], timeout_ms_);
+                auto response = [&] {
+                    PerformanceSpan recv("coordinator", "stage_receive", i, initial.request_id,
+                                         initial.window_id, initial.rows);
+                    return receive_final_result(fds_[i], timeout_ms_);
+                }();
                 if (!response) throw std::runtime_error("final worker closed without head result");
                 if (require_compact_ && response->logits)
                     throw std::runtime_error("requested compact result, but worker returned diagnostic logits");
                 gate_.stage(std::move(*response), static_cast<uint32_t>(i),
                             initial.request_id, initial.window_id, initial.plan_fingerprint, initial.rows);
             } else {
-                auto response = receive_frame(fds_[i], timeout_ms_);
+                auto response = [&] {
+                    PerformanceSpan recv("coordinator", "stage_receive", i, initial.request_id,
+                                         initial.window_id, initial.rows);
+                    return receive_frame(fds_[i], timeout_ms_);
+                }();
                 if (!response) throw std::runtime_error("intermediate worker closed before handoff");
                 if (response->kind == Kind::failure)
                     throw std::runtime_error("intermediate worker failed: " + response->error);

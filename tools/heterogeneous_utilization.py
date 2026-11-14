@@ -20,10 +20,10 @@ def fraction(values, predicate):
     return 100 * sum(predicate(x) for x in values) / len(values) if values else None
 
 
-def phase(name, start, end, request=None, feedback=None):
+def phase(name, start, end, request=None, feedback=None, prompt_tokens=None):
     if not number(start) or not number(end) or start > end:
         raise ValueError(f"invalid phase bounds: {name}")
-    return dict(name=name, start=start, end=end, request=request, feedback=feedback)
+    return dict(name=name, start=start, end=end, request=request, feedback=feedback, prompt_tokens=prompt_tokens)
 
 
 def phases(benchmark):
@@ -38,8 +38,12 @@ def phases(benchmark):
         req = record["request_id"]
         if record["finish_reason"] not in ("stop", "length"):
             raise ValueError("only successful benchmark requests are supported")
+        prompt_tokens = record.get("prompt_tokens")
+        if prompt_tokens is not None and (type(prompt_tokens) is not int or prompt_tokens <= 0):
+            raise ValueError("invalid prompt token count")
         result += [phase("idle", previous, b["request_start"]),
-                   phase("prefill_including_reset", b["request_start"], b["prefill_end"], req),
+                   phase("prefill_including_reset", b["request_start"], b["prefill_end"], req,
+                         prompt_tokens=prompt_tokens),
                    phase("decode", b["prefill_end"], b["decode_end"], req, t["decode_feedback_tokens"]),
                    phase("completion_tail", b["decode_end"], b["request_end"], req)]
         previous = b["request_end"]
@@ -116,8 +120,12 @@ def summarize(benchmark, samples, devices):
                                               default=None)}
         mins = [min(row["util_percent"] for row in group.values()) for group in complete]
         feedback = sum(p["feedback"] or 0 for p in ps)
+        prompt_tokens = (sum(p["prompt_tokens"] for p in ps)
+                         if ps and all(p["prompt_tokens"] is not None for p in ps) else None)
         expected = elapsed / interval
         return {"duration_s": elapsed, "expected_cycles_approx": expected,
+                "prompt_tokens": prompt_tokens,
+                "prompt_tok_s_including_reset": prompt_tokens / elapsed if prompt_tokens and elapsed else None,
                 "feedback_tokens": feedback, "feedback_tok_s": feedback / elapsed if feedback and elapsed else None,
                 "gpu": gpu, "aligned_complete_cycles": len(complete),
                 "total_gpu_power_w": stats(complete_power),
@@ -130,13 +138,15 @@ def summarize(benchmark, samples, devices):
     ps = phases(benchmark)
     decode = [p for p in ps if p["name"] == "decode"]
     warm = decode[1:]
+    prefill = [p for p in ps if p["name"] == "prefill_including_reset"]
     return {"schema": "strata-heterogeneous-utilization/v1", "interval_s": interval,
             "devices": devices, "phases": [dict(p, **summarize_phases([p])) for p in ps],
             "warm_decode": summarize_phases(warm),
+            "warm_prefill": summarize_phases(prefill[1:]),
             "notes": "Same Linux host/boot only. Unweighted sensor samples, not exact time fractions or kernel occupancy. "
                      "Driver averaging windows differ; aligned cycles are not proof of instantaneous overlap. "
                      "Decode excludes startup, prefill/reset and final completion tail; includes IPC/consumer pacing. "
-                     "First request excluded from warm decode. Missing readings are not zero. "
+                     "First request excluded from warm decode and warm prefill; prefill includes reset. Missing readings are not zero. "
                      "Total GPU power sums only complete aligned power cycles; sampled board/sensor readings, not wall power."}
 
 

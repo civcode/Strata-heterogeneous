@@ -40,6 +40,20 @@ class UtilizationTests(unittest.TestCase):
         self.assertEqual(s["all_gpus_at_least_90_percent"], 50)
         self.assertTrue(s["low_sample_warning"])
 
+    def test_warm_prefill_excludes_first_and_pools_prompt_rate(self):
+        b = benchmark()
+        for rec in b["completions"]:
+            rec["prompt_tokens"] = 41
+        data = self.data() + [sample(6, d, 6.4 + i * .002, 80)
+                              for i, d in enumerate(self.devices)]
+        s = summarize(b, data, self.devices)["warm_prefill"]
+        self.assertEqual(s["prompt_tokens"], 41)
+        self.assertAlmostEqual(s["prompt_tok_s_including_reset"], 41)
+        self.assertEqual(s["aligned_complete_cycles"], 1)
+        self.assertEqual(s["gpu"]["hip:1"]["utilization_percent"]["mean"], 80)
+        del b["completions"][1]["prompt_tokens"]
+        self.assertIsNone(summarize(b, data, self.devices)["warm_prefill"]["prompt_tokens"])
+
     def test_power_is_independent_of_util_and_aligned(self):
         data = self.data()
         # One cycle has a missing busy sensor but all power sensors valid.
