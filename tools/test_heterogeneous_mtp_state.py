@@ -19,7 +19,7 @@ class StateTests(unittest.TestCase):
         Path(str(prefix) + '.complete.json').write_text(json.dumps({
             'schema': 'strata-heterogeneous-parity/v1', 'model_fingerprint': 123, 'plan': 'cuda,hip,hip'}))
         p = Path(str(prefix) + '.mtp.1.json')
-        meta = {'schema': 'strata-mtp-state/v1', 'event': 1, 'phase': 'draft_after',
+        meta = {'schema': 'strata-mtp-state/v2', 'event': 1, 'phase': 'draft_after',
                 'cell': 1, 'upto': 2, 'tokens': [9], 'residual_stride': 40960,
                 'format': 1, 'kv_strides': [4, 8, 2, 2]}
         meta.update(changes)
@@ -51,6 +51,11 @@ class StateTests(unittest.TestCase):
     def test_bad_extent(self):
         self.b.with_suffix('.v.bin').write_bytes(b'x')
         with self.assertRaisesRegex(ValueError, 'extent'):
+            compare(self.a, self.b)
+
+    def test_legacy_non_cell_major_trace_rejected(self):
+        self.b = self.trace('b', schema='strata-mtp-state/v1')
+        with self.assertRaisesRegex(ValueError, 'trace identity'):
             compare(self.a, self.b)
 
     def test_incomplete_run(self):

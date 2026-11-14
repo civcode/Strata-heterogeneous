@@ -49,7 +49,10 @@ public:
                 total+=bytes;
             }
             if(!core::conversation_kv_save(kv,state,g_,upto,false,error)) return false;
-            if(kv.cells<upto || kv.page_size<=0 || kv.pending || kv.dev_tag || kv.pooled.size()) {
+            // Native dense BF16 pools are [page][kv_head][cell][head_dim],
+            // not cell-major. Reject other formats until explicitly decoded.
+            if(kv.cells<upto || kv.page_size<=0 || kv.format!=0 || kv.pending || kv.dev_tag ||
+               kv.pooled.size() || kv.heads<=0 || kv.head_dim<=0) {
                 error="MTP state trace unexpected native KV layout";return false;
             }
         }
@@ -59,18 +62,27 @@ public:
         const std::array<const char*,4> names={"k","v","ks","vs"};
         for(size_t i=0;i<parts.size();++i) {
             const auto& part=*parts[i];
-            if(upto && part.size()%size_t(kv.cells)) {error="MTP state trace nonintegral cell stride";return false;}
-            strides[i]=upto?part.size()/size_t(kv.cells):0;
+            const size_t head_bytes=upto?size_t(kv.head_dim)*sizeof(uint16_t):0;
+            strides[i]=(upto && i<2)?size_t(kv.heads)*head_bytes:0;
+            if(upto && ((i<2 && part.size()!=size_t(kv.cells)*strides[i]) ||
+                        (i>=2 && part.size()!=0))) {
+                error="MTP state trace unexpected dense KV extent";return false;
+            }
             if(!file(stem+"."+names[i]+".bin",[&](int fd){
-                const size_t count=strides[i]*size_t(upto);
-                return !count || part.visit(0,count,[&](const uint8_t* data,size_t size,size_t){
-                    return write_all(fd,data,size,error);
-                });
+                if(i>=2) return true;
+                for(int64_t c=0;c<upto;++c) for(int64_t h=0;h<kv.heads;++h) {
+                    const size_t row=(size_t(c/kv.page_size)*size_t(kv.heads)+size_t(h))*
+                                     size_t(kv.page_size)+size_t(c%kv.page_size);
+                    if(!part.visit(row*head_bytes,head_bytes,[&](const uint8_t* data,size_t size,size_t){
+                        return write_all(fd,data,size,error);
+                    })) return false;
+                }
+                return true;
             },error))return false;
         }
         // Manifest LAST; incomplete captures must never be compared.
         std::ostringstream meta;
-        meta<<"{\"schema\":\"strata-mtp-state/v1\",\"event\":"<<events_
+        meta<<"{\"schema\":\"strata-mtp-state/v2\",\"event\":"<<events_
             <<",\"phase\":\""<<phase<<"\",\"cell\":"<<cell<<",\"upto\":"<<upto
             <<",\"residual_stride\":"<<stride<<",\"format\":"<<kv.format
             <<",\"kv_strides\":["<<strides[0]<<','<<strides[1]<<','<<strides[2]<<','<<strides[3]

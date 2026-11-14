@@ -23,7 +23,7 @@ def load(path):
             type(completion['model_fingerprint']) is int and completion['model_fingerprint'] > 0 and
             isinstance(completion['plan'], str) and completion['plan'], 'invalid completed target run')
     m = json.loads(path.read_text())
-    require(m['schema'] == 'strata-mtp-state/v1' and m['event'] == int(event[:-5]) and
+    require(m['schema'] == 'strata-mtp-state/v2' and m['event'] == int(event[:-5]) and
             1 <= m['event'] <= 64 and m['phase'] in PHASES, 'invalid trace identity')
     cell, upto, tokens = m['cell'], m['upto'], m['tokens']
     require(type(cell) is int and type(upto) is int and isinstance(tokens, list) and
