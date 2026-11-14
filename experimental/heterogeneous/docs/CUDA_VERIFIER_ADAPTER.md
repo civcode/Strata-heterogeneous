@@ -1,5 +1,10 @@
 # CUDA verifier adapter integration increment
 
+> **Historical milestone snapshot.** Early CPU-only/unverified native status
+> describes this milestone, not the later successful native GPU windows.
+> Follow the [current CUDA → HIP implementation contract](IMPLEMENTATION_CONTRACT.md).
+
+
 Status: **compiled and linked, not hardware-validated inference**.
 The standalone demo still launches CPU mock workers. No production default,
 wire format, existing engine source or CUDA/HIP build guard changed.

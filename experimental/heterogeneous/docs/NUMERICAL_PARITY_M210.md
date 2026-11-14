@@ -1,5 +1,10 @@
 # M2.10 — Native unsplit reference numerical parity handoff
 
+> **Historical numerical diagnostic.** The current architecture acceptance is
+> [M2.18 CUDA → HIP implementation contract](IMPLEMENTATION_CONTRACT.md).
+> Keep original KL measurements below; they do not alone prove a bad handoff.
+
+
 **Baseline:** M2.9 real CUDA→HIP→HIP smoke PASSED; commit 28446b0d503d4067c40f2e95e4a88262e82b3bf9.
 **Stage plan:** cuda:0:0-12,hip:0:12-30,hip:1:30-48
 **Reference plan:** hip:0:0-48 on a single R9700
@@ -115,13 +120,13 @@ If the two-window test passes, repeat with fresh output prefixes,
 more state transitions. Compare shared-memory versus socket too, but
 never substitute cross-transport agreement for the unsplit reference.
 
-## Outcome criteria
+## Historical M2.10 numerical-parity outcome criteria (not boundary acceptance)
 
-**PASS:** both live sessions complete and commit, exact same Q2_0 source,
+**M2.10 numerical-parity PASS:** both live sessions complete and commit, exact same Q2_0 source,
 GGUF shards and profile; identical token inputs, positions, vocab size,
 predictions and logit top-1; finite complete logits; KL <= 0.001 per row.
 
-**FAIL:** report first divergent position, predictions, top-1, KL, logit
+**M2.10 numerical-parity FAIL:** report first divergent position, predictions, top-1, KL, logit
 RMSE/max delta, actual device IDs, and any HIP Q8 precision settings.
 Do not waive a difference without investigation.
 

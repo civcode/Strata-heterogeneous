@@ -1,5 +1,11 @@
 # M2.15 — Localize layer-5 MoE and layer-6 GDN divergence
 
+> **Historical cross-backend numerical diagnostic.** The active implementation
+> and architecture gate is [CUDA → HIP contract (M2.18)](IMPLEMENTATION_CONTRACT.md).
+> Preserve all original measurements and KL thresholds below as history;
+> their failure alone does not establish a CUDA → HIP handoff defect.
+
+
 **Status:** implementation prepared; GPU M2.15 has NOT been run.
 **Plan:** compare single-R9700 HIP reference hip:0:0-48 with CUDA→HIP→HIP
 cuda:0:0-12,hip:0:12-30,hip:1:30-48, using Q2_0 model fingerprint

@@ -1,12 +1,14 @@
-# Experimental heterogeneous layer handoff — host-only foundation
+# Experimental heterogeneous layer handoff
 
-Status: **not an inference backend**. The demo and tests remain CPU-only.
-An opt-in [CUDA non-final-stage adapter](docs/CUDA_VERIFIER_ADAPTER.md) now
-compiles and links against the real verifier, but has not run on a GPU.
-Model loading, the real final-stage CUDA/HIP head implementation and mixed-vendor inference remain unfinished.
-No numerical correctness or performance claims.
-This directory can be added to `civcode/Strata-heterogeneous` without changing the
-upstream CUDA/HIP CMake paths or running GitHub Actions.
+**Active contract:** [CUDA → HIP production-path validation and acceptance](docs/IMPLEMENTATION_CONTRACT.md).
+The old demo and protocol fixtures remain CPU-only, but separately compiled
+native CUDA and HIP workers have executed real staged-model windows. M2.17
+reported two committed windows and predictions 198/271; KL against an all-HIP
+reference still fails its historical target. Prioritize actual transfer bytes,
+fences, identity, state/commits and end-to-end CUDA → HIP → HIP completion.
+Use as little new code as possible: no duplicate native inference or disposable
+numeric fixtures. Experimental/opt-in only; no production readiness claim.
+The M1–M2.17 sections below record historical milestones.
 
 ## Exact Strata boundary used
 
@@ -67,7 +69,7 @@ On timeouts, stage failures, truncated transfers, stale IDs, incompatible
 plans, bad shapes or commit failures, the session is poisoned and its sockets
 are shut down to wake outstanding workers. A partially committed transaction
 is **not rolled back**: the session must be abandoned and recreated. The
-stateful StageExecutor API is a CPU-only contract; a real stage must not
+stateful StageExecutor API began as a CPU-only contract and now also serves native workers; a real stage must not
 advance durable model state during the provisional run.
 The unit tests use **actual separate POSIX processes**, via `fork()` and
 `socketpair()`, plus fault injection for handshake, worker-exit and commit
@@ -78,7 +80,7 @@ stages and `strata_heterogeneous_mock_hip_worker` for the HIP stages.
 They have compile-time backend markers, use separate address spaces and
 communicate only through local Unix sockets. They do **not** link or
 initialize either GPU runtime, and the marker is not hardware attestation.
-Actual CUDA and HIP executors will replace these mock binaries.
+Native CUDA and HIP executors now exist; the preceding paragraph describes the original CPU mock demo.
 
 The shared-memory path avoids shipping bulk float32 activations through a
 socket. In M1.7, a `StageExecutor` can override `run_staged_window` to
@@ -807,7 +809,7 @@ kernels or model changes. Layer-6 convolution history remains
 an open next capture if QKV/z still match.
 
 See [docs/SHARED_EXPERT_CONTROL_M216.md](docs/SHARED_EXPERT_CONTROL_M216.md).
-M2.16 hardware results are pending; acceptance thresholds unchanged.
+M2.16 hardware results are recorded in M2.17; the KL threshold remains historical numerical parity, not the boundary gate.
 
 
 ### M2.17 — Shared projection microtrace + pre-GDN conv history
@@ -835,7 +837,11 @@ The new checksummed, bounded STM0/v1 record is written to
 CPU `tools/heterogeneous_stage_micro.py` requires completed
 STFR/manifest plus M2.15 STB0 and checks bitwise overlap for the
 shared output, QKV and conv output before comparing backends.
-21 new synthetic CPU cases registered. These new tests and
-native CUDA/HIP builds are **not yet verified** on Oberon.
+Oberon reported 21/21 new microtrace tests, 104/104 Python, 38/38
+host CTest and separate native CUDA/HIP builds passing. Two sequential
+windows committed, predicted 198/271 and passed STM0/STB0 integrity.
+Layer-5/6 differences precede the CUDA → HIP boundary; full-head KL
+0.005003 / 0.037718 still FAILS the historical <=0.001 target.
 See [docs/STAGE_MICRO_LOCALIZATION_M217.md](docs/STAGE_MICRO_LOCALIZATION_M217.md).
-No kernel arithmetic or KL tolerances were changed.
+The next step follows the [M2.18 contract](docs/IMPLEMENTATION_CONTRACT.md),
+not another cross-backend kernel localization.

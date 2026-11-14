@@ -1,5 +1,11 @@
 # M2.11 — Locate the first observable layer divergence
 
+> **Historical cross-backend numerical diagnostic.** The active implementation
+> and architecture gate is [CUDA → HIP contract (M2.18)](IMPLEMENTATION_CONTRACT.md).
+> Preserve all original measurements and KL thresholds below as history;
+> their failure alone does not establish a CUDA → HIP handoff defect.
+
+
 **Branch:** feature/heterogeneous-cuda-window-admission
 **Reference:** hip:0:0-48 on R9700 PCI 0000:03:00.0
 **Heterogeneous:** cuda:0:0-12,hip:0:12-30,hip:1:30-48

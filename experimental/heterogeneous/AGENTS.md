@@ -1,9 +1,15 @@
 # Coding agent instructions: heterogeneous Strata inference
 
-These instructions apply to this directory. Also follow the repository-root
-[AGENTS.md](../../AGENTS.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md).
+These instructions apply to this directory. Also follow
+[CONTRIBUTING.md](../../CONTRIBUTING.md).
 This is an experimental, opt-in research feature; do not change the behavior
 of existing CUDA-only or HIP-only inference.
+
+**Authoritative implementation contract:**
+[docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
+Validate the real production CUDA → HIP boundary and full native pipeline
+with minimal durable code; no duplicate inference engine, test-only numeric
+fixtures or prerequisite CUDA-to-CUDA/KL parity detour.
 
 ## Local project isolation on Oberon
 
@@ -12,8 +18,7 @@ Stage project patches and logs in `/home/chris/tmp/strata-heterogeneous`.
 **Ignore completely** `/home/chris/workspace/Strata-dev` and
 `/home/chris/tmp/strata-dev`: do not search, inspect, modify, build,
 test, or use their files for this project. Do not run parent-directory-wide
-searches. The root [AGENTS.md](../../AGENTS.md) establishes these boundaries
-for the entire fork.
+searches. These are the heterogeneous project boundaries.
 
 ## Mission and current state
 
@@ -23,19 +28,11 @@ and two AMD Radeon AI PRO R9700 cards (32 GiB each). Use the existing
 Strata layer-split algorithm, not tensor parallelism. The first CUDA/HIP
 boundary is the priority; do not claim that 80 GiB is unified VRAM.
 
-The code in this directory is presently a **CPU-only Linux host prototype**.
-It includes:
-
-- a validated stage plan with backend-local ordinals;
-- a v4 Unix-socket protocol with opt-in memfd-backed activation handoff, stage identity handshake and commit acknowledgments;
-- separately compiled, backend-tagged CPU mock worker executables launched with posix_spawn/exec by the coordinator;
-- exact-shape, integrity, timeout, failure-propagation, and subprocess tests.
-
-There is **no real CUDA/HIP execution**, model loading, KV/cache handling,
-GPU DMA, streaming prefill, or Strata server integration in this prototype.
-The README's historical increment list should not be interpreted as proof
-that an exec-based launcher is missing: the demo already has one. Check the
-code before proposing a change.
+This project began as a CPU host prototype and now includes native CUDA
+and HIP workers with real model loading and supervised GPU windows (M2.9–
+M2.17), alongside the CPU protocol mock tests. It is still experimental;
+prompt prefill, long-context, full parity and general production readiness
+are not established. Older milestones are historical snapshots.
 
 ## Study these files first
 
@@ -1012,10 +1009,21 @@ download huge model files merely to validate the CPU transport.
 - The CPU STM0 reader requires complete STFR and STB0; shared
   output, layer6 QKV and conv output MUST agree bitwise with
   M2.15 STB0 in each run. Then compare full source identities.
-  First nonzero component is not proven causal. New CPU tests
-  and native CUDA/HIP compilation still require Oberon validation.
+  First nonzero component is not proven causal. Oberon later reported 21/21 new CPU tests, 104/104 Python, 38/38 host
+  CTest and both native CUDA/HIP builds passing.
 - Do not touch Strata-dev or preexisting untracked probes; no
   GitHub Actions, GPU resets/reboots, driver unload, or auto
   workflow triggers. Separate local builds <=28 jobs. Preserve
-  original memory/model/accepted-prefix gates and KL<=0.001.
+  original memory/model/accepted-prefix gates. KL<=0.001 is a historical
+  numerical-parity diagnostic, not the M2.18 transition acceptance gate.
   Handoff: docs/STAGE_MICRO_LOCALIZATION_M217.md.
+
+### M2.18 — Active priority: CUDA → HIP production handoff
+
+- Follow [docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
+  Reuse the existing native CUDA/HIP verifier execution paths.
+- Verify real CUDA layer-11 output reaches HIP layer-12 input unchanged,
+  along with fences, identity, stage state, commit and final continuation.
+- Audit existing production buffers/logs before adding any code; add only
+  durable, opt-in boundary observations if needed. No new inference kernel,
+  synthetic numerical fixtures, or mandatory CUDA-to-CUDA/KL detours.

@@ -1,5 +1,11 @@
 # M2.12 — Exact layer-zero arithmetic: HIP control vs CUDA stage zero
 
+> **Historical cross-backend numerical diagnostic.** The active implementation
+> and architecture gate is [CUDA → HIP contract (M2.18)](IMPLEMENTATION_CONTRACT.md).
+> Preserve all original measurements and KL thresholds below as history;
+> their failure alone does not establish a CUDA → HIP handoff defect.
+
+
 **Status:** Implementation committed; native M2.12 GPU diagnosis NOT YET EXECUTED.
 **Branch:** feature/heterogeneous-cuda-window-admission
 **M2.11 known fact:** the first observed post-layer HC-mean residual divergence

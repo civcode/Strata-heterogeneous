@@ -1,5 +1,10 @@
 # M1.16 — supervised CUDA model-loading worker (opt-in, GPU execution gated)
 
+> **Historical milestone snapshot.** Early CPU-only/unverified native status
+> describes this milestone, not the later successful native GPU windows.
+> Follow the [current CUDA → HIP implementation contract](IMPLEMENTATION_CONTRACT.md).
+
+
 
 > **M2.9 update:** The historical I_APPROVE_* runtime environment-variable
 > gate described below was removed. An explicitly launched native worker is

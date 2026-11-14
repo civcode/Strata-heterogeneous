@@ -1,5 +1,11 @@
 # M2.14 — Stage-zero phase localization (matched BF16)
 
+> **Historical cross-backend numerical diagnostic.** The active implementation
+> and architecture gate is [CUDA → HIP contract (M2.18)](IMPLEMENTATION_CONTRACT.md).
+> Preserve all original measurements and KL thresholds below as history;
+> their failure alone does not establish a CUDA → HIP handoff defect.
+
+
 **Status:** Implementation committed; native M2.14 GPU runs NOT YET EXECUTED.
 **Plan:** HIP reference hip:0:0-48 vs heterogeneous cuda:0:0-12,hip:0:12-30,hip:1:30-48.
 **Model:** Q2_0, 48 layers, 2560 embedding, HC=4, fingerprint=2026111301.

@@ -1,5 +1,11 @@
 # M2.16 — Shared-expert stream control (no new native kernel code)
 
+> **Historical cross-backend numerical diagnostic.** The active implementation
+> and architecture gate is [CUDA → HIP contract (M2.18)](IMPLEMENTATION_CONTRACT.md).
+> Preserve all original measurements and KL thresholds below as history;
+> their failure alone does not establish a CUDA → HIP handoff defect.
+
+
 **Status:** hardware test PENDING. Branch feature/heterogeneous-cuda-window-admission.
 
 ## Evidence

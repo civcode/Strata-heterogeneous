@@ -1,5 +1,10 @@
 # M2.9 — Native CUDA→HIP hardware-test handoff
 
+> **Historical milestone snapshot.** Early CPU-only/unverified native status
+> describes this milestone, not the later successful native GPU windows.
+> Follow the [current CUDA → HIP implementation contract](IMPLEMENTATION_CONTRACT.md).
+
+
 **Branch:** feature/heterogeneous-cuda-window-admission
 **Target:** Oberon; RTX 4070 Ti SUPER 16 GiB and two Radeon AI PRO R9700 32 GiB.
 **Stage plan:** cuda:0:0-12,hip:0:12-30,hip:1:30-48

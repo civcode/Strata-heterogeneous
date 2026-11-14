@@ -1,5 +1,11 @@
 # M2.13 — Native HC read precision and dispatch isolation
 
+> **Historical cross-backend numerical diagnostic.** The active implementation
+> and architecture gate is [CUDA → HIP contract (M2.18)](IMPLEMENTATION_CONTRACT.md).
+> Preserve all original measurements and KL thresholds below as history;
+> their failure alone does not establish a CUDA → HIP handoff defect.
+
+
 **Baseline:** M2.12 showed exact embedding agreement and exact
 HIP-split-versus-unsplit agreement. CUDA stage zero first differs
 at `hc_mixed` (relative L2 0.006630, RMSE 0.004182, max

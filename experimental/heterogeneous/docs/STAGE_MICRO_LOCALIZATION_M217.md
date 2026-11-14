@@ -1,6 +1,11 @@
 # M2.17 — Exact shared-expert gate/down and GDN preconv-history probe
 
-**State:** code committed; live M2.17 CUDA/HIP correctness UNVERIFIED.
+> **Historical numerical diagnostic.** The current architecture acceptance is
+> [M2.18 CUDA → HIP implementation contract](IMPLEMENTATION_CONTRACT.md).
+> Keep original KL measurements below; they do not alone prove a bad handoff.
+
+
+**State:** Historical native M2.17 hardware diagnostic completed on Oberon; numerical KL parity FAIL. Current next step is M2.18 transition validation.
 **Branch:** feature/heterogeneous-cuda-window-admission
 **Model:** Qwen3.8-Flash-Next, Q2_0, 48 layers, n_embd=2560,
 hc=4, 512 experts, fingerprint=2026111301.
@@ -213,7 +218,7 @@ Abort immediately on native build, OOM, device identity, worker,
 checksum, STB0 overlap, nonfinite or commit failures. No GPU resets
 or automatic Actions. Keep all raw captures and logs.
 
-## Decision table after M2.17
+## Historical M2.17 decision table (not the active M2.18 plan)
 
 | Measurement | Interpretation / next experiment |
 | --- | --- |
@@ -232,6 +237,13 @@ the selected STRATA_SHARED_MICRO_PATH flags, source fingerprints and
 GPU PCI functions. A small first nonzero difference is not a
 proven first causal operation.
 
-M2.10 full-head KL<=0.001 and exact prediction/top-1 agreement
-remain the only existing numerical parity acceptance criterion;
-the threshold is not relaxed. No M2.17 real GPU evidence exists yet.
+Reported M2.17 results: sequential real runs committed two windows and
+predicted 198/271. STM0/STB0 integrity passed; 21/21 new microtrace
+CPU tests, 104/104 Python, 38/38 host CTest and both native builds passed.
+Position-0 layer-5 SwiGLU Q8 differed by eight bytes and unscaled down
+relative L2 was 0.002823: not proof of a defective down kernel.
+Position-1 layer-6 QKV matched but preconv history relative L2 was
+0.000350: not proof of a defective conv kernel. Full-head KL remains
+FAIL at 0.005003 / 0.037718 versus the unchanged historical <=0.001
+numerical-parity target, separate from M2.18 transition acceptance.
+No source changes were made in the reported GPU experiment.
