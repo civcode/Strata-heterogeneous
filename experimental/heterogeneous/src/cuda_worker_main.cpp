@@ -13,6 +13,7 @@
 #include "strata/core/geometry.hpp"
 #include "native_worker_defaults.hpp"
 #include "strata_heterogeneous/performance.hpp"
+#include "strata_heterogeneous/native_prefill_domain.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -132,8 +133,10 @@ int main(int argc,char** argv) {
             eo.max_cache_slots=config.max_cache_slots;
             eo.cpu_workers=static_cast<int>(config.cpu_workers);
             eo.free_reserve_bytes=config.free_reserve_bytes;
-            if(!experts->open(plan,index,geometry,eo,error)||
-               !owner.attach_experts(std::move(experts),error))
+            if(!experts->open(plan,index,geometry,eo,error))
+                throw std::runtime_error("expert provider startup: "+error);
+            const auto pf_resources=experts->native_prefill_resources();
+            if(!owner.attach_experts(std::move(experts),error))
                 throw std::runtime_error("expert provider startup: "+error);
             auto bindings=owner.make_bindings();
             const hetero::WindowLimits window_limits{
@@ -150,7 +153,15 @@ int main(int argc,char** argv) {
                 hetero::DeviceStageExecutor executor(driver);
                 hetero::serve_worker_stateful(3,plan,index,executor,
                     static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
-                    &window_limits, startup_wait_ms);
+                    &window_limits, startup_wait_ms,
+                    [&](const hetero::Frame& cmd,int fd,std::string& e) {
+                        if (index!=0) { e="native prefill requires CUDA entry stage"; return false; }
+                        return hetero::run_native_prefill_domain(cmd,fd,
+                            {{bindings.weights,bindings.geometry,bindings.session,pf_resources,
+                              config.free_reserve_bytes,config.arena_budget_bytes}},
+                            true,bindings.timeout_ms,e) &&
+                            driver.adopt_native_prefill(cmd.request_id,cmd.rows,e);
+                    });
                 executor.shutdown();driver.shutdown();
             }
             native.shutdown(); // after verifier graphs, before stage weights

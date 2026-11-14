@@ -42,6 +42,7 @@ public:
     CudaVerifierDriver& operator=(const CudaVerifierDriver&) = delete;
     bool prepare(const Plan&, size_t, std::string&) override;
     bool reset_request(uint64_t, std::string&) override;
+    bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
     bool begin_window(const WindowSpec&, uint64_t, uint64_t, std::string&) override;
     bool enqueue_upload(const uint8_t*, size_t, std::string&) override;
     bool wait_upload(std::string&) override;

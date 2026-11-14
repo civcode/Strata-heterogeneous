@@ -14,6 +14,7 @@
 #include "strata/core/geometry.hpp"
 #include "native_worker_defaults.hpp"
 #include "strata_heterogeneous/performance.hpp"
+#include "strata_heterogeneous/native_prefill_domain.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -71,6 +72,7 @@ bool check_compiled_geometry(const hetero::HipWorkerConfig& config,const hetero:
 struct LoadedHipStage {
     hetero::HipStageResources owner;
     hetero::HipNativeStage native;
+    hetero::NativePrefillExpertView pf_resources;
     explicit LoadedHipStage(uint64_t fingerprint)
         : owner(strata::core::kCompiledGeometry, fingerprint) {}
     void load(const hetero::Plan& plan, size_t index, const hetero::CudaWorkerConfig& c) {
@@ -99,7 +101,10 @@ struct LoadedHipStage {
         eo.max_cache_slots = c.max_cache_slots;
         eo.cpu_workers = static_cast<int>(c.cpu_workers);
         eo.free_reserve_bytes = c.free_reserve_bytes;
-        if (!experts->open(plan,index,geometry,eo,error) || !owner.attach_experts(std::move(experts),error))
+        if (!experts->open(plan,index,geometry,eo,error))
+            throw std::runtime_error("expert provider startup: "+error);
+        pf_resources=experts->native_prefill_resources();
+        if (!owner.attach_experts(std::move(experts),error))
             throw std::runtime_error("expert provider startup: "+error);
     }
 };
@@ -133,10 +138,14 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     }
     std::vector<std::unique_ptr<LoadedHipStage>> owners;
     std::vector<hetero::HipNativeChainStage> bindings;
+    std::vector<hetero::NativePrefillStage> pf_stages;
     for (size_t j = 0; j < domain.size(); ++j) {
         auto owner = std::make_unique<LoadedHipStage>(plan.model_fingerprint);
         owner->load(plan,domain.first_stage+j,configs[j].fields);
-        bindings.push_back({owner->owner.make_bindings(),configs[j].fields.free_reserve_bytes});
+        const auto b=owner->owner.make_bindings();
+        bindings.push_back({b,configs[j].fields.free_reserve_bytes});
+        pf_stages.push_back({b.weights,b.geometry,b.session,owner->pf_resources,
+            configs[j].fields.free_reserve_bytes,configs[j].fields.arena_budget_bytes});
         owners.push_back(std::move(owner));
     }
     const auto& c = configs.front().fields;
@@ -144,7 +153,12 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact});
     // Same native final-result handler; one external commit ACK covers the entire HIP chain.
     hetero::serve_final_stage_worker(3,plan,invocation.stage_index,final,static_cast<int>(c.io_timeout_ms),
-        invocation.shared_memory,&limits,startup_wait_ms,true);
+        invocation.shared_memory,&limits,startup_wait_ms,true,
+        [&](const hetero::Frame& cmd,int fd,std::string& e) {
+            return hetero::run_native_prefill_domain(cmd,fd,pf_stages,false,
+                       static_cast<int>(c.io_timeout_ms),e) &&
+                   final.adopt_native_prefill(cmd.request_id,cmd.rows,e);
+        });
     final.shutdown();
 }
 } // namespace

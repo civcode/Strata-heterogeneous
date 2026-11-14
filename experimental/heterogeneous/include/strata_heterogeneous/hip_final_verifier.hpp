@@ -39,6 +39,7 @@ public:
 
     bool prepare(const Plan&, size_t stage_index, std::string&) override;
     bool reset_request(uint64_t, std::string&) override;
+    bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
     bool begin_window(const WindowSpec&, uint64_t request_id,
                       uint64_t window_id, std::string&) override;
     bool run_final_window(const Frame&, ActivationView, FinalStageResult&,

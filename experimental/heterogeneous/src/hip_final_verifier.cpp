@@ -155,6 +155,14 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
     unsafe_result_ = false;
     return true;
 }
+bool HipFinalVerifierExecutor::adopt_native_prefill(uint64_t request,uint32_t rows,std::string& error) {
+    // The native prompt engine has fully drained the same stage-local session.
+    if (state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
+        !rows || rows>=bindings_.session.max_cells || chain_stages_.empty()) {
+        error="native prefill position adoption refused"; return false;
+    }
+    next_position_=rows; window_=1; return true;
+}
 bool HipFinalVerifierExecutor::begin_window(const WindowSpec& spec,
                                               uint64_t request, uint64_t window,
                                               std::string& error) {

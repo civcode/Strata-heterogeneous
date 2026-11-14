@@ -59,6 +59,7 @@ void send_failure(int fd, Frame request, const std::string& reason, int timeout_
     request.shared_checksum = 0;
     request.window.reset();
     request.keep_count = 0;
+    request.prefill_chunk = 0;
     request.error = reason.substr(0, max_failure_bytes);
     if (request.error.empty()) request.error = "unknown stage failure";
     send_frame(fd, request, timeout_ms);

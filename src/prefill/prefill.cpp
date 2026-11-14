@@ -7986,9 +7986,15 @@ bool Prefill::run_external(const int64_t* tokens, int64_t n, int64_t pos0, int64
     // Use the same planning flags and native async successor chain as vanilla.
     // Deliberately bypass layer-major selection until that variant has a boundary interface.
     force_chunk(chunk_size, n <= chunk_size, planned);
-    const bool body_ok = run_impl(tokens, n, pos0, err);
+    bool body_ok = false;
+    try { body_ok = run_impl(tokens, n, pos0, err); }
+    catch (const std::exception& ex) { err = ex.what(); }
+    catch (...) { err = "native external prefill threw"; }
     std::string drain_err;
-    const bool drain_ok = drain_pipeline(drain_err);
+    bool drain_ok = false;
+    try { drain_ok = drain_pipeline(drain_err); }
+    catch (...) { std::_Exit(70); } // never destroy a potentially live successor
+
     if (!body_ok) return false;
     if (!drain_ok) { err = drain_err; return false; }
     return true;

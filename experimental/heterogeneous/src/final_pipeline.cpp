@@ -4,6 +4,7 @@
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -52,6 +53,7 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
         f.payload.clear();
         f.window.reset();
         f.keep_count = 0;
+        f.prefill_chunk = 0;
         f.shared_checksum = 0;
         f.error = error.empty() ? "final stage failed" : std::move(error);
         if (f.error.size() > 1024) f.error.resize(1024);
