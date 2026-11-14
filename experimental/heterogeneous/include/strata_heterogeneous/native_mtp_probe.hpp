@@ -6,7 +6,16 @@
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
 #include "strata/artifact/gguf_reader.hpp"
+// Vanilla PinnedRing intentionally discards cleanup/error-clear return values;
+// HIP annotates them nodiscard and this worker builds with -Werror.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+#endif
 #include "strata/core/mtp.hpp"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include "strata/core/native_head.hpp"
 #include "strata/core/weights.hpp"
 #include "strata/kernels/cpu/expert.hpp"
@@ -66,6 +75,12 @@ public:
             // even if mapped, exact runtime weights, plus 1 GiB for private
             // state/graphs/scratch. Never resize expert residency to fit.
             const uint64_t estimate=dense+experts+head_bytes*2+embed_bytes+(1ull<<30);
+            size_t free_bytes=0, total_bytes=0;
+            if (!ck(cudaMemGetInfo(&free_bytes,&total_bytes),error)) return false;
+            std::fprintf(stderr,"HETERO_MTP_PROBE_ADMISSION device=%d free=%llu total=%llu reserve=%llu estimate=%llu head=%llu embed=%llu\n",
+                         device_,static_cast<unsigned long long>(free_bytes),static_cast<unsigned long long>(total_bytes),
+                         static_cast<unsigned long long>(reserve_),static_cast<unsigned long long>(estimate),
+                         static_cast<unsigned long long>(head_bytes),static_cast<unsigned long long>(embed_bytes));
             if (!room(estimate,error)) return false;
             head_=std::make_unique<core::NativeHead>();
             if (!head_->load(shards_,g.n_embd,g.n_vocab,error) || head_->on_host() || !room(0,error)) {

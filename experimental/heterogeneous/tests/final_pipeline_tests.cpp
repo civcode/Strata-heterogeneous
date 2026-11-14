@@ -527,6 +527,9 @@ void compact_and_prefix(bool shared, bool fanout) {
     check(greedy_accepted_prefix({1,2,3},{2,3,4})==3,"all draft rows accepted");
     check(greedy_accepted_prefix({1,2,3},{2,8,4})==2,"middle mismatch terminates prefix");
     check(greedy_accepted_prefix({1,2,3},{8,3,4})==1,"first mismatch keeps only anchor");
+    // Report 0017: actual native MTP proposal and target-verifier replay.
+    check(greedy_accepted_prefix({264,14075,8818,364,264},{2724,8818,11176,264,491})==1,
+          "real MTP continuation rejects first draft and keeps anchor");
     check(greedy_accepted_prefix({1},{2})==1,"plain decode prefix");
     fails([]{ (void)greedy_accepted_prefix({1,2},{3}); },"wrong shape");
     fails([]{ (void)greedy_accepted_prefix({1,2},{2,-1}); },"negative predictions");
