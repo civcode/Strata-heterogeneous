@@ -1,0 +1,17 @@
+# Report 0018 — dynamic native MTP relay qualification
+
+**Status: blocked before hardware qualification; host tests pass.** Branch was fast-forwarded to requested `0c3e7059519daa96c24a1119dc5aa8e98fc72073`. This execution environment exposes neither `/dev/kfd` nor `/dev/nvidiactl` (nor `/dev/dri` or `/dev/nvidia*`), so it cannot run the required CUDA0 → HIP0 → HIP1 chain. No GPU run was started or forcibly terminated. No Actions were used. This report does not qualify relay or production MTP.
+
+## Builds, tests and assets
+
+- Existing vanilla build directories: `cmake --build build-hetero-smoke-{host,cuda,hip} -j28`: all three succeeded, including CUDA and HIP workers. CUDA repeat log: `build-hetero-smoke-cuda/report-0018-build.log` (local build artifact).
+- `ctest --test-dir build-hetero-smoke-host --output-on-failure -j28`: **97/97 passed**, including the cursor and final-pipeline protocol fixtures. Log: `build-hetero-smoke-host/report-0018-ctest.log` (local build artifact). These host mocks are not hardware relay evidence.
+- `PYTHONPATH=tools .venv/bin/python -m unittest test_heterogeneous_mtp_admission test_heterogeneous_prefill_state test_heterogeneous_prefill_parity`: **25/25 passed**. An initial invocation without `PYTHONPATH=tools` failed on imports; the corrected invocation passed. The separately requested Python resident suite was not identified/run.
+- `.venv/bin/python -m pip check` failed: this environment's venv sees ROS system packages requiring missing `setuptools`; `import setuptools` also fails. No packages installed or environment changed.
+- Read-only hashes match report 0017: `rt/dense.txt` `991456cf4eb266eb8a888c349e548d11bc640f5dbd9149439aa9786af0f732fd`, `dense.bin` `c724dc0b0822ada5d2977bf5bde821605feabaa64ea2e0045b67ca656329070a`, `experts.bin` `09398406be61f1f54c93861f449e48b8df0bfccbc9ec9b2b7636775a6ea9244f`, `draft_vocab.bin` `b1e1d3a7a9e4bf862dcd5923ce661fb59bbd07907e594df5cf86a62ac235cb91`. Current configured stage0/stage1/stage2 pack directory is `/home/chris/workspace/Strata-data/packs/q2_0`; its `index.txt` is `c344c01f59f547ed8a59003857a82eb90499e5299154241dbca787acb54b5b7c`. No raw tensor re-audit. As in 0017, exact target conversion/checkpoint revision relationship remains unverified.
+
+## Missing qualification and next step
+
+No new one-shot control, real dynamic offer, accepted/rejected count, all-stage commit observation, serial logits comparison, natural draft acceptance search, fresh-prefix offer comparison or committed draft K/V comparison was possible. Prior report 0017's real first draft `[14075,8818,364,264]` and rejection are **offline replay**, not evidence that this revision's dynamic relay works. Logical causal overwrite is unproved; physical suffix clearing is not established. Resident MTP reset remains unqualified and must remain disabled. Native bulk prefill remains disabled; first CUDA GDN state discrepancy remains open. No throughput or production generation claim is made.
+
+Resume the exact handoff matrix on a host exposing the approved GPUs, including socket/shared independent repeats, unchanged parity gates and fresh independent prefix probes after each rejection/partial acceptance, then only consider resident reset once the required reuse evidence exists. Existing 0017 raw captures are under `/home/chris/tmp/strata-heterogeneous/m7-0017/`; this iteration created no GPU captures. Existing untracked `tools/heterogeneous_pool_probe.cpp` was preserved; `.env` is a sandbox-provided untracked device mount and was not added.
