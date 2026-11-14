@@ -218,7 +218,7 @@ void shared_expert_multi(int n_tok, const float* x, const uint16_t* x_bf16, cons
                          int64_t n_ff, void* stream, const void* x_q8_1_ready, int lfuse,
                          SharedExpertMicrotrace* trace) {
     const bool gate_deferred = (lfuse & 1) != 0, pair = (lfuse & 2) != 0;
-    if (trace != nullptr && (n_tok != 1 || gate_deferred || n_embd <= 0 ||
+    if (trace != nullptr && (n_tok != 1 || gate_deferred || !native_bf16 || n_embd <= 0 ||
                             n_ff <= 0 || (n_embd % 32) != 0 || (n_ff % 32) != 0))
         throw std::invalid_argument("M2.17 shared microtrace needs one nondeferred token and block32 dimensions");
     if (n_tok < 1 || n_tok > kVerifyMaxT || !nw.q8_1 || !nw.gate_data || !nw.up_data || !nw.down_data || !stream)
@@ -293,8 +293,8 @@ void shared_expert_multi(int n_tok, const float* x, const uint16_t* x_bf16, cons
         scale_rows_kernel<<<dim3((unsigned) ((n_embd + THREADS - 1) / THREADS), (unsigned) n_tok), THREADS, 0, cs>>>(
             out, g, (int) n_embd);
     }
-    trace_copy(trace ? trace->gate_scale : nullptr, g,
-               sizeof(float), "gate_scale");
+    trace_copy(trace ? trace->gate_logit : nullptr, g,
+               sizeof(float), "gate_logit");
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) throw std::runtime_error(std::string("shared_expert_multi: ") + cudaGetErrorString(e));
 }
