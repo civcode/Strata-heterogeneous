@@ -2440,7 +2440,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 trace.up_raw = micro_dev_ + micro_offsets_[2];
                 trace.swiglu_q8 = micro_swiglu_q8_;
                 trace.down_unscaled = micro_dev_ + micro_offsets_[3];
-                trace.gate_scale = micro_dev_ + micro_offsets_[4];
+                trace.gate_logit = micro_dev_ + micro_offsets_[4];
             }
             nsw.gate_type = wsg->native_type; nsw.gate_data = wsg->native_data;
             nsw.up_type = wsu->native_type; nsw.up_data = wsu->native_data;
