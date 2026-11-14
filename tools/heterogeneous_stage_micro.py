@@ -99,9 +99,9 @@ def read_run(prefix: Path) -> list[tuple[dict, dict]]:
                 item["fingerprint"] == stfr["fingerprint"] and
                 item["token"] == meta["token_ids"][0],
                 "STM0 model/window token/request/position identity mismatch")
-        require(item["shared_final"] == old["layer5_shared"] and
-                item["layer6_qkv"] == old["layer6_qkv"] and
-                item["layer6_conv_output"] == old["layer6_conv"],
+        require(item["shared_final"].tobytes() == old["layer5_shared"].tobytes() and
+                item["layer6_qkv"].tobytes() == old["layer6_qkv"].tobytes() and
+                item["layer6_conv_output"].tobytes() == old["layer6_conv"].tobytes(),
                 "STM0/STB0 overlap mismatch: instrumentation or field layout inconsistent")
         require(item["n_embd"] == old["n_embd"] and
                 item["conv_channels"] == old["conv_channels"],
