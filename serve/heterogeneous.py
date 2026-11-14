@@ -26,7 +26,7 @@ def prepare_server(cfg):
         raise ValueError("heterogeneous engine needs a heterogeneous config object")
     required = {"coordinator", "cuda_worker", "hip_worker", "config", "plan", "fingerprint"}
     optional = {"layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
-                "max_context", "stream_tokens", "restart_clean"}
+                "max_context", "stream_tokens", "restart_clean", "lookup_draft"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     for key in ("coordinator", "cuda_worker", "hip_worker", "plan"):
@@ -37,14 +37,14 @@ def prepare_server(cfg):
         raise ValueError("heterogeneous.config must list ordered worker config paths")
     values = dict(layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
-                  stream_tokens=False, restart_clean=False)
+                  stream_tokens=False, restart_clean=False, lookup_draft=False)
     values.update(opts)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
             raise ValueError(f"heterogeneous.{key} must be a positive integer")
     if type(values["prompt_chunk"]) is not int or not 0 <= values["prompt_chunk"] <= 8:
         raise ValueError("heterogeneous.prompt_chunk must be 0..8")
-    for key in ("shared", "stream_tokens", "restart_clean"):
+    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft"):
         if type(values[key]) is not bool:
             raise ValueError(f"heterogeneous.{key} must be boolean")
     args = argparse.Namespace(**values)
@@ -65,6 +65,9 @@ class ResidentEngine:
         self.stop_ids = set(stop_ids)
         self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
         self.stream_tokens = source.get("stream_tokens", False)
+        self.lookup_draft = source.get("lookup_draft", False)
+        if self.lookup_draft and (self.stream_tokens or chunk < 2):
+            raise ValueError("lookup-draft requires buffered generation and chunk >= 2")
         self._restart_clean = source.get("restart_clean", False)
         self._argv = tuple(argv)
         self.last_metrics = None
@@ -97,7 +100,8 @@ class ResidentEngine:
                                         name="heterogeneous-native-output")
         self._reader.start()
         try:
-            expected = "HETERO_READY 1 STREAM" if self.stream_tokens else "HETERO_READY 1"
+            expected = ("HETERO_READY 1 STREAM" if self.stream_tokens else
+                        "HETERO_READY 1 LOOKUP" if self.lookup_draft else "HETERO_READY 1")
             if self._receive() != expected:
                 raise self._died("native resident readiness not acknowledged")
             print(f"HETERO_READY coordinator_pid={self.proc.pid}", file=sys.stderr, flush=True)
@@ -233,7 +237,8 @@ class ResidentEngine:
             self.last_completion = self.last_metrics = None
             waiting = completed = cancelled = False
             progress = Progress(self._request, len(ids), max_new, self.chunk,
-                                self.source["vocab"], self.stop_ids, self.stream_tokens)
+                                self.source["vocab"], self.stop_ids, self.stream_tokens,
+                                 self.lookup_draft)
             start = time.perf_counter()
             prefill_end = last_checkpoint = first_output = None
             emitted = 0

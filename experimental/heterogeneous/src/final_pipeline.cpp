@@ -1,5 +1,6 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/shared.hpp"
+#include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 
 #include <cstdio>
@@ -154,7 +155,11 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (gate && !gate->provisional_final(error))
                     throw std::runtime_error(error);
                 trace_window(gate.get(), "provisional");
-                send_final_result(fd, result, timeout_ms);
+                {
+                    PerformanceSpan perf("worker", "final_result_send", index,
+                                         request->request_id, request->window_id, request->rows);
+                    send_final_result(fd, result, timeout_ms);
+                }
                 auto commit = receive_frame(fd, timeout_ms);
                 if (!commit) { executor.abandon_window(); break; }
                 match(*commit, *request, Kind::commit_prefix);
@@ -188,9 +193,11 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 }
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
-                                           int timeout_ms, bool shared_memory, bool resident)
+                                           int timeout_ms, bool shared_memory, bool resident,
+                                           bool fanout_control, bool require_compact)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
-      shared_memory_(shared_memory), resident_(resident) {
+      shared_memory_(shared_memory), resident_(resident),
+      fanout_control_(fanout_control), require_compact_(require_compact) {
     plan_.validate();
     if (fds_.size() != plan_.stages.size() || timeout_ms_ < 0)
         throw std::invalid_argument("final pipeline needs one worker per stage and valid timeout");
@@ -232,9 +239,16 @@ void FinalPipelineSession::begin_request(uint64_t request) {
         request <= resident_request_)
         throw std::logic_error("resident reset requires an idle pipeline and increasing request ID");
     try {
+        PerformanceSpan total("coordinator", "reset_barrier", fds_.size(), request, 0, 1);
+        // Stage-local state resets can overlap. Wait for every ACK.
+        if (fanout_control_) {
+            for (size_t i = 0; i < fds_.size(); ++i)
+                send_frame(fds_[i], control(plan_, i, Kind::begin_request, request, 0, 1), timeout_ms_);
+        }
         for (size_t i = 0; i < fds_.size(); ++i) {
             const auto reset = control(plan_, i, Kind::begin_request, request, 0, 1);
-            send_frame(fds_[i], reset, timeout_ms_);
+            PerformanceSpan stage("coordinator", "reset_ack", i, request, 0, 1);
+            if (!fanout_control_) send_frame(fds_[i], reset, timeout_ms_);
             auto ack = receive_frame(fds_[i], timeout_ms_);
             if (!ack) throw std::runtime_error("worker closed during resident reset");
             if (ack->kind == Kind::failure)
@@ -248,6 +262,11 @@ void FinalPipelineSession::begin_request(uint64_t request) {
 }
 
 FinalStageResult FinalPipelineSession::execute(Frame initial, const WindowSpec& spec) {
+    execute_discard(std::move(initial), spec);
+    try { return gate_.provisional(); }
+    catch (...) { poison(); throw; }
+}
+void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec) {
     if (!initialized_ || poisoned_) throw std::logic_error("final pipeline unavailable");
     if (pending_) throw std::logic_error("final pipeline already has uncommitted result");
     if (resident_ && (!resident_request_ || initial.request_id != resident_request_))
@@ -258,7 +277,8 @@ FinalStageResult FinalPipelineSession::execute(Frame initial, const WindowSpec& 
             initial.geometry.hc != plan_.geometry.hc ||
             initial.geometry.n_embd != plan_.geometry.n_embd)
             throw std::invalid_argument("initial final pipeline activation identity/shape invalid");
-        (void)encode(initial);
+        // Same validation as encode, without serializing and hashing a throwaway packet.
+        validate_wire_frame(initial);
         spec.validate(initial.rows);
         if (initial.request_id == last_request_ && initial.window_id <= last_window_)
             throw std::invalid_argument("final pipeline received replayed window");
@@ -271,6 +291,8 @@ FinalStageResult FinalPipelineSession::execute(Frame initial, const WindowSpec& 
             initial.shared_checksum = shared_->checksum(bytes);
         }
         for (size_t i = 0; i < fds_.size(); ++i) {
+            PerformanceSpan stage("coordinator", "stage_roundtrip", i, initial.request_id,
+                                  initial.window_id, initial.rows);
             Frame context = control(plan_, i, Kind::window_spec,
                                     initial.request_id, initial.window_id, initial.rows);
             context.window = spec;
@@ -280,6 +302,8 @@ FinalStageResult FinalPipelineSession::execute(Frame initial, const WindowSpec& 
             if (i + 1 == fds_.size()) {
                 auto response = receive_final_result(fds_[i], timeout_ms_);
                 if (!response) throw std::runtime_error("final worker closed without head result");
+                if (require_compact_ && response->logits)
+                    throw std::runtime_error("requested compact result, but worker returned diagnostic logits");
                 gate_.stage(std::move(*response), static_cast<uint32_t>(i),
                             initial.request_id, initial.window_id, initial.plan_fingerprint, initial.rows);
             } else {
@@ -297,7 +321,6 @@ FinalStageResult FinalPipelineSession::execute(Frame initial, const WindowSpec& 
         pending_window_ = initial.window_id;
         pending_rows_ = initial.rows;
         pending_ = true;
-        return gate_.provisional();
     } catch (...) { poison(); throw; }
 }
 FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
@@ -307,11 +330,25 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
     try {
         if (gate_.provisional().has_nonfinite())
             throw std::runtime_error("nonfinite head result cannot be committed");
+        PerformanceSpan total("coordinator", "commit_barrier", fds_.size(), pending_request_,
+                              pending_window_, pending_rows_);
+        // Only after the finite gate passes. Partial failure still poisons
+        // all peers. No result is published before every valid ACK.
+        if (fanout_control_) {
+            for (size_t i = 0; i < fds_.size(); ++i) {
+                Frame request = control(plan_, i, Kind::commit_prefix,
+                                        pending_request_, pending_window_, pending_rows_);
+                request.keep_count = n_keep;
+                send_frame(fds_[i], request, timeout_ms_);
+            }
+        }
         for (size_t i = 0; i < fds_.size(); ++i) {
             Frame request = control(plan_, i, Kind::commit_prefix,
                                     pending_request_, pending_window_, pending_rows_);
             request.keep_count = n_keep;
-            send_frame(fds_[i], request, timeout_ms_);
+            PerformanceSpan stage("coordinator", "commit_ack", i, pending_request_,
+                                  pending_window_, pending_rows_);
+            if (!fanout_control_) send_frame(fds_[i], request, timeout_ms_);
             auto reply = receive_frame(fds_[i], timeout_ms_);
             if (!reply) throw std::runtime_error("worker closed during final-result commit");
             if (reply->kind == Kind::failure)

@@ -3,6 +3,9 @@
 #include "strata_heterogeneous/cuda_worker_config.hpp"
 #include "strata_heterogeneous/hip_worker_config.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/performance.hpp"
+#include "strata_heterogeneous/speculation.hpp"
+#include "strata/spec/suffix_drafter.hpp"
 #include "strata_heterogeneous/process.hpp"
 
 #include <algorithm>
@@ -15,6 +18,7 @@
 #include <sstream>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -38,6 +42,7 @@ struct Options {
     bool describe_source = false;
     bool resident = false;
     bool stream_tokens = false;
+    bool lookup_draft = false;
     uint32_t context_limit = 4096;
     uint32_t layers = 48;
     uint32_t hc = 4;
@@ -92,6 +97,7 @@ void usage() {
         "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
+        "  --lookup-draft: verified suffix lookup (buffered only, prompt-chunk 2..8).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
 // Input is local, but bounded before allocation beyond the documented cap.
@@ -154,6 +160,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
+        else if (key == "--lookup-draft") { o.lookup_draft = true; generation_arg = true; }
         else if (key == "--context-limit") {
             generation_arg = true;
             o.context_limit = u32(required_value(i, argc, argv, "--context-limit"), "context-limit");
@@ -260,6 +267,8 @@ Options parse(int argc, char** argv) {
     }
     if (o.stream_tokens && !o.resident)
         throw std::invalid_argument("--stream-tokens requires --resident");
+    if (o.lookup_draft && (o.stream_tokens || o.prompt_chunk < 2))
+        throw std::invalid_argument("--lookup-draft requires buffered generation and chunk >= 2");
     if (o.generate) {
         if (o.generate >= o.context_limit)
             throw std::invalid_argument("completion budget leaves no prompt context");
@@ -290,7 +299,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     // The last provisional window, including its discarded suffix, must fit.
     const uint64_t needed = o.resident ? uint64_t(o.generate) + 1
         : o.generate ? uint64_t(o.tokens.size()) + o.generate : uint64_t(o.windows - 1) * o.keep + o.rows;
-    const uint32_t rows = o.resident ? o.prompt_chunk
+    const uint32_t rows = (o.resident || o.lookup_draft) ? o.prompt_chunk
         : o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) : o.rows;
     const uint64_t stride = plan.geometry.floats_per_row();
     if (stride > hetero::max_payload_bytes / (sizeof(float) * rows))
@@ -521,14 +530,21 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     } else if (::unsetenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX") != 0) {
         throw std::runtime_error("cannot clear inherited boundary capture");
     }
+    const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
+    const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
+    (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
+    (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
+    if (compact && !o.generate)
+        throw std::invalid_argument("compact head results are only supported in generation mode");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
-    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident);
+    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident,
+                                         fanout, compact);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket") << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
-    auto run_window = [&](const hetero::WindowSpec& spec, uint64_t id, uint32_t keep) {
+    auto initial_frame = [&](const hetero::WindowSpec& spec, uint64_t id) {
         hetero::Frame initial;
         initial.kind = hetero::Kind::data;
         initial.request_id = request_id;
@@ -539,7 +555,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         // Layer zero embeds the real tokens; only this ignored placeholder is zero.
         initial.payload.assign(static_cast<size_t>(plan.geometry.floats_per_row()) *
                                initial.rows, 0.0f);
-        (void)session.execute(std::move(initial), spec);
+        return initial;
+    };
+    auto run_window = [&](const hetero::WindowSpec& spec, uint64_t id, uint32_t keep) {
+        session.execute_discard(initial_frame(spec, id), spec);
         auto committed = session.commit(keep);
         if (committed.predicted_tokens.size() != spec.token_ids.size() || committed.has_nonfinite())
             throw std::runtime_error("committed head predictions malformed or nonfinite");
@@ -585,20 +604,71 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             pos += static_cast<int64_t>(count);
             if (!checkpoint()) return;
         }
-        for (uint32_t n = 0; n < max_new; ++n) {
-            if (std::find(o.stop_ids.begin(), o.stop_ids.end(), next) != o.stop_ids.end()) {
+        // Reuse Strata's existing request-local suffix lookup. The history
+        // contains only committed inputs. The already-known next token is
+        // temporarily appended for lookup, but never accepted as a draft.
+        std::unique_ptr<strata::spec::SuffixDrafter> lookup;
+        if (o.lookup_draft) {
+            lookup = std::make_unique<strata::spec::SuffixDrafter>(3, 32, o.context_limit);
+            lookup->append(prompt.data(), prompt.size());
+        }
+        uint64_t proposed = 0, accepted = 0, lookup_windows = 0;
+        auto is_stop = [&](int32_t token) {
+            return std::find(o.stop_ids.begin(), o.stop_ids.end(), token) != o.stop_ids.end();
+        };
+        auto report_lookup = [&] {
+            if (lookup)
+                std::cerr << "HETERO_LOOKUP request=" << request_id
+                          << " proposed=" << proposed << " accepted=" << accepted
+                          << " multirow_windows=" << lookup_windows << '\n';
+        };
+        while (generated.size() < max_new) {
+            if (is_stop(next)) {
                 stopped = true;
                 stop_token = next;
                 break;
             }
             generated.push_back(next);
-            if (n + 1 == max_new) break;
+            if (generated.size() == max_new) break;
             hetero::WindowSpec spec;
-            spec.pos0 = pos++;
+            spec.pos0 = pos;
             spec.token_ids = {next};
-            next = run_window(spec, ++window, 1).predicted_tokens.back();
-            if (!checkpoint()) { generated.clear(); return; }
+            if (lookup) {
+                // Leave room for the final un-fed output token and never
+                // evaluate a proposed stop as input. Same bounds as prefill.
+                const int cap = static_cast<int>(std::min<size_t>(
+                    o.prompt_chunk, max_new - generated.size())) - 1;
+                int32_t drafts[8]{};
+                const int count = lookup->propose_after(&next, 1, cap, drafts);
+                if (count < 0 || count > cap)
+                    throw std::runtime_error("suffix drafter exceeded bounded window");
+                for (int i = 0; i < count && !is_stop(drafts[i]); ++i)
+                    spec.token_ids.push_back(drafts[i]);
+            }
+            uint32_t keep = 1;
+            if (spec.token_ids.size() > 1) {
+                ++lookup_windows;
+                proposed += spec.token_ids.size() - 1;
+                const auto provisional = session.execute(initial_frame(spec, ++window), spec);
+                if (provisional.has_nonfinite())
+                    throw std::runtime_error("nonfinite speculative window");
+                keep = hetero::greedy_accepted_prefix(spec.token_ids, provisional.predicted_tokens);
+                const auto committed = session.commit(keep);
+                if (committed.predicted_tokens.size() != spec.token_ids.size() || committed.has_nonfinite())
+                    throw std::runtime_error("invalid committed speculative window");
+                next = committed.predicted_tokens[keep - 1];
+                // Publish accepted draft rows only AFTER all stages ACK.
+                generated.insert(generated.end(), spec.token_ids.begin() + 1,
+                                 spec.token_ids.begin() + keep);
+                accepted += keep - 1;
+            } else {
+                next = run_window(spec, ++window, 1).predicted_tokens.back();
+            }
+            if (lookup) lookup->append(spec.token_ids.data(), keep);
+            pos += keep;
+            if (!checkpoint()) { generated.clear(); report_lookup(); return; }
         }
+        report_lookup();
     };
     auto publish = [&](size_t prompt_size) {
         std::ostringstream out;
@@ -618,6 +688,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         session.begin_request(request_id);
         std::cout << "HETERO_READY " << request_id;
         if (o.stream_tokens) std::cout << " STREAM";
+        if (o.lookup_draft) std::cout << " LOOKUP";
         std::cout << std::endl;
         bool first = true;
         std::string line;

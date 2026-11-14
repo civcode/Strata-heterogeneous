@@ -1,5 +1,6 @@
 // CPU-only final-worker protocol. Real forked worker processes, no GPU model.
 #include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/shared.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 #include <iostream>
@@ -169,10 +170,10 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
     }
     return group;
 }
-void three_stage(bool shared) {
+void three_stage(bool shared, bool fanout) {
     Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     WorkerGroup group = launch(p, shared);
-    FinalPipelineSession pipe(p, group.sockets, 1200, shared);
+    FinalPipelineSession pipe(p, group.sockets, 1200, shared, false, fanout);
     pipe.initialize();
     const WindowSpec spec{22,{4,51,9}};
     FinalStageResult provisional = pipe.execute(input_frame(p), spec);
@@ -201,11 +202,11 @@ void three_stage(bool shared) {
 }
 // Exercise only handshake/admission/replay/fail-stop on existing CPU mocks.
 // No inference or numerical correctness is inferred from these assertions.
-void resident_lifecycle(bool shared) {
+void resident_lifecycle(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     {
         auto w = launch(p, shared, false, false, false, false, 0.f, true);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared, true);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, true, fanout);
         pipe.initialize();
         fails([&]{ (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}}); }, "reset required");
         pipe.begin_request(1);
@@ -225,14 +226,14 @@ void resident_lifecycle(bool shared) {
     }
     {
         auto w = launch(p, shared, false, false, false, false, 0.f, true, true);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared, true);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, true, fanout);
         pipe.initialize();
         fails([&]{ pipe.begin_request(1); }, "later worker reset refusal");
         check(pipe.poisoned(), "partial reset poisons all peers");
         fails([&]{ pipe.begin_request(2); }, "poisoned workers not reusable");
     }
 }
-void bad_ack() {
+void bad_ack(bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3",3,{2,3},3719);
     int fd[2]{};
     check(::socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0,"bad ACK socketpair");
@@ -266,7 +267,7 @@ void bad_ack() {
     }
     ::close(fd[1]);
     {
-        FinalPipelineSession pipe(p,{fd[0]},1200,false);
+        FinalPipelineSession pipe(p,{fd[0]},1200,false,false,fanout);
         pipe.initialize();
         check(pipe.execute(input_frame(p),{0,{1,2,3}}).predicted_tokens[1]==11,
               "bad ACK test receives provisional output");
@@ -280,13 +281,13 @@ void bad_ack() {
     check(::waitpid(pid,&status,0)==pid && WIFEXITED(status) && WEXITSTATUS(status)==0,
           "bad ACK peer exited cleanly");
 }
-void negative(bool shared) {
+void negative(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3",3,{2,3},3719);
     for (float value : {std::numeric_limits<float>::quiet_NaN(),
                         std::numeric_limits<float>::infinity(),
                         -std::numeric_limits<float>::infinity()}) {
         WorkerGroup w = launch(p, shared, false, false, false, false, value);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, false, fanout);
         pipe.initialize();
         auto result = pipe.execute(input_frame(p),{0,{1,2,3}});
         check(result.nonfinite_rows.empty() && result.logits &&
@@ -302,20 +303,20 @@ void negative(bool shared) {
     }
     {
         WorkerGroup w = launch(p, !shared);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, false, fanout);
         fails([&]{pipe.initialize();}, "wrong final transport mode rejected");
         check(pipe.poisoned(), "transport mismatch poisons session");
     }
     {
         WorkerGroup w = launch(p, shared, true);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, false, fanout);
         pipe.initialize();
         fails([&]{(void)pipe.execute(input_frame(p),{0,{1,2,3}});}, "wrong result identity rejected");
         check(pipe.poisoned(), "bad identity poisons session");
     }
     {
         WorkerGroup w = launch(p, shared, false, true);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, false, fanout);
         pipe.initialize();
         auto result = pipe.execute(input_frame(p),{0,{1,2,3}});
         check(result.nonfinite_rows == std::vector<uint32_t>({1}), "diagnostics available provisional");
@@ -325,7 +326,7 @@ void negative(bool shared) {
     {
         const Plan split = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
         WorkerGroup w = launch(split, shared, false, false, true);
-        FinalPipelineSession pipe(split, w.sockets, 1200, shared);
+        FinalPipelineSession pipe(split, w.sockets, 1200, shared, false, fanout);
         pipe.initialize();
         (void)pipe.execute(input_frame(split),{0,{1,2,3}});
         fails([&]{(void)pipe.commit(1);}, "final failure after two stage commits not published");
@@ -333,18 +334,41 @@ void negative(bool shared) {
     }
     {
         WorkerGroup w = launch(p, shared, false, false, false, true);
-        FinalPipelineSession pipe(p, w.sockets, 1200, shared);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, false, fanout);
         fails([&]{pipe.initialize();}, "wrong handshake fails closed");
         check(pipe.poisoned(), "wrong final capability poisons coordinator");
     }
 }
+void compact_and_prefix(bool shared, bool fanout) {
+    const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    {
+        auto w=launch(p,shared);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,false,fanout,true);
+        pipe.initialize();
+        pipe.execute_discard(input_frame(p), {0,{1,2,3}});
+        const auto result=pipe.commit(1);
+        check(!result.logits && result.predicted_tokens[0]==18,"compact discard path commits");
+        fails([&]{ pipe.execute_discard(input_frame(p,17,2),{1,{9,10,11}}); },
+              "compact request rejects unexpected diagnostic logits");
+        check(pipe.poisoned(),"unexpected logits poison compact session");
+    }
+    check(greedy_accepted_prefix({1,2,3},{2,3,4})==3,"all draft rows accepted");
+    check(greedy_accepted_prefix({1,2,3},{2,8,4})==2,"middle mismatch terminates prefix");
+    check(greedy_accepted_prefix({1,2,3},{8,3,4})==1,"first mismatch keeps only anchor");
+    check(greedy_accepted_prefix({1},{2})==1,"plain decode prefix");
+    fails([]{ (void)greedy_accepted_prefix({1,2},{3}); },"wrong shape");
+    fails([]{ (void)greedy_accepted_prefix({1,2},{2,-1}); },"negative predictions");
+}
 } // namespace
 int main() {
     try {
-        three_stage(false); three_stage(true);
-        resident_lifecycle(false); resident_lifecycle(true);
-        negative(false); negative(true);
-        bad_ack();
+        for (bool fanout : {false,true}) {
+            three_stage(false,fanout); three_stage(true,fanout);
+            resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);
+            negative(false,fanout); negative(true,fanout);
+            compact_and_prefix(false,fanout); compact_and_prefix(true,fanout);
+            bad_ack(fanout);
+        }
         std::cout << "final pipeline tests: PASS (" << assertions
                   << " assertions; isolated CPU workers, no GPU)\n";
         return 0;

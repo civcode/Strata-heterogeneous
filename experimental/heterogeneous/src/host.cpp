@@ -256,8 +256,9 @@ Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uin
     out.validate();
     return out;
 }
+void validate_wire_frame(const Frame& f) { check_host(); validate_frame(f); }
 std::vector<uint8_t> encode(const Frame& f) {
-    check_host(); validate_frame(f);
+    validate_wire_frame(f);
     std::vector<uint8_t> payload;
     if (f.kind == Kind::data) {
         payload.resize(f.payload.size() * sizeof(float));

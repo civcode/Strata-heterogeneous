@@ -42,7 +42,8 @@ class FinalPipelineSession {
 public:
     FinalPipelineSession(Plan plan, std::vector<int> worker_fds,
                          int timeout_ms = default_io_timeout_ms,
-                         bool shared_memory = false, bool resident = false);
+                         bool shared_memory = false, bool resident = false,
+                         bool fanout_control = false, bool require_compact = false);
     ~FinalPipelineSession();
     FinalPipelineSession(const FinalPipelineSession&) = delete;
     FinalPipelineSession& operator=(const FinalPipelineSession&) = delete;
@@ -51,6 +52,8 @@ public:
     void begin_request(uint64_t request);
     // Returns provisional head predictions; DOES NOT commit model state.
     FinalStageResult execute(Frame initial, const WindowSpec& spec);
+    // Keep the provisional result in the gate without copying discarded logits.
+    void execute_discard(Frame initial, const WindowSpec& spec);
     // Returns publishable predictions only after matching prefix ACKs from
     // every stage. n_keep=0 is valid at protocol level but a real verifier
     // must reject it until state restoration is correctly implemented.
@@ -64,6 +67,8 @@ private:
     int timeout_ms_;
     bool shared_memory_;
     bool resident_;
+    bool fanout_control_;
+    bool require_compact_;
     uint64_t resident_request_ = 0;
     bool initialized_ = false;
     bool poisoned_ = false;

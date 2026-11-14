@@ -22,6 +22,18 @@ class TestLimits(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_request(ids, 1, vocab, 8192)
 
+    def test_lookup_progress_bounds(self):
+        p = Progress(1, 3, 8, 4, 100, {99}, False, True)
+        self.assertIsNone(p.accept("HETERO_PROGRESS 1 1 3"))
+        self.assertIsNone(p.accept("HETERO_PROGRESS 1 2 7"))
+        with self.assertRaises(ValueError):
+            p.accept("HETERO_PROGRESS 1 3 12")
+        with self.assertRaises(ValueError):
+            p.accept("HETERO_PROGRESS 1 3 7")
+        self.assertIsNone(p.accept("HETERO_PROGRESS 1 3 10"))
+        with self.assertRaises(ValueError):
+            Progress(1, 3, 8, 4, 100, {99}, True, True)
+
     def test_progress_and_timing(self):
         p = Progress(1, 3, 3, 2, 100, {99}, True)
         self.assertIsNone(p.accept("HETERO_PROGRESS 1 1 2 -1"))
@@ -44,6 +56,7 @@ class TestResident(unittest.TestCase):
         e.stop_ids = {99}
         e.max_context, e.max_new, e.chunk = 8192, 3, 2
         e.stream_tokens = stream
+        e.lookup_draft = False
         e._died = RuntimeError
         e._lock = threading.Lock()
         e._request = 0
@@ -69,6 +82,13 @@ class TestResident(unittest.TestCase):
         e = self.engine(["HETERO_PROGRESS 1 1 2", "HETERO_PROGRESS 1 2 3",
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"length","stop_token":-1}'], False)
         self.assertEqual(list(e.generate([1, 2], 2, {}, Event())), [None, None, 10, 11])
+
+    def test_lookup_buffered_completion(self):
+        e = self.engine(["HETERO_PROGRESS 1 1 2", "HETERO_PROGRESS 1 2 4",
+                         'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11,12],"finish_reason":"length","stop_token":-1}'], False)
+        e.lookup_draft = True
+        self.assertEqual(list(e.generate([1,2], 3, {}, Event())), [None,None,10,11,12])
+        self.assertEqual(e.last_metrics["decode_feedback_tokens"], 2)
 
     def test_length_last_token_after_validation(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2 10", "HETERO_PROGRESS 1 2 3 11",

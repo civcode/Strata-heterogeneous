@@ -123,6 +123,8 @@ private:
     size_t stride_bytes_;
 };
 
+// Exactly the same host and frame checks as encode(), without serializing.
+void validate_wire_frame(const Frame& f);
 std::vector<uint8_t> encode(const Frame& f);
 Frame decode(const std::vector<uint8_t>& encoded);
 

@@ -1,5 +1,6 @@
 #include "strata_heterogeneous/hip_verifier.hpp"
 #include "strata_heterogeneous/boundary_capture.hpp"
+#include "strata_heterogeneous/performance.hpp"
 #if !defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
 #error "HipVerifierDriver requires an isolated wave32 HIP-only build"
 #endif
@@ -32,7 +33,7 @@ bool HipVerifierDriver::wait(std::string& error) {
             error = "HIP verifier fence timed out";
             return false;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(fence_poll_interval());
     }
 }
 bool HipVerifierDriver::prepare(const Plan& plan, size_t index, std::string& error) {
@@ -133,6 +134,7 @@ bool HipVerifierDriver::begin_window(const WindowSpec& spec, uint64_t request,
     return true;
 }
 bool HipVerifierDriver::enqueue_upload(const uint8_t* host, size_t bytes, std::string& error) {
+    PerformanceSpan perf("worker", "enqueue_upload", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::begun, error)) return false;
     if (!host || bytes != bytes_) { error = "HIP verifier upload shape mismatch"; return false; }
     state_ = State::uploading;
@@ -146,6 +148,7 @@ bool HipVerifierDriver::enqueue_upload(const uint8_t* host, size_t bytes, std::s
     return check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice, verifier_->stream()), error) && record(error);
 }
 bool HipVerifierDriver::wait_upload(std::string& error) {
+    PerformanceSpan perf("worker", "wait_upload", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::uploading, error) || !wait(error)) return false;
     if (plan_.stages[index_].first_layer != 0 &&
         !capture_device_handoff(input_, staging_, bytes_, index_, request_,
@@ -155,6 +158,7 @@ bool HipVerifierDriver::wait_upload(std::string& error) {
     state_ = State::uploaded; return true;
 }
 bool HipVerifierDriver::enqueue_execute(const Frame& frame, std::string& error) {
+    PerformanceSpan perf("worker", "enqueue_execute", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::uploaded, error)) return false;
     if (frame.kind != Kind::data || frame.stage_index != index_ ||
         frame.request_id != request_ || frame.window_id != window_ ||
@@ -168,6 +172,7 @@ bool HipVerifierDriver::enqueue_execute(const Frame& frame, std::string& error) 
                           spec_.pos0, bindings_.pool, bindings_.pool_user, ignored, error) && record(error);
 }
 bool HipVerifierDriver::wait_execute(std::string& error) {
+    PerformanceSpan perf("worker", "wait_execute", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::executing, error) || !wait(error)) return false;
     // The compute stream completed. Gather post-layer diagnostics before
     // an accepted-prefix commit can overwrite the verifier's tap buffers.
@@ -179,6 +184,7 @@ bool HipVerifierDriver::wait_execute(std::string& error) {
     state_ = State::executed; return true;
 }
 bool HipVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::string& error) {
+    PerformanceSpan perf("worker", "enqueue_download", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::executed, error)) return false;
     if (!host || bytes != bytes_) { error = "HIP verifier download shape mismatch"; return false; }
     download_host_ = host;
@@ -186,6 +192,7 @@ bool HipVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::strin
     return check(cudaMemcpyAsync(staging_, output_, bytes, cudaMemcpyDeviceToHost, verifier_->stream()), error) && record(error);
 }
 bool HipVerifierDriver::wait_download(std::string& error) {
+    PerformanceSpan perf("worker", "wait_download", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::downloading, error) || !wait(error)) return false;
     if (!capture_device_handoff(output_, staging_, bytes_, index_, request_,
                                 window_, "out", verifier_->stream(),
@@ -200,6 +207,7 @@ bool HipVerifierDriver::enqueue_commit(uint64_t, uint64_t, std::string& error) {
 }
 bool HipVerifierDriver::enqueue_commit_prefix(uint64_t request, uint64_t window,
                                                uint32_t keep, std::string& error) {
+    PerformanceSpan perf("worker", "enqueue_commit_prefix", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::downloaded, error)) return false;
     if (request != request_ || window != window_ || !keep || keep > spec_.token_ids.size()) {
         // commit(0) is NOT a no-op: run has overwritten the indexer key tail.
@@ -211,6 +219,7 @@ bool HipVerifierDriver::enqueue_commit_prefix(uint64_t request, uint64_t window,
     return verifier_->commit(static_cast<int>(keep), error) && record(error);
 }
 bool HipVerifierDriver::wait_commit(std::string& error) {
+    PerformanceSpan perf("worker", "wait_commit", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::committing, error) || !wait(error)) return false;
     next_position_ += keep_;
     state_ = State::ready; spec_ = {}; return true;

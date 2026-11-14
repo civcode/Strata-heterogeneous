@@ -12,6 +12,7 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata/core/geometry.hpp"
 #include "native_worker_defaults.hpp"
+#include "strata_heterogeneous/performance.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -98,6 +99,11 @@ int main(int argc,char** argv) {
                 throw std::runtime_error("HIP worker needs v2 native GGUF/PLE configuration; v1 is preflight-only");
             // Explicit supervised worker launch is the opt-in for runtime use.
             // There is no second environment-variable approval handshake.
+            const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
+            (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
+            (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
+            if(compact && index+1==plan.stages.size() && !strata::core::Verifier::nan_guard_on())
+                throw std::runtime_error("compact result requires native GPU nonfinite guard");
             strata_heterogeneous_native_worker_defaults();
             const auto& geometry=strata::core::kCompiledGeometry;
             hetero::HipStageResources owner(geometry,plan.model_fingerprint);
@@ -135,7 +141,7 @@ int main(int argc,char** argv) {
                 0, static_cast<int64_t>(c.max_cells),
                 static_cast<int64_t>(c.n_vocab), c.max_t};
             if(index+1==plan.stages.size()) {
-                hetero::HipFinalVerifierExecutor final(bindings);
+                hetero::HipFinalVerifierExecutor final(bindings, {!compact});
                 hetero::serve_final_stage_worker(3,plan,index,final,
                     static_cast<int>(c.io_timeout_ms),invocation.shared_memory,
                     &window_limits);

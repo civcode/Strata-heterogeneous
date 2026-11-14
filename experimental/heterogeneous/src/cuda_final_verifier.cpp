@@ -1,5 +1,6 @@
 #include "strata_heterogeneous/cuda_final_verifier.hpp"
 #include "strata_heterogeneous/boundary_capture.hpp"
+#include "strata_heterogeneous/performance.hpp"
 #if defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
 #error "CudaFinalVerifierExecutor requires a CUDA-only worker"
 #endif
@@ -35,7 +36,7 @@ bool CudaFinalVerifierExecutor::wait_fence(std::string& error) {
             error = "CUDA final verifier stream fence timed out";
             return false;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(fence_poll_interval());
     }
 }
 bool CudaFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
@@ -190,6 +191,7 @@ bool CudaFinalVerifierExecutor::run_final_window(const Frame& metadata,
         return false;
     }
     if (plan_.stages[index_].first_layer != 0) {
+        PerformanceSpan perf("worker", "final_upload", index_, request_, window_, spec_.token_ids.size());
         const size_t bytes = input.bytes();
         std::memcpy(staging_, input.data(), bytes); // raw memfd bytes, not float[]
         if (!check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice,
@@ -202,10 +204,13 @@ bool CudaFinalVerifierExecutor::run_final_window(const Frame& metadata,
     } // layer-zero native Verifier uses token embeddings, not handoff bytes
 
     std::vector<int32_t> predictions(spec_.token_ids.size());
-    if (!verifier_->run(static_cast<int>(predictions.size()), spec_.token_ids.data(),
-                        spec_.pos0, bindings_.pool, bindings_.pool_user,
-                        predictions.data(), error) ||
-        !fence(error) || !wait_fence(error)) return false;
+    {
+        PerformanceSpan perf("worker", "final_execute", index_, request_, window_, predictions.size());
+        if (!verifier_->run(static_cast<int>(predictions.size()), spec_.token_ids.data(),
+                            spec_.pos0, bindings_.pool, bindings_.pool_user,
+                            predictions.data(), error) ||
+            !fence(error) || !wait_fence(error)) return false;
+    }
     if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     if (!layer_zero_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
     if (!stage0_phases_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
@@ -223,6 +228,7 @@ bool CudaFinalVerifierExecutor::run_final_window(const Frame& metadata,
         if (verifier_->nonfinite_in(static_cast<int>(t)))
             pending.nonfinite_rows.push_back(t);
     if (options_.include_logits) {
+        PerformanceSpan perf("worker", "final_logits_download", index_, request_, window_, pending.rows);
         std::vector<float> logits(static_cast<size_t>(pending.rows) * pending.vocab_size);
         for (uint32_t t = 0; t < pending.rows; ++t) {
             if (!verifier_->copy_logits(static_cast<int>(t),
@@ -251,6 +257,7 @@ bool CudaFinalVerifierExecutor::commit_prefix(uint64_t request, uint64_t window,
         error = "CUDA final verifier requires a matching positive accepted prefix; zero needs restoration";
         return false;
     }
+    PerformanceSpan perf("worker", "final_commit", index_, request_, window_, spec_.token_ids.size());
     keep_ = n_keep;
     if (!verifier_->commit(static_cast<int>(n_keep), error) ||
         !verifier_->wait_commit(error) ||

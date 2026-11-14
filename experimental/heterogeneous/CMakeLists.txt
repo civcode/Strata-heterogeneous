@@ -122,7 +122,10 @@ endif()
 
 # Host-only manual launcher: performs CPU config preflight by default;
 # --run launches native CUDA/HIP children and is never wired into CTest.
-add_executable(strata_heterogeneous_live_smoke src/live_smoke.cpp)
+add_executable(strata_heterogeneous_live_smoke src/live_smoke.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../src/spec/suffix_drafter.cpp)
+# Reuse the existing GPU-free suffix drafter, not a second implementation.
+target_include_directories(strata_heterogeneous_live_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
 target_link_libraries(strata_heterogeneous_live_smoke PRIVATE strata_heterogeneous_host)
 target_compile_features(strata_heterogeneous_live_smoke PRIVATE cxx_std_17)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

@@ -32,6 +32,7 @@ def add_arguments(parser):
     parser.add_argument("--prompt-chunk", type=int, default=1, help="1..8; 0 selects largest safe verifier window")
     parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 2..8192; worker capacities still apply")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
+    parser.add_argument("--lookup-draft", action="store_true", help="opt-in verified suffix lookup; buffered mode, chunk >= 2")
     parser.add_argument("--restart-clean", action="store_true", help="opt-in server restart only after verified old process-group exit")
     parser.add_argument("--benchmark-repeat", type=int, default=1, help="repeat resident prompt sequence 1..20 times; JSON includes timing")
     parser.add_argument("--timeout-ms", type=int, default=120000, help="per worker I/O operation")
@@ -102,9 +103,12 @@ def prepare_native(args):
                                        getattr(args, "max_context", 4096),
                                        args.max_new_tokens, args.prompt_chunk)
     args.prompt_chunk = chunk
+    lookup = getattr(args, "lookup_draft", False)
+    if lookup and (getattr(args, "stream_tokens", False) or chunk < 2):
+        raise ValueError("lookup-draft requires buffered generation and chunk >= 2")
     source.update(context_limit=context, prompt_chunk=chunk,
                   stream_tokens=getattr(args, "stream_tokens", False),
-                  restart_clean=getattr(args, "restart_clean", False))
+                  restart_clean=getattr(args, "restart_clean", False), lookup_draft=lookup)
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -125,6 +129,8 @@ def prepare_native(args):
                      "--context-limit", str(context)]
     if source["stream_tokens"]:
         native.append("--stream-tokens")
+    if lookup:
+        native.append("--lookup-draft")
     return native, source, tok, stop_ids
 
 
@@ -169,7 +175,7 @@ def write_server_config(args):
            "heterogeneous": {key: getattr(args, key) for key in
                ("plan", "fingerprint", "layers", "hc", "n_embd", "max_new_tokens",
                 "prompt_chunk", "max_context", "timeout_ms", "shared", "stream_tokens",
-                "restart_clean")}}
+                "restart_clean", "lookup_draft")}}
     for key in ("coordinator", "cuda_worker", "hip_worker"):
         cfg["heterogeneous"][key] = _path(getattr(args, key), True)
     cfg["heterogeneous"]["config"] = [_path(p) for p in args.config]
