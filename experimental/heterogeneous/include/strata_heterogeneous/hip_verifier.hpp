@@ -6,6 +6,7 @@
 #include "strata_heterogeneous/layer_zero_probe.hpp"
 #include "strata_heterogeneous/stage0_phase_probe.hpp"
 #include "strata_heterogeneous/stage_branch_probe.hpp"
+#include "strata_heterogeneous/stage_micro_probe.hpp"
 #include "strata/core/verify.hpp"
 #include <memory>
 
@@ -67,6 +68,7 @@ private:
     LayerZeroProbeRecorder layer_zero_;
     Stage0PhaseRecorder stage0_phases_;
     StageBranchRecorder branch_probe_;
+    StageMicroRecorder micro_probe_;
     uint64_t request_ = 0, window_ = 0;
     size_t bytes_ = 0;
     int device_ = -1;
