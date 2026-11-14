@@ -6,6 +6,7 @@
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
+#include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata_heterogeneous/mtp_state_trace.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 // Vanilla PinnedRing intentionally discards cleanup/error-clear return values;
@@ -35,10 +36,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false)
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -50,7 +51,12 @@ public:
         }
         if (front_trace_ && trace_prefix_.empty()) {error="MTP front trace needs state trace";return false;}
         if (repeat_round_ && (!front_trace_ || relay_rounds_)) {error="MTP repeat needs one-shot front trace";return false;}
-        if (relay_rounds_ > 1) {
+        // Sole exception: an explicit nonresident, fixed-prompt qualification.
+        if (three_round_ && (!mtp_three_shape(windows_,relay_rounds_,fresh_replay_,repeat_round_,reprime_tail_) ||
+            (trace_prefix_.empty()==front_trace_))) {
+            error="invalid MTP three-round diagnostic"; return false;
+        }
+        if (relay_rounds_ > 1 && !three_round_) {
             error="MTP relay draft-state reuse failed fresh-prefix qualification";
             return false;
         }
@@ -139,6 +145,14 @@ public:
             if(error.empty()) error="MTP probe window identity mismatch";
             return false;
         }
+        if (three_round_) {
+            const bool prompt=window<=windows_;
+            if ((prompt && (spec.pos0!=int64_t(window-1) ||
+                            spec.token_ids!=std::vector<int32_t>{mtp_three_prompt[window-1]})) ||
+                (!prompt && !mtp_three_window_fits(spec.pos0,spec.token_ids.size(),unsigned(window-windows_-1)))) {
+                error="MTP three-round window bound or prompt mismatch"; return false;
+            }
+        }
         if (!cursor_->begin(spec.pos0,spec.token_ids,prime(),error)) return false;
         relay_pending_=false;
         return true;
@@ -150,6 +164,12 @@ public:
             !keep || keep>predictions.size() || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe commit identity mismatch";
             return false;
+        }
+        // Coordinator enforces the same budget BEFORE sending any commit.
+        // This is a defensive observer check, not a distributed rollback.
+        if (three_round_ && window>windows_ &&
+            !mtp_three_commit_fits(spec.pos0,keep,unsigned(window-windows_-1))) {
+            error="MTP three-round committed prefix exceeds diagnostic budget"; return false;
         }
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
         ++committed_;
@@ -249,6 +269,7 @@ private:
     bool front_trace_=false;
     bool repeat_round_=false;
     bool fresh_replay_=false;
+    bool three_round_=false;
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;

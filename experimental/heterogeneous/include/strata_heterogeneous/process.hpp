@@ -42,7 +42,9 @@ public:
     // Graceful closure and bounded wait; remaining children are killed/reaped.
     // False reports a non-zero exit, abnormal termination or timeout.
     // Call only after no PipelineSession operation is in flight.
-    bool finish(std::string& error, int grace_ms = 1500);
+    // For explicit diagnostic refusal only, kill_on_timeout=false reports
+    // and relinquishes unreaped PIDs after closing sockets, without a signal.
+    bool finish(std::string& error, int grace_ms = 1500, bool kill_on_timeout = true);
     // Used for error paths/destruction. SIGKILL + waitpid avoids orphan workers.
     void terminate() noexcept;
 private:

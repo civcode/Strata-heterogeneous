@@ -72,13 +72,15 @@ def read_stfr(path: Path) -> dict:
 
 
 def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = False,
-             mtp_fresh_replay: bool = False) -> list[tuple[dict, dict]]:
+             mtp_fresh_replay: bool = False, mtp_three_round: bool = False) -> list[tuple[dict, dict]]:
     """Read completed captures; legacy parity callers require full commits.
 
     For explicit partial-prefix callers, STFR contains all evaluated rows;
     only n_keep rows belong to the accepted prefix.
     """
-    require(not (mtp_fresh_replay and (placement or allow_partial)), "conflicting fresh replay comparison mode")
+    require(not (mtp_fresh_replay and (placement or allow_partial)) and
+            not (mtp_three_round and (placement or mtp_fresh_replay or not allow_partial)),
+            "conflicting MTP comparison mode")
     completed = Path(str(prefix) + ".complete.json")
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
@@ -87,8 +89,11 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
             marker.get("placement_capture", False) == placement and
             type(marker.get("mtp_fresh_replay", False)) is bool and
             marker.get("mtp_fresh_replay", False) == mtp_fresh_replay and
+            type(marker.get("mtp_three_round", False)) is bool and
+            marker.get("mtp_three_round", False) == mtp_three_round and
             type(marker.get("windows")) is int and
-            1 <= marker["windows"] <= (128 if placement else 12 if mtp_fresh_replay else 8) and
+            (marker["windows"] == 10 if mtp_three_round else
+             1 <= marker["windows"] <= (128 if placement else 12 if mtp_fresh_replay else 8)) and
             type(marker.get("model_fingerprint")) is int and marker["model_fingerprint"] > 0 and
             isinstance(marker.get("plan"), str) and marker["plan"],
             "invalid parity completion marker")

@@ -195,7 +195,7 @@ std::vector<int> WorkerProcessGroup::sockets() const {
     return fds;
 }
 
-bool WorkerProcessGroup::finish(std::string& error, int grace_ms) {
+bool WorkerProcessGroup::finish(std::string& error, int grace_ms, bool kill_on_timeout) {
     if (grace_ms < 0) throw std::invalid_argument("negative worker grace timeout");
     error.clear();
     for (auto& c : children_) close_fd(c.fd);
@@ -212,8 +212,11 @@ bool WorkerProcessGroup::finish(std::string& error, int grace_ms) {
             ::usleep(10000);
         }
         if (result != c.pid) {
-            if (result == 0) { (void) ::kill(c.pid, SIGKILL); reap(c.pid); }
-            if (error.empty()) error = result == 0 ? "worker exceeded shutdown deadline" : "worker waitpid failed";
+            if (result == 0 && kill_on_timeout) { (void) ::kill(c.pid, SIGKILL); reap(c.pid); }
+            if (result == 0 && !kill_on_timeout) {
+                if (!error.empty()) error += "; ";
+                error += "worker exceeded shutdown deadline; not signalled, PID=" + std::to_string(c.pid);
+            } else if (error.empty()) error = result == 0 ? "worker exceeded shutdown deadline" : "worker waitpid failed";
             ok = false;
         } else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
             if (error.empty()) error = "worker exited with failure";

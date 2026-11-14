@@ -167,6 +167,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
             relay=unsigned(value[0]-'0');
         }
         const bool fresh_replay=hetero::performance_flag("STRATA_HETERO_MTP_FRESH_REPLAY");
+        const bool three_round=hetero::performance_flag("STRATA_HETERO_MTP_THREE_ROUND");
         if (!hetero::mtp_probe_window_count(windows,relay,fresh_replay))
             throw std::runtime_error("invalid MTP probe window count or fresh replay mode");
         const char* raw_prefix=std::getenv("STRATA_HETERO_MTP_STATE_PREFIX");
@@ -175,11 +176,13 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         const bool front_trace=hetero::performance_flag("STRATA_HETERO_MTP_FRONT_TRACE");
         const bool repeat_round=hetero::performance_flag("STRATA_HETERO_MTP_REPEAT_NATIVE_ROUND");
         if (repeat_round && (!front_trace || relay)) throw std::runtime_error("invalid MTP repeat mode");
-        if ((!trace_prefix.empty() && (trace_prefix.front()!='/' || trace_prefix.size()>4096 || relay>1)) ||
+        if (three_round && (!hetero::mtp_three_shape(windows,relay,fresh_replay,repeat_round,reprime) ||
+            (trace_prefix.empty()==front_trace))) throw std::runtime_error("invalid three-round diagnostic mode");
+        if ((!trace_prefix.empty() && (trace_prefix.front()!='/' || trace_prefix.size()>4096 || (relay>1 && !three_round))) ||
             (reprime && (trace_prefix.empty() || relay!=1)) || (front_trace && trace_prefix.empty())) throw std::runtime_error("invalid bounded MTP state trace");
         const auto& last=configs.back().fields;
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
-                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay);
+                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round);
     }
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
     if (mtp) final.set_observer(mtp.get());

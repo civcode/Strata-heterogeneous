@@ -7,6 +7,7 @@
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
+#include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata/spec/suffix_drafter.hpp"
 #include "strata_heterogeneous/process.hpp"
 
@@ -64,7 +65,7 @@ struct Options {
     bool cuda_mapped_egress = false;
     std::string mtp_probe_rt;
     uint32_t mtp_relay_rounds=0;
-    bool mtp_fresh_replay=false;
+    bool mtp_fresh_replay=false, mtp_three_round=false;
     bool mtp_state_trace=false, mtp_reprime_tail=false, mtp_front_trace=false, mtp_repeat_native_round=false;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
@@ -114,6 +115,7 @@ void usage() {
         "  --mtp-state-trace: bounded exact terminal R and committed draft KV; capture-prefix required.\n"
         "  --mtp-reprime-tail: diagnostic native prefill of offered tail after first draft.\n"
         "  --mtp-fresh-replay: isolated one-row MTP reference, up to 12 windows, full capture, no relay.\n"
+        "  --mtp-three-round: explicit three-relay qualification of the known seven-token prompt; 12 committed rows max.\n"
         "  --mtp-relay-rounds N: after fixed prompt windows, relay 1..8 actual native proposals and commit greedy prefixes.\n"
         "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
@@ -196,6 +198,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--mtp-state-trace") o.mtp_state_trace=true;
         else if (key == "--mtp-reprime-tail") o.mtp_reprime_tail=true;
         else if (key == "--mtp-fresh-replay") o.mtp_fresh_replay=true;
+        else if (key == "--mtp-three-round") o.mtp_three_round=true;
         else if (key == "--mtp-relay-rounds") {
             o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
             if (!o.mtp_relay_rounds || o.mtp_relay_rounds>8) throw std::invalid_argument("MTP relay rounds must be 1..8");
@@ -340,8 +343,16 @@ Options parse(int argc, char** argv) {
         o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
         o.micro_probe || o.boundary_capture || o.mtp_reprime_tail))
         throw std::invalid_argument("MTP fresh replay requires 1..12 explicit one-row full commits, capture, no relay or repeat");
+    if (o.mtp_three_round && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
+        !hetero::mtp_three_shape(o.windows,o.mtp_relay_rounds,o.mtp_fresh_replay,o.mtp_repeat_native_round,o.mtp_reprime_tail) ||
+        o.rows!=1 || o.keep!=1 ||
+        o.tokens!=std::vector<int32_t>(hetero::mtp_three_prompt.begin(),hetero::mtp_three_prompt.end()) ||
+        o.generate || o.resident || o.describe_source || o.warmup_windows || o.placement_capture ||
+        o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
+        o.micro_probe || o.boundary_capture || o.mtp_state_trace!=o.mtp_front_trace))
+        throw std::invalid_argument("MTP three-round diagnostic requires exact seven-row prompt, three relays, capture and either both traces or neither");
     if (o.mtp_state_trace && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
-        o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))
+        (!o.mtp_three_round && (o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))))
         throw std::invalid_argument("MTP state trace requires fresh capture, at most 16 cells and one relay");
     if (o.mtp_repeat_native_round && (!o.mtp_front_trace || o.mtp_relay_rounds))
         throw std::invalid_argument("MTP repeat requires one-shot front trace");
@@ -417,7 +428,9 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
     const uint64_t needed = o.resident ? uint64_t(o.generate) + 1
-        : o.generate ? uint64_t(o.tokens.size()) + o.generate : uint64_t(o.windows - 1) * o.keep + o.rows + 5ull*o.mtp_relay_rounds;
+        : o.generate ? uint64_t(o.tokens.size()) + o.generate
+         : o.mtp_three_round ? hetero::mtp_three_provisional_max
+         : uint64_t(o.windows - 1) * o.keep + o.rows + 5ull*o.mtp_relay_rounds;
     const uint32_t rows = (o.resident || o.lookup_draft) ? o.prompt_chunk
         : o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) :
           std::max(o.rows,o.mtp_relay_rounds?5u:1u);
@@ -690,7 +703,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         ::setenv("STRATA_HETERO_MTP_REPRIME_TAIL",o.mtp_reprime_tail?"1":"0",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_FRONT_TRACE",o.mtp_front_trace?"1":"0",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_REPEAT_NATIVE_ROUND",o.mtp_repeat_native_round?"1":"0",1)!=0 ||
-        ::setenv("STRATA_HETERO_MTP_FRESH_REPLAY",o.mtp_fresh_replay?"1":"0",1)!=0)
+        ::setenv("STRATA_HETERO_MTP_FRESH_REPLAY",o.mtp_fresh_replay?"1":"0",1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_THREE_ROUND",o.mtp_three_round?"1":"0",1)!=0)
         throw std::runtime_error("cannot configure MTP state trace");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
@@ -718,6 +732,22 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip);
+    // For this diagnostic only, drain by EOF even on post-launch exceptions;
+    // if a worker cannot exit, report its PID rather than escalating to SIGKILL.
+    struct DiagnosticDrain {
+        hetero::WorkerProcessGroup& group;
+        bool enabled;
+        int timeout;
+        ~DiagnosticDrain() noexcept {
+            if (!enabled || !group.size()) return;
+            try {
+                std::string error;
+                if (!group.finish(error,timeout,false)) std::cerr << "MTP diagnostic drain: " << error << '\n';
+            } catch (...) {
+                std::cerr << "MTP diagnostic drain could not finish\n";
+            }
+        }
+    } diagnostic_drain{workers,o.mtp_three_round,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
                                          fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
@@ -992,9 +1022,24 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         for(uint32_t round=0;round<o.mtp_relay_rounds;++round) {
             const auto spec=session.request_mtp_proposal();
             const uint64_t id=uint64_t(o.windows)+round+1;
+            if (o.mtp_three_round && !hetero::mtp_three_window_fits(spec.pos0,spec.token_ids.size(),round)) {
+                std::cerr << "MTP_THREE_BOUND_REFUSED phase=offer round=" << round+1 << " pos0=" << spec.pos0 << '\n';
+                std::string drain;
+                if (!workers.finish(drain,o.timeout_ms,false)) std::cerr << "MTP diagnostic drain: " << drain << '\n';
+                return 1;
+            }
             const auto provisional=session.execute(initial_frame(spec,id),spec);
             if(provisional.has_nonfinite()) throw std::runtime_error("nonfinite MTP verification");
             const uint32_t keep=hetero::greedy_accepted_prefix(spec.token_ids,provisional.predicted_tokens);
+            if (o.mtp_three_round && !hetero::mtp_three_commit_fits(spec.pos0,keep,round)) {
+                // No commit frame has been sent. Workers are waiting for commit;
+                // EOF abandons the provisional window and drains the session.
+                std::cerr << "MTP_THREE_BOUND_REFUSED phase=precommit round=" << round+1
+                          << " pos0=" << spec.pos0 << " greedy_keep=" << keep << '\n';
+                std::string drain;
+                if (!workers.finish(drain,o.timeout_ms,false)) std::cerr << "MTP diagnostic drain: " << drain << '\n';
+                return 1;
+            }
             const auto committed=session.commit(keep);
             auto capture=o; capture.keep=keep;
             capture_window(capture,plan,spec,committed);
@@ -1004,7 +1049,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
     }
     std::string error;
-    if (!workers.finish(error))
+    if (!(o.mtp_three_round ? workers.finish(error,o.timeout_ms,false) : workers.finish(error)))
         throw std::runtime_error("worker shutdown failed: " + error);
     if (o.resident) {
         std::cout << "HETERO_CLOSED\n" << std::flush;
@@ -1020,6 +1065,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"windows\":"
                  << o.windows+o.mtp_relay_rounds << ",\"placement_capture\":" << (o.placement_capture ? "true" : "false")
                  << ",\"mtp_fresh_replay\":" << (o.mtp_fresh_replay ? "true" : "false")
+                 << ",\"mtp_three_round\":" << (o.mtp_three_round ? "true" : "false")
                  << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
         complete.flush();

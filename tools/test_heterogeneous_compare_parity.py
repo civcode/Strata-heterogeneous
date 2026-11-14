@@ -117,6 +117,24 @@ class ParityFixtures(unittest.TestCase):
         with self.assertRaises(parity.ParityError):
             parity.read_run(self.het, mtp_fresh_replay=True)
 
+    def test_three_round_marker_requires_explicit_mode_and_exact_window_count(self):
+        plan = "cuda:0:0-12,hip:0:12-30,hip:1:30-48"
+        for count in (9, 10, 11):
+            self.write_run(self.het, plan, count=count)
+            marker = Path(f"{self.het}.complete.json")
+            data = json.loads(marker.read_text())
+            data["mtp_three_round"] = True
+            marker.write_text(json.dumps(data))
+            with self.assertRaises(parity.ParityError):
+                parity.read_run(self.het, allow_partial=True)
+            with self.assertRaises(parity.ParityError):
+                parity.read_run(self.het, mtp_three_round=True)
+            if count == 10:
+                self.assertEqual(len(parity.read_run(self.het, allow_partial=True, mtp_three_round=True)), count)
+            else:
+                with self.assertRaises(parity.ParityError):
+                    parity.read_run(self.het, allow_partial=True, mtp_three_round=True)
+
     def test_prediction_mismatch_fails_even_when_logits_match(self):
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48",
                        predictions=[2])

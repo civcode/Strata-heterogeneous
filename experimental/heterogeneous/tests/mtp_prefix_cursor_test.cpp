@@ -1,5 +1,6 @@
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
+#include "strata_heterogeneous/mtp_three_round.hpp"
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -22,6 +23,18 @@ int main() {
     check(!mtp_fresh_replay_shape(1,1,true,true));
     for (auto x : {"", "0", "01", "13", "99", "1x", " 9", "+9", "999"}) check(!mtp_probe_parse_windows(x));
     for (auto x : {"1", "8", "9", "10", "11", "12"}) check(mtp_probe_parse_windows(x));
+    check(mtp_three_shape(7,3,false,false,false));
+    check(!mtp_three_shape(7,2,false,false,false));
+    check(!mtp_three_shape(7,3,true,false,false));
+    check(mtp_three_commit_fits(7,2,0));
+    check(!mtp_three_commit_fits(7,4,0));
+    check(mtp_three_window_fits(11,5,2));
+    check(!mtp_three_window_fits(12,5,2));
+    for (unsigned round=0;round<5;++round)
+        for (int64_t pos=-1;pos<18;++pos)
+            for (unsigned keep=0;keep<7;++keep)
+                check(mtp_three_commit_fits(pos,keep,round)==
+                    (round<3 && pos>=7+int64_t(round) && keep>=1 && keep<=5 && pos+keep+2-int64_t(round)<=12));
     std::string e;
     std::array<float,8> r{11,12,21,22,31,32,41,42};
     using Row=std::tuple<float,int32_t,int64_t>;

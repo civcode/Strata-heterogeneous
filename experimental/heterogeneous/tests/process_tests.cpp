@@ -3,6 +3,8 @@
 #include "strata_heterogeneous/process.hpp"
 
 #include <csignal>
+#include <cerrno>
+#include <sys/wait.h>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -176,6 +178,21 @@ int main() {
         check(!stuck.finish(error, 50), "nonresponding worker forcibly terminated at deadline");
         check(error.find("deadline") != std::string::npos, "timeout reported explicitly");
         check(stuck.size() == 0, "timed-out child reaped");
+        // Opt-in diagnostic drain must report rather than signal a stalled
+        // child. This is a CPU-only test executable, explicitly reaped here.
+        auto diagnostic = WorkerProcessGroup::launch(hang_plan, cuda, dir + "/strata_heterogeneous_hang_worker");
+        const bool finished = diagnostic.finish(error,50,false);
+        const auto marker = error.find("PID=");
+        if (marker == std::string::npos) throw std::runtime_error("missing diagnostic timeout PID");
+        const auto pid = static_cast<pid_t>(std::stol(error.substr(marker+4)));
+        const bool alive = ::kill(pid,0)==0;
+        (void)::kill(pid,SIGTERM);
+        int status=0;
+        pid_t reaped;
+        do { reaped=::waitpid(pid,&status,0); } while (reaped<0 && errno==EINTR);
+        check(!finished && diagnostic.size()==0 && alive && reaped==pid &&
+              WIFSIGNALED(status) && WTERMSIG(status)==SIGTERM,
+              "diagnostic timeout reports and does not signal CPU child");
         std::cout << "heterogeneous process tests: PASS (" << assertions
                   << " assertions; separate backend-tagged CPU workers; no GPU)\n";
         return 0;
