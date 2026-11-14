@@ -5,6 +5,12 @@
 #include <vector>
 namespace strata::kernels { constexpr int kVerifyMaxT = 8; }
 namespace strata::core {
+// Fail-closed M2.17 CPU-only test-double contract.
+struct StageMicroProbe {
+    uint32_t n_embd = 0, n_ff = 0, conv_channels = 0, conv_kernel = 0;
+    std::vector<float> data;
+    std::vector<uint8_t> input_q8, swiglu_q8;
+};
 struct StageBranchProbe {
     uint32_t n_embd = 0, n_expert = 0, k = 0;
     uint32_t conv_channels = 0, value_heads = 0, value_dim = 0;
@@ -35,6 +41,10 @@ class Verifier {
 public:
     static constexpr int kStage0ProbeLayers = 12;
     static constexpr int kStage0ProbePhases = 4;
+    void set_stage_micro_probe(bool) {}
+    bool copy_stage_micro_probe(StageMicroProbe&, std::string& e) const {
+        e = "stage microprobe unsupported in CPU test double"; return false;
+    }
     void set_stage_branch_probe(bool) {}
     bool copy_stage_branch_probe(StageBranchProbe&, std::string& e) const {
         e = "branch probe unavailable in CPU test double"; return false;
