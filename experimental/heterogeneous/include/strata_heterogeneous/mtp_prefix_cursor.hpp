@@ -26,6 +26,10 @@ public:
             return fail(error, "MTP prefix begin identity/extent mismatch");
         for (auto token : tokens)
             if (token < 0 || token >= vocab_) return fail(error, "MTP token outside vocabulary");
+        if (!offered_.empty()) {
+            if (tokens != offered_) return fail(error,"MTP relay did not consume exact offered window");
+            offered_.clear();
+        }
         if (tail_) {
             if (next_ <= 0 || !prime(tail_, tokens.data(), 1, next_ - 1, error))
                 return fail(error, "MTP deferred tail prime failed");
@@ -64,6 +68,26 @@ public:
         state_ = State::sealed;
         return true;
     }
+    // Native draft_first writes the accepted tail paired with the verified
+    // anchor and may write speculative future cells. On the next commit,
+    // native prefill/draft overwrite those cells with actual accepted pairs
+    // before reading them. No physical suffix zeroing is claimed; qualify
+    // native causal overwrite against independent fresh-prefix replay.
+    template<class Draft>
+    bool offer(int32_t anchor, std::vector<int32_t>& output, Draft&& draft, std::string& error) {
+        if (state_ != State::ready || !tail_ || !offered_.empty() ||
+            next_ <= 0 || next_ > context_ - 5 || anchor < 0 || anchor >= vocab_)
+            return fail(error,"MTP relay offer identity or context mismatch");
+        std::vector<int32_t> candidates;
+        if (!draft(tail_,anchor,next_-1,candidates,error) || candidates.empty() || candidates.size()>4)
+            return fail(error,"MTP native offer failed");
+        for (auto id:candidates) if (id<0 || id>=vocab_) return fail(error,"MTP candidate outside vocabulary");
+        offered_={anchor};
+        offered_.insert(offered_.end(),candidates.begin(),candidates.end());
+        output=offered_;
+        tail_=nullptr; // already primed by draft_first
+        return true;
+    }
     int64_t committed_position() const noexcept { return next_; }
 private:
     enum class State { ready, begun, sealed, failed };
@@ -71,10 +95,11 @@ private:
     size_t stride_, max_rows_;
     int64_t context_, vocab_, next_ = 0;
     const float* tail_ = nullptr;
-    std::vector<int32_t> tokens_;
+    std::vector<int32_t> tokens_, offered_;
     bool fail(std::string& error, const char* message) {
         state_ = State::failed;
         tail_ = nullptr;
+        offered_.clear();
         if (error.empty()) error = message;
         return false;
     }

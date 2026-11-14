@@ -160,9 +160,15 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         const char* count = std::getenv("STRATA_HETERO_MTP_PROBE_WINDOWS");
         const auto n = count ? std::string(count) : std::string();
         if (n.size()!=1 || n[0]<'1' || n[0]>'8') throw std::runtime_error("invalid MTP probe window count");
+        unsigned relay=0;
+        if (const char* raw=std::getenv("STRATA_HETERO_MTP_RELAY_ROUNDS")) {
+            const std::string value(raw);
+            if(value.size()!=1 || value[0]<'0' || value[0]>'8') throw std::runtime_error("invalid MTP relay round count");
+            relay=unsigned(value[0]-'0');
+        }
         const auto& last=configs.back().fields;
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
-                                                  last.arena_budget_bytes,unsigned(n[0]-'0'));
+                                                  last.arena_budget_bytes,unsigned(n[0]-'0'),relay);
     }
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
     if (mtp) final.set_observer(mtp.get());

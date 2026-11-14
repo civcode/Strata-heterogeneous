@@ -62,6 +62,7 @@ struct Options {
     bool receiver_arm = false;
     bool cuda_mapped_egress = false;
     std::string mtp_probe_rt;
+    uint32_t mtp_relay_rounds=0;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
     bool layer_zero_probe = false;
@@ -104,7 +105,8 @@ void usage() {
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--run]\n"
-        "  --mtp-probe-rt ABS_PATH: one-shot native HIP MTP load/prime/draft; full-logit fixed-token smoke only.\n"
+        "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification; full-logit fixed-token smoke only.\n"
+        "  --mtp-relay-rounds N: after fixed prompt windows, relay 1..8 actual native proposals and commit greedy prefixes.\n"
         "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
@@ -181,6 +183,10 @@ Options parse(int argc, char** argv) {
         else if (key == "--hip-split-overlap") o.hip_split_overlap = true;
         else if (key == "--receiver-arm") o.receiver_arm = true;
         else if (key == "--cuda-mapped-egress") o.cuda_mapped_egress = true;
+        else if (key == "--mtp-relay-rounds") {
+            o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
+            if (!o.mtp_relay_rounds || o.mtp_relay_rounds>8) throw std::invalid_argument("MTP relay rounds must be 1..8");
+        }
         else if (key == "--mtp-probe-rt") {
             o.mtp_probe_rt = required_value(i,argc,argv,"--mtp-probe-rt");
             if (o.mtp_probe_rt.empty()) throw std::invalid_argument("MTP probe runtime path is empty");
@@ -314,6 +320,8 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.mtp_relay_rounds && (o.mtp_probe_rt.empty() || o.capture_prefix.empty()))
+        throw std::invalid_argument("MTP relay requires explicit MTP probe and full-logit capture prefix");
     if (!o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || o.generate ||
         o.describe_source || o.warmup_windows || o.native_prefill_chunk || o.tokens.empty() ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
@@ -380,9 +388,10 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
     const uint64_t needed = o.resident ? uint64_t(o.generate) + 1
-        : o.generate ? uint64_t(o.tokens.size()) + o.generate : uint64_t(o.windows - 1) * o.keep + o.rows;
+        : o.generate ? uint64_t(o.tokens.size()) + o.generate : uint64_t(o.windows - 1) * o.keep + o.rows + 5ull*o.mtp_relay_rounds;
     const uint32_t rows = (o.resident || o.lookup_draft) ? o.prompt_chunk
-        : o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) : o.rows;
+        : o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) :
+          std::max(o.rows,o.mtp_relay_rounds?5u:1u);
     const uint64_t stride = plan.geometry.floats_per_row();
     if (stride > hetero::max_payload_bytes / (sizeof(float) * rows))
         throw std::invalid_argument("requested activation geometry exceeds bounded 16 MiB transport");
@@ -475,7 +484,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                         throw std::invalid_argument("prefill parity capture exists; use a fresh prefix");
                 }
             }
-            for (uint32_t n = 1; n <= o.windows; ++n) {
+            for (uint32_t n = 1; n <= o.windows+o.mtp_relay_rounds; ++n) {
                 const std::string base = o.capture_prefix + ".w" + std::to_string(n);
                 if (o.layer_zero_probe &&
                     std::filesystem::exists(o.capture_prefix + ".stage0.w" +
@@ -650,9 +659,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure explicit HIP split overlap mode");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
-            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.windows).c_str(),1)!=0)
+            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.windows).c_str(),1)!=0 ||
+            ::setenv("STRATA_HETERO_MTP_RELAY_ROUNDS",std::to_string(o.mtp_relay_rounds).c_str(),1)!=0)
             throw std::runtime_error("cannot configure one-shot MTP probe");
-    } else if (::unsetenv("STRATA_HETERO_MTP_PROBE_RT")!=0 || ::unsetenv("STRATA_HETERO_MTP_PROBE_WINDOWS")!=0)
+    } else if (::unsetenv("STRATA_HETERO_MTP_PROBE_RT")!=0 || ::unsetenv("STRATA_HETERO_MTP_PROBE_WINDOWS")!=0 ||
+               ::unsetenv("STRATA_HETERO_MTP_RELAY_ROUNDS")!=0)
         throw std::runtime_error("cannot clear inherited MTP probe mode");
     if (::setenv("STRATA_HETERO_CUDA_MAPPED_EGRESS", o.cuda_mapped_egress ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit mapped CUDA egress mode");
@@ -673,7 +684,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
-                                         fanout, compact, o.group_hip, o.receiver_arm);
+                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
@@ -943,6 +954,19 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 std::cout << committed.predicted_tokens[t] << ',';
             std::cout << '\n';
         }
+        for(uint32_t round=0;round<o.mtp_relay_rounds;++round) {
+            const auto spec=session.request_mtp_proposal();
+            const uint64_t id=uint64_t(o.windows)+round+1;
+            const auto provisional=session.execute(initial_frame(spec,id),spec);
+            if(provisional.has_nonfinite()) throw std::runtime_error("nonfinite MTP verification");
+            const uint32_t keep=hetero::greedy_accepted_prefix(spec.token_ids,provisional.predicted_tokens);
+            const auto committed=session.commit(keep);
+            auto capture=o; capture.keep=keep;
+            capture_window(capture,plan,spec,committed);
+            std::cout << "HETERO_MTP_RELAY_COMMITTED window=" << id << " pos0=" << spec.pos0
+                      << " proposed=" << spec.token_ids.size()-1 << " accepted=" << keep-1
+                      << " next=" << committed.predicted_tokens.at(keep-1) << '\n';
+        }
     }
     std::string error;
     if (!workers.finish(error))
@@ -959,7 +983,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         std::ofstream complete(o.capture_prefix + ".complete.json", std::ios::binary);
         if (!complete) throw std::runtime_error("cannot create parity completion marker");
         complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"windows\":"
-                 << o.windows << ",\"placement_capture\":" << (o.placement_capture ? "true" : "false")
+                 << o.windows+o.mtp_relay_rounds << ",\"placement_capture\":" << (o.placement_capture ? "true" : "false")
                  << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
         complete.flush();
@@ -990,7 +1014,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
         std::cout << "]}\n";
     }
-    std::cout << "LIVE PASS: all " << o.windows
+    std::cout << "LIVE PASS: all " << o.windows+o.mtp_relay_rounds
               << " window(s) committed on actual CUDA/HIP worker chain\n";
     return 0;
 }

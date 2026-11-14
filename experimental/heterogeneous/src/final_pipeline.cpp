@@ -3,6 +3,7 @@
 #include "strata_heterogeneous/shared.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
+#include "strata_heterogeneous/speculation.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -96,6 +97,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
         uint64_t active_request = 0;
         SharedActivation shared;
         if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
+        if (executor.mtp_relay_enabled() && (resident || !group_hip || !gate || executor.receiver_arm_enabled()))
+            throw std::runtime_error("MTP relay requires bounded nonresident grouped HIP without external arm");
+        std::optional<Frame> last_mtp_commit;
+        bool mtp_requested = false;
         while (auto request = resident ? receive_idle_frame(fd, timeout_ms)
                                        : receive_frame(fd, timeout_ms)) {
             try {
@@ -131,6 +136,29 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                     send_frame(fd,ack,timeout_ms);
                     continue;
                 }
+                if (request->kind == Kind::mtp_proposal_request) {
+                    if (!executor.mtp_relay_enabled() || !last_mtp_commit || mtp_requested)
+                        throw std::runtime_error("MTP proposal request lacks a fresh committed prefix");
+                    match(*request,*last_mtp_commit,Kind::mtp_proposal_request);
+                    if (!request->window || request->window->pos0 != last_mtp_commit->window->pos0 ||
+                        request->window->token_ids != last_mtp_commit->window->token_ids)
+                        throw std::runtime_error("MTP proposal anchor differs from committed target");
+                    mtp_requested = true;
+                    WindowSpec offer;
+                    if (!executor.propose_mtp(*request->window,offer,error))
+                        throw std::runtime_error(error.empty()?"native MTP proposal failed":error);
+                    if (offer.pos0 != request->window->pos0 || offer.token_ids.size()<2 ||
+                        offer.token_ids.size()>5 || offer.token_ids.front()!=request->window->token_ids.front())
+                        throw std::runtime_error("invalid native MTP offer");
+                    Frame response=*request;
+                    response.kind=Kind::mtp_proposal;
+                    response.rows=static_cast<uint32_t>(offer.token_ids.size());
+                    response.window=std::move(offer);
+                    send_frame(fd,response,timeout_ms);
+                    continue;
+                }
+                last_mtp_commit.reset();
+                mtp_requested=false;
                 if (request->kind != Kind::window_spec || !request->window)
                     throw std::runtime_error("final worker requires verifier window metadata");
                 if (request->stage_index != index ||
@@ -211,6 +239,11 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 Frame ack = *commit;
                 ack.kind = Kind::committed_prefix;
                 send_frame(fd, ack, timeout_ms);
+                if (executor.mtp_relay_enabled() && commit->keep_count) {
+                    last_mtp_commit=control(plan,index,Kind::mtp_proposal_request,request->request_id,request->window_id,1);
+                    last_mtp_commit->window=WindowSpec{request->window->pos0+commit->keep_count,
+                        {result.predicted_tokens.at(commit->keep_count-1)}};
+                }
             } catch (const std::exception& ex) {
                 trace_window(gate.get(), "failure");
                 if (gate) gate->poison();
@@ -231,10 +264,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
@@ -243,6 +276,8 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
         throw std::invalid_argument("final pipeline needs one worker per domain and valid timeout");
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
+    if (mtp_relay_ && (!group_hip || resident_ || receiver_arm_ || require_compact_ || fds_.size()!=2 || !timeout_ms_))
+        throw std::invalid_argument("MTP relay requires bounded nonresident full-logit grouped HIP");
 }
 FinalPipelineSession::~FinalPipelineSession() = default;
 void FinalPipelineSession::poison() noexcept {
@@ -369,6 +404,13 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
         // Same validation as encode, without serializing and hashing a throwaway packet.
         validate_wire_frame(initial);
         spec.validate(initial.rows);
+        if (mtp_offer_ && (initial.request_id!=last_request_ || initial.window_id!=last_window_+1 ||
+                          spec.pos0!=mtp_offer_->pos0 || spec.token_ids!=mtp_offer_->token_ids))
+            throw std::invalid_argument("next window must consume exact MTP offer");
+        mtp_pending_inputs_.clear();
+        if (mtp_offer_) mtp_pending_inputs_=spec.token_ids;
+        mtp_offer_.reset();
+        mtp_anchor_.reset();
         if (initial.request_id == last_request_ && initial.window_id <= last_window_)
             throw std::invalid_argument("final pipeline received replayed window");
         const size_t floats = static_cast<size_t>(initial.rows) * plan_.geometry.floats_per_row();
@@ -439,6 +481,7 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
         pending_request_ = initial.request_id;
         pending_window_ = initial.window_id;
         pending_rows_ = initial.rows;
+        pending_pos_ = spec.pos0;
         pending_ = true;
     } catch (...) { poison(); throw; }
 }
@@ -449,6 +492,8 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
     try {
         if (gate_.provisional().has_nonfinite())
             throw std::runtime_error("nonfinite head result cannot be committed");
+        if (!mtp_pending_inputs_.empty() && n_keep!=greedy_accepted_prefix(mtp_pending_inputs_,gate_.provisional().predicted_tokens))
+            throw std::invalid_argument("MTP commit differs from target-authoritative greedy prefix");
         PerformanceSpan total("coordinator", "commit_barrier", fds_.size(), pending_request_,
                               pending_window_, pending_rows_);
         // Only after the finite gate passes. Partial failure still poisons
@@ -480,8 +525,37 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
         FinalStageResult output = gate_.take_committed();
         last_request_ = pending_request_;
         last_window_ = pending_window_;
+        mtp_requested_=false;
+        if (mtp_relay_ && n_keep) {
+            mtp_anchor_=WindowSpec{pending_pos_+n_keep,{output.predicted_tokens.at(n_keep-1)}};
+            mtp_vocab_=output.vocab_size;
+        }
         pending_ = false;
         return output;
+    } catch (...) { poison(); throw; }
+}
+WindowSpec FinalPipelineSession::request_mtp_proposal() {
+    if (!mtp_relay_ || !initialized_ || poisoned_ || pending_ || resident_ || fds_.size()!=2 ||
+        !mtp_anchor_ || mtp_requested_ || mtp_offer_)
+        throw std::logic_error("MTP relay requires fresh all-stage committed prefix");
+    try {
+        mtp_requested_=true;
+        Frame request=control(plan_,endpoints_.back(),Kind::mtp_proposal_request,last_request_,last_window_,1);
+        request.window=*mtp_anchor_;
+        send_frame(fds_.back(),request,timeout_ms_);
+        auto reply=receive_frame(fds_.back(),timeout_ms_);
+        if (!reply) throw std::runtime_error("terminal closed during MTP proposal");
+        if (reply->kind==Kind::failure) throw std::runtime_error("MTP proposal failed: "+reply->error);
+        request.rows=reply->rows;
+        match(*reply,request,Kind::mtp_proposal);
+        if (!reply->window || reply->window->pos0!=mtp_anchor_->pos0 ||
+            reply->window->token_ids.size()<2 || reply->window->token_ids.size()>5 ||
+            reply->window->token_ids.front()!=mtp_anchor_->token_ids.front() ||
+            std::any_of(reply->window->token_ids.begin(),reply->window->token_ids.end(),
+                [this](int32_t id){return id<0 || static_cast<uint32_t>(id)>=mtp_vocab_;}))
+            throw std::runtime_error("MTP proposal invalid anchor, position or vocabulary");
+        mtp_offer_=*reply->window;
+        return *mtp_offer_;
     } catch (...) { poison(); throw; }
 }
 } // namespace strata::heterogeneous

@@ -79,7 +79,8 @@ uint32_t expected_bytes(const Frame& f) {
     return static_cast<uint32_t>(n);
 }
 void validate_frame(const Frame& f) {
-    if (f.kind != Kind::window_spec && f.kind != Kind::prefill_spec && f.window)
+    if (f.kind != Kind::window_spec && f.kind != Kind::prefill_spec &&
+        f.kind != Kind::mtp_proposal_request && f.kind != Kind::mtp_proposal && f.window)
         throw std::invalid_argument("unexpected window specification");
     if (f.kind != Kind::commit_prefix && f.kind != Kind::committed_prefix && f.keep_count)
         throw std::invalid_argument("unexpected accepted-token count");
@@ -122,6 +123,14 @@ void validate_frame(const Frame& f) {
             if (!zero_identity || f.shared_checksum || !f.payload.empty() ||
                 !f.error.empty() || !f.window)
                 throw std::invalid_argument("invalid window specification frame");
+            f.window->validate(f.rows);
+            break;
+        case Kind::mtp_proposal_request:
+        case Kind::mtp_proposal:
+            if (!f.window_id || !zero_identity || f.shared_checksum || !f.payload.empty() ||
+                !f.error.empty() || !f.window ||
+                (f.kind == Kind::mtp_proposal_request ? f.rows != 1 : (f.rows < 2 || f.rows > 5)))
+                throw std::invalid_argument("invalid MTP proposal control");
             f.window->validate(f.rows);
             break;
         case Kind::window_armed:
@@ -297,7 +306,8 @@ std::vector<uint8_t> encode(const Frame& f) {
              f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final)
         for (uint32_t word : f.identity) add_u32(payload, word);
     else if (f.kind == Kind::shared_data) add_u32(payload, f.shared_checksum);
-    else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec) {
+    else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec ||
+               f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal) {
         add_u64(payload, static_cast<uint64_t>(f.window->pos0));
         add_u32(payload, static_cast<uint32_t>(f.window->token_ids.size()));
         for (int32_t token : f.window->token_ids) add_u32(payload, static_cast<uint32_t>(token));
@@ -345,7 +355,8 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         f.payload.resize(n / sizeof(float));
         if (n) std::memcpy(f.payload.data(), payload, n);
     } else if (f.kind == Kind::failure) f.error.assign(reinterpret_cast<const char*>(payload), n);
-    else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec) {
+    else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec ||
+               f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal) {
         const uint32_t fixed = f.kind == Kind::prefill_spec ? 16 : 12;
         if (n < fixed || (n - fixed) % 4 != 0 || get_u32(payload + 8) != (n - fixed) / 4 ||
             get_u32(payload + 8) > max_window_tokens)

@@ -58,7 +58,8 @@ enum class Kind : uint16_t {
     hello_final = 12, hello_shared_final = 13,
     ready_resident = 14, begin_request = 15, request_ready = 16,
     prefill_spec = 17, prefill_rows = 18, prefill_done = 19,
-    window_armed = 20 // opt-in receiver prelaunch ACK, full window identity, no payload
+    window_armed = 20, // opt-in receiver prelaunch ACK
+    mtp_proposal_request = 21, mtp_proposal = 22 // terminal-only, paired with last committed window
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
@@ -85,7 +86,7 @@ struct Frame {
     // hello/hello_shared: [backend, ordinal, first_layer, end_layer]; others: zero.
     std::array<uint32_t, 4> identity{};
     uint32_t shared_checksum = 0; // shared_data only, over mapped float32 bytes
-    std::optional<WindowSpec> window; // window_spec only
+    std::optional<WindowSpec> window; // window_spec, prefill_spec, MTP request/proposal
     uint32_t keep_count = 0; // commit_prefix and committed_prefix only
     uint32_t prefill_chunk = 0; // prefill_spec only
 };

@@ -25,6 +25,10 @@ public:
     virtual bool begin(const WindowSpec&, uint64_t request, uint64_t window, std::string&) = 0;
     virtual bool committed(const WindowSpec&, uint64_t request, uint64_t window, uint32_t keep,
                            core::Verifier&, const std::vector<int32_t>& predictions, std::string&) = 0;
+    virtual bool relay_enabled() const noexcept { return false; }
+    virtual bool propose(const WindowSpec&, WindowSpec&, std::string& error) {
+        error="terminal observer does not relay proposals"; return false;
+    }
     virtual void shutdown() noexcept = 0;
 };
 
@@ -60,6 +64,8 @@ public:
                       uint64_t window_id, std::string&) override;
     bool receiver_arm_enabled() const noexcept override { return options_.receiver_arm; }
     bool arm_window(std::string&) override;
+    bool mtp_relay_enabled() const noexcept override { return observer_ && observer_->relay_enabled(); }
+    bool propose_mtp(const WindowSpec&, WindowSpec&, std::string&) override;
     bool run_final_window(const Frame&, ActivationView, FinalStageResult&,
                           std::string&) override;
     bool commit_prefix(uint64_t request_id, uint64_t window_id,

@@ -385,6 +385,16 @@ bool HipFinalVerifierExecutor::commit_prefix(uint64_t request, uint64_t window,
     spec_ = {};
     return true;
 }
+bool HipFinalVerifierExecutor::propose_mtp(const WindowSpec& anchor, WindowSpec& offer, std::string& error) {
+    if (!observer_ || state_!=State::ready || chain_stages_.empty() ||
+        anchor.pos0!=next_position_ || anchor.token_ids.size()!=1 ||
+        !check(cudaSetDevice(chain_.last().device()),error) ||
+        !observer_->propose(anchor,offer,error) || !select_device(error)) {
+        if(error.empty()) error="terminal native MTP relay refused";
+        abort_once(); return false;
+    }
+    return true;
+}
 bool HipFinalVerifierExecutor::run_window(const Frame&, Frame&, std::string& error) {
     error = "final HIP verifier never returns activation frames";
     return false;

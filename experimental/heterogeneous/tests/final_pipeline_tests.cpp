@@ -46,6 +46,16 @@ public:
         if (arm_mode != 1 || armed || tokens_.empty()) { e = "synthetic arm refusal"; return false; }
         armed = true; return true;
     }
+    int mtp_mode = 0;
+    bool mtp_relay_enabled() const noexcept override { return mtp_mode != 0; }
+    bool propose_mtp(const WindowSpec& anchor, WindowSpec& offer, std::string& e) override {
+        if (mtp_mode==2) {e="CPU proposal refusal";return false;}
+        offer=anchor;
+        offer.token_ids.push_back((anchor.token_ids.front()+17)%1000);
+        offer.token_ids.push_back(mtp_mode==3 ? 1000 : 0);
+        if(mtp_mode==4) ++offer.pos0;
+        return true;
+    }
     bool nonfinite = false;
     bool fail_commit = false;
     bool fail_reset = false;
@@ -150,7 +160,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
-                   bool bad_prefill = false, int arm_mode = 0) {
+                   bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -196,11 +206,12 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     final.bad_identity = bad;
                     final.grouped = grouped;
                     final.arm_mode = arm_mode;
+                    final.mtp_mode = mtp_mode;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
                     final.fail_reset = fail_reset;
-                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, resident ? &limits : nullptr,
+                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, (resident || mtp_mode) ? &limits : nullptr,
                                              delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf);
                 } else {
                     MockStageExecutor intermediate;
@@ -335,6 +346,51 @@ void receiver_arm_protocol(bool shared) {
     check(decode(encode(ack)).kind==Kind::window_armed,"receiver arm ACK roundtrip");
     ack.window_id=0;
     fails([&]{(void)encode(ack);},"zero window arm ACK rejected");
+}
+void mtp_relay_protocol(bool shared) {
+    const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    for(int mode:{1,2,3,4,0}) {
+        auto w=launch(p,shared,false,false,false,false,0.f,false,false,false,true,false,false,0,mode);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,false,true,false,true,false,true);
+        pipe.initialize();
+        fails([&]{(void)pipe.request_mtp_proposal();},"proposal before commit refused");
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        fails([&]{(void)pipe.request_mtp_proposal();},"provisional-only proposal refused");
+        check(pipe.commit(2).predicted_tokens[1]==19,"anchor comes from kept row");
+        if(mode!=1) {
+            fails([&]{(void)pipe.request_mtp_proposal();},"refused or invalid proposal");
+            check(pipe.poisoned(),"proposal failure poisons both peers");
+            continue;
+        }
+        auto offer=pipe.request_mtp_proposal();
+        check(offer.pos0==2 && offer.token_ids==std::vector<int32_t>({19,36,0}),"identity-bound proposal");
+        fails([&]{(void)pipe.request_mtp_proposal();},"duplicate offer refused");
+        auto result=pipe.execute(input_frame(p,1,2),offer);
+        check(result.predicted_tokens[0]==36 && result.predicted_tokens[1]==53,"actual mock proposal evaluated");
+        pipe.commit(2);
+        offer=pipe.request_mtp_proposal();
+        check(offer.pos0==4 && offer.token_ids.front()==53,"next offer after partial accept");
+        offer.token_ids.back()=8;
+        fails([&]{(void)pipe.execute(input_frame(p,1,3),offer);},"altered offer rejected");
+        check(pipe.poisoned(),"altered offer poisons pipeline");
+    }
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,false,false,false,true,false,false,0,1);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,false,true,false,true,false,true);
+        pipe.initialize();
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        pipe.commit(2);
+        const auto offer=pipe.request_mtp_proposal();
+        (void)pipe.execute(input_frame(p,1,2),offer);
+        fails([&]{(void)pipe.commit(3);},"cannot commit rejected proposal suffix");
+        check(pipe.poisoned(),"wrong greedy prefix poisons before sending commit");
+    }
+    Frame f=input_frame(p,1,1);
+    f.kind=Kind::mtp_proposal; f.stage_index=2; f.payload.clear();
+    f.window=WindowSpec{2,{19,36,0}};
+    check(decode(encode(f)).window->token_ids==f.window->token_ids,"proposal codec roundtrip");
+    f.rows=6; f.window->token_ids.resize(6);
+    fails([&]{(void)encode(f);},"oversized MTP proposal rejected");
 }
 void native_prefill_protocol(bool shared) {
     const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
@@ -541,6 +597,7 @@ int main() {
         startup_frame_failures();
         native_prefill_protocol(false); native_prefill_protocol(true);
         receiver_arm_protocol(false); receiver_arm_protocol(true);
+        mtp_relay_protocol(false); mtp_relay_protocol(true);
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

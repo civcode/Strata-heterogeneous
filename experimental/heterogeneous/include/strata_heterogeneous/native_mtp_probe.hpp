@@ -1,7 +1,7 @@
 #pragma once
 
-// Explicit one-shot HIP terminal qualification. No proposals are admitted to
-// the coordinator or used as target input. Uses vanilla MtpDrafter unchanged.
+// Explicit bounded HIP terminal qualification. One-shot mode logs proposals;
+// relay mode returns bounded IDs to the target verifier. Vanilla MtpDrafter unchanged.
 // Run the read-only asset audit first, against the exact configured target.
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
@@ -32,14 +32,14 @@ namespace strata::heterogeneous {
 class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
-                   uint64_t arena_budget, unsigned windows)
+                   uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
-          arena_budget_(arena_budget), windows_(windows) {}
+          arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
         const auto& g=b.geometry;
-        if (device_>=0 || !windows_ || windows_>8 || arena_budget_ ||
+        if (device_>=0 || !windows_ || windows_>8 || relay_rounds_>8 || arena_budget_ ||
             b.session.layer_hi!=g.n_layers || b.session.max_cells!=2048 ||
             g.n_layers!=48 || g.n_embd!=2560 || g.hc!=4 || g.n_expert!=512 ||
             g.n_vocab!=248320 || b.max_t<5 || b.max_t>8 ||
@@ -111,16 +111,18 @@ public:
     }
 
     bool begin(const WindowSpec& spec,uint64_t request,uint64_t window,std::string& error) override {
-        if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_ ||
-            !ck(cudaSetDevice(device_),error)) {
+        if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_+relay_rounds_ ||
+            (window>windows_ && !relay_pending_) || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe window identity mismatch";
             return false;
         }
-        return cursor_->begin(spec.pos0,spec.token_ids,prime(),error);
+        if (!cursor_->begin(spec.pos0,spec.token_ids,prime(),error)) return false;
+        relay_pending_=false;
+        return true;
     }
     bool committed(const WindowSpec& spec,uint64_t request,uint64_t window,uint32_t keep,
                    core::Verifier& terminal,const std::vector<int32_t>& predictions,std::string& error) override {
-        if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_ ||
+        if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_+relay_rounds_ ||
             terminal.device()!=device_ || predictions.size()!=spec.token_ids.size() ||
             !keep || keep>predictions.size() || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe commit identity mismatch";
@@ -128,7 +130,8 @@ public:
         }
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
         ++committed_;
-        if (committed_!=windows_) return true;
+        verified_next_=predictions[keep-1];
+        if (relay_rounds_ || committed_!=windows_) return true;
         return cursor_->finish(predictions[keep-1],
             [this](const float* row,int32_t next,int64_t cell,std::string& e) {
                 std::array<int32_t,8> tokens{};
@@ -151,6 +154,37 @@ public:
                 return true;
             },error);
     }
+    bool relay_enabled() const noexcept override { return relay_rounds_!=0; }
+    bool propose(const WindowSpec& anchor, WindowSpec& offer, std::string& error) override {
+        if (!relay_rounds_ || relay_pending_ || committed_<windows_ || committed_>=windows_+relay_rounds_ ||
+            !cursor_ || anchor.pos0!=cursor_->committed_position() ||
+            anchor.token_ids!=std::vector<int32_t>{verified_next_} ||
+            !ck(cudaSetDevice(device_),error)) {
+            if(error.empty()) error="MTP relay not admitted";
+            return false;
+        }
+        offer.pos0=anchor.pos0;
+        const bool ok=cursor_->offer(verified_next_,offer.token_ids,
+            [this](const float* row,int32_t next,int64_t cell,std::vector<int32_t>& candidates,std::string& e) {
+                std::array<int32_t,8> tokens{};
+                std::array<float,8> probs{};
+                int n=0;
+                core::MtpDrafter::DraftResult result;
+                if (!room(512ull<<20,e) ||
+                    !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
+                    !room(0,e)) return false;
+                if (n<1 || n>4 || result.generated!=n) {e="MTP relay invalid count";return false;}
+                for(int i=0;i<n;++i)
+                    if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
+                       probs[i]<0.f || probs[i]>1.f) {e="MTP relay invalid candidate";return false;}
+                candidates.assign(tokens.begin(),tokens.begin()+n);
+                std::fprintf(stderr,"HETERO_MTP_RELAY_OFFER cell=%lld anchor=%d count=%d\n",
+                             static_cast<long long>(cell),next,n);
+                return true;
+            },error);
+        relay_pending_=ok;
+        return ok;
+    }
     void shutdown() noexcept override {
         if(device_<0) return;
         // Every native call above is synchronous. No explicit frees on an
@@ -169,7 +203,9 @@ private:
     std::string rt_;
     std::vector<std::string> shards_;
     uint64_t reserve_,arena_budget_;
-    unsigned windows_,committed_=0;
+    unsigned windows_,relay_rounds_=0,committed_=0;
+    int32_t verified_next_=-1;
+    bool relay_pending_=false;
     int device_=-1;
     int64_t n_vocab_=0;
     size_t stride_=0;

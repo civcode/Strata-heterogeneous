@@ -41,5 +41,37 @@ int main() {
     e.clear(); MtpPrefixCursor boundary(2,2,100,8);
     check(boundary.begin(0,{5,6},prime,e) && boundary.committed(r.data(),2,prime,e));
     check(!boundary.finish(7,[](auto...){return true;},e));
+    e.clear(); seen.clear();
+    MtpPrefixCursor relay(2,32,100,8);
+    r={11,12,21,22,31,32,41,42};
+    auto draft=[&](const float* row,int32_t token,int64_t pos,std::vector<int32_t>& out,std::string&){
+        seen.emplace_back(row[0],token,pos);
+        out={23,24,25,26}; return true;
+    };
+    std::vector<int32_t> offer;
+    check(relay.begin(0,{5,6,77,78},prime,e) && relay.committed(r.data(),2,prime,e));
+    check(relay.offer(9,offer,draft,e) && offer==std::vector<int32_t>({9,23,24,25,26}));
+    check(seen==std::vector<Row>({{11,6,0},{21,9,1}}));
+    check(relay.begin(2,offer,prime,e) && seen.size()==2);
+    r={51,52,61,62,71,72,81,82};
+    check(relay.committed(r.data(),1,prime,e) && relay.committed_position()==3);
+    check(relay.offer(42,offer,draft,e) && seen.back()==Row(51,42,2));
+    check(relay.begin(3,offer,prime,e));
+    check(relay.committed(r.data(),2,prime,e) && seen.back()==Row(51,23,3));
+    check(relay.offer(99,offer,draft,e) && seen.back()==Row(61,99,4));
+    check(!relay.begin(5,{99,23,24,25,27},prime,e)); // no altered/replayed candidate
+    for (int failure=0;failure<3;++failure) {
+        e.clear(); MtpPrefixCursor bad(2,32,100,8);
+        check(bad.begin(0,{1},prime,e) && bad.committed(r.data(),1,prime,e));
+        if(failure==0) {
+            check(bad.offer(2,offer,draft,e));
+            check(!bad.offer(2,offer,draft,e));
+        } else {
+            check(!bad.offer(2,offer,[&](auto,auto,auto,auto& ids,auto&){
+                ids=failure==1?std::vector<int32_t>{100}:std::vector<int32_t>{};
+                return true;
+            },e));
+        }
+    }
     std::cout << "PASS " << n << " MTP prefix pairing CPU assertions\n";
 }
