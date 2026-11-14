@@ -124,6 +124,8 @@ bool CudaVerifierDriver::reset_request(uint64_t request, std::string& error) {
     // experts, device allocations and graphs remain resident.
     bindings_.zero_session(bindings_.session, bindings_.geometry, verifier_->stream());
     if (!record(error) || !wait(error)) return false;
+    if (prefix_observer_ && std::getenv("STRATA_HETERO_PREFILL_FIRST_TOKEN") &&
+        !prefix_observer_(request,0,error)) return false;
     request_ = request;
     window_ = 0;
     next_position_ = 0;

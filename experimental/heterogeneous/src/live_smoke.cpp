@@ -81,6 +81,7 @@ struct Options {
     bool placement_capture = false;
     uint32_t prefill_parity_at = 0; // diagnostic: number of known prefix tokens before teacher-forced rows
     bool prefill_state_capture = false;
+    bool prefill_first_token = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -133,6 +134,7 @@ void usage() {
         "    --generate 1 --native-prefill-chunk N --prompt-chunk 1, nonresident stdin tokens.\n"
         "    Captures full committed logits on the remaining 1..128 teacher-forced tokens and native bridge bytes.\n"
         "    --prefill-state-capture: also snapshot the entry CUDA committed prefix (cut 1..16 only).\n"
+        "    --prefill-first-token: paired native/verifier CUDA first-token observations (cut/chunk 1 only).\n"
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
@@ -229,6 +231,7 @@ Options parse(int argc, char** argv) {
             smoke_shape = true;
         }
         else if (key == "--prefill-state-capture") o.prefill_state_capture = true;
+        else if (key == "--prefill-first-token") o.prefill_first_token = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
@@ -411,6 +414,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
+    if (o.prefill_first_token && (!o.prefill_state_capture || o.prefill_parity_at!=1 || o.native_prefill_chunk!=1))
+        throw std::invalid_argument("first-token localization requires A/B/A cut/chunk 1 and state capture");
     if (o.prefill_state_capture && (!o.prefill_parity_at || o.prefill_parity_at > 16))
         throw std::invalid_argument("prefill state capture requires explicit A/B/A and cut 1..16");
     if (o.prefill_parity_at && (o.generate != 1 || !o.group_hip || o.resident || o.stream_tokens ||
@@ -436,6 +441,8 @@ Options parse(int argc, char** argv) {
             }
             if (uint64_t(o.tokens.size()) + o.generate > o.context_limit)
                 throw std::invalid_argument("prompt and completion exceed context limit");
+            if (o.prefill_first_token && o.tokens.size()!=2)
+                throw std::invalid_argument("first-token localization requires one prefix and one forced token");
             if (o.prefill_parity_at && (o.prefill_parity_at >= o.tokens.size() ||
                 o.tokens.size() - o.prefill_parity_at > 128))
                 throw std::invalid_argument("prefill parity requires a nonempty prefix and 1..128 teacher-forced rows");
@@ -685,7 +692,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
     if (o.generate && ::unsetenv("STRATA_HETERO_LAYER_TAP_PREFIX") != 0)
         throw std::runtime_error("cannot clear inherited native layer-tap capture");
-    if (o.layer_zero_probe) {
+    if (o.prefill_first_token ? ::setenv("STRATA_HETERO_PREFILL_FIRST_TOKEN","1",1)!=0
+                              : ::unsetenv("STRATA_HETERO_PREFILL_FIRST_TOKEN")!=0)
+        throw std::runtime_error("cannot configure first-token localization");
+    if (o.layer_zero_probe || o.prefill_first_token) {
         if (::setenv("STRATA_HETERO_L0_PROBE_PREFIX",
                      o.capture_prefix.c_str(), 1) != 0)
             throw std::runtime_error("cannot configure native layer-zero arithmetic probe");
@@ -807,7 +817,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 std::cerr << "MTP diagnostic drain could not finish\n";
             }
         }
-    } diagnostic_drain{workers,o.mtp_three_round || o.generation_capture,o.timeout_ms};
+    } diagnostic_drain{workers,o.mtp_three_round || o.generation_capture || o.prefill_parity_at,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
                                          fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation,o.mtp_resident_prompt_rows!=0);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
@@ -867,7 +877,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                       << " prefix=" << cut << " rows=" << o.tokens.size() - cut << std::endl;
         }
         std::string error;
-        if (!workers.finish(error)) throw std::runtime_error("parity worker shutdown failed: " + error);
+        if (!workers.finish(error,o.timeout_ms,false)) throw std::runtime_error("parity worker shutdown failed: " + error);
         // Completion is evidence of capture, not numerical parity. Publish only after all ACKs and cleanup.
         std::ofstream complete(o.capture_prefix + ".prefill.json", std::ios::binary);
         if (!complete) throw std::runtime_error("cannot create prefill parity completion marker");
@@ -876,6 +886,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"prefix_rows\":" << cut << ",\"chunk\":" << o.native_prefill_chunk
                  << ",\"state_capture\":" << (o.prefill_state_capture ? "true" : "false")
+                 << ",\"first_token_capture\":" << (o.prefill_first_token ? "true" : "false")
                  << ",\"hc\":" << o.hc << ",\"n_embd\":" << o.n_embd << ",\"token_ids\":[";
         for (size_t pos = 0; pos < o.tokens.size(); ++pos) {
             if (pos) complete << ',';

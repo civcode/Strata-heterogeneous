@@ -26,6 +26,8 @@ public:
         if (raw == nullptr || !*raw || index >= plan.stages.size() ||
             plan.stages[index].first_layer != 0) return true;
         prefix_ = raw;
+        const char* first=std::getenv("STRATA_HETERO_PREFILL_FIRST_TOKEN");
+        first_token_=first && std::strcmp(first,"1")==0;
         const std::filesystem::path path(prefix_);
         if (prefix_.size() > 4096 || !path.is_absolute() ||
             prefix_.find('\n') != std::string::npos ||
@@ -50,6 +52,7 @@ public:
                 const WindowSpec& window, uint64_t request,
                 uint64_t window_id, std::string& error) const {
         if (!enabled_) return true;
+        if (first_token_ && (window.pos0!=0 || (request!=1 && request!=3))) return true;
         if (window.token_ids.size() != 1 || window.token_ids[0] < 0 ||
             window.pos0 < 0 || !request || !window_id ||
             plan.total_layers != n_layers_ ||
@@ -123,6 +126,7 @@ public:
         for (unsigned j = 0; j < 4; ++j)
             bytes[64 + j] = static_cast<uint8_t>(hash >> (j * 8));
         const std::string filename = prefix_ + ".stage" + std::to_string(stage_) +
+                                     (first_token_?".r"+std::to_string(request):std::string())+
                                      ".w" + std::to_string(window_id) + ".stl0";
         const int fd = ::open(filename.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0600);
         if (fd < 0) {
@@ -159,6 +163,7 @@ private:
     uint32_t stage_ = 0;
     uint32_t n_layers_ = 0;
     bool enabled_ = false;
+    bool first_token_ = false;
 };
 
 } // namespace strata::heterogeneous

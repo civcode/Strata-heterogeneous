@@ -254,6 +254,11 @@ public:
     /// earlier stage is a chunk or more ahead of the last one by the time `on_chunk` runs, so this is where a
     /// mid-prompt checkpoint takes each stage's part.  Runs on that stage's thread, with its device current.
     std::function<bool(int64_t done, std::string& err)> on_stage_chunk;
+    // Opt-in entry-stage localization, first single-token chunk only. Borrowed
+    // device FP32 data on the native compute stream; consume before return.
+    // No allocation or reads when unset. Not an inference path.
+    using FirstTokenProbe = std::function<bool(const char*, const float*, size_t, void*, std::string&)>;
+    FirstTokenProbe on_first_token;
 
     /// Checked before every chunk: true stops the prompt early (`run` returns false with err "cancelled").
     std::function<bool()> should_stop;

@@ -28,7 +28,7 @@ def check(ok: bool, msg: str) -> None:
         raise parity.ParityError(msg)
 
 
-def load_probe(path: Path) -> dict:
+def load_probe(path: Path, *, request_id: int = 1) -> dict:
     check(path.is_file(), f"missing layer-zero arithmetic record: {path}")
     size = path.stat().st_size
     check(HEADER.size + 4 <= size <= MAX_SIZE, f"invalid STL0 record size: {path}")
@@ -39,7 +39,8 @@ def load_probe(path: Path) -> dict:
           stage == 0 and rows == 1 and layers == 48 and
           0 < N <= 16384 and N % 32 == 0 and
           0 < C <= 65536 and Q == (N // 32) * 36 and
-          request == 1 and window > 0 and pos0 >= 0 and fingerprint > 0,
+          type(request_id) is int and request_id in (1, 3) and
+          request == request_id and window > 0 and pos0 >= 0 and fingerprint > 0,
           "invalid STL0 header/geometry/identity")
     expect = HEADER.size + 4 + 4 * (2 * N + C) + Q
     check(size == expect, "STL0 payload length mismatch")

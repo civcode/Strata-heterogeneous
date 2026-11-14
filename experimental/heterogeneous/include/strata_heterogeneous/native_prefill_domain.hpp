@@ -24,7 +24,9 @@ struct NativePrefillStage {
 };
 inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         const std::vector<NativePrefillStage>& stages, bool sender,
-        int timeout_ms, std::string& error) {
+        int timeout_ms, std::string& error,
+        prefill::Prefill::FirstTokenProbe first_probe = {},
+        std::function<bool(const char*,std::string&)> entry_state = {}) {
     struct Local {
         int device = -1;
         cudaStream_t stream = nullptr;
@@ -59,6 +61,10 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         if (cmd.kind != Kind::prefill_spec || stages.size() != (sender ? 1u : 2u) ||
             cmd.stage_index < stages.size() - 1) {
             error = "native prefill domain command/topology mismatch"; return false;
+        }
+        if ((first_probe || entry_state) && (!sender || !first_probe || !entry_state ||
+            cmd.rows!=1 || cmd.prefill_chunk!=1 || cmd.request_id!=2)) {
+            error="first-token prefill diagnostic requires one CUDA entry token";return false;
         }
         const int64_t n = cmd.rows;
         const int64_t chunk = std::min<int64_t>(n,cmd.prefill_chunk);
@@ -118,10 +124,13 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             return pos==offset && offset<n && rows==std::min(chunk,n-offset);
         };
         if (sender) {
+            first.pf->on_first_token=std::move(first_probe);
             first.pf->set_external_handoff({},true);
             first.pf->on_chunk=[&](const float* r,int64_t rows,int64_t pos,std::string& err) {
                 try {
                     if (!shape(rows,pos) || !r) { err="native prefill output chunk mismatch"; return false; }
+                    // Before even the first D2H/transport operation.
+                    if (entry_state && !entry_state("before_bridge",err)) return false;
                     if (!check(cudaMemcpy(owned.pinned,r,size_t(rows)*stride*sizeof(float),cudaMemcpyDeviceToHost),
                                "native prefill residual D2H")) return false;
                     for (size_t off=0;off<size_t(rows);) {
@@ -181,6 +190,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                 !init_owned_native_prefill(*node.pf,s.weights,s.geometry,s.session,s.experts,
                                            chunk,node.stream,s.reserve_bytes,0,error)) return false;
         }
+        if (entry_state && !entry_state("after_init",error)) return false;
         std::vector<int64_t> tokens(cmd.window->token_ids.begin(),cmd.window->token_ids.end());
         if (!check(cudaSetDevice(first.device),"prefill entry device") ||
             !first.pf->run_external(tokens.data(),n,0,chunk,n>chunk,error)) return false;

@@ -3607,6 +3607,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 ++t;
             }
         }
+        if (on_first_token && LB==0 && p0==0 && T==1 &&
+            !on_first_token("embedding",m.emb,size_t(N),m.cs,err)) return false;
         if (!incoming) gr_broadcast(m.emb, m.R, T, m.cs);
         // ---- the PLE rows of the whole chunk, one batched SSD request on a thread (see ple_gather).  A later chunk's
         // were read ahead during the previous chunk; the first chunk's are read beside layer 0 - they are needed from
@@ -4224,6 +4226,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                              m.mixed_bf_lo);
                 }
 
+                if (on_first_token && l==0 && half==0 && p0==0 && T==1 &&
+                    !on_first_token("hc_mixed",m.mixed,size_t(N),m.cs,err)) return false;
                 if (wd_q8.data) {   // the HC GEMMs that read the scratch are enqueued: the next user waits for them
                     core::NativeDense::hc_bf16_release(m.cs, 0, 0);
                     core::NativeDense::hc_bf16_release(m.cs, 1, 0);
@@ -4240,6 +4244,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     float* state = ss.gdn_state + (size_t) (gdn_index - ss.gdn_ord0) * gdn_floats;
                     float* conv = state + (uint64_t) g.ssm_state_size * g.ssm_v_heads * g.ssm_state_size;
                     if (!native_proj(m.gemm, wqkv, m.mixed_h, m.qkv, T, v.name("attn_qkv.weight"), err)) return false;
+                    if (on_first_token && l==0 && p0==0 && T==1 &&
+                        !on_first_token("gdn_qkv",m.qkv,size_t(g.ssm_conv_channels),m.cs,err)) return false;
                     // KVA: the gate projection feeds only the output normalization, which a state-only layer skips
                     // (STRATA_KVA_GDN_NORM=1 keeps the full recurrence as the A/B control for the state-only one)
                     static const bool kva_gdn_norm = [] {

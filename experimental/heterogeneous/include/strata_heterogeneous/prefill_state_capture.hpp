@@ -26,6 +26,33 @@ namespace strata::heterogeneous {
 class PrefillStateCapture {
 public:
     bool active() const noexcept { return !prefix_.empty(); }
+    bool first_token() const noexcept { return first_token_; }
+
+    // Observe the first GDN layer and PLE history. No inference writes.
+    bool entry_state(uint64_t request,const char* phase,const core::SessionState& ss,
+                     const core::ModelGeometry& g,std::string& error) const {
+        if (!first_token_) return true;
+        const bool reset=std::strcmp(phase,"reset")==0;
+        if (request<1 || request>3 || (!reset && request!=2) ||
+            (!reset && std::strcmp(phase,"after_init") && std::strcmp(phase,"before_bridge") &&
+             std::strcmp(phase,"after_drain"))) {error="invalid first-token state phase";return false;}
+        const size_t rec=size_t(g.ssm_state_size)*g.ssm_v_heads*g.ssm_state_size;
+        const size_t conv=size_t(g.ssm_conv_channels)*(g.ssm_d_conv-1);
+        const size_t ple=size_t(strata::kernels::NG_HIST)*strata::kernels::NG_HC_DIM;
+        if (!ss.gdn_state || !ss.ple_hist || !rec || !conv || !ple) {error="missing first-token state";return false;}
+        int current=-1;
+        if (cudaGetDevice(&current)!=cudaSuccess || current!=device_ ||
+            cudaDeviceSynchronize()!=cudaSuccess) {error="first-token state owner/drain failed";return false;}
+        const std::string base=std::string(phase)+".";
+        return sample(request,base+"recurrence",ss.gdn_state,rec,nullptr,error) &&
+               sample(request,base+"conv",ss.gdn_state+rec,conv,nullptr,error) &&
+               sample(request,base+"ple",ss.ple_hist,ple,nullptr,error);
+    }
+    bool native_sample(const char* name,const float* ptr,size_t count,void* stream,std::string& error) const {
+        if (!first_token_ || (std::strcmp(name,"embedding") && std::strcmp(name,"hc_mixed") &&
+            std::strcmp(name,"gdn_qkv")) || !stream) {error="invalid native first-token sample";return false;}
+        return sample(2,name,ptr,count,stream,error);
+    }
 
     bool configure(size_t stage, const core::SessionState& ss,
                    const core::ModelGeometry& g, std::string& error) {
@@ -56,6 +83,9 @@ public:
             }
         }
         prefix_ = prefix;
+        const char* first=std::getenv("STRATA_HETERO_PREFILL_FIRST_TOKEN");
+        first_token_=first && std::strcmp(first,"1")==0;
+        if (first_token_ && cut_!=1) {error="first-token localization requires cut 1";return false;}
         if (cudaGetDevice(&device_) != cudaSuccess) {
             error = "state capture cannot identify CUDA owner"; return false;
         }
@@ -191,6 +221,24 @@ public:
 
 private:
     std::string prefix_;
+    bool first_token_=false;
+    bool sample(uint64_t request,const std::string& name,const float* ptr,size_t count,
+                void* stream,std::string& error) const {
+        int device=-1;
+        if (!ptr || !count || count>(16u<<20)/sizeof(float) ||
+            cudaGetDevice(&device)!=cudaSuccess || device!=device_) {
+            error="first-token sample size/device refused";return false;
+        }
+        if (stream && cudaStreamSynchronize(static_cast<cudaStream_t>(stream))!=cudaSuccess) {
+            error="first-token native compute stream failed";return false;
+        }
+        std::vector<float> data(count);
+        if (cudaMemcpy(data.data(),ptr,count*sizeof(float),cudaMemcpyDeviceToHost)!=cudaSuccess) {
+            error="first-token sample download failed";return false;
+        }
+        return write_file(prefix_+".first.r"+std::to_string(request)+"."+name+".f32",
+                          [&](int fd){return write_all(fd,data.data(),count*sizeof(float),error);},error);
+    }
     int64_t cut_ = 0;
     int device_ = -1;
 
