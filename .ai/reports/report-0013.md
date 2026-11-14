@@ -1,0 +1,34 @@
+# Report 0013 — CUDA prefix state and split-overlap direction
+
+**Status: PARTIAL; native prefill remains unqualified and off by default.** Synced to handoff commit `b55159f2c82a88abe5192a6b6b25a2c441ee296e`. No interoperability defect or fix was established. The exact operator benchmark is not identified; the conditional shared-page probe was therefore not run. No GitHub Actions, precision/budget/clock changes, private checkout, or substitute assets were used.
+
+## Build and tests
+
+Using the existing vanilla CMake caches/toolchains, `cmake --build build-hetero-smoke-{cuda,host,hip} -j28` all succeeded, including the actual CUDA worker and live-smoke host. Host `ctest --test-dir build-hetero-smoke-host -j28 --output-on-failure`: **94/94 passed**, including CUDA verifier contract/observer tests. With checkout `.venv` and inherited `PYTHONPATH` removed, prefill state/parity discovery: **18 passed**; `python -m unittest serve.test_heterogeneous_resident`: **12 passed**; `pip check`: clean. An initial combined module-form Python invocation failed because the tools tests import sibling modules as top-level modules; the successful discovery invocation supplies the intended tools path. Logs are in `/home/chris/tmp/strata-heterogeneous/m7-0013/`.
+
+## Bounded CUDA state localization
+
+Reused report-0012 A02 token IDs and original 12/18/18 full-resident Q2_0 plan, budgets, source hash, context 2048, grouped HIP, synchronous checkpoint and fresh A/B/A requests. Exact runnable invocation construction is `m7-0013/run-cuts.py`; `--prefill-state-capture`, chunk 1 and cuts 1 and 2 were used. Raw state manifests/binaries, logits, and physical bridge readbacks are under `/home/chris/tmp/strata-heterogeneous/m7-0013/captures/A02-p{1,2}-c1*`; state and logits JSON/log comparisons are `m7-0013/A02-p{1,2}-c1-{state,report}.json` and corresponding logs. Completion manifests are present. Each test used one teacher-forced token after the prefix.
+
+| Cut | logits gate, serial vs native | R-only physical bridge | committed CUDA state |
+|---|---|---|---|
+| 1 | PASS, KL 1.2165e-10, same top-1; max absolute logit difference 0.17954 | 1/1 equal | DIFFERENT |
+| 2 | FAIL, KL 0.00189619595 > 0.001, same top-1; max absolute logit difference 0.28343 | 2/2 equal | DIFFERENT |
+
+Both serial repeats are byte-identical in all captured state fields and logits for both cuts. PLE previous-token IDs agree across all three runs: cut 1 `[-1, 248045]`, cut 2 `[248045, 846]`. The PLE history differs: 368,640 bytes, max absolute difference 0.00710535 (cut 1), 0.01055908 (cut 2). The earliest owned GDN ordinal, `gdn0` (layer 0), already differs after cut 1: recurrence 3,145,728 bytes, max abs 0.00149938; convolution 122,880 bytes, max abs 0.01761019. At cut 2 these maxima are 0.00681806 and 0.01769471 respectively. Later GDN and QSA fields also differ; full per-field sizes are in manifests, magnitudes and first differing offsets in state reports. GDN/QSA identifiers are global owned ordinals, not interchangeable layer numbers. The order of fields in the report does not establish temporal causation: PLE history and layer-0 state are committed snapshots, not an arithmetic trace.
+
+This narrows the divergence to state already present after the first CUDA prefix token, even though the cut-1 logits gate passes. It does **not** distinguish initialization/adoption from native prefill versus verifier arithmetic, or prove a CUDA kernel or cross-runtime bug. No additional stage tap was run; that distinction remains open. The bridge equality only excludes corruption of the captured pieces, not source correctness. Since no concrete interop fix was demonstrated, no post-fix A02/A03 long controls are claimed; stop tuning this layer-range control.
+
+## Vanilla split path and provenance
+
+The operator reports 3840 prompt tokens/s on dual R9700, but the authorized fork documentation and inspected scratch evidence do not identify that measurement's exact executable pathname, build revision/version, invocation/environment flags, model/quant, prompt tokens/content, context, batching, or whether MTP was used. `docs/SPLIT_ENGINE.md` describes the all-cards candidate and says auto selection on AMD is for four R9700s with specific expert types; it does not establish this dual-card measurement. The handoff's figure is user-reported, not reproduced. Obtain the actual read-only invocation and version/model/workload metadata before treating this candidate as the confirmed fastest benchmark path.
+
+The fork's `src/split/CMakeLists.txt` builds architecture/runtime-specific `strata-split-N` executables, not a mixed-runtime binary. `strata_control/split_engine.py` rejects mixed vendors; disabling that guard alone cannot make pointers, streams, device enumeration or collectives interoperable. Its normal split launcher requires the model MTP files, except the explicit supported DFlash2 alternative with its real pack; whether the unknown benchmark itself required MTP is **unknown**. No assets were substituted.
+
+`src/split/src/card_split.hpp` partitions each layer's heads and FF blocks by global card rank; it is not the existing 12/18/18 pipeline. `prefill.cu` defaults `FNX_PF_OVERLAP` on: chunk sums run on a ring stream while subsequent work computes. `pf_ring_plan.hpp` defines rank-ordered reduce-scatter/all-gather; `pf_common.cuh` implements half-precision host-buffer transfers, per-step sequence flags, waits and local stream operations. Attention exchanges and other swaps have separate buffers/flags too, so the ring alone is not necessarily the entire boundary.
+
+**Proposed, unvalidated seam:** preserve global rank, exact shard mapping, ring order/rounding, overlap, local streams and same-vendor HIP group; map rank explicitly to each process's runtime-local ordinal (CUDA rank in CUDA process, two HIP ranks in HIP process). Replace only cross-vendor host-buffer/flag ownership and transfer edges with a bounded, explicitly acknowledged bridge; do not pass foreign device pointers, streams or events. Same-runtime paths stay native. Safe visibility, lifetimes, ordering, failure/drain and all exchange types still require proof; CPU-mediated acknowledgement may be a conservative fallback, not a demonstrated performance solution.
+
+## Conditional feasibility / remaining work
+
+The handoff permits the cross-runtime shared-host-page probe **only if the actual fast path is confirmed**. That prerequisite is unmet, so no memfd registration, bidirectional DMA or flag ordering was tested and no all-cards integration or qualification is claimed. Once benchmark metadata confirms the candidate, a small independently registered shared-page probe with per-runtime aliases, bounded locally observed ordering, drained transfers/ACKs and safe cleanup is the next feasibility check. Preserve the existing serial control. The pre-existing untracked `tools/heterogeneous_pool_probe.cpp` was not modified or committed.
