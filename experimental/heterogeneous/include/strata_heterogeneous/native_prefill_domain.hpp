@@ -3,6 +3,7 @@
 // The caller owns weights/cache/session, and has completed its resident reset.
 #include "strata_heterogeneous/native_prefill_init.hpp"
 #include "strata_heterogeneous/host.hpp"
+#include "strata_heterogeneous/window_admission.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>

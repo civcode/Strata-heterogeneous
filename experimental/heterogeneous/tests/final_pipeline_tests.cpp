@@ -4,6 +4,7 @@
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/shared.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
+#include <algorithm>
 #include <iostream>
 #include <cmath>
 #include <limits>
@@ -139,7 +140,8 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool nonfinite = false, bool fail_commit = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
                    bool resident = false, bool fail_reset = false,
-                   bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false) {
+                   bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
+                   bool bad_prefill = false) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -152,6 +154,33 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
             ::close(fd[0]);
             try {
                 const WindowLimits limits{0, 64, 1000, 8};
+                NativePrefillHandler pf;
+                if (grouped) pf=[&,i](const Frame& cmd,int sock,std::string& error) {
+                    const size_t stride=size_t(cmd.geometry.hc)*cmd.geometry.n_embd;
+                    for (size_t offset=0;offset<cmd.rows;) {
+                        const size_t count=std::min({size_t(prefill_piece_rows(cmd.geometry)),
+                            size_t(cmd.prefill_chunk)-offset%cmd.prefill_chunk,size_t(cmd.rows)-offset});
+                        if (i==0) {
+                            Frame piece;
+                            piece.kind=Kind::prefill_rows; piece.stage_index=cmd.stage_index;
+                            piece.request_id=cmd.request_id; piece.window_id=offset+1+(bad_prefill?1:0);
+                            piece.plan_fingerprint=cmd.plan_fingerprint; piece.geometry=cmd.geometry;
+                            piece.rows=static_cast<uint32_t>(count);
+                            piece.payload.assign(count*stride, float(offset+1));
+                            send_frame(sock,piece,1200);
+                        } else {
+                            auto piece=receive_frame(sock,1200);
+                            if (!piece || piece->kind!=Kind::prefill_rows || piece->stage_index!=i ||
+                                piece->request_id!=cmd.request_id || piece->window_id!=offset+1 ||
+                                piece->plan_fingerprint!=cmd.plan_fingerprint || piece->rows!=count ||
+                                piece->payload!=std::vector<float>(count*stride,float(offset+1))) {
+                                error="mock native residual transport mismatch"; return false;
+                            }
+                        }
+                        offset+=count;
+                    }
+                    return true;
+                };
                 if (i + 1 == plan.stages.size() && !wrong_mode) {
                     if (delayed_startup) ::usleep(1600000);
                     MockFinal final;
@@ -162,11 +191,11 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     final.unmarked_logit = unmarked_logit;
                     final.fail_reset = fail_reset;
                     serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, resident ? &limits : nullptr,
-                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello);
+                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf);
                 } else {
                     MockStageExecutor intermediate;
                     serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, resident ? &limits : nullptr,
-                                          delayed_startup ? 4000 : -1);
+                                          delayed_startup ? 4000 : -1, pf);
                 }
                 ::close(fd[1]);
                 ::_exit(0);
@@ -269,6 +298,53 @@ void grouped_domain(bool shared, bool fanout) {
         fails([&]{pipe.initialize();},"terminal-only hello must not pass grouped readiness");
     }
 }
+void native_prefill_protocol(bool shared) {
+    const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    Frame spec;
+    spec.kind=Kind::prefill_spec; spec.stage_index=0; spec.request_id=1; spec.window_id=1;
+    spec.plan_fingerprint=p.fingerprint(); spec.geometry=p.geometry; spec.rows=5;
+    spec.window=WindowSpec{0,{1,2,3,4,5}}; spec.prefill_chunk=2;
+    const auto round=decode(encode(spec));
+    check(round.kind==Kind::prefill_spec && round.prefill_chunk==2 &&
+          round.window && round.window->token_ids==spec.window->token_ids,"prefill spec round trip");
+    Frame residual=spec;
+    residual.kind=Kind::prefill_rows; residual.window.reset(); residual.prefill_chunk=0;
+    residual.rows=2; residual.payload.assign(2*p.geometry.hc*p.geometry.n_embd,0.25f);
+    check(decode(encode(residual)).payload==residual.payload,"R-only residual round trip");
+    residual.kind=Kind::data;
+    fails([&]{(void)encode(residual);},"R-only cannot be used as decode handoff");
+    auto invalid=spec; invalid.prefill_chunk=0;
+    fails([&]{(void)encode(invalid);},"zero native chunk rejected");
+    std::string error;
+    WindowAdmission gate(p,0,{0,64,1000,8});
+    check(!gate.begin_prefill(spec,error),"reset required before native prompt");
+    check(gate.reset_request(1,error) && gate.begin_prefill(spec,error),"admit native prompt");
+    check(!gate.begin({0,{1}},1,2,error),"decode cannot overlap incomplete native prompt");
+    check(gate.finished_prefill(error) && gate.next_position()==5,"position advanced after native drain");
+    check(!gate.begin_prefill(spec,error),"native prompt replay rejected");
+    check(gate.begin({5,{6}},1,2,error),"next decode starts at native prompt end");
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        pipe.native_prefill({1,2,3,4,5},2);
+        fails([&]{pipe.native_prefill({1},1);},"prefill replay declined by coordinator");
+        (void)pipe.execute(input_frame(p,1,2),{5,{6,7,8}});
+        check(pipe.commit(1).request_id==1,"native prompt to decode commit");
+        pipe.begin_request(2);
+        pipe.native_prefill({2,4,6},2);
+        (void)pipe.execute(input_frame(p,2,2),{3,{8,9,10}});
+        check(pipe.commit(3).request_id==2,"native prompt after resident reset");
+    }
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        fails([&]{pipe.native_prefill({1,2,3},2);},"out-of-order native residual rejected");
+        check(pipe.poisoned(),"native prefill failure poisons coordinator");
+    }
+}
+
 void bad_ack(bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3",3,{2,3},3719);
     int fd[2]{};
@@ -422,6 +498,7 @@ int main() {
     try {
         startup_barrier(false); startup_barrier(true);
         startup_frame_failures();
+        native_prefill_protocol(false); native_prefill_protocol(true);
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);
