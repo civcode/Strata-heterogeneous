@@ -207,6 +207,27 @@ public:
     /// first, -1 for none) and is advanced to the last two of these.
     bool run(const int64_t* tokens, int64_t n, int64_t pos0, std::string& err);
 
+    /// An external *backend* boundary, not another prompt engine. Configure before init, together with set_stage.
+    /// Only the first local stage may receive external rows; only the last local stage may send them.
+    /// Incoming is called on the receiving device for a chunk, with its LOCAL device destination and stream.
+    /// It must enqueue exactly rows * row_floats residual floats (R, not verifier R|bo|inject), correct pos0,
+    /// on that stream, or return false. The bridge must retain its source until the upload completes.
+    /// Outgoing uses the existing on_chunk callback: the stream is synchronized and R is valid until reuse.
+    /// Neither callback may export runtime pointers/events or throw. The bridge owns transport/cancellation.
+    using ExternalInput = std::function<bool(float* dst, int64_t rows, int64_t row_floats,
+                                             int64_t pos0, void* stream, std::string& err)>;
+    void set_external_handoff(ExternalInput incoming, bool outgoing) {
+        external_input_ = incoming;
+        external_output_ = outgoing;
+    }
+    /// Read one whole segment with a common, externally agreed chunk size. Uses the native chunk-major
+    /// run_impl and drains its native local successors once (not per chunk). Tokens stay live until return.
+    /// Every local Prefill must have been successfully initialized, with idle, exclusively owned session/streams.
+    /// A failure poisons the mixed request; the worker must settle its streams before releasing any resources.
+    /// No layer-major, multi-prompt or early segment truncation on an external boundary yet.
+    bool run_external(const int64_t* tokens, int64_t n, int64_t pos0, int64_t chunk_size,
+                      bool planned, std::string& err);
+
     const PrefillStats& stats() const { return stats_; }
 
     /// multi-GPU: the experts the peer GPU holds are computed THERE for every prompt chunk (up to `cap_rows` routed
@@ -350,6 +371,9 @@ private:
     int64_t tap_first_ = 0, tap_cap_ = 0;
     float* tap_dev_ = nullptr;
     Prefill* next_ = nullptr;
+    ExternalInput external_input_;
+    bool external_output_ = false;
+    bool has_external_handoff() const;
     Prefill* helper_ = nullptr;         ///< set_stage_helper
     bool single_chunk_ = false;         ///< a later stage: the prompt is one chunk (set by the stage before)
     int64_t stopped_at_ = -1;           ///< stop_at_chunk ended the last run after this many tokens (-1: it read all)

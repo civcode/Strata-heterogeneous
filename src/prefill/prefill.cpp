@@ -1833,7 +1833,9 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
     }
     cudaGetDevice(&m.device);
     if (stage_le_ < 0) stage_le_ = g.n_layers;
-    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers || (stage_le_ < g.n_layers) != (next_ != nullptr)) {
+    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers ||
+        (stage_le_ < g.n_layers) != (next_ != nullptr || external_output_) ||
+        (next_ != nullptr && external_output_) || (external_input_ && stage_lb_ == 0)) {
         err = "prefill: the stage's layer range is wrong";
         return false;
     }
@@ -3300,6 +3302,11 @@ struct KvaTap {
 
 bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::string& err) {
     err.clear();
+    const bool incoming = hand_in_ != nullptr || static_cast<bool>(external_input_);
+    if (external_input_ && hand_in_ != nullptr) {
+        err = "prefill: two incoming hand-offs";
+        return false;
+    }
     // force_chunk is for this run only: taken before any early return can leave it to the next one
     const int64_t forced = hand_in_ == nullptr ? std::exchange(force_chunk_, 0) : 0;
     const bool forced_single = force_single_, forced_planned = force_planned_;
@@ -3501,7 +3508,14 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         const auto tsetup = Clock::now();
         // ---- embeddings, broadcast to the four streams - or, in a later stage of a layer split, the rows the
         // previous stage handed on
-        if (hand_in_ != nullptr && hand_ev_ != nullptr) {
+        if (external_input_) {
+            // The cross-runtime bridge receives bytes and queues the upload on THIS device's stream.
+            // All following native work is ordered behind it; no foreign stream/event is involved.
+            if (!external_input_(m.R, T, D, p0, m.cs, err)) {
+                if (err.empty()) err = "prefill: external hand-off upload failed";
+                return false;
+            }
+        } else if (hand_in_ != nullptr && hand_ev_ != nullptr) {
             // STRATA_HANDOFF_PIPE: each piece's upload waits on the GPU for its download on the stage before.  The
             // stage before split the chunk it handed on (n rows); one chunk here is all of it, otherwise (a smaller
             // chunk here) every piece is waited for before the one copy.
@@ -3533,7 +3547,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         }
         // C-4: the whole chunk's rows in one gather (the same per-element arithmetic as the per-token path, so the
         // same bits); a chunk with picture rows, or a token outside the table, takes the per-token path
-        bool batched = hand_in_ == nullptr && m.tok_dev != nullptr;
+        bool batched = !incoming && m.tok_dev != nullptr;
         const core::NativeEmbed* nemb = core::native_embed();
         const core::WeightRef* wemb = nemb ? nullptr : m.wt->find("token_embd.weight");
         if (batched && nemb == nullptr &&
@@ -3563,7 +3577,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                       (uint64_t) (wemb->ne0 / wemb->group_elems), m.emb, m.cs);
             }
         }
-        for (int64_t t = 0; hand_in_ == nullptr && !batched && t < T;) {
+        for (int64_t t = 0; !incoming && !batched && t < T;) {
             const float* row = embd_rows ? embd_rows[p0 + t] : nullptr;
             if (row) {
                 // #1996: the picture's rows live in the caller's (pageable) memory.  A run of consecutive rows is
@@ -3591,7 +3605,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 ++t;
             }
         }
-        if (hand_in_ == nullptr) gr_broadcast(m.emb, m.R, T, m.cs);
+        if (!incoming) gr_broadcast(m.emb, m.R, T, m.cs);
         // ---- the PLE rows of the whole chunk, one batched SSD request on a thread (see ple_gather).  A later chunk's
         // were read ahead during the previous chunk; the first chunk's are read beside layer 0 - they are needed from
         // layer 1 on, and gathering them here first left the GPU idle for the whole read (~0.4 s of a 32K prompt)
@@ -6831,6 +6845,7 @@ bool Prefill::run_layer_major(const int64_t* tokens, int64_t n, int64_t pos0, st
 // the streamed experts cost is shared by the prompts.  A single segment with no sessions given is exactly the usual run.
 bool Prefill::run_multi(const std::vector<Seg>& segs, std::string& err) {
     err.clear();
+    if (has_external_handoff()) { err = "prefill: external hand-off requires run_external"; return false; }
     if (segs.empty()) { err = "prefill: no prompt"; return false; }
     int64_t total = 0;
     for (const Seg& sg : segs) total += sg.n;
@@ -7922,7 +7937,66 @@ bool Prefill::reserve_uploads(int64_t T) {
     return ok;
 }
 
+bool Prefill::has_external_handoff() const {
+    for (auto* p = this; p != nullptr; p = p->next_)
+        if (p->external_input_ || p->external_output_) return true;
+    return false;
+}
+
+bool Prefill::run_external(const int64_t* tokens, int64_t n, int64_t pos0, int64_t chunk_size,
+                           bool planned, std::string& err) {
+    err.clear();
+#if defined(STRATA_GPU_METAL)
+    (void) tokens; (void) n; (void) pos0; (void) chunk_size; (void) planned;
+    err = "prefill: external hand-off is a CUDA/HIP interface";
+    return false;
+#else
+    if (!has_external_handoff() || !tokens || n <= 0 || pos0 < 0 || chunk_size <= 0 ||
+        (stage_lb_ != 0) != static_cast<bool>(external_input_) || hand_in_ != nullptr) {
+        err = "prefill: invalid external segment or missing input callback";
+        return false;
+    }
+    // Validate the entire native local chain before mutating any session state.
+    int64_t lb = stage_lb_;
+    const core::ModelGeometry* geometry = nullptr;
+    for (auto* p = this; p != nullptr; p = p->next_) {
+        const auto* m = p->impl_.get();
+        if (!m || !m->g || !m->ss || !m->cs || m->T < chunk_size ||
+            n > m->ss->max_cells || pos0 > m->ss->max_cells - n ||
+            p->stage_lb_ != lb || p->stage_le_ <= lb || p->stage_le_ > m->g->n_layers ||
+            (p->stage_le_ < m->g->n_layers) != (p->next_ != nullptr || p->external_output_) ||
+            (p->external_output_ && (p->next_ != nullptr || !p->on_chunk)) ||
+            (p != this && p->external_input_) || p->stop_at_chunk) {
+            err = "prefill: invalid external segment range, callback, capacity or context";
+            return false;
+        }
+        if (geometry && (geometry->n_layers != m->g->n_layers || geometry->n_embd != m->g->n_embd ||
+                         geometry->hc != m->g->hc || geometry->n_vocab != m->g->n_vocab)) {
+            err = "prefill: external segment geometry mismatch";
+            return false;
+        }
+        geometry = m->g;
+        lb = p->stage_le_;
+    }
+    for (int64_t t = 0; t < n; ++t)
+        if (tokens[t] < 0 || tokens[t] >= geometry->n_vocab) {
+            err = "prefill: external segment token outside vocabulary";
+            return false;
+        }
+    // Use the same planning flags and native async successor chain as vanilla.
+    // Deliberately bypass layer-major selection until that variant has a boundary interface.
+    force_chunk(chunk_size, n <= chunk_size, planned);
+    const bool body_ok = run_impl(tokens, n, pos0, err);
+    std::string drain_err;
+    const bool drain_ok = drain_pipeline(drain_err);
+    if (!body_ok) return false;
+    if (!drain_ok) { err = drain_err; return false; }
+    return true;
+#endif
+}
+
 bool Prefill::run(const int64_t* tokens, int64_t n, int64_t pos0, std::string& err) {
+    if (has_external_handoff()) { err = "prefill: external hand-off requires run_external"; return false; }
 #if defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906)
     (void) strata::kernels::qsa_two_pass_on();   // HIP: a set STRATA_SELECT_TWO_PASS says once it is not used
 #endif

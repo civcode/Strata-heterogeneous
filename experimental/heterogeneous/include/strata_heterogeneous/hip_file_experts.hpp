@@ -6,6 +6,7 @@
 #include "strata_heterogeneous/hip_stage_resources.hpp"
 #include "strata/core/expert_cache.hpp"
 #include "strata/core/expert_source.hpp"
+#include "strata_heterogeneous/native_prefill_resources.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
 
 #include <cstddef>
@@ -55,6 +56,12 @@ public:
     bool ready() const noexcept { return state_ == State::ready; }
     bool poisoned() const noexcept { return state_ == State::dead; }
     size_t filled_slots() const noexcept { return filled_slots_; }
+    // Initial native integration is full-resident only. Reuse the actual source,
+    // cache and table; do not allocate a duplicate cache or lend its expert slots.
+    NativePrefillExpertView native_prefill_resources() noexcept {
+        if (!ready() || !full_residency_) return {};
+        return {&source_, &cache_, host_res_.data(), host_res_.size(), device_, first_, end_};
+    }
 
 private:
     enum class State { fresh, initializing, ready, dead };

@@ -134,6 +134,10 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  add_executable(strata_heterogeneous_native_pipeline_window_tests tests/native_pipeline_window_tests.cpp)
+  target_include_directories(strata_heterogeneous_native_pipeline_window_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+  target_compile_features(strata_heterogeneous_native_pipeline_window_tests PRIVATE cxx_std_17)
+  add_test(NAME strata_heterogeneous_native_pipeline_window_tests COMMAND strata_heterogeneous_native_pipeline_window_tests)
   # Imported private hardening fixtures: fake runtime only, never GPU fault injection.
   set(_hardening_root ${CMAKE_CURRENT_SOURCE_DIR}/../..)
   find_package(Threads REQUIRED)

@@ -32,6 +32,7 @@
 #include "strata/core/expert_cache.hpp"
 #include "strata/core/expert_nibble.hpp"
 #include "strata/core/conversation_snapshot.hpp"
+#include "strata/core/pipeline_window.hpp"
 #include "strata/core/lookup_default.hpp"
 #if defined(STRATA_USE_HIP)
 #include "strata/core/serve_stop_bound.hpp"
@@ -18157,22 +18158,7 @@ int main(int argc, char** argv) {
                     std::printf("ERR %s\n", err.c_str());
                     return 1;
                 }
-                struct PW {
-                    int T = 0, seq = 0;
-                    int64_t p = 0;
-                    int32_t tok[8] = {};
-                    float prob[8] = {};    // prob[i]: the drafter's probability of tok[i + 1]
-                    float p_on = 0.0f;     // the chain's estimate that the window before is accepted whole, tok[0] its bonus
-                    // launched: on stage 0; finished: done on every front stage (all but the last); s1: on the last
-                    bool ready = false, launched = false, finished = false, s1 = false, s1_done = false;
-                    int fr = 0;            // front stages done
-                    bool fl = false;       // in flight on front stage `fr`
-                    uint32_t com = 0;      // the front stages this window was committed on speculatively (bit per stage)
-                    bool spec = false;     // launched speculatively (behind the window before, ahead of its verdict)
-                    bool made = false;     // made from a chain (its outcome can be scored even when the gate held it)
-                    bool sfx = false;      // a lookup window (the suffix drafter's drafts)
-                    int sfx_match = 0;
-                };
+                using PW = strata::core::PipelineWindow;
                 // front stage `st`'s verifier of w's parity, and the last stage's
                 auto VF = [&](int st, const PW& w) -> strata::core::Verifier& { return stage_ver_p(st, w.seq & 1); };
                 auto V1 = [&](const PW& w) -> strata::core::Verifier& { return *PV[1][w.seq & 1]; };
@@ -18265,29 +18251,13 @@ int main(int argc, char** argv) {
                 };
                 // the serial loop's window size over the chain's outputs from index `from` (`avail` of them)
                 auto t_rule = [&](const float* pr, int from, int avail) {
-                    int T = S_mtp;
-                    if (req_spec_min_p > 0.0) {
-                        T = 1;
-                        while (T < S_mtp && from + T - 1 < avail && pr[from + T - 1] >= (float) req_spec_min_p) ++T;
-                    }
-                    return std::max(1, std::min(T, 1 + avail - from));
+                    return strata::core::pipeline_window_size(pr, from, avail, S_mtp, req_spec_min_p);
                 };
                 // B from the chain's outputs: its row 0 is the guess at index `base`, its drafts follow
                 auto make_b = [&](const int32_t* oc, const float* op, int base, int avail, float pa) {
-                    B = PW{};
-                    if (base >= avail) return;
-                    B.seq = A.seq + 1;
-                    B.p = A.p + A.T;
-                    B.tok[0] = oc[base];
-                    B.T = t_rule(op, base + 1, avail);
-                    for (int i = 1; i < B.T; ++i) {
-                        B.tok[i] = oc[base + i];
-                        B.prob[i - 1] = op[base + i];
-                    }
-                    B.p_on = pa * op[base];
+                    B = strata::core::pipeline_make_lookahead(A, oc, op, base, avail, pa, S_mtp, req_spec_min_p);
+                    if (!B.made) return;
                     if (force_miss > 0 && ++pl_fm % force_miss == 0) B.tok[0] = B.tok[0] == 0 ? 1 : 0;
-                    B.ready = true;
-                    B.made = true;
                 };
                 // events after all the work both stages' streams hold now, and whether they have passed
                 std::vector<cudaEvent_t> fence_ev((size_t) n_stages, nullptr), exch_ev((size_t) n_stages, nullptr);
@@ -18632,8 +18602,7 @@ int main(int argc, char** argv) {
                         if (mtp.chain_poll(err) < 0) return die(err);
                     if (chain_kind != 0 && !B.launched && !B.made) B = PW{};
                     chain_kind = 0;
-                    int a = 0;
-                    while (a < A.T - 1 && A.tok[a + 1] == outp[(size_t) a]) ++a;
+                    int a = strata::core::pipeline_accepted_drafts(A, outp.data());
 #if defined(STRATA_USE_HIP)
                     if (stop_bound)
                         a = strata::core::serve_stop_bound(a + 1, max_new - produced_n, outp.data(), [&](int32_t y) {
@@ -18663,9 +18632,9 @@ int main(int argc, char** argv) {
                     else if (eos) finish = "stop";
                     else if (stop_req.load()) finish = "cancel";
                     const bool last = nf || eos || produced_n >= max_new || stop_req.load();
-                    const bool on = !nf && B.launched && a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
+                    const bool on = !nf && B.launched && strata::core::pipeline_matches_lookahead(A, B, a, outp.data());
                     if (B.made) {   // the gate's calibration: would B have been on the path, by its estimate p_on
-                        const bool would = a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
+                        const bool would = strata::core::pipeline_matches_lookahead(A, B, a, outp.data());
                         const int bin = std::min(9, std::max(0, (int) (B.p_on * 10.0f)));
                         cal_n[bin] += 1;
                         cal_on[bin] += would ? 1 : 0;

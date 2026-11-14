@@ -49,6 +49,7 @@ try{
    require(!experts.ready()&&!experts.poisoned(),"fresh state");
    require(experts.open(plan(),stage,geom(),o,err),"open real provider with doubles");
    require(err.empty()&&experts.ready(),"prepared status");
+   require(!experts.native_prefill_resources(),"partial residency cannot expose initial prefill view");
    require(fake_cuda::device==static_cast<int>(stage),"correct CUDA stage ordinal");
    require(experts.filled_slots()==2&&fc::admitted==2&&fc::verifies==2,"two profiled verified slots");
    require(fc::opens==1&&fc::live&&fe::source_opens==1,"native source/cache opened");
@@ -101,6 +102,9 @@ try{
    CudaFileExperts e;require(e.open(plan(),1,geom(),o,err),"complete stage profile admitted");
    require(e.filled_slots()==2048&&fc::verifies==2048,"every stage slot verified");
    auto h=e.hits();require(h.n_slots==2048,"full stage cache length");
+   auto pf=e.native_prefill_resources();
+   require(pf && pf.host_res==h.h_res && pf.residency_entries==8*512 &&
+           pf.device==1 && pf.first_layer==4 && pf.end_layer==8,"borrowed native prefill view matches owner");
    auto* d=static_cast<const int32_t*>(h.d_res);
    for(int i=0;i<8*512;++i){
      const int32_t expected=i<4*512?-1:i-4*512;
