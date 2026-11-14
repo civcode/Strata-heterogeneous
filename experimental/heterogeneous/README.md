@@ -1,6 +1,7 @@
 # Experimental heterogeneous layer handoff
 
 **Active contract:** [CUDA → HIP production-path validation and acceptance](docs/IMPLEMENTATION_CONTRACT.md).
+**Manual Oberon runbook:** [M2.18–M2.22 boundary validation](docs/BOUNDARY_VALIDATION_M218_M222.md).
 The old demo and protocol fixtures remain CPU-only, but separately compiled
 native CUDA and HIP workers have executed real staged-model windows. M2.17
 reported two committed windows and predictions 198/271; KL against an all-HIP

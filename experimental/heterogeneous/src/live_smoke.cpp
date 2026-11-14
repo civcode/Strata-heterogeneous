@@ -47,6 +47,7 @@ struct Options {
     bool stage0_phases = false;
     bool branch_probe = false;
     bool micro_probe = false;
+    bool boundary_capture = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -75,6 +76,7 @@ void usage() {
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
         "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
+        "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -88,6 +90,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--stage0-phases") o.stage0_phases = true;
         else if (key == "--branch-probe") o.branch_probe = true;
         else if (key == "--micro-probe") o.micro_probe = true;
+        else if (key == "--boundary-capture") o.boundary_capture = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
@@ -139,6 +142,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--branch-probe requires --capture-prefix and --rows 1");
     if (o.micro_probe && (o.capture_prefix.empty() || o.rows != 1))
         throw std::invalid_argument("--micro-probe requires --capture-prefix and --rows 1");
+    if (o.boundary_capture && o.capture_prefix.empty())
+        throw std::invalid_argument("--boundary-capture requires --capture-prefix");
     if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     return o;
@@ -233,6 +238,17 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                     std::filesystem::exists(o.capture_prefix + ".stage0.w" +
                                             std::to_string(n) + ".stm0"))
                     throw std::invalid_argument("microprobe record exists; use fresh prefix");
+                if (o.boundary_capture) {
+                    for (size_t stage = 0; stage < plan.stages.size(); ++stage) {
+                        const std::string root = o.capture_prefix + ".stage" +
+                            std::to_string(stage) + ".r1.w" + std::to_string(n);
+                        if ((plan.stages[stage].first_layer != 0 &&
+                             std::filesystem::exists(root + ".in.f32")) ||
+                            (stage + 1 < plan.stages.size() &&
+                             std::filesystem::exists(root + ".out.f32")))
+                            throw std::invalid_argument("boundary image already exists; use a fresh prefix");
+                    }
+                }
                 if (o.layer_taps)
                     for (size_t stage = 0; stage < plan.stages.size(); ++stage)
                         if (std::filesystem::exists(o.capture_prefix + ".stage" +
@@ -339,6 +355,14 @@ int execute(const Options& o, const hetero::Plan& plan) {
             throw std::runtime_error("cannot configure native microprobe");
     } else if (::unsetenv("STRATA_HETERO_MICRO_PROBE_PREFIX") != 0) {
         throw std::runtime_error("cannot clear inherited native microprobe");
+    }
+    // Explicit opt-in only. Clear inherited capture state for normal runs.
+    if (o.boundary_capture) {
+        if (::setenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX",
+                     o.capture_prefix.c_str(), 1) != 0)
+            throw std::runtime_error("cannot enable native boundary capture");
+    } else if (::unsetenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX") != 0) {
+        throw std::runtime_error("cannot clear inherited boundary capture");
     }
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);

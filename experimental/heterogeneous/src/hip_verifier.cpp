@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/hip_verifier.hpp"
+#include "strata_heterogeneous/boundary_capture.hpp"
 #if !defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
 #error "HipVerifierDriver requires an isolated wave32 HIP-only build"
 #endif
@@ -125,6 +126,9 @@ bool HipVerifierDriver::enqueue_upload(const uint8_t* host, size_t bytes, std::s
 }
 bool HipVerifierDriver::wait_upload(std::string& error) {
     if (!expect(State::uploading, error) || !wait(error)) return false;
+    if (plan_.stages[index_].first_layer != 0 &&
+        !capture_device_handoff(input_, staging_, bytes_, index_, request_,
+                                window_, "in", error)) return false;
     state_ = State::uploaded; return true;
 }
 bool HipVerifierDriver::enqueue_execute(const Frame& frame, std::string& error) {
@@ -160,6 +164,8 @@ bool HipVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::strin
 }
 bool HipVerifierDriver::wait_download(std::string& error) {
     if (!expect(State::downloading, error) || !wait(error)) return false;
+    if (!capture_device_handoff(output_, staging_, bytes_, index_, request_,
+                                window_, "out", error)) return false;
     std::memcpy(download_host_, staging_, bytes_);
     download_host_ = nullptr;
     state_ = State::downloaded; return true;

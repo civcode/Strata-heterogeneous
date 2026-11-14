@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/cuda_final_verifier.hpp"
+#include "strata_heterogeneous/boundary_capture.hpp"
 #if defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
 #error "CudaFinalVerifierExecutor requires a CUDA-only worker"
 #endif
@@ -173,7 +174,9 @@ bool CudaFinalVerifierExecutor::run_final_window(const Frame& metadata,
         std::memcpy(staging_, input.data(), bytes); // raw memfd bytes, not float[]
         if (!check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice,
                                    verifier_->stream()), error) ||
-            !fence(error) || !wait_fence(error)) return false;
+            !fence(error) || !wait_fence(error) ||
+            !capture_device_handoff(input_, staging_, bytes, index_, request_,
+                                    window_, "in", error)) return false;
     } // layer-zero native Verifier uses token embeddings, not handoff bytes
 
     std::vector<int32_t> predictions(spec_.token_ids.size());

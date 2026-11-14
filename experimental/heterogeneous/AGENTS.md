@@ -7,6 +7,7 @@ of existing CUDA-only or HIP-only inference.
 
 **Authoritative implementation contract:**
 [docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
+Manual GPU test procedure: [docs/BOUNDARY_VALIDATION_M218_M222.md](docs/BOUNDARY_VALIDATION_M218_M222.md).
 Validate the real production CUDA → HIP boundary and full native pipeline
 with minimal durable code; no duplicate inference engine, test-only numeric
 fixtures or prerequisite CUDA-to-CUDA/KL parity detour.
