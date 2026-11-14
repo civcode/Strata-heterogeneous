@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/process.hpp"
+#include "strata_heterogeneous/backend_domains.hpp"
 
 #include <cerrno>
 #include <chrono>
@@ -104,8 +105,8 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_executable,
                                             const std::string& hip_executable, bool shared_memory,
                                             const std::string& cuda_config_path,
-                                            const std::vector<std::string>& stage_config_paths) {
-    plan.validate();
+                                            const std::vector<std::string>& stage_config_paths, bool group_hip) {
+    const auto domains = worker_domains(plan, group_hip);
     // An unsplit native reference uses one backend. Only the worker
     // executable(s) named by this plan must exist; mixed plans need both.
     for (const auto& stage : plan.stages) {
@@ -123,11 +124,18 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
             throw std::invalid_argument("stage configs must match plan and cannot mix with legacy CUDA config");
         for (const auto& path : stage_config_paths) validate_stage_config_path(path);
     }
+    if (group_hip) {
+        if (stage_config_paths.size() != plan.stages.size())
+            throw std::invalid_argument("grouped mode requires all physical stage configs");
+        for (const auto& path : stage_config_paths)
+            if (path.empty()) throw std::invalid_argument("grouped mode requires nonempty stage configs");
+    }
     const std::string spec = plan_spec(plan);
     const std::string no_config;
     WorkerProcessGroup group;
-    group.children_.reserve(plan.stages.size()); // no allocation after a successful spawn
-    for (size_t i = 0; i < plan.stages.size(); ++i) {
+    group.children_.reserve(domains.size()); // no allocation after a successful spawn
+    for (const auto& domain : domains) {
+        const size_t i = domain.terminal_stage();
         const std::string& exe = plan.stages[i].backend == Backend::cuda ? cuda_executable : hip_executable;
         int pair[2] = {-1, -1};
         if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair) < 0)
@@ -153,7 +161,13 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
             const std::string& config_path = !stage_config_paths.empty()
                 ? stage_config_paths[i]
                 : (plan.stages[i].backend == Backend::cuda ? cuda_config_path : no_config);
-            if (!config_path.empty()) {
+            if (domain.size() > 1) {
+                args[1] = shared_memory ? "--worker-hip-domain-shared" : "--worker-hip-domain";
+                for (size_t j = domain.first_stage; j < domain.end_stage; ++j) {
+                    args.push_back("--config");
+                    args.push_back(stage_config_paths[j]);
+                }
+            } else if (!config_path.empty()) {
                 args.push_back("--config");
                 args.push_back(config_path);
             }

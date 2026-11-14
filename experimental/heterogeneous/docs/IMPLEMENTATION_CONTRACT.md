@@ -4,6 +4,8 @@
 
 ## Objective and implementation boundary
 
+**M7 supersedes the one-worker-per-GPU topology.** One native execution process per contiguous backend domain is mandatory. CUDA→HIP is the only added activation/notification boundary on Oberon; AMD0→AMD1 uses native same-runtime Strata. Retain the original physical stage plan/fingerprint and per-device resource admission. Per-GPU workers are legacy regression controls, not the production target. Grouping must be explicitly qualified before activation. No duplicate homogeneous scheduler or inference implementation.
+
 Run one model across contiguous, non-overlapping layers using **separately built, isolated native Strata CUDA and HIP workers**. The target plan is `cuda:0:0-12,hip:0:12-30,hip:1:30-48`. Validate the **CUDA layer 11 → HIP layer 12 transition** first, then HIP → HIP continuation and the full pipeline.
 
 **Vanilla-first, mandatory:** Extend proven Strata components, not a parallel engine. Reuse native `Prefill`, `MtpDrafter`, `Verifier`, graph scheduling, mapped pinned/double-buffered hand-offs, native same-runtime multi-GPU stage chains, speculative snapshots/rollback and the existing kernels. Extract the smallest reusable interface when a vanilla component assumes one runtime. Only the CUDA/HIP boundary, cross-process identities/ownership, transfer/failure handling and necessary coordination belong to heterogeneous-specific code. Do not alter CUDA-only or HIP-only defaults. Native bulk-prefill and native speculative window overlap are mandatory functionality, not optional future tuning. Group adjacent same-backend stages inside their native runtime when safe, subject to qualified resource ownership.

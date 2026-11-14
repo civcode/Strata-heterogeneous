@@ -34,7 +34,8 @@ public:
                                      const std::string& hip_executable,
                                      bool shared_memory = false,
                                      const std::string& cuda_config_path = {},
-                                     const std::vector<std::string>& stage_config_paths = {});
+                                     const std::vector<std::string>& stage_config_paths = {},
+                                     bool group_hip = false);
     std::vector<int> sockets() const;
     size_t size() const { return children_.size(); }
 

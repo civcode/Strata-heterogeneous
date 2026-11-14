@@ -3,6 +3,7 @@
 #include "strata_heterogeneous/cuda_worker_config.hpp"
 #include "strata_heterogeneous/hip_worker_config.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/backend_domains.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata/spec/suffix_drafter.hpp"
@@ -55,6 +56,7 @@ struct Options {
     int timeout_ms = 120000;
     bool run = false;
     bool shared = false;
+    bool group_hip = false;
     bool layer_taps = false;
     bool layer_zero_probe = false;
     bool stage0_phases = false;
@@ -93,7 +95,7 @@ void usage() {
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
-        "  [--timeout-ms 120000] [--shared] [--run]\n"
+        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--run]\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
         "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
@@ -160,6 +162,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--boundary-capture") o.boundary_capture = true;
         else if (key == "--placement-capture") o.placement_capture = true;
         else if (key == "--shared") o.shared = true;
+        else if (key == "--group-native-hip") o.group_hip = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
@@ -303,6 +306,12 @@ void require_executable(const std::string& path, const char* label) {
 std::string json_string(const std::string& value);
 struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
 GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
+    if (o.group_hip) {
+        (void)hetero::worker_domains(plan, true);
+        if (o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
+            o.micro_probe || o.placement_capture || o.boundary_capture)
+            throw std::invalid_argument("grouped HIP currently supports ordinary generation/smoke only");
+    }
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
@@ -549,11 +558,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
         throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
-        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
+        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident,
-                                         fanout, compact);
+                                         fanout, compact, o.group_hip);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
-    std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket") << '\n';
+    std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
+              << " processes=" << workers.size() << " grouped_hip=" << o.group_hip << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
     auto initial_frame = [&](const hetero::WindowSpec& spec, uint64_t id) {

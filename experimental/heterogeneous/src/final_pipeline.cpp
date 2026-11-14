@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/backend_domains.hpp"
 #include "strata_heterogeneous/shared.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
@@ -200,13 +201,14 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact)
+                                           bool fanout_control, bool require_compact, bool group_hip)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
       fanout_control_(fanout_control), require_compact_(require_compact) {
-    plan_.validate();
-    if (fds_.size() != plan_.stages.size() || timeout_ms_ < 0)
-        throw std::invalid_argument("final pipeline needs one worker per stage and valid timeout");
+    for (const auto& domain : worker_domains(plan_, group_hip))
+        endpoints_.push_back(domain.terminal_stage());
+    if (fds_.size() != endpoints_.size() || timeout_ms_ < 0)
+        throw std::invalid_argument("final pipeline needs one worker per domain and valid timeout");
 }
 FinalPipelineSession::~FinalPipelineSession() = default;
 void FinalPipelineSession::poison() noexcept {
@@ -231,16 +233,16 @@ void FinalPipelineSession::initialize() {
             const bool last = i + 1 == fds_.size();
             const Kind kind = last ? (shared_memory_ ? Kind::hello_shared_final : Kind::hello_final)
                                    : (shared_memory_ ? Kind::hello_shared : Kind::hello);
-            const Frame expected = control(plan_, i, kind);
+            const Frame expected = control(plan_, endpoints_[i], kind);
             match(*hello, expected, kind);
             if (hello->identity != (std::array<uint32_t,4>{
-                static_cast<uint32_t>(plan_.stages[i].backend), plan_.stages[i].ordinal,
-                plan_.stages[i].first_layer, plan_.stages[i].end_layer}))
+                static_cast<uint32_t>(plan_.stages[endpoints_[i]].backend), plan_.stages[endpoints_[i]].ordinal,
+                plan_.stages[endpoints_[i]].first_layer, plan_.stages[endpoints_[i]].end_layer}))
                 throw std::runtime_error("worker backend, ordinal or stage bounds mismatch");
         }
         if (shared_memory_) shared_ = std::make_unique<SharedActivation>(SharedActivation::create());
         for (size_t i = 0; i < fds_.size(); ++i) {
-            send_frame(fds_[i], control(plan_, i, resident_ ? Kind::ready_resident : Kind::ready), timeout_ms_);
+            send_frame(fds_[i], control(plan_, endpoints_[i], resident_ ? Kind::ready_resident : Kind::ready), timeout_ms_);
             if (shared_memory_) shared_->send(fds_[i], timeout_ms_);
         }
         initialized_ = true;
@@ -255,11 +257,11 @@ void FinalPipelineSession::begin_request(uint64_t request) {
         // Stage-local state resets can overlap. Wait for every ACK.
         if (fanout_control_) {
             for (size_t i = 0; i < fds_.size(); ++i)
-                send_frame(fds_[i], control(plan_, i, Kind::begin_request, request, 0, 1), timeout_ms_);
+                send_frame(fds_[i], control(plan_, endpoints_[i], Kind::begin_request, request, 0, 1), timeout_ms_);
         }
         for (size_t i = 0; i < fds_.size(); ++i) {
-            const auto reset = control(plan_, i, Kind::begin_request, request, 0, 1);
-            PerformanceSpan stage("coordinator", "reset_ack", i, request, 0, 1);
+            const auto reset = control(plan_, endpoints_[i], Kind::begin_request, request, 0, 1);
+            PerformanceSpan stage("coordinator", "reset_ack", endpoints_[i], request, 0, 1);
             if (!fanout_control_) send_frame(fds_[i], reset, timeout_ms_);
             auto ack = receive_frame(fds_[i], timeout_ms_);
             if (!ack) throw std::runtime_error("worker closed during resident reset");
@@ -303,36 +305,36 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             initial.shared_checksum = shared_->checksum(bytes);
         }
         for (size_t i = 0; i < fds_.size(); ++i) {
-            PerformanceSpan stage("coordinator", "stage_roundtrip", i, initial.request_id,
+            PerformanceSpan stage("coordinator", "stage_roundtrip", endpoints_[i], initial.request_id,
                                   initial.window_id, initial.rows);
-            Frame context = control(plan_, i, Kind::window_spec,
+            Frame context = control(plan_, endpoints_[i], Kind::window_spec,
                                     initial.request_id, initial.window_id, initial.rows);
             context.window = spec;
             {
-                PerformanceSpan send("coordinator", "stage_send_spec", i, initial.request_id,
+                PerformanceSpan send("coordinator", "stage_send_spec", endpoints_[i], initial.request_id,
                                      initial.window_id, initial.rows);
                 send_frame(fds_[i], context, timeout_ms_);
             }
-            initial.stage_index = static_cast<uint32_t>(i);
+            initial.stage_index = static_cast<uint32_t>(endpoints_[i]);
             {
-                PerformanceSpan send("coordinator", "stage_send_activation", i, initial.request_id,
+                PerformanceSpan send("coordinator", "stage_send_activation", endpoints_[i], initial.request_id,
                                      initial.window_id, initial.rows);
                 send_frame(fds_[i], initial, timeout_ms_);
             }
             if (i + 1 == fds_.size()) {
                 auto response = [&] {
-                    PerformanceSpan recv("coordinator", "stage_receive", i, initial.request_id,
+                    PerformanceSpan recv("coordinator", "stage_receive", endpoints_[i], initial.request_id,
                                          initial.window_id, initial.rows);
                     return receive_final_result(fds_[i], timeout_ms_);
                 }();
                 if (!response) throw std::runtime_error("final worker closed without head result");
                 if (require_compact_ && response->logits)
                     throw std::runtime_error("requested compact result, but worker returned diagnostic logits");
-                gate_.stage(std::move(*response), static_cast<uint32_t>(i),
+                gate_.stage(std::move(*response), static_cast<uint32_t>(endpoints_[i]),
                             initial.request_id, initial.window_id, initial.plan_fingerprint, initial.rows);
             } else {
                 auto response = [&] {
-                    PerformanceSpan recv("coordinator", "stage_receive", i, initial.request_id,
+                    PerformanceSpan recv("coordinator", "stage_receive", endpoints_[i], initial.request_id,
                                          initial.window_id, initial.rows);
                     return receive_frame(fds_[i], timeout_ms_);
                 }();
@@ -364,17 +366,17 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
         // all peers. No result is published before every valid ACK.
         if (fanout_control_) {
             for (size_t i = 0; i < fds_.size(); ++i) {
-                Frame request = control(plan_, i, Kind::commit_prefix,
+                Frame request = control(plan_, endpoints_[i], Kind::commit_prefix,
                                         pending_request_, pending_window_, pending_rows_);
                 request.keep_count = n_keep;
                 send_frame(fds_[i], request, timeout_ms_);
             }
         }
         for (size_t i = 0; i < fds_.size(); ++i) {
-            Frame request = control(plan_, i, Kind::commit_prefix,
+            Frame request = control(plan_, endpoints_[i], Kind::commit_prefix,
                                     pending_request_, pending_window_, pending_rows_);
             request.keep_count = n_keep;
-            PerformanceSpan stage("coordinator", "commit_ack", i, pending_request_,
+            PerformanceSpan stage("coordinator", "commit_ack", endpoints_[i], pending_request_,
                                   pending_window_, pending_rows_);
             if (!fanout_control_) send_frame(fds_[i], request, timeout_ms_);
             auto reply = receive_frame(fds_[i], timeout_ms_);

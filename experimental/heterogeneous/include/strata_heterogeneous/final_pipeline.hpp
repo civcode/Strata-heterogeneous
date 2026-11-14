@@ -43,7 +43,7 @@ public:
     FinalPipelineSession(Plan plan, std::vector<int> worker_fds,
                          int timeout_ms = default_io_timeout_ms,
                          bool shared_memory = false, bool resident = false,
-                         bool fanout_control = false, bool require_compact = false);
+                         bool fanout_control = false, bool require_compact = false, bool group_hip = false);
     ~FinalPipelineSession();
     FinalPipelineSession(const FinalPipelineSession&) = delete;
     FinalPipelineSession& operator=(const FinalPipelineSession&) = delete;
@@ -64,6 +64,7 @@ public:
 private:
     Plan plan_;
     std::vector<int> fds_;
+    std::vector<size_t> endpoints_; // physical terminal-stage identity for each socket
     int timeout_ms_;
     bool shared_memory_;
     bool resident_;
