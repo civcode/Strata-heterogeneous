@@ -50,9 +50,17 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
         error = "HIP final verifier must own the final stage";
         return false;
     }
-    const Stage& stage = plan.stages[index];
+    input_index_ = index;
+    if (!chain_stages_.empty()) {
+        const auto domain = worker_domains(plan, true).back();
+        if (index != domain.terminal_stage() || chain_stages_.size() != domain.size()) {
+            error = "HIP group does not own complete terminal domain"; return false;
+        }
+        input_index_ = domain.first_stage;
+    }
+    const Stage& stage = plan.stages[input_index_];
     if (stage.backend != Backend::hip || stage.ordinal > INT_MAX ||
-        stage.end_layer != plan.total_layers ||
+        plan.stages[index].end_layer != plan.total_layers ||
         plan.total_layers != g.n_layers ||
         plan.geometry.hc != g.hc || plan.geometry.n_embd != g.n_embd ||
         plan.model_fingerprint != bindings_.model_fingerprint ||
@@ -85,7 +93,12 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
           !check(cudaMallocHost(&staging_, capacity_), error))) ||
         !check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error))
         return false;
-    verifier_ = std::make_unique<core::Verifier>();
+    if (!chain_stages_.empty()) {
+        if (!chain_.prepare(plan, chain_stages_, input_, nullptr, error)) return false;
+        verifier_ = &chain_.first();
+    } else {
+    owned_verifier_ = std::make_unique<core::Verifier>();
+    verifier_ = owned_verifier_.get();
     verifier_->set_stage(stage.first_layer, stage.end_layer,
                          stage.first_layer ? input_ : nullptr, nullptr);
     verifier_->set_handoff_rows(bindings_.max_t);
@@ -100,6 +113,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     if (!micro_probe_.configure(*verifier_, plan, index, error)) return false;
     if (!verifier_->init(bindings_.weights, g, bindings_.session, bindings_.hits,
                          nullptr, bindings_.max_t, error)) return false;
+    }
     if (verifier_->vocab() != g.n_vocab) {
         error = "HIP final verifier vocabulary differs from loaded model";
         return false;
@@ -118,7 +132,20 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
     // All prior commits were fenced. Reuse native session_zero, including
     // stage-local GDN/QSA/PLE state, on the same verifier stream. Weights,
     // experts, device allocations and graphs remain resident.
-    bindings_.zero_session(bindings_.session, bindings_.geometry, verifier_->stream());
+    if (chain_stages_.empty()) {
+        bindings_.zero_session(bindings_.session, bindings_.geometry, verifier_->stream());
+    } else {
+        // Reset each native session on its owning stream. Never reset a
+        // partial group and acknowledge it as a fresh request.
+        for (size_t j = 0; j < chain_stages_.size(); ++j) {
+            const auto& b = chain_stages_[j].bindings;
+            auto& v = chain_.at(j);
+            if (!b.zero_session || !check(cudaSetDevice(v.device()), error)) return false;
+            b.zero_session(b.session, b.geometry, v.stream());
+            if (!check(cudaStreamSynchronize(v.stream()), error)) return false;
+        }
+        if (!select_device(error)) return false;
+    }
     if (!fence(error) || !wait_fence(error)) return false;
     request_ = request;
     window_ = 0;
@@ -190,7 +217,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         error = "HIP final verifier stage/activation identity mismatch";
         return false;
     }
-    if (plan_.stages[index_].first_layer != 0) {
+    if (plan_.stages[input_index_].first_layer != 0) {
         PerformanceSpan perf("worker", "final_upload", index_, request_, window_, spec_.token_ids.size());
         const size_t bytes = input.bytes();
         {
@@ -200,7 +227,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         if (!check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice,
                                    verifier_->stream()), error) ||
             !fence(error) || !wait_fence(error) ||
-            !capture_device_handoff(input_, staging_, bytes, index_, request_,
+            !capture_device_handoff(input_, staging_, bytes, input_index_, request_,
                                     window_, "in", verifier_->stream(),
                                     [this](std::string& e) { return fence(e) && wait_fence(e); },
                                     error)) return false;
@@ -231,6 +258,8 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         if (verifier_->nonfinite_in(static_cast<int>(t)))
             pending.nonfinite_rows.push_back(t);
     if (options_.include_logits) {
+        // The recursive native head lives on the last HIP card.
+        if (!chain_stages_.empty() && !check(cudaSetDevice(chain_.last().device()), error)) return false;
         PerformanceSpan perf("worker", "final_logits_download", index_, request_, window_, pending.rows);
         std::vector<float> logits(static_cast<size_t>(pending.rows) * pending.vocab_size);
         for (uint32_t t = 0; t < pending.rows; ++t) {
@@ -241,6 +270,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
             }
         }
         pending.logits = std::move(logits);
+        if (!select_device(error)) return false;
     }
     try { validate_final_result(pending); }
     catch (const std::exception& e) { error = e.what(); return false; }
@@ -286,7 +316,8 @@ void HipFinalVerifierExecutor::abort_once() noexcept {
     if (device_ >= 0 && cudaSetDevice(device_) != cudaSuccess) std::_Exit(70);
     // An aborted worker is not reusable. Releasing waits must precede freeing
     // captured device allocations; a hung GPU requires supervisor SIGKILL.
-    if (verifier_ && (!verifier_->release_gpu_waits(bindings_.timeout_ms) ||
+    if (!chain_stages_.empty()) chain_.abort(bindings_.timeout_ms);
+    else if (verifier_ && (!verifier_->release_gpu_waits(bindings_.timeout_ms) ||
                       cudaStreamQuery(verifier_->stream()) != cudaSuccess)) std::_Exit(70);
 }
 void HipFinalVerifierExecutor::abandon_window() noexcept { abort_once(); }
@@ -294,7 +325,10 @@ void HipFinalVerifierExecutor::shutdown() noexcept {
     if (state_ != State::fresh && state_ != State::ready && state_ != State::dead)
         abort_once();
     if (device_ >= 0 && cudaSetDevice(device_) != cudaSuccess) std::_Exit(70);
-    verifier_.reset();  // captured graphs/streams released before input buffer
+    chain_.shutdown();
+    if (device_ >= 0 && cudaSetDevice(device_) != cudaSuccess) std::_Exit(70);
+    owned_verifier_.reset(); // captured graphs/streams released before input buffer
+    verifier_ = nullptr;
     if (fence_) { if (cudaEventDestroy(fence_) != cudaSuccess) std::_Exit(70); fence_ = nullptr; }
     if (input_) { if (cudaFree(input_) != cudaSuccess) std::_Exit(70); input_ = nullptr; }
     if (staging_) { if (cudaFreeHost(staging_) != cudaSuccess) std::_Exit(70); staging_ = nullptr; }

@@ -32,7 +32,8 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t stage_index,
                               FinalStageExecutor& executor,
                               int timeout_ms = default_io_timeout_ms,
                               bool shared_memory = false,
-                              const WindowLimits* limits = nullptr, int startup_wait_ms = -1);
+                              const WindowLimits* limits = nullptr, int startup_wait_ms = -1,
+                              bool group_hip = false);
 
 // Owns only protocol state and the optional shared activation slot, never
 // child processes or caller-owned file descriptors. The final worker uses
@@ -65,6 +66,7 @@ private:
     Plan plan_;
     std::vector<int> fds_;
     std::vector<size_t> endpoints_; // physical terminal-stage identity for each socket
+    std::vector<size_t> starts_;
     int timeout_ms_;
     bool shared_memory_;
     bool resident_;

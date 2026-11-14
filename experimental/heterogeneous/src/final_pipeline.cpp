@@ -62,12 +62,18 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
 
 void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                               FinalStageExecutor& executor, int timeout_ms,
-                              bool shared_memory, const WindowLimits* limits, int startup_wait_ms) {
+                              bool shared_memory, const WindowLimits* limits, int startup_wait_ms, bool group_hip) {
     plan.validate();
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
-    const Frame hello = control(plan, index,
+    Frame hello = control(plan, index,
         shared_memory ? Kind::hello_shared_final : Kind::hello_final);
+    if (group_hip) {
+        const auto d = worker_domains(plan, true).back();
+        const auto& front = plan.stages[d.first_stage];
+        hello.identity = {static_cast<uint32_t>(front.backend), front.ordinal, front.first_layer,
+                          plan.stages[d.terminal_stage()].end_layer};
+    }
     std::unique_ptr<WindowAdmission> gate;
     if (limits) gate = std::make_unique<WindowAdmission>(plan, index, *limits);
     std::string error;
@@ -205,8 +211,10 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
       fanout_control_(fanout_control), require_compact_(require_compact) {
-    for (const auto& domain : worker_domains(plan_, group_hip))
+    for (const auto& domain : worker_domains(plan_, group_hip)) {
+        starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
+    }
     if (fds_.size() != endpoints_.size() || timeout_ms_ < 0)
         throw std::invalid_argument("final pipeline needs one worker per domain and valid timeout");
 }
@@ -236,8 +244,8 @@ void FinalPipelineSession::initialize() {
             const Frame expected = control(plan_, endpoints_[i], kind);
             match(*hello, expected, kind);
             if (hello->identity != (std::array<uint32_t,4>{
-                static_cast<uint32_t>(plan_.stages[endpoints_[i]].backend), plan_.stages[endpoints_[i]].ordinal,
-                plan_.stages[endpoints_[i]].first_layer, plan_.stages[endpoints_[i]].end_layer}))
+                static_cast<uint32_t>(plan_.stages[starts_[i]].backend), plan_.stages[starts_[i]].ordinal,
+                plan_.stages[starts_[i]].first_layer, plan_.stages[endpoints_[i]].end_layer}))
                 throw std::runtime_error("worker backend, ordinal or stage bounds mismatch");
         }
         if (shared_memory_) shared_ = std::make_unique<SharedActivation>(SharedActivation::create());

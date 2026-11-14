@@ -4,6 +4,7 @@
 // Requires preloaded worker-owned weights, session and residency state.
 // No HIP/HIP runtime objects cross process boundaries.
 #include "strata_heterogeneous/hip_verifier.hpp"
+#include "strata_heterogeneous/hip_native_chain.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/layer_taps.hpp"
 #include "strata_heterogeneous/layer_zero_probe.hpp"
@@ -29,6 +30,9 @@ public:
     explicit HipFinalVerifierExecutor(HipVerifierBindings bindings,
                                        HipFinalVerifierOptions options = {})
         : bindings_(bindings), options_(options) {}
+    explicit HipFinalVerifierExecutor(std::vector<HipNativeChainStage> stages,
+                                      HipFinalVerifierOptions options = {})
+        : bindings_(stages.at(0).bindings), options_(options), chain_stages_(std::move(stages)) {}
     ~HipFinalVerifierExecutor() override { shutdown(); }
     HipFinalVerifierExecutor(const HipFinalVerifierExecutor&) = delete;
     HipFinalVerifierExecutor& operator=(const HipFinalVerifierExecutor&) = delete;
@@ -50,7 +54,11 @@ private:
     enum class State { fresh, initializing, ready, begun, provisional, dead };
     HipVerifierBindings bindings_;
     HipFinalVerifierOptions options_;
-    std::unique_ptr<core::Verifier> verifier_;
+    std::unique_ptr<core::Verifier> owned_verifier_;
+    core::Verifier* verifier_ = nullptr; // borrowed local chain entry or owned_verifier_
+    std::vector<HipNativeChainStage> chain_stages_;
+    HipNativeVerifierChain chain_;
+    size_t input_index_ = 0;
     Plan plan_;
     State state_ = State::fresh;
     size_t index_ = 0;
