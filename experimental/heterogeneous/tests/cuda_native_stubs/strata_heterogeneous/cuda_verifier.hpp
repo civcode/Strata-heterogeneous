@@ -14,5 +14,7 @@ struct CudaVerifierBindings {
     uint64_t model_fingerprint;
     int max_t, timeout_ms;
     int64_t initial_position;
+    void (*zero_session)(strata::core::SessionState&,
+                         const strata::core::ModelGeometry&, void*) = nullptr;
 };
 }

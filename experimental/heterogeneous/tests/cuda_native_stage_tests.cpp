@@ -67,6 +67,16 @@ int main(){try{
   need(owner.attach_experts(std::make_unique<Expert>(),err),"native owner accepts expert pool");
   auto bindings=owner.make_bindings();
   need(bindings.session.ple.ready(),"verifier bindings receive wired PLE session");
+  need(bindings.zero_session!=nullptr,"verifier bindings receive session reset");
+  const int zero_calls=core::fake_resource::zero_calls;
+  bindings.session.ple_prev[0]=11;
+  bindings.session.ple_prev[1]=12;
+  bindings.session.ple_token=13;
+  bindings.zero_session(bindings.session,bindings.geometry,nullptr);
+  need(core::fake_resource::zero_calls==zero_calls+1,"session reset dispatches once");
+  need(bindings.session.ple_prev[0]==-1&&bindings.session.ple_prev[1]==-1&&
+       bindings.session.ple_token==-1,"session reset clears PLE history tokens");
+  need(bindings.session.ple.ready(),"session reset preserves PLE wiring");
   native.shutdown();
   need(!owner.native_ready()&&!native.ready(),"native shutdown makes binding unavailable");
   bool refused=false;try{(void)owner.make_bindings();}catch(const std::logic_error&){refused=true;}
