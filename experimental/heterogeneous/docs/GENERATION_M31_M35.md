@@ -1,6 +1,6 @@
 # M3.1–M3.5 — native text completion and CLI integration
 
-**Status:** M3.1–M3.4 bounded validation PASS, as reported by the Oberon operator for the `4a976a0` implementation. M3.5 resident-worker and existing-server integration is implemented experimentally; hardware qualification, long-context behavior, and native GPU failure paths remain UNVERIFIED. See [M3.5 runbook](RESIDENT_SERVER_M35.md). M2's bounded native boundary and state results remain documented in [BOUNDARY_VALIDATION_M218_M222.md](BOUNDARY_VALIDATION_M218_M222.md). The [implementation contract](IMPLEMENTATION_CONTRACT.md) remains authoritative.
+**Status:** M3.1–M3.4 bounded validation PASS, as reported by the Oberon operator for the `4a976a0` implementation. M3.5a–e bounded resident-worker and existing-server validation PASS, as reported in [report 0002](../../../.ai/reports/report-0002.md) for source revision `992fc289634e228f57cd062eb8a35fcc01fbc2cb`. Long-context behavior, native GPU failure recovery and broader production readiness remain UNVERIFIED. See [M3.5 runbook](RESIDENT_SERVER_M35.md). M2's bounded native boundary and state results remain documented in [BOUNDARY_VALIDATION_M218_M222.md](BOUNDARY_VALIDATION_M218_M222.md). The [implementation contract](IMPLEMENTATION_CONTRACT.md) remains authoritative.
 
 ## Scope and code
 
@@ -10,7 +10,7 @@
 | M3.2 Autoregressive generation | Existing `strata_heterogeneous_live_smoke` coordinator supports a fresh greedy request and feeds each previously predicted token back into its single acknowledged session. Stop IDs come from the loaded model. | PASS, reported bounded real decode and corrected trace checks |
 | M3.3 Prompt processing/context | Sequential ordinary verifier windows, optional prompt chunks up to the already configured limit (1..8); positions and full accepted counts advance after all worker ACKs. | PASS, reported bounded prompt/chunk runs; larger contexts and optimized bulk prefill remain unverified |
 | M3.4 Strata CLI | Explicit `strata.py heterogeneous-generate` command with human or JSON output; CPU preflight by default, GPU use only with `--run`. | PASS, reported bounded checkout CLI; packaging/launcher integration remains pending |
-| M3.5 Strata server | Audited integration seam: existing `serve.server.Engine.generate` protocol, existing frontend and service. | Resident worker/request lifecycle, safe session reset, cancellation, failure/reaping, readiness, existing server integration. **Experimental opt-in source implementation; host and hardware validation pending.** |
+| M3.5 Strata server | Audited integration seam: existing `serve.server.Engine.generate` protocol, existing frontend and service. | Resident worker/request lifecycle, safe session reset, cancellation, failure/reaping, readiness, existing server integration. **PASS, bounded operator-reported validation:** 38/38 CPU CTests, separate native builds, resident socket/shared-memory A/B/A, existing loopback API, cooperative cancellation and orderly shutdown. Native fault recovery remains unverified. |
 
 The new native coordinator code reuses `FinalPipelineSession::execute` and `commit` and the already-qualified transfer mechanism. No new GPU kernels, sampler, engine, worker executable, model format or transport protocol. Prompt ingestion commits each real input window using `core::Verifier`. The last prompt row predicts the first completion token; subsequent predictions are fed back one at a time. The last returned token need not itself be evaluated, since this is a fresh one-shot request with no resumable session. EOS/EOT predictions terminate without appearing in the completion. The existing greedy head's default behavior is unchanged.
 
@@ -117,15 +117,13 @@ Prepare the local `.venv/` using the pinned runtime requirements above before ex
 - If useful, compare actual prompt/feedback IDs from the completion with an explicit short sequence through the existing smoke runner (within its already bounded window count), with the same native model/plan; no new fixtures or reference arithmetic. Report observed results, including any variability.
 - Report PASS / FAIL / UNVERIFIED for each milestone, tested commit, model source/pack fingerprint, device placement, native logs, output JSON, and all remaining limitations. Preserve previous M2 results; do not claim M3.5, production readiness, optimized prefill or long context based on this run.
 
-## Next: existing server, not a new server
+## M3.5 design rationale: existing server, not a new server
 
-The current stage worker admission is deliberately fresh-session/single-request, and the coordinator launches and reaps workers per CLI invocation. A server adapter that reloads the full model per HTTP request, or pretends an existing worker can safely accept another request, would be an unsuitable substitute for the existing resident Strata server. After Oberon generation succeeds, identify the smallest reusable model-versus-session lifetime separation using existing Strata session initialization/reset, explicit multi-stage lifecycle acknowledgments and safe cancellation/poisoned-session recovery. Then integrate with the existing server `Engine.generate(ids, max_new, sampling, cancel)` interface and normal readiness/ownership controls; do not create a parallel HTTP service. Sampling beyond the existing greedy head and concurrent/multi-turn requests need their own explicit qualification.
+Before M3.5, stage worker admission was deliberately fresh-session/single-request, and the coordinator launched and reaped workers per CLI invocation. A server adapter that reloads the full model per HTTP request, or pretends an existing worker can safely accept another request, would be an unsuitable substitute for the existing resident Strata server. M3.5 implements the reusable model-versus-session lifetime separation using existing Strata reset, explicit multi-stage lifecycle acknowledgments, cooperative cancellation and poisoning on failure. It integrates with the existing server `Engine.generate(ids, max_new, sampling, cancel)` interface and normal readiness/ownership controls; no parallel HTTP service. Native poisoned-set recovery is not qualified. Sampling beyond the existing greedy head and concurrent/multi-turn requests need their own explicit qualification.
 
 ### M3.5 implementation roadmap
 
-M3.1–M3.4 are bounded hardware PASS as reported above. Work in this order;
-reuse the successful one-shot CLI for regression and extract only what is
-required for the existing resident server.
+M3.1–M3.4 and M3.5a–e are bounded PASS at their respective tested revisions. The original sequence below remains the implementation/acceptance contract; the recorded M3.5 results and limitations are in [report 0002](../../../.ai/reports/report-0002.md).
 
 | Step | Implementation | Acceptance gate |
 | --- | --- | --- |

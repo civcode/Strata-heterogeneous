@@ -1,6 +1,22 @@
 # M3.5 — resident native workers and existing Strata server
 
-Status: experimental source implementation, not hardware-qualified. M3.1–M3.4 bounded Oberon PASS applies to its previously tested revision, not this increment.
+**Status: bounded M3.5a–e PASS on Oberon**, as reported in [report 0002](../../../.ai/reports/report-0002.md) for tested source revision `992fc289634e228f57cd062eb8a35fcc01fbc2cb`. This is experimental opt-in resident serving, not general production or native failure-path qualification.
+
+## Reported Oberon qualification
+
+The coding agent tested the corrected source revision above; report commit `580c97f8ef38bbe76cd116ab1bae8ce6714a482a` adds only the report. Python 3.12 checkout-local venv passed pip check; all three CMake caches used it. Host build, 38/38 CTests, and independent CUDA worker/coordinator and HIP worker builds passed.
+
+| Gate | Bounded result |
+| --- | --- |
+| M3.5a | PASS: source audit and CPU reset/replay/poison coverage |
+| M3.5b | PASS: fresh A/B vs resident A/B/A token and termination equivalence in socket and shared-memory transports |
+| M3.5c | PASS: active client disconnect, cooperative cancellation, subsequent successful request and orderly owned-process shutdown |
+| M3.5d | PASS: existing loopback HTTP chat completions, sequential A/B/A and post-cancel A |
+| M3.5e | PASS: bounded end-to-end CLI/server operation on the recorded plan and devices |
+
+The tested Q2_0 plan was `cuda:0:0-12,hip:0:12-30,hip:1:30-48` (RTX 4070 Ti SUPER and two R9700s). CLI A returned token IDs `[11751,13]` (stop); B returned `[44745,11,864,369,1048,279,7526,3177]` (length). Resident traces checked request IDs, position-zero resets and 7/12/7 committed windows per stage in both transports. The server retained the same coordinator and three worker identities across requests and cancellation; one device startup announcement per stage and no reload were logged (not an independent measurement of every allocation). Active cancellation was observed, the next A succeeded, and a normal owner SIGTERM produced `HETERO_CLOSED` and all owned children exited.
+
+Raw artifacts are on Oberon at `/home/chris/tmp/strata-heterogeneous/m35-0002-PF0NDL1z/`; the committed report is the evidence available here, not an independent rerun or inspection of raw logs. Longer contexts, concurrent/multiturn requests, non-greedy sampling, incremental token streaming, native failure recovery, abrupt parent death/hangs, broader numerical parity, packaging and production readiness remain unqualified.
 
 ## Architecture and scope
 
@@ -78,4 +94,4 @@ Run the server in a separate foreground terminal; use the actual port from the r
 
 Report revision, venv interpreter/dependency checks, host CTest and separate native builds; M3.5a audit, b resident reset/isolation, c cooperative cancellation/cleanup, d API integration, e end-to-end results individually. Include output token IDs, worker identity and load/reset/commit traces, responses and shutdown evidence, artifact directory, any failures and remaining limits. Record native-failure handling as UNVERIFIED; do not add numerical fixtures or claim broader readiness.
 
-Local evidence before handoff: coordinator translation unit compiled using GCC C++17 with strict warnings and exact repository header/source blob identities; isolated Python adapter syntax and metadata validation checks passed. Full checkout retrieval failed due to DNS resolution in the local environment, so full linking, CTest, native builds, and live HTTP/GPU verification remain pending. Existing CPU protocol tests were extended for resident reset/replay/idle/poison behavior, not numerical inference. They have not yet run on this revision.
+Historical local evidence before handoff 0002: coordinator translation unit compiled using GCC C++17 with strict warnings and exact repository header/source blob identities; isolated Python adapter syntax and metadata validation checks passed. Full checkout retrieval failed due to DNS resolution in the local environment, so full linking, CTest, native builds, and live HTTP/GPU verification remain pending. Existing CPU protocol tests were extended for resident reset/replay/idle/poison behavior, not numerical inference. The subsequent bounded Oberon results above supersede these pre-handoff validation limits for the tested revision only.
