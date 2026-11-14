@@ -50,6 +50,9 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
         error = "HIP final verifier must own the final stage";
         return false;
     }
+    if (options_.native_split_overlap && chain_stages_.empty()) {
+        error = "native split overlap requires grouped HIP"; return false;
+    }
     input_index_ = index;
     if (!chain_stages_.empty()) {
         const auto domain = worker_domains(plan, true).back();
@@ -94,7 +97,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
         !check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error))
         return false;
     if (!chain_stages_.empty()) {
-        if (!chain_.prepare(plan, chain_stages_, input_, nullptr, error)) return false;
+        if (!chain_.prepare(plan, chain_stages_, input_, nullptr, error, options_.native_split_overlap)) return false;
         verifier_ = &chain_.first();
     } else {
     owned_verifier_ = std::make_unique<core::Verifier>();

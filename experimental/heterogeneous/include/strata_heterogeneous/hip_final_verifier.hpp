@@ -20,6 +20,7 @@ struct HipFinalVerifierOptions {
     // Optional diagnostic logits. A full rows*vocab matrix must fit STFR's
     // 16 MiB cap; otherwise the window fails closed before running a kernel.
     bool include_logits = true; // fail-closed default when GPU nonfinite guard is off
+    bool native_split_overlap = false; // qualification only; HIP-local edge
 };
 
 // Final-stage counterpart to HipVerifierDriver. Deliberately not a

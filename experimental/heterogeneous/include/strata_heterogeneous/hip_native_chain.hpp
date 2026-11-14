@@ -20,7 +20,8 @@ public:
     HipNativeVerifierChain(const HipNativeVerifierChain&) = delete;
     HipNativeVerifierChain& operator=(const HipNativeVerifierChain&) = delete;
     bool prepare(const Plan& plan, const std::vector<HipNativeChainStage>& stages,
-                 const float* input, const core::NativeHead* head, std::string& error) {
+                 const float* input, const core::NativeHead* head, std::string& error,
+                 bool split_overlap = false) {
         if (attempted_) { error = "HIP chain already attempted"; return false; }
         attempted_ = true;
         try {
@@ -30,6 +31,9 @@ public:
                 (plan.stages[domain.first_stage].first_layer != 0) != (input != nullptr)) {
                 error = "HIP chain requires complete terminal native domain and matching input";
                 return false;
+            }
+            if (split_overlap && (stages.size() != 2 || plan.stages[domain.first_stage+1].first_layer <= 1)) {
+                error = "native HIP split overlap requires two stages and no downstream PLE"; return false;
             }
             const auto& first = stages.front().bindings;
             if (first.max_t < 1 || first.max_t > strata::kernels::kVerifyMaxT || !first.pool ||
@@ -69,16 +73,33 @@ public:
             nodes_.reserve(stages.size());
             hands_.resize(stages.size() - 1);
             // Vanilla mapped portable pinned handoff, with per-device aliases.
+            unsigned mapped_flags = cudaHostAllocMapped | cudaHostAllocPortable;
+#if defined(STRATA_USE_HIP)
+            // Wave32 HIP must see publication while the consumer graph is
+            // already running; do not rely on a coarse-grained default.
+            if (split_overlap) mapped_flags |= hipHostMallocCoherent;
+#endif
             for (size_t j = 0; j < hands_.size(); ++j) {
                 auto& h = hands_[j];
                 h.owner = static_cast<int>(plan.stages[domain.first_stage + j].ordinal);
                 const int receiver = static_cast<int>(plan.stages[domain.first_stage + j + 1].ordinal);
                 if (!ck(cudaSetDevice(h.owner), error) ||
-                    !ck(cudaHostAlloc(&h.host, bytes, cudaHostAllocMapped | cudaHostAllocPortable), error) ||
+                    !ck(cudaHostAlloc(&h.host, bytes, mapped_flags), error) ||
                     !ck(cudaHostGetDevicePointer(reinterpret_cast<void**>(&h.writer), h.host, 0), error) ||
                     !ck(cudaSetDevice(receiver), error) ||
                     !ck(cudaHostGetDevicePointer(reinterpret_cast<void**>(&h.reader), h.host, 0), error)) return false;
                 std::memset(h.host, 0, bytes);
+                // Use the existing vanilla runtime-local mapped allocator. The
+                // writer clears the word in stage_inputs; the native publisher
+                // and bounded wait own the per-window GPU synchronization.
+                if (split_overlap) {
+                    if (!ck(cudaSetDevice(h.owner), error) ||
+                        !ck(cudaHostAlloc(reinterpret_cast<void**>(&h.flag_host), 64, mapped_flags), error) ||
+                        !ck(cudaHostGetDevicePointer(reinterpret_cast<void**>(&h.flag_writer), h.flag_host, 0), error) ||
+                        !ck(cudaSetDevice(receiver), error) ||
+                        !ck(cudaHostGetDevicePointer(reinterpret_cast<void**>(&h.flag_reader), h.flag_host, 0), error)) return false;
+                    std::memset(h.flag_host, 0, 64);
+                }
             }
             for (size_t j = 0; j < stages.size(); ++j) {
                 const auto& p = plan.stages[domain.first_stage + j];
@@ -90,7 +111,12 @@ public:
                 v.set_stage(p.first_layer, p.end_layer, j ? hands_[j-1].reader : input,
                             j < hands_.size() ? hands_[j].writer : nullptr);
                 v.set_handoff_rows(b.max_t);
-                // Legacy serial transactional control, not speculative scheduling.
+                if (split_overlap)
+                    v.set_handoff_flags(j ? hands_[j-1].flag_host : nullptr,
+                                        j ? hands_[j-1].flag_reader : nullptr,
+                                        j+1 < stages.size() ? hands_[j].flag_host : nullptr,
+                                        j+1 < stages.size() ? hands_[j].flag_writer : nullptr);
+                // Preserve transactional accepted-prefix commit in both modes.
                 v.set_always_publish(true);
                 v.set_head_sampling(j + 1 == stages.size());
                 if (!v.init(b.weights, b.geometry, b.session, b.hits,
@@ -115,7 +141,6 @@ public:
     core::Verifier& first() { return at(0); }
     core::Verifier& last() { return at(nodes_.empty() ? 0 : nodes_.size() - 1); }
     bool ready() const noexcept { return ready_; }
-    // No producer/consumer spin-flag overlap is enabled for this control.
     // On a failed window, release every native wait before freeing anything.
     void abort(int timeout_ms) noexcept {
         for (const auto& n : nodes_)
@@ -131,13 +156,20 @@ public:
             n.verifier.reset();
         }
         nodes_.clear();
-        for (auto& h : hands_)
-            if (h.host && (cudaSetDevice(h.owner) != cudaSuccess || cudaFreeHost(h.host) != cudaSuccess)) std::_Exit(70);
+        for (auto& h : hands_) {
+            if (!h.host && !h.flag_host) continue;
+            if (cudaSetDevice(h.owner) != cudaSuccess ||
+                (h.flag_host && cudaFreeHost(h.flag_host) != cudaSuccess) ||
+                (h.host && cudaFreeHost(h.host) != cudaSuccess)) std::_Exit(70);
+        }
         hands_.clear();
     }
 private:
     struct Node { int device; std::unique_ptr<core::Verifier> verifier; };
-    struct Handoff { int owner = -1; void* host = nullptr; float* writer = nullptr; float* reader = nullptr; };
+    struct Handoff {
+        int owner = -1; void* host = nullptr; float* writer = nullptr; float* reader = nullptr;
+        uint32_t *flag_host = nullptr, *flag_writer = nullptr, *flag_reader = nullptr;
+    };
     std::vector<Node> nodes_;
     std::vector<Handoff> hands_;
     bool attempted_ = false, ready_ = false;

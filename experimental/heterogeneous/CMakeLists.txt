@@ -101,6 +101,23 @@ if(STRATA_HETERO_BUILD_HIP_WORKER)
   endif()
 endif()
 
+# Explicit model-free qualification target, never built or run by default.
+# Compile the same native publish/wait probe in the existing separate toolchains.
+if(STRATA_HETERO_BUILD_CUDA_WORKER OR STRATA_HETERO_BUILD_HIP_WORKER)
+  add_executable(strata_heterogeneous_overlap_probe EXCLUDE_FROM_ALL src/overlap_probe.cpp)
+  target_link_libraries(strata_heterogeneous_overlap_probe PRIVATE strata_engine strata_kernels)
+  target_compile_features(strata_heterogeneous_overlap_probe PRIVATE cxx_std_17)
+  if(STRATA_HETERO_BUILD_HIP_WORKER)
+    target_compile_definitions(strata_heterogeneous_overlap_probe PRIVATE STRATA_USE_HIP=1)
+    target_link_libraries(strata_heterogeneous_overlap_probe PRIVATE strata_hip_runtime)
+  else()
+    target_link_libraries(strata_heterogeneous_overlap_probe PRIVATE CUDA::cudart)
+  endif()
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(strata_heterogeneous_overlap_probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endif()
+
 # Two independent CPU mock executables. They deliberately do not initialize
 # either GPU runtime, but verify that each worker has a backend-specific image.
 foreach(_mock_backend IN ITEMS cuda hip)

@@ -195,6 +195,31 @@ void grouped_native_chain() {
         stage.shutdown();
     }
     check(fake_cuda::allocations==0,"grouped graph and mapped handoff teardown");
+    fv::reset();
+    {
+        HipFinalVerifierExecutor stage(bindings, {true,true});
+        check(stage.prepare(f.plan,2,err),"opt-in HIP split overlap prepared");
+        check(fake_cuda::allocations==4,"overlap adds one runtime-local mapped flag");
+        check(fv::incoming_flags.size()==2 && fv::outgoing_flags.size()==2 &&
+              fv::incoming_flags[0]==nullptr && fv::outgoing_flags[1]==nullptr &&
+              fv::outgoing_flags[0]!=nullptr && fv::outgoing_flags[0]==fv::incoming_flags[1],
+              "native sender and receiver share only the local HIP flag");
+        check(stage.reset_request(1,err),"overlap reset");
+        check(stage.begin_window({0,{5,6}},1,1,err),"overlap window admission");
+        Buffer input(2,f.plan.geometry); FinalStageResult output;
+        check(stage.run_final_window(f.frame(),input.view,output,err) && stage.commit_prefix(1,1,1,err),
+              "overlap assembly retains accepted prefix contract (CPU double, no GPU overlap)");
+        stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"overlap flag cleanup");
+    for (int fail=3; fail<=4; ++fail) {
+        HipFinalVerifierExecutor stage(bindings,{true,true});
+        fake_cuda::fail_alloc=fake_cuda::alloc_calls+fail;
+        check(!stage.prepare(f.plan,2,err),"failed local handoff/flag allocation refuses overlap");
+        fake_cuda::fail_alloc=0;
+        stage.shutdown();
+        check(fake_cuda::allocations==0,"partial overlap allocation cleaned up");
+    }
     r0[4]=-1;
     {
         HipFinalVerifierExecutor stage(bindings);

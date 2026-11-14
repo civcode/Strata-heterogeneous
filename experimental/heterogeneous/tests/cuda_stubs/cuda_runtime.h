@@ -24,7 +24,7 @@ inline int cudaMalloc(void** p, size_t n) {
     *p = std::malloc(n); if (*p) ++fake_cuda::allocations; return *p ? 0 : 2;
 }
 inline int cudaMallocHost(void** p, size_t n) { return cudaMalloc(p, n); }
-constexpr unsigned cudaHostAllocMapped=8, cudaHostAllocPortable=16;
+constexpr unsigned cudaHostAllocMapped=8, cudaHostAllocPortable=16, hipHostMallocCoherent=32;
 inline int cudaHostAlloc(void** p,size_t n,unsigned) { return cudaMallocHost(p,n); }
 inline int cudaHostGetDevicePointer(void** d,void* h,unsigned) { *d=h; return 0; }
 inline int cudaFree(void* p) { if (p) { --fake_cuda::allocations; std::free(p); } return 0; }
