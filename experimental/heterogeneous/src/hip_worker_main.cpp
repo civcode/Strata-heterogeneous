@@ -15,6 +15,7 @@
 #include "native_worker_defaults.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/native_prefill_domain.hpp"
+#include "strata_heterogeneous/native_mtp_probe.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -153,7 +154,18 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     const bool overlap = hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP");
     const bool arm = hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM");
     if (arm && (!overlap || compact)) throw std::runtime_error("receiver arm requires native HIP overlap and full logits");
+    std::unique_ptr<hetero::NativeMtpProbe> mtp;
+    if (const char* path = std::getenv("STRATA_HETERO_MTP_PROBE_RT"); path && *path) {
+        if (compact || !overlap || arm) throw std::runtime_error("one-shot MTP probe requires HIP overlap without external arm");
+        const char* count = std::getenv("STRATA_HETERO_MTP_PROBE_WINDOWS");
+        const auto n = count ? std::string(count) : std::string();
+        if (n.size()!=1 || n[0]<'1' || n[0]>'8') throw std::runtime_error("invalid MTP probe window count");
+        const auto& last=configs.back().fields;
+        mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
+                                                  last.arena_budget_bytes,unsigned(n[0]-'0'));
+    }
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
+    if (mtp) final.set_observer(mtp.get());
     std::cerr << "HETERO_RECEIVER_ARM enabled=" << arm << '\n';
     std::cerr << "HETERO_HIP_SPLIT_OVERLAP enabled=" << overlap << '\n';
     // Same native final-result handler; one external commit ACK covers the entire HIP chain.
@@ -199,7 +211,8 @@ int main(int argc,char** argv) {
                 return 0;
             }
             if (hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP") ||
-                hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM"))
+                hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM") ||
+                std::getenv("STRATA_HETERO_MTP_PROBE_RT"))
                 throw std::runtime_error("HIP split overlap requires the grouped worker");
             hetero::HipWorkerConfig config;
             if(!hetero::read_hip_worker_config(invocation.config_path,config,error)||

@@ -253,6 +253,44 @@ void grouped_native_chain() {
         stage.shutdown();
         check(fake_cuda::allocations==0,"partial overlap allocation cleaned up");
     }
+    // Observer is head-owner-only and sees only committed windows.
+    for (bool refuse : {false,true}) {
+        fv::reset();
+        struct Observer final : HipFinalObserver {
+            bool refuse;
+            int prepares=0,begins=0,commits=0,closes=0;
+            explicit Observer(bool r):refuse(r){}
+            bool prepare(const HipVerifierBindings& b,strata::core::Verifier& v,std::string&) override {
+                check(fake_cuda::device==1 && v.device()==1 && b.session.layer_lo==3,"observer owns real terminal stage");
+                ++prepares;return true;
+            }
+            bool begin(const WindowSpec& spec,uint64_t r,uint64_t w,std::string&) override {
+                check(fake_cuda::device==1 && r==1 && w==1 && spec.pos0==0,"observer primes before next run on terminal");
+                ++begins;return true;
+            }
+            bool committed(const WindowSpec& spec,uint64_t r,uint64_t w,uint32_t keep,
+                           strata::core::Verifier& v,const std::vector<int32_t>& pred,std::string& err) override {
+                check(fake_cuda::device==1 && v.device()==1 && r==1 && w==1 && keep==1 &&
+                      spec.token_ids==std::vector<int32_t>({5,6}) && pred.size()==2 &&
+                      fv::commit_devices==std::vector<int>({0,1}),"observer after native commits, before ACK");
+                ++commits;
+                if(refuse) err="synthetic MTP observer failure";
+                return !refuse;
+            }
+            void shutdown() noexcept override {++closes;}
+        } observer(refuse);
+        HipFinalVerifierExecutor stage(bindings,{true,true});
+        stage.set_observer(&observer);
+        check(stage.prepare(f.plan,2,err) && observer.prepares==1,"observer prepared");
+        check(!stage.reset_request(1,err),"one-shot observer refuses resident reset");
+        check(stage.begin_window({0,{5,6}},1,1,err) && observer.begins==1,"observer begin");
+        Buffer input(2,f.plan.geometry); FinalStageResult output;
+        check(stage.run_final_window(f.frame(),input.view,output,err) && observer.commits==0,"provisional result does not prime");
+        check(stage.commit_prefix(1,1,1,err)!=refuse && observer.commits==1,"observer refusal blocks commit ACK");
+        if(refuse) check(!stage.commit_prefix(1,1,1,err),"observer failure cannot replay native commit");
+        stage.shutdown();
+        check(observer.closes==1 && fake_cuda::allocations==0,"observer freed before chain teardown");
+    }
     r0[4]=-1;
     {
         HipFinalVerifierExecutor stage(bindings);

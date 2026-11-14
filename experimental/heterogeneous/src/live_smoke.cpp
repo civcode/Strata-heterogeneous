@@ -61,6 +61,7 @@ struct Options {
     bool hip_split_overlap = false;
     bool receiver_arm = false;
     bool cuda_mapped_egress = false;
+    std::string mtp_probe_rt;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
     bool layer_zero_probe = false;
@@ -103,6 +104,7 @@ void usage() {
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--run]\n"
+        "  --mtp-probe-rt ABS_PATH: one-shot native HIP MTP load/prime/draft; full-logit fixed-token smoke only.\n"
         "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
@@ -179,6 +181,10 @@ Options parse(int argc, char** argv) {
         else if (key == "--hip-split-overlap") o.hip_split_overlap = true;
         else if (key == "--receiver-arm") o.receiver_arm = true;
         else if (key == "--cuda-mapped-egress") o.cuda_mapped_egress = true;
+        else if (key == "--mtp-probe-rt") {
+            o.mtp_probe_rt = required_value(i,argc,argv,"--mtp-probe-rt");
+            if (o.mtp_probe_rt.empty()) throw std::invalid_argument("MTP probe runtime path is empty");
+        }
         else if (key == "--warmup-windows") {
             o.warmup_windows = u32(required_value(i,argc,argv,"--warmup-windows"),"warmup-windows");
             if (!o.warmup_windows) throw std::invalid_argument("warmup-windows must be positive");
@@ -308,6 +314,11 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (!o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || o.generate ||
+        o.describe_source || o.warmup_windows || o.native_prefill_chunk || o.tokens.empty() ||
+        !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
+        o.mtp_probe_rt.find_first_of("\r\n")!=std::string::npos))
+        throw std::invalid_argument("MTP probe requires explicit fixed tokens, absolute runtime path, grouped HIP overlap, nonresident and no receiver arm");
     if (o.cuda_mapped_egress && (!o.receiver_arm || o.native_prefill_chunk || o.boundary_capture ||
         o.prefill_parity_at || o.describe_source))
         throw std::invalid_argument("mapped CUDA egress requires receiver arm, serial prefill and no device boundary capture");
@@ -637,6 +648,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     }
     if (::setenv("STRATA_HETERO_HIP_SPLIT_OVERLAP", o.hip_split_overlap ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit HIP split overlap mode");
+    if (!o.mtp_probe_rt.empty()) {
+        if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
+            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.windows).c_str(),1)!=0)
+            throw std::runtime_error("cannot configure one-shot MTP probe");
+    } else if (::unsetenv("STRATA_HETERO_MTP_PROBE_RT")!=0 || ::unsetenv("STRATA_HETERO_MTP_PROBE_WINDOWS")!=0)
+        throw std::runtime_error("cannot clear inherited MTP probe mode");
     if (::setenv("STRATA_HETERO_CUDA_MAPPED_EGRESS", o.cuda_mapped_egress ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit mapped CUDA egress mode");
     if (::setenv("STRATA_HETERO_RECEIVER_ARM", o.receiver_arm ? "1" : "0", 1) != 0)
@@ -648,7 +665,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (o.warmup_windows && (hetero::performance_trace() || hetero::performance_flag("STRATA_HETERO_OVERLAP_TRACE") ||
         hetero::performance_flag("STRATA_HETERO_WINDOW_TRACE") || std::getenv("STRATA_VERIFY_TRACE")))
         throw std::invalid_argument("timed smoke requires tracing disabled (unset STRATA_VERIFY_TRACE)");
-    if (compact && (!o.generate || o.prefill_parity_at || o.receiver_arm))
+    if (compact && (!o.generate || o.prefill_parity_at || o.receiver_arm || !o.mtp_probe_rt.empty()))
         throw std::invalid_argument("compact head results are not supported in diagnostic modes");
     // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)

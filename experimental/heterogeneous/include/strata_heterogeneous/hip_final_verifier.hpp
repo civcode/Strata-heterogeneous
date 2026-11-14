@@ -16,6 +16,18 @@
 
 namespace strata::heterogeneous {
 
+// Optional qualification-only terminal observer. Runs on the head owner;
+// borrowed verifier residuals expire at the next native run. No wire changes.
+class HipFinalObserver {
+public:
+    virtual ~HipFinalObserver() = default;
+    virtual bool prepare(const HipVerifierBindings&, core::Verifier&, std::string&) = 0;
+    virtual bool begin(const WindowSpec&, uint64_t request, uint64_t window, std::string&) = 0;
+    virtual bool committed(const WindowSpec&, uint64_t request, uint64_t window, uint32_t keep,
+                           core::Verifier&, const std::vector<int32_t>& predictions, std::string&) = 0;
+    virtual void shutdown() noexcept = 0;
+};
+
 struct HipFinalVerifierOptions {
     // Optional diagnostic logits. A full rows*vocab matrix must fit STFR's
     // 16 MiB cap; otherwise the window fails closed before running a kernel.
@@ -39,6 +51,8 @@ public:
     HipFinalVerifierExecutor(const HipFinalVerifierExecutor&) = delete;
     HipFinalVerifierExecutor& operator=(const HipFinalVerifierExecutor&) = delete;
 
+    // Observer must outlive this executor, and be attached before prepare.
+    void set_observer(HipFinalObserver* observer) { observer_ = observer; }
     bool prepare(const Plan&, size_t stage_index, std::string&) override;
     bool reset_request(uint64_t, std::string&) override;
     bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
@@ -85,6 +99,8 @@ private:
     uint32_t keep_ = 0;
     bool aborted_ = false;
     bool unsafe_result_ = false;
+    HipFinalObserver* observer_ = nullptr;
+    std::vector<int32_t> observer_predictions_;
 
     bool select_device(std::string&);
     bool check(cudaError_t, std::string&);

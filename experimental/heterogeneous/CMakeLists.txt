@@ -345,6 +345,10 @@ if(STRATA_HETERO_HOST_TESTS)
   target_link_libraries(strata_heterogeneous_receiver_publish_tests PRIVATE strata_heterogeneous_host)
   target_include_directories(strata_heterogeneous_receiver_publish_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   add_test(NAME strata_heterogeneous_receiver_publish_tests COMMAND strata_heterogeneous_receiver_publish_tests)
+  add_executable(strata_heterogeneous_mtp_prefix_cursor_tests tests/mtp_prefix_cursor_test.cpp)
+  target_link_libraries(strata_heterogeneous_mtp_prefix_cursor_tests PRIVATE strata_heterogeneous_host)
+  target_compile_options(strata_heterogeneous_mtp_prefix_cursor_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME strata_heterogeneous_mtp_prefix_cursor_tests COMMAND strata_heterogeneous_mtp_prefix_cursor_tests)
   # M2.2: actual HIP adapter source with CPU CUDA-shaped API doubles.
   add_executable(strata_heterogeneous_hip_verifier_contract_tests
     tests/hip_verifier_tests.cpp src/hip_verifier.cpp)

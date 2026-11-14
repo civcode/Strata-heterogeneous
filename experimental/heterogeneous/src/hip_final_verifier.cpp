@@ -52,6 +52,9 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
         error = "HIP final verifier must own the final stage";
         return false;
     }
+    if (observer_ && (chain_stages_.size()!=2 || !options_.include_logits || bindings_.initial_position!=0)) {
+        error = "terminal observer requires grouped native HIP and full logits from fresh state"; return false;
+    }
     if (options_.native_split_overlap && chain_stages_.empty()) {
         error = "native split overlap requires grouped HIP"; return false;
     }
@@ -138,11 +141,14 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
         error = "HIP final verifier vocabulary differs from loaded model";
         return false;
     }
+    if (observer_ && (!check(cudaSetDevice(chain_.last().device()), error) ||
+        !observer_->prepare(chain_stages_.back().bindings,chain_.last(),error) || !select_device(error))) return false;
     next_position_ = bindings_.initial_position;
     state_ = State::ready;
     return true;
 }
 bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& error) {
+    if (observer_) { error="one-shot terminal observer cannot reset"; return false; }
     if (state_ != State::ready || !select_device(error) ||
         !request || request <= request_ || bindings_.initial_position != 0 ||
         !bindings_.zero_session || !verifier_) {
@@ -177,7 +183,7 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
 }
 bool HipFinalVerifierExecutor::adopt_native_prefill(uint64_t request,uint32_t rows,std::string& error) {
     // The native prompt engine has fully drained the same stage-local session.
-    if (options_.receiver_arm || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
+    if (observer_ || options_.receiver_arm || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
         !rows || rows>=bindings_.session.max_cells || chain_stages_.empty()) {
         error="native prefill position adoption refused"; return false;
     }
@@ -214,6 +220,10 @@ bool HipFinalVerifierExecutor::begin_window(const WindowSpec& spec,
         error = "HIP final verifier logits exceed STFR packet cap";
         return false;
     }
+    // Complete draft KV pairing before the next run can overwrite a borrowed
+    // tail residual or arm either native HIP graph.
+    if (observer_ && (!check(cudaSetDevice(chain_.last().device()),error) ||
+        !observer_->begin(spec,request,window,error) || !select_device(error))) { abort_once(); return false; }
     unsafe_result_ = false;
     spec_ = spec;
     request_ = request;
@@ -342,6 +352,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
     try { validate_final_result(pending); }
     catch (const std::exception& e) { error = e.what(); return false; }
     unsafe_result_ = pending.has_nonfinite();
+    if (observer_) observer_predictions_ = pending.predicted_tokens;
     result = std::move(pending);
     state_ = State::provisional;
     return true;
@@ -362,6 +373,12 @@ bool HipFinalVerifierExecutor::commit_prefix(uint64_t request, uint64_t window,
     if (!verifier_->commit(static_cast<int>(n_keep), error) ||
         !verifier_->wait_commit(error) ||
         !fence(error) || !wait_fence(error)) return false;
+    // Native verifier commit is drained. The terminal observer runs before
+    // the domain ACK; failure poisons the session, never retries a commit.
+    if (observer_ && (!check(cudaSetDevice(chain_.last().device()),error) ||
+        !observer_->committed(spec_,request,window,n_keep,chain_.last(),observer_predictions_,error) ||
+        !select_device(error))) { abort_once(); return false; }
+    observer_predictions_.clear();
     next_position_ += keep_;
     state_ = State::ready;
     unsafe_result_ = false;
@@ -392,6 +409,7 @@ void HipFinalVerifierExecutor::shutdown() noexcept {
     if (state_ != State::fresh && state_ != State::ready && state_ != State::dead)
         abort_once();
     if (device_ >= 0 && cudaSetDevice(device_) != cudaSuccess) std::_Exit(70);
+    if (observer_) { observer_->shutdown(); observer_ = nullptr; }
     chain_.shutdown();
     if (device_ >= 0 && cudaSetDevice(device_) != cudaSuccess) std::_Exit(70);
     owned_verifier_.reset(); // captured graphs/streams released before input buffer
