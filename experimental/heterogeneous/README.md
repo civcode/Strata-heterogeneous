@@ -2,6 +2,7 @@
 
 **Active contract:** [CUDA → HIP production-path validation and acceptance](docs/IMPLEMENTATION_CONTRACT.md).
 **Manual Oberon runbook:** [M2.18–M2.22 boundary validation](docs/BOUNDARY_VALIDATION_M218_M222.md).
+**Next phase:** [M3.1–M3.5 native text generation and Oberon runbook](docs/GENERATION_M31_M35.md). The explicit `strata.py heterogeneous-generate` command is implemented for a fresh, bounded, greedy request; actual text-generation hardware validation is pending.
 The old demo and protocol fixtures remain CPU-only, but separately compiled
 native CUDA and HIP workers have executed real staged-model windows. Oberon
 reported 38/38 CTests, both native builds, exact CUDA → HIP and HIP → HIP

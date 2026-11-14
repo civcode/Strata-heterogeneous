@@ -32,6 +32,10 @@ struct Options {
     std::vector<std::string> configs;
     std::vector<int32_t> tokens;
     std::string capture_prefix;
+    std::string source_gguf, source_index;
+    std::vector<int32_t> stop_ids;
+    uint32_t generate = 0, prompt_chunk = 1;
+    bool describe_source = false;
     uint32_t layers = 48;
     uint32_t hc = 4;
     uint32_t n_embd = 2560;
@@ -80,12 +84,42 @@ void usage() {
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
+        "  --describe-source (CPU-only validated primary GGUF and limits)\n"
+        "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
+        "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
+}
+// Input is local, but bounded before allocation beyond the documented cap.
+// The CLI passes decimal token IDs separated by ASCII whitespace.
+std::vector<int32_t> prompt_from_stdin() {
+    std::string input;
+    char c;
+    while (std::cin.get(c)) {
+        if (input.size() == 65536)
+            throw std::invalid_argument("prompt token input exceeds 64 KiB");
+        input.push_back(c);
+    }
+    if (!std::cin.eof() || std::cin.bad())
+        throw std::runtime_error("could not read prompt token input");
+    std::istringstream in(input);
+    std::string word;
+    std::vector<int32_t> ids;
+    while (in >> word) {
+        const auto n = u32(word, "prompt token");
+        if (n > INT32_MAX || ids.size() >= 4096)
+            throw std::invalid_argument("prompt exceeds token bounds (4096 IDs)");
+        ids.push_back(static_cast<int32_t>(n));
+    }
+    if (ids.empty()) throw std::invalid_argument("prompt token input is empty");
+    return ids;
 }
 Options parse(int argc, char** argv) {
     Options o;
+    bool smoke_shape = false, generation_arg = false;
     for (int i = 1; i < argc; ++i) {
         const std::string key = argv[i];
+        if (key == "--token" || key == "--tokens" || key == "--rows" ||
+            key == "--keep" || key == "--windows") smoke_shape = true;
         if (key == "--run") o.run = true;
         else if (key == "--layer-taps") o.layer_taps = true;
         else if (key == "--layer0-probe") o.layer_zero_probe = true;
@@ -94,6 +128,37 @@ Options parse(int argc, char** argv) {
         else if (key == "--micro-probe") o.micro_probe = true;
         else if (key == "--boundary-capture") o.boundary_capture = true;
         else if (key == "--shared") o.shared = true;
+        else if (key == "--describe-source") o.describe_source = true;
+        else if (key == "--generate") {
+            generation_arg = true;
+            o.generate = u32(required_value(i, argc, argv, "--generate"), "generate");
+            if (!o.generate || o.generate > 256)
+                throw std::invalid_argument("--generate must be in 1..256");
+        } else if (key == "--prompt-chunk") {
+            generation_arg = true;
+            o.prompt_chunk = u32(required_value(i, argc, argv, "--prompt-chunk"), "prompt-chunk");
+            if (!o.prompt_chunk || o.prompt_chunk > 8)
+                throw std::invalid_argument("--prompt-chunk must be in 1..8");
+        } else if (key == "--source-gguf") {
+            generation_arg = true;
+            o.source_gguf = required_value(i, argc, argv, "--source-gguf");
+        } else if (key == "--source-index") {
+            generation_arg = true;
+            o.source_index = required_value(i, argc, argv, "--source-index");
+        } else if (key == "--stop-ids") {
+            generation_arg = true;
+            const std::string value = required_value(i, argc, argv, "--stop-ids");
+            std::istringstream in(value);
+            std::string item;
+            while (std::getline(in, item, ',')) {
+                const uint32_t id = u32(item, "stop-ids");
+                if (id > INT32_MAX || o.stop_ids.size() >= 16)
+                    throw std::invalid_argument("invalid bounded stop IDs");
+                o.stop_ids.push_back(static_cast<int32_t>(id));
+            }
+            if (value.empty() || value.back() == ',')
+                throw std::invalid_argument("invalid comma-separated stop IDs");
+        }
         else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
         else if (key == "--hip-worker") o.hip_worker = required_value(i, argc, argv, "--hip-worker");
@@ -152,8 +217,23 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--micro-probe requires --capture-prefix and --rows 1");
     if (o.boundary_capture && o.capture_prefix.empty())
         throw std::invalid_argument("--boundary-capture requires --capture-prefix");
-    if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
+    if (o.describe_source && (o.run || generation_arg || smoke_shape))
+        throw std::invalid_argument("--describe-source is a CPU-only standalone mode");
+    if (generation_arg && !o.generate)
+        throw std::invalid_argument("generation options require --generate");
+    if (o.generate || o.describe_source) {
+        if (smoke_shape || !o.capture_prefix.empty() || o.layer_taps ||
+            o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
+            o.micro_probe || o.boundary_capture)
+            throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
+    }
+    if (o.generate) {
+        if (o.source_gguf.empty() || o.source_index.empty() || o.stop_ids.empty())
+            throw std::invalid_argument("generation requires validated source and stop IDs");
+        o.tokens = prompt_from_stdin();
+    } else if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows) {
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
+    }
     return o;
 }
 void require_executable(const std::string& path, const char* label) {
@@ -163,15 +243,19 @@ void require_executable(const std::string& path, const char* label) {
         ::access(path.c_str(), X_OK) != 0)
         throw std::invalid_argument(std::string(label) + " must be an executable absolute file");
 }
+std::string json_string(const std::string& value);
 void preflight(const Options& o, const hetero::Plan& plan) {
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
-    const uint64_t needed = uint64_t(o.windows - 1) * o.keep + o.rows;
+    const uint64_t needed = o.generate ? uint64_t(o.tokens.size()) + o.generate
+                                      : uint64_t(o.windows - 1) * o.keep + o.rows;
+    const uint32_t rows = o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) : o.rows;
     const uint64_t stride = plan.geometry.floats_per_row();
-    if (stride > hetero::max_payload_bytes / (sizeof(float) * o.rows))
+    if (stride > hetero::max_payload_bytes / (sizeof(float) * rows))
         throw std::invalid_argument("requested activation geometry exceeds bounded 16 MiB transport");
     std::optional<hetero::CudaWorkerConfig> common_model;
+    uint32_t max_cells = UINT32_MAX, max_t = UINT32_MAX;
     for (size_t index = 0; index < plan.stages.size(); ++index) {
         std::string error;
         hetero::CudaWorkerConfig config;
@@ -202,16 +286,36 @@ void preflight(const Options& o, const hetero::Plan& plan) {
             ? config.n_vocab <= o.token
             : std::any_of(o.tokens.begin(), o.tokens.end(),
                           [&](int32_t token) { return token >= static_cast<int32_t>(config.n_vocab); });
+        const bool invalid_stop = std::any_of(o.stop_ids.begin(), o.stop_ids.end(),
+            [&](int32_t token) { return static_cast<uint32_t>(token) >= config.n_vocab; });
         if (config.version != 2 || config.max_cells < needed ||
-            config.max_t < o.rows || invalid_token)
+            config.max_t < rows || invalid_token || invalid_stop)
             throw std::invalid_argument("stage " + std::to_string(index) +
                 ": v2, context, window or token bounds cannot serve smoke-test request");
+        max_cells = std::min(max_cells, config.max_cells);
+        max_t = std::min(max_t, config.max_t);
+        if (o.generate && (uint64_t(rows) * config.n_vocab + 2ull * rows + 1) >
+                hetero::final_result_max_payload_bytes / sizeof(float))
+            throw std::invalid_argument("prompt chunk logits exceed STFR payload cap");
         std::cout << "PREFLIGHT stage=" << index
                   << " backend=" << (is_hip ? "HIP" : "CUDA")
                   << " ordinal=" << config.device_ordinal
                   << " layers=[" << config.first_layer << ',' << config.end_layer << ')'
                   << " max_cells=" << config.max_cells
                   << " max_t=" << config.max_t << '\n';
+    }
+    if (!common_model || common_model->gguf_shards.empty())
+        throw std::invalid_argument("native model source is missing");
+    if (o.generate && (o.source_gguf != common_model->gguf_shards.front() ||
+                       o.source_index != common_model->index_sha256))
+        throw std::invalid_argument("generation tokenizer source differs from validated worker source");
+    if (o.describe_source) {
+        std::cout << "HETERO_SOURCE {\"gguf\":" << json_string(common_model->gguf_shards.front())
+                  << ",\"pack_dir\":" << json_string(common_model->pack_dir)
+                  << ",\"pack_index_sha256\":" << json_string(common_model->index_sha256)
+                  << ",\"vocab\":" << common_model->n_vocab
+                  << ",\"max_cells\":" << max_cells << ",\"max_t\":" << max_t
+                  << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
     if (o.run) {
         for (const auto& stage : plan.stages) {
@@ -335,6 +439,8 @@ int execute(const Options& o, const hetero::Plan& plan) {
     if (o.layer_taps && ::setenv("STRATA_HETERO_LAYER_TAP_PREFIX",
                                  o.capture_prefix.c_str(), 1) != 0)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
+    if (o.generate && ::unsetenv("STRATA_HETERO_LAYER_TAP_PREFIX") != 0)
+        throw std::runtime_error("cannot clear inherited native layer-tap capture");
     if (o.layer_zero_probe) {
         if (::setenv("STRATA_HETERO_L0_PROBE_PREFIX",
                      o.capture_prefix.c_str(), 1) != 0)
@@ -378,39 +484,87 @@ int execute(const Options& o, const hetero::Plan& plan) {
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket") << '\n';
-    for (uint32_t n = 0; n < o.windows; ++n) {
-        hetero::WindowSpec spec;
-        spec.pos0 = static_cast<int64_t>(uint64_t(n) * o.keep);
-        if (o.tokens.empty()) spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
-        else spec.token_ids.assign(o.tokens.begin() + static_cast<size_t>(n) * o.rows,
-                                   o.tokens.begin() + static_cast<size_t>(n + 1) * o.rows);
+    // Both smoke and generation use the exact same committed real-worker path.
+    auto run_window = [&](const hetero::WindowSpec& spec, uint64_t id, uint32_t keep) {
         hetero::Frame initial;
         initial.kind = hetero::Kind::data;
         initial.request_id = 1;
-        initial.window_id = uint64_t(n) + 1;
+        initial.window_id = id;
         initial.plan_fingerprint = plan.fingerprint();
-        initial.rows = o.rows;
+        initial.rows = static_cast<uint32_t>(spec.token_ids.size());
         initial.geometry = plan.geometry;
-        // Layer-zero verifier embeds token_ids; it intentionally ignores
-        // the placeholder initial activation. Later stages receive real
-        // native GPU output from the immediately preceding stage.
-        initial.payload.assign(
-            static_cast<size_t>(plan.geometry.floats_per_row()) * o.rows, 0.0f);
-        (void)session.execute(std::move(initial), spec); // provisional only
-        const hetero::FinalStageResult committed = session.commit(o.keep);
-        if (committed.predicted_tokens.size() != o.rows || committed.has_nonfinite())
+        // Layer zero embeds the real tokens; only this ignored placeholder is zero.
+        initial.payload.assign(static_cast<size_t>(plan.geometry.floats_per_row()) *
+                               initial.rows, 0.0f);
+        (void)session.execute(std::move(initial), spec);
+        auto committed = session.commit(keep);
+        if (committed.predicted_tokens.size() != spec.token_ids.size() || committed.has_nonfinite())
             throw std::runtime_error("committed head predictions malformed or nonfinite");
-        if (!o.capture_prefix.empty()) capture_window(o, plan, spec, committed);
-        std::cout << "LIVE PASS window=" << n + 1 << " pos0=" << spec.pos0
-                  << " committed=" << o.keep << " predictions=";
-        // STFR records every evaluated row; log only the accepted prefix.
-        for (uint32_t t = 0; t < o.keep; ++t)
-            std::cout << committed.predicted_tokens[t] << ',';
-        std::cout << '\n';
+        return committed;
+    };
+    std::vector<int32_t> generated;
+    bool stopped = false;
+    if (o.generate) {
+        uint64_t window = 0;
+        int64_t pos = 0;
+        int32_t next = -1;
+        // Prompt ingestion uses ordinary verified windows. Only the last row's
+        // prediction is the first completion token. No draft or new prefill kernel.
+        for (size_t offset = 0; offset < o.tokens.size();) {
+            const size_t count = std::min<size_t>(o.prompt_chunk, o.tokens.size() - offset);
+            hetero::WindowSpec spec;
+            spec.pos0 = pos;
+            spec.token_ids.assign(o.tokens.begin() + offset, o.tokens.begin() + offset + count);
+            const auto result = run_window(spec, ++window, static_cast<uint32_t>(count));
+            next = result.predicted_tokens.back();
+            offset += count;
+            pos += static_cast<int64_t>(count);
+        }
+        for (uint32_t n = 0; n < o.generate; ++n) {
+            if (std::find(o.stop_ids.begin(), o.stop_ids.end(), next) != o.stop_ids.end()) {
+                stopped = true;
+                break;
+            }
+            generated.push_back(next);
+            if (n + 1 == o.generate) break;
+            hetero::WindowSpec spec;
+            spec.pos0 = pos++;
+            spec.token_ids = {next};
+            next = run_window(spec, ++window, 1).predicted_tokens.back();
+        }
+    } else {
+        for (uint32_t n = 0; n < o.windows; ++n) {
+            hetero::WindowSpec spec;
+            spec.pos0 = static_cast<int64_t>(uint64_t(n) * o.keep);
+            if (o.tokens.empty()) spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
+            else spec.token_ids.assign(o.tokens.begin() + static_cast<size_t>(n) * o.rows,
+                                       o.tokens.begin() + static_cast<size_t>(n + 1) * o.rows);
+            const auto committed = run_window(spec, uint64_t(n) + 1, o.keep);
+            if (!o.capture_prefix.empty()) capture_window(o, plan, spec, committed);
+            std::cout << "LIVE PASS window=" << n + 1 << " pos0=" << spec.pos0
+                      << " committed=" << o.keep << " predictions=";
+            // STFR records every evaluated row; log only the accepted prefix.
+            for (uint32_t t = 0; t < o.keep; ++t)
+                std::cout << committed.predicted_tokens[t] << ',';
+            std::cout << '\n';
+        }
     }
     std::string error;
     if (!workers.finish(error))
         throw std::runtime_error("worker shutdown failed: " + error);
+    if (o.generate) {
+        // Publish a completion only after every executed window was acknowledged
+        // and the supervised workers exited successfully.
+        std::cout << "HETERO_GENERATION {\"prompt_tokens\":" << o.tokens.size()
+                  << ",\"finish_reason\":\"" << (stopped ? "stop" : "length")
+                  << "\",\"token_ids\":[";
+        for (size_t i = 0; i < generated.size(); ++i) {
+            if (i) std::cout << ',';
+            std::cout << generated[i];
+        }
+        std::cout << "]}\n";
+        return 0;
+    }
     if (!o.capture_prefix.empty()) {
         std::ofstream complete(o.capture_prefix + ".complete.json", std::ios::binary);
         if (!complete) throw std::runtime_error("cannot create parity completion marker");

@@ -9,6 +9,11 @@ of existing CUDA-only or HIP-only inference.
 [docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
 Manual GPU validation and reported Oberon results:
 [docs/BOUNDARY_VALIDATION_M218_M222.md](docs/BOUNDARY_VALIDATION_M218_M222.md).
+Current next-phase implementation and manual runbook:
+[docs/GENERATION_M31_M35.md](docs/GENERATION_M31_M35.md).
+Reuse the original GGUF tokenizer, model chat template and existing native
+committed-window path. Do not implement a second generator or server; resident
+serving requires separately qualified request lifecycle/reset/cancellation.
 Native CUDA → HIP boundary and bounded state qualification passed on
 `5e1f868` and `1fdfc4e`; remaining native failure-path qualification is
 UNVERIFIED. Do not restart historical kernel-localization work.

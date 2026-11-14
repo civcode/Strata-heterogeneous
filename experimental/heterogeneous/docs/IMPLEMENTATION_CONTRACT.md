@@ -48,3 +48,7 @@ Work only in `/home/chris/workspace/Strata-heterogeneous` and `/home/chris/tmp/s
 [M2.18–M2.22 source audit, native boundary runbook and Oberon evidence](BOUNDARY_VALIDATION_M218_M222.md): the reported real CUDA → HIP → HIP boundary and bounded positive-prefix tests passed on `5e1f868` / `1fdfc4e`. The normal-path objective is demonstrated for those measured configurations; native fail-stop/partial-commit failure behavior and general readiness remain unverified. This evidence does not alter the requirements above.
 
 Historical evidence: [M2.9 mixed native run](LIVE_GPU_HANDOFF_M29.md), [M2.10 numerical parity](NUMERICAL_PARITY_M210.md), [M2.17 diagnostic](STAGE_MICRO_LOCALIZATION_M217.md). Production interfaces: [CUDA verifier](../src/cuda_verifier.cpp), [HIP verifier](../src/hip_verifier.cpp), [framing](../src/host.cpp), [window protocol](VERIFIER_WINDOW_V4.md).
+
+## M3 integration
+
+[Native text generation and serving integration roadmap](GENERATION_M31_M35.md): extend the same production-path contract to actual prompts and autoregressive decode. Reuse existing tokenizer, chat template, greedy head and native committed windows. No independent model executor or server implementation; require qualification of resident request lifecycle before enabling HTTP serving.

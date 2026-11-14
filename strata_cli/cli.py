@@ -43,6 +43,9 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action=_VersionAction, nargs=0,
                     help="print the version and the interpreter this terminal runs on")
     sp = ap.add_subparsers(dest="command", required=True)
+    from strata_cli import heterogeneous
+    heterogeneous.add_arguments(sp.add_parser("heterogeneous-generate",
+        help="experimental native CUDA/HIP text completion (explicit --run)"))
     serve = sp.add_parser("serve", help="start the existing Strata inference server in the foreground")
     serve.add_argument("--profile", "--config", dest="config", required=True, metavar="CONFIG.json")
     serve.add_argument("--engine", choices=("strata", "mock"), default="strata",
@@ -2129,6 +2132,9 @@ def _run(a: argparse.Namespace) -> int:
     try:
         if a.command == "serve":
             return _serve(a)
+        if a.command == "heterogeneous-generate":
+            from strata_cli import heterogeneous
+            return heterogeneous.run(a)
         if a.command == "install":
             return _install(a)
         if a.command == "repair-access":
