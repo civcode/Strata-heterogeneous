@@ -4,6 +4,7 @@
 // surrogate for residual/KV identity. Only committed-prefix cells are copied;
 // conversation_kv_save internally rounds to pages, so trim unused suffix.
 #include "strata/core/conversation_snapshot.hpp"
+#include "strata/core/mtp_front_trace.hpp"
 #include <cuda_runtime.h>
 #include <array>
 #include <cerrno>
@@ -24,7 +25,8 @@ public:
     MtpStateTrace(std::string prefix,const core::ModelGeometry& g)
         : prefix_(std::move(prefix)),g_(g) {}
     bool capture(const char* phase,const core::QsaState& state,const float* rows,
-                 const int32_t* tokens,size_t n,int64_t cell,int64_t upto,std::string& error) {
+                 const int32_t* tokens,size_t n,int64_t cell,int64_t upto,std::string& error,
+                 const void* front=nullptr) {
         if(prefix_.empty()) return true;
         if (state.kv_mode!=0 || !rows || !tokens || !n || n>8 || cell<0 || cell>max_cells ||
             cell+int64_t(n)>max_cells || upto<0 || upto>cell+int64_t(n) ||
@@ -80,11 +82,20 @@ public:
                 return true;
             },error))return false;
         }
+        if(front) {
+            if(n!=1 || std::strcmp(phase,"draft_after")!=0) {error="invalid front trace phase";return false;}
+            std::vector<uint8_t> raw(core::mtp_front_bytes);
+            if(cudaMemcpy(raw.data(),front,raw.size(),cudaMemcpyDeviceToHost)!=cudaSuccess) {
+                error="MTP front trace readback failed";return false;
+            }
+            if(!file(stem+".front.bin",[&](int fd){return write_all(fd,raw.data(),raw.size(),error);},error))return false;
+        }
         // Manifest LAST; incomplete captures must never be compared.
         std::ostringstream meta;
         meta<<"{\"schema\":\"strata-mtp-state/v2\",\"event\":"<<events_
             <<",\"phase\":\""<<phase<<"\",\"cell\":"<<cell<<",\"upto\":"<<upto
             <<",\"residual_stride\":"<<stride<<",\"format\":"<<kv.format
+            <<",\"front_schema\":"<<(front?1:0)<<",\"front_bytes\":"<<(front?core::mtp_front_bytes:0)
             <<",\"kv_strides\":["<<strides[0]<<','<<strides[1]<<','<<strides[2]<<','<<strides[3]
             <<"],\"tokens\":[";
         for(size_t i=0;i<n;++i){if(i)meta<<',';meta<<tokens[i];}

@@ -20,6 +20,7 @@
 #pragma once
 
 #include "strata/core/layer.hpp"
+#include "strata/core/mtp_front_trace.hpp"
 #include "strata/core/pinned_ring.hpp"
 #include "strata/core/session.hpp"
 #include "strata/kernels/sampler.hpp"
@@ -110,6 +111,9 @@ public:
     bool bind(const WeightTable& wt, const NativeHead* head, const float* window_R, std::string& err,
               const MtpDrafter* shared = nullptr);
     void set_window_R(const float* window_R) { window_R_ = window_R; }
+    // Diagnostic only: borrowed device buffer, installed before round graph
+    // capture and kept alive until this drafter (including graphs) is destroyed.
+    bool set_front_trace(void* device_buffer, size_t bytes, std::string& err);
 
     /// Prompt cells [cell0, cell0 + n): residual rows `R_rows` (device, hc*n_embd each) and `next_tokens` (host,
     /// the token at position cell+1).  Runs in batches of up to max_t rows.  `sync` false: returns without waiting
@@ -239,7 +243,9 @@ private:
     }
     /// The layer's front for T rows at step rows [row0, +T): the embedding, the fc projections, the attention
     /// hyper-connection read (R_, inj_, mixed_) and the K/V appended.
-    bool record_front(int T, int row0, cudaStream_t cs, std::string& err);
+    bool record_front(int T, int row0, cudaStream_t cs, std::string& err, bool trace_round = false);
+    bool trace_front_copy(MtpFrontField field, const void* src, cudaStream_t cs, std::string& err);
+    uint8_t* front_trace_ = nullptr;
     /// The rest for row 0 at step row `step_row`: the attention from the q projection, the MLP, the final mixer,
     /// the head, the draft and its probability.  Needs row 0's R_, inj_ and mixed_ (its q8_1 rows in xq_).
     bool record_rest(int step_row, cudaStream_t cs, std::string& err);

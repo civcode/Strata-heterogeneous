@@ -34,10 +34,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false)
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -47,6 +47,8 @@ public:
         if (!trace_prefix_.empty() && (std::getenv("STRATA_PARK_ASYNC") || std::getenv("STRATA_PARK_VRAM_MIB"))) {
             error="MTP state trace needs ordinary synchronous native snapshot configuration"; return false;
         }
+        if (front_trace_ && trace_prefix_.empty()) {error="MTP front trace needs state trace";return false;}
+        if (repeat_round_ && (!front_trace_ || relay_rounds_)) {error="MTP repeat needs one-shot front trace";return false;}
         if (relay_rounds_ > 1) {
             error="MTP relay draft-state reuse failed fresh-prefix qualification";
             return false;
@@ -113,6 +115,9 @@ public:
                 !ck(cudaMalloc(reinterpret_cast<void**>(&scratch_),bytes),error) ||
                 !drafter_->bind(b.weights,head_.get(),scratch_,error) ||
                 !ck(cudaDeviceSynchronize(),error) || !room(0,error)) return false;
+            if (front_trace_ && (!room(core::mtp_front_bytes,error) ||
+                !ck(cudaMalloc(&front_device_,core::mtp_front_bytes),error) ||
+                !drafter_->set_front_trace(front_device_,core::mtp_front_bytes,error) || !room(0,error))) return false;
             cursor_=std::make_unique<MtpPrefixCursor>(stride_,b.session.max_cells,g.n_vocab,b.max_t);
             n_vocab_=g.n_vocab;
             if (!trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
@@ -150,24 +155,28 @@ public:
             (relay_rounds_ && !trace_)) return true;
         return cursor_->finish(predictions[keep-1],
             [this](const float* row,int32_t next,int64_t cell,std::string& e) {
-                std::array<int32_t,8> tokens{};
-                std::array<float,8> probs{};
-                int n=0;
-                core::MtpDrafter::DraftResult result;
-                // Native draft_first copies into probe-owned scratch, never
-                // clobbers verifier R or submits candidates to target.
-                if (!capture("draft_before",row,&next,1,cell,cell,e) ||
-                    !room(512ull<<20,e) ||
-                    !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
-                    !room(0,e) || !capture("draft_after",row,&next,1,cell,cell+1,e)) return false;
-                if (n<1 || n>4 || result.generated!=n) {e="MTP probe invalid generated count";return false;}
-                for(int i=0;i<n;++i)
-                    if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
-                       probs[i]<0.f || probs[i]>1.f) {e="MTP probe invalid candidate";return false;}
-                std::fprintf(stderr,"HETERO_MTP_PROBE_DRAFT cell=%lld verified_next=%d count=%d tokens=",
-                             static_cast<long long>(cell),next,n);
-                for(int i=0;i<n;++i) std::fprintf(stderr,"%d,",tokens[i]);
-                std::fprintf(stderr," (not submitted to target)\n");
+                // In repeat mode the exact same native pair is evaluated
+                // twice, without a target launch, prime, or advance between.
+                // No physical rollback or reset. Neither offer is submitted.
+                for(unsigned attempt=0;attempt<(repeat_round_?2u:1u);++attempt) {
+                    std::array<int32_t,8> tokens{};
+                    std::array<float,8> probs{};
+                    int n=0;
+                    core::MtpDrafter::DraftResult result;
+                    if (!capture("draft_before",row,&next,1,cell,cell,e) ||
+                        !room(512ull<<20,e) ||
+                        !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
+                        !room(0,e) || !capture("draft_after",row,&next,1,cell,cell+1,e)) return false;
+                    if (n<1 || n>4 || result.generated!=n) {e="MTP probe invalid generated count";return false;}
+                    for(int i=0;i<n;++i)
+                        if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
+                           probs[i]<0.f || probs[i]>1.f) {e="MTP probe invalid candidate";return false;}
+                    std::fprintf(stderr,"HETERO_MTP_PROBE_DRAFT cell=%lld verified_next=%d count=%d tokens=",
+                                 static_cast<long long>(cell),next,n);
+                    for(int i=0;i<n;++i) std::fprintf(stderr,"%d,",tokens[i]);
+                    std::fprintf(stderr," (not submitted to target)\n");
+                    if(repeat_round_) std::fprintf(stderr,"HETERO_MTP_REPEAT_NATIVE_ROUND attempt=%u\n",attempt+1);
+                }
                 return true;
             },error);
     }
@@ -213,6 +222,8 @@ public:
         // unconfirmed runtime drain. Draft graphs die before their inputs.
         if(cudaSetDevice(device_)!=cudaSuccess || cudaDeviceSynchronize()!=cudaSuccess) std::_Exit(70);
         drafter_.reset();
+        if(front_device_ && cudaFree(front_device_)!=cudaSuccess) std::_Exit(70);
+        front_device_=nullptr;
         cursor_.reset();
         if(scratch_ && cudaFree(scratch_)!=cudaSuccess) std::_Exit(70);
         scratch_=nullptr;
@@ -230,6 +241,9 @@ private:
     bool relay_pending_=false;
     std::string trace_prefix_;
     bool reprime_tail_=false;
+    bool front_trace_=false;
+    bool repeat_round_=false;
+    void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;
     int64_t n_vocab_=0;
@@ -255,7 +269,8 @@ private:
     }
     bool capture(const char* phase,const float* rows,const int32_t* next,size_t n,
                  int64_t cell,int64_t upto,std::string& e) {
-        return !trace_ || trace_->capture(phase,drafter_->kv_state(),rows,next,n,cell,upto,e);
+        return !trace_ || trace_->capture(phase,drafter_->kv_state(),rows,next,n,cell,upto,e,
+            std::strcmp(phase,"draft_after")==0?front_device_:nullptr);
     }
     std::function<bool(const float*,const int32_t*,size_t,int64_t,std::string&)> prime() {
         return [this](const float* rows,const int32_t* next,size_t n,int64_t cell,std::string& e) {

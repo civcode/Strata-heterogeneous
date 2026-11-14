@@ -1028,13 +1028,42 @@ bool MtpDrafter::record_forward(int T, int step_row0, cudaStream_t cs, std::stri
     return !full || record_rest(step_row0, cs, err);
 }
 
-bool MtpDrafter::record_front(int T, int row0, cudaStream_t cs, std::string& err) {
+bool MtpDrafter::set_front_trace(void* device_buffer, size_t bytes, std::string& err) {
+#if defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
+    if (!g_ || !device_buffer || front_trace_ || bytes!=mtp_front_bytes || chain_live_ ||
+        g_->n_embd!=2560 || g_->hc!=4 || g_->n_head!=24 || g_->n_head_kv!=2 || g_->head_dim!=256) {
+        err="mtp: invalid one-row front trace admission"; return false;
+    }
+    for (auto exec:round_exec_) if(exec) {err="mtp: trace must precede capture"; return false;}
+    for (auto exec:round_exec_c_) if(exec) {err="mtp: trace must precede coupled capture"; return false;}
+    front_trace_=static_cast<uint8_t*>(device_buffer);
+    return true;
+#else
+    (void)device_buffer; (void)bytes;
+    err="mtp: bounded front trace supports native wave32 HIP only"; return false;
+#endif
+}
+bool MtpDrafter::trace_front_copy(MtpFrontField field, const void* src, cudaStream_t cs, std::string& err) {
+    if (!front_trace_) return true;
+    if (cudaMemcpyAsync(front_trace_+mtp_front_offset(field),src,
+                        mtp_front_sizes[static_cast<size_t>(field)],cudaMemcpyDeviceToDevice,cs)!=cudaSuccess) {
+        err="mtp: front trace device copy failed"; return false;
+    }
+    return true;
+}
+bool MtpDrafter::record_front(int T, int row0, cudaStream_t cs, std::string& err, bool trace_round) {
     using namespace strata::kernels;
     const ModelGeometry& g = *g_;
     const int64_t N = g.n_embd, HC = g.hc, NH = g.n_head, HD = g.head_dim, NKV = g.n_head_kv;
     const QsaShapes s = shapes_of(g);
     const int32_t* step = step_ + row0 * 4;
     const int32_t* pos = pos_ + row0 * NH;
+    using F=MtpFrontField;
+    const auto tap=[&](F field,const void* ptr) {
+        return !trace_round || trace_front_copy(field,ptr,cs,err);
+    };
+    if (!tap(F::token,tok_) || !tap(F::step,step) || !tap(F::position,pos) ||
+        !tap(F::residual,Rin_)) return false;
     // --mtp-q4: each projection's format and weights for this pass (Q8_0 unless the Q4_0 copies exist)
     int wt_fc_embedding, wt_fc_hidden, wt_k_proj, wt_v_proj;
     const void* wp_fc_embedding = wq("fc_embedding.weight", wt_fc_embedding);
@@ -1055,20 +1084,26 @@ bool MtpDrafter::record_front(int T, int row0, cudaStream_t cs, std::string& err
             embedding_gather_dev(codes, scales, offsets, tok_, T, we->ne0, we->code_bits, we->code_bias, we->group_elems,
                                  (uint64_t) (we->ne0 / (8 / we->code_bits)), (uint64_t) (we->ne0 / we->group_elems), emb_, cs);
         }
+        if (!tap(F::embedding,emb_)) return false;
         native_qsa_rms_norm_weighted(emb_, f32("pre_fc_norm_embedding.weight"), en_, (int) N, T, EPS, cs);
+        if (!tap(F::embedding_norm,en_)) return false;
         native_quantize_q8_1(en_, xq_, (int) N, T, cs);
         native_mmvq(wt_fc_embedding, wp_fc_embedding, xq_, e2_, (int) N, (int) N, T, cs);
+        if (!tap(F::embedding_fc,e2_)) return false;
         g_mp.stamp(1, cs);
         if (hnorm_stream_)   // --mtp-hnorm stream: one RMS per stream, each scaled by its slice of the weight
             native_qsa_rms_norm_grouped(Rin_, f32("pre_fc_norm_hidden.weight"), hn_, (int) N, (int) HC, (int) (T * HC), EPS, cs);
         else
             native_qsa_rms_norm_weighted(Rin_, f32("pre_fc_norm_hidden.weight"), hn_, (int) (HC * N), T, EPS, cs);
+        if (!tap(F::hidden_norm,hn_)) return false;
         for (int c0 = 0; c0 < T * HC; c0 += 8) {
             const int nc = (int) std::min<int64_t>(8, T * HC - c0);
             native_quantize_q8_1(hn_ + (size_t) c0 * N, xq_, (int) N, nc, cs);
             native_mmvq(wt_fc_hidden, wp_fc_hidden, xq_, h2_ + (size_t) c0 * N, (int) N, (int) N, nc, cs);
         }
+        if (!tap(F::hidden_fc,h2_)) return false;
         add_streams_broadcast(h2_, e2_, R_, N, (int) HC, T, cs);
+        if (!tap(F::mixed_residual,R_)) return false;
         g_mp.stamp(2, cs);
         // ---- the attention hyper-connection
         const bool qfuse_hc = mtp_qfuse_hc_on();
@@ -1090,8 +1125,10 @@ bool MtpDrafter::record_front(int T, int row0, cudaStream_t cs, std::string& err
         g_mp.stamp(3, cs);
         // ---- attention: K/V into the layer's own cache
         if (!q8_attn) native_quantize_q8_1(mixed_, xq_, (int) N, T, cs);
+        if (!tap(F::inject,inj_) || !tap(F::mixed,mixed_) || !tap(F::q8_mixed,xq_)) return false;
         native_mmvq(wt_k_proj, wp_k_proj, xq_, kcur_, (int) N, (int) (NKV * HD), T, cs);
         native_mmvq(wt_v_proj, wp_v_proj, xq_, vcur_, (int) N, (int) (NKV * HD), T, cs);
+        if (!tap(F::k_project,kcur_) || !tap(F::v_project,vcur_)) return false;
         // #783 PR-d (stuchapin909): the T tokens' K norm, K/V rotation and K/V append each run once over all T rows
         // (every row is independent; the rope keeps its per-token positions). STRATA_NO_BATCH_KV_STEP=1 appends per token.
         static const bool no_batch_kv = [] {
@@ -1117,6 +1154,7 @@ bool MtpDrafter::record_front(int T, int row0, cudaStream_t cs, std::string& err
             fwht256_inplace_cuda(kcur_, (int64_t) T * NKV, cs);
             fwht256_inplace_cuda(vcur_, (int64_t) T * NKV, cs);
         }
+        if (!tap(F::k_append,kcur_) || !tap(F::v_append,vcur_)) return false;
         // stored in the state's own format (#293 appended rotated INT8 K/V as Q4_0, into pools INT8 never has)
         if (!no_batch_kv && st_.kv_q4)
             kv_append_q4_steps(st_.k_q4, st_.v_q4, st_.page_table, step, 4, T, kcur_, vcur_, s, cs, &st_.host);
@@ -1432,6 +1470,7 @@ bool MtpDrafter::capture_prefill_dev(int T, std::string& err) {
 bool MtpDrafter::capture_round(int T, bool coupled, std::string& err) {
     cudaGraphExec_t& exec = coupled ? round_exec_c_[T] : round_exec_[T];
     if (exec) return true;
+    if (front_trace_ && (T!=1 || coupled)) {err="mtp: trace requires one-row greedy round"; return false;}
     using namespace strata::kernels;
     const int64_t HCN = g_->hc * g_->n_embd;
     g_mp.init();   // (its allocation before the capture)
@@ -1450,7 +1489,12 @@ bool MtpDrafter::capture_round(int T, bool coupled, std::string& err) {
                               {row_, m_row_, 2}, {Rin_, window_R_, T * HCN}, {step_ + ra * 4, m_step_ + ra * 4, 4},
                               {pos_ + ra * NH, m_pos_ + ra * NH, NH}};
     copy_from_mapped_multi(in, 7, cs_);
-    ok = record_front(T, 0, cs_, err);
+    if (front_trace_) {
+        ok=trace_front_copy(MtpFrontField::rest_step,step_+ra*4,cs_,err) &&
+           trace_front_copy(MtpFrontField::rest_position,pos_+ra*NH,cs_,err) &&
+           trace_front_copy(MtpFrontField::selected_row,row_,cs_,err);
+    }
+    if (ok) ok = record_front(T, 0, cs_, err, front_trace_!=nullptr);
     if (ok) {
         if (T > 1) {
             copy_row_to_first(row_, R_, HCN, inj_, g_->hc, mixed_, N, cs_);

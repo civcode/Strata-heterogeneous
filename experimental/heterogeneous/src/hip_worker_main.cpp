@@ -169,11 +169,14 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         const char* raw_prefix=std::getenv("STRATA_HETERO_MTP_STATE_PREFIX");
         const std::string trace_prefix=raw_prefix?raw_prefix:"";
         const bool reprime=hetero::performance_flag("STRATA_HETERO_MTP_REPRIME_TAIL");
+        const bool front_trace=hetero::performance_flag("STRATA_HETERO_MTP_FRONT_TRACE");
+        const bool repeat_round=hetero::performance_flag("STRATA_HETERO_MTP_REPEAT_NATIVE_ROUND");
+        if (repeat_round && (!front_trace || relay)) throw std::runtime_error("invalid MTP repeat mode");
         if ((!trace_prefix.empty() && (trace_prefix.front()!='/' || trace_prefix.size()>4096 || relay>1)) ||
-            (reprime && (trace_prefix.empty() || relay!=1))) throw std::runtime_error("invalid bounded MTP state trace");
+            (reprime && (trace_prefix.empty() || relay!=1)) || (front_trace && trace_prefix.empty())) throw std::runtime_error("invalid bounded MTP state trace");
         const auto& last=configs.back().fields;
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
-                                                  last.arena_budget_bytes,unsigned(n[0]-'0'),relay,trace_prefix,reprime);
+                                                  last.arena_budget_bytes,unsigned(n[0]-'0'),relay,trace_prefix,reprime,front_trace,repeat_round);
     }
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
     if (mtp) final.set_observer(mtp.get());
