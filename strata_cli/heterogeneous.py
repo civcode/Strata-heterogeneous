@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 
 def add_arguments(parser):
@@ -24,9 +25,15 @@ def add_arguments(parser):
     prompt = parser.add_mutually_exclusive_group(required=True)
     prompt.add_argument("--prompt", help="text completion prompt or one chat user message")
     prompt.add_argument("--prompt-file", type=Path, help="UTF-8 text file, at most 64 KiB")
+    prompt.add_argument("--write-server-config", type=Path, help="validate and write a new loopback server JSON; no GPU startup")
+    parser.add_argument("--model-name", default="qwen3.8-flash-next", help="served model name for generated config")
     parser.add_argument("--chat", action="store_true", help="render one user message with the exact model chat template")
     parser.add_argument("--max-new-tokens", type=int, default=16, help="1..256, existing greedy head")
-    parser.add_argument("--prompt-chunk", type=int, default=1, help="1..8, limited by every worker's max_t")
+    parser.add_argument("--prompt-chunk", type=int, default=1, help="1..8; 0 selects largest safe verifier window")
+    parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 2..8192; worker capacities still apply")
+    parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
+    parser.add_argument("--restart-clean", action="store_true", help="opt-in server restart only after verified old process-group exit")
+    parser.add_argument("--benchmark-repeat", type=int, default=1, help="repeat resident prompt sequence 1..20 times; JSON includes timing")
     parser.add_argument("--timeout-ms", type=int, default=120000, help="per worker I/O operation")
     parser.add_argument("--shared", action="store_true", help="use existing memfd transport")
     parser.add_argument("--run", action="store_true", help="explicitly start native GPU workers; default is preflight only")
@@ -67,8 +74,9 @@ def _native(argv, *, text=None, marker=None):
 
 def prepare_native(args):
     """CPU-only source/identity and tokenizer loading for the CLI and server."""
-    if not 1 <= args.max_new_tokens <= 256 or not 1 <= args.prompt_chunk <= 8:
-        raise ValueError("max-new-tokens must be 1..256 and prompt-chunk 1..8")
+    from serve.heterogeneous_contract import generation_limits
+    if not 1 <= args.max_new_tokens <= 256 or not 0 <= args.prompt_chunk <= 8:
+        raise ValueError("max-new-tokens must be 1..256 and prompt-chunk 0..8")
     argv = [_path(args.coordinator, True), "--plan", args.plan, "--fingerprint", str(args.fingerprint),
             "--layers", str(args.layers), "--hc", str(args.hc), "--n-embd", str(args.n_embd),
             "--cuda-worker", _path(args.cuda_worker, True), "--hip-worker", _path(args.hip_worker, True),
@@ -90,6 +98,13 @@ def prepare_native(args):
             any(c not in "0123456789abcdef" for c in index) or
             any(type(n) is not int or n <= 0 for n in (vocab, cells, max_t))):
         raise ValueError("invalid validated model source description")
+    context, chunk = generation_limits(cells, max_t, vocab, args.hc, args.n_embd,
+                                       getattr(args, "max_context", 4096),
+                                       args.max_new_tokens, args.prompt_chunk)
+    args.prompt_chunk = chunk
+    source.update(context_limit=context, prompt_chunk=chunk,
+                  stream_tokens=getattr(args, "stream_tokens", False),
+                  restart_clean=getattr(args, "restart_clean", False))
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -106,7 +121,10 @@ def prepare_native(args):
         raise ValueError("no valid model end-of-generation token IDs")
     native = argv + ["--generate", str(args.max_new_tokens), "--prompt-chunk", str(args.prompt_chunk),
                      "--source-gguf", gguf, "--source-index", index,
-                     "--stop-ids", ",".join(str(t) for t in sorted(stop_ids))]
+                     "--stop-ids", ",".join(str(t) for t in sorted(stop_ids)),
+                     "--context-limit", str(context)]
+    if source["stream_tokens"]:
+        native.append("--stream-tokens")
     return native, source, tok, stop_ids
 
 
@@ -136,16 +154,48 @@ def encode_prompt(tok, source, prompt, chat, max_new, chunk):
         ids = tok.encode(rendered, parse_special=True, plain=plain)
     else:
         ids = tok.encode(prompt, parse_special=False)
-    if not ids or len(ids) > 4096:
-        raise ValueError("prompt must encode to 1..4096 tokens")
-    if len(ids) + max_new > source["max_cells"] or min(len(ids), chunk) > source["max_t"]:
-        raise ValueError("prompt/generation budget exceeds validated worker context or max_t")
+    from serve.heterogeneous_contract import validate_request
+    validate_request(ids, max_new, source["vocab"],
+                     source.get("context_limit", min(source["max_cells"], 4096)))
+    if min(len(ids), chunk) > source["max_t"]:
+        raise ValueError("prompt chunk exceeds validated worker max_t")
     return ids
 
 
+def write_server_config(args):
+    from serve.heterogeneous import prepare_server
+    cfg = {"model_name": args.model_name, "host": "127.0.0.1",
+           "max_queue": 0, "reasoning_effort": "none",
+           "heterogeneous": {key: getattr(args, key) for key in
+               ("plan", "fingerprint", "layers", "hc", "n_embd", "max_new_tokens",
+                "prompt_chunk", "max_context", "timeout_ms", "shared", "stream_tokens",
+                "restart_clean")}}
+    for key in ("coordinator", "cuda_worker", "hip_worker"):
+        cfg["heterogeneous"][key] = _path(getattr(args, key), True)
+    cfg["heterogeneous"]["config"] = [_path(p) for p in args.config]
+    if not isinstance(args.model_name, str) or not args.model_name.strip():
+        raise ValueError("model-name must be nonempty")
+    prepare_server(cfg)
+    with args.write_server_config.open("x", encoding="utf-8") as out:
+        json.dump(cfg, out, indent=2)
+        out.write("\n")
+    print(json.dumps({"status": "preflight", "server_config": str(args.write_server_config.resolve())}))
+    return 0
+
+
 def run(args):
-    if not 1 <= args.max_new_tokens <= 256 or not 1 <= args.prompt_chunk <= 8:
-        raise ValueError("max-new-tokens must be 1..256 and prompt-chunk 1..8")
+    if not 1 <= args.max_new_tokens <= 256 or not 0 <= args.prompt_chunk <= 8:
+        raise ValueError("max-new-tokens must be 1..256 and prompt-chunk 0..8")
+    if not 1 <= args.benchmark_repeat <= 20:
+        raise ValueError("benchmark-repeat must be 1..20")
+    if args.write_server_config is not None:
+        if args.run or args.resident or args.chat or args.additional_prompt or args.benchmark_repeat != 1:
+            raise ValueError("config generation is CPU-only and cannot be combined with generation")
+        return write_server_config(args)
+    if args.restart_clean:
+        raise ValueError("--restart-clean applies only to generated server config")
+    if (args.stream_tokens or args.benchmark_repeat != 1) and not args.resident:
+        raise ValueError("stream-tokens and benchmark-repeat require --resident")
     if args.prompt_file is not None:
         with args.prompt_file.open("rb") as stream:
             data = stream.read(65537)
@@ -166,25 +216,34 @@ def run(args):
         from threading import Event
         prompts = [ids] + [encode_prompt(tok, source, txt, args.chat, args.max_new_tokens, args.prompt_chunk)
                            for txt in args.additional_prompt]
+        if len(prompts) * args.benchmark_repeat > 100:
+            raise ValueError("resident benchmark limited to 100 total requests")
+        prompts *= args.benchmark_repeat
         resident = native + ["--resident"]
         _native(resident)
         if not args.run:
             result = {"status": "preflight", "source": source, "prompt_token_ids": prompts}
         else:
+            start = time.perf_counter()
             engine = ResidentEngine(resident, source, stop_ids, args.max_new_tokens,
                                     args.prompt_chunk, args.timeout_ms, ValueError)
+            startup_ms = (time.perf_counter() - start) * 1000
             try:
                 completions = []
                 for ids in prompts:
                     for _ in engine.generate(ids, args.max_new_tokens, {"temperature": 0}, Event()):
                         pass
                     record = dict(engine.last_completion)
-                    record.update(text=tok.decode(record["token_ids"]), prompt_token_ids=ids)
+                    record.update(text=tok.decode(record["token_ids"]), prompt_token_ids=ids,
+                                  timing=engine.last_metrics)
                     completions.append(record)
                 result = {"status": "complete", "coordinator_pid": engine.proc.pid,
-                          "source": source, "completions": completions}
+                          "source": source, "completions": completions,
+                          "startup_ms": startup_ms}
             finally:
+                start_close = time.perf_counter()
                 engine.close()
+            result["shutdown_ms"] = (time.perf_counter() - start_close) * 1000
         if args.output == "json":
             print(json.dumps(result, ensure_ascii=True))
         elif args.run:

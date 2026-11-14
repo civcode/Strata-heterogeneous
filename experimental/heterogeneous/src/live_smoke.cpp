@@ -37,6 +37,8 @@ struct Options {
     uint32_t generate = 0, prompt_chunk = 1;
     bool describe_source = false;
     bool resident = false;
+    bool stream_tokens = false;
+    uint32_t context_limit = 4096;
     uint32_t layers = 48;
     uint32_t hc = 4;
     uint32_t n_embd = 2560;
@@ -89,6 +91,7 @@ void usage() {
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
         "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
+        "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
 // Input is local, but bounded before allocation beyond the documented cap.
@@ -108,19 +111,19 @@ bool read_command(std::string& line) {
         throw std::runtime_error("incomplete resident command");
     return false;
 }
-std::vector<int32_t> prompt_ids(std::istream& in) {
+std::vector<int32_t> prompt_ids(std::istream& in, uint32_t limit) {
     std::string word;
     std::vector<int32_t> ids;
     while (in >> word) {
         const auto n = u32(word, "prompt token");
-        if (n > INT32_MAX || ids.size() >= 4096)
-            throw std::invalid_argument("prompt exceeds token bounds (4096 IDs)");
+        if (n > INT32_MAX || ids.size() >= limit)
+            throw std::invalid_argument("prompt exceeds configured token bound");
         ids.push_back(static_cast<int32_t>(n));
     }
     if (ids.empty()) throw std::invalid_argument("prompt token input is empty");
     return ids;
 }
-std::vector<int32_t> prompt_from_stdin() {
+std::vector<int32_t> prompt_from_stdin(uint32_t limit) {
     std::string input;
     char c;
     while (std::cin.get(c)) {
@@ -131,7 +134,7 @@ std::vector<int32_t> prompt_from_stdin() {
     if (!std::cin.eof() || std::cin.bad())
         throw std::runtime_error("could not read prompt token input");
     std::istringstream in(input);
-    return prompt_ids(in);
+    return prompt_ids(in, limit);
 }
 Options parse(int argc, char** argv) {
     Options o;
@@ -150,6 +153,13 @@ Options parse(int argc, char** argv) {
         else if (key == "--shared") o.shared = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
+        else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
+        else if (key == "--context-limit") {
+            generation_arg = true;
+            o.context_limit = u32(required_value(i, argc, argv, "--context-limit"), "context-limit");
+            if (o.context_limit < 2 || o.context_limit > 8192)
+                throw std::invalid_argument("--context-limit must be in 2..8192");
+        }
         else if (key == "--generate") {
             generation_arg = true;
             o.generate = u32(required_value(i, argc, argv, "--generate"), "generate");
@@ -248,10 +258,18 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.stream_tokens && !o.resident)
+        throw std::invalid_argument("--stream-tokens requires --resident");
     if (o.generate) {
+        if (o.generate >= o.context_limit)
+            throw std::invalid_argument("completion budget leaves no prompt context");
         if (o.source_gguf.empty() || o.source_index.empty() || o.stop_ids.empty())
             throw std::invalid_argument("generation requires validated source and stop IDs");
-        if (!o.resident) o.tokens = prompt_from_stdin();
+        if (!o.resident) {
+            o.tokens = prompt_from_stdin(o.context_limit);
+            if (uint64_t(o.tokens.size()) + o.generate > o.context_limit)
+                throw std::invalid_argument("prompt and completion exceed context limit");
+        }
     } else if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows) {
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     }
@@ -542,7 +560,14 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         auto checkpoint = [&]() {
             if (!o.resident) return true;
             std::cout << "HETERO_PROGRESS " << request_id << ' ' << window
-                      << ' ' << pos << std::endl;
+                      << ' ' << pos;
+            if (o.stream_tokens) {
+                // Only committed predictions, never intermediate prompt rows or stop IDs.
+                const bool available = pos >= static_cast<int64_t>(prompt.size()) &&
+                    std::find(o.stop_ids.begin(), o.stop_ids.end(), next) == o.stop_ids.end();
+                std::cout << ' ' << (available ? next : -1);
+            }
+            std::cout << std::endl;
             std::string command;
             if (!read_command(command)) { input_closed = true; cancelled = true; return false; }
             if (command == "cancel") { cancelled = true; return false; }
@@ -591,7 +616,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (o.resident) {
         // Negotiate actual reset support before announcing readiness.
         session.begin_request(request_id);
-        std::cout << "HETERO_READY " << request_id << std::endl;
+        std::cout << "HETERO_READY " << request_id;
+        if (o.stream_tokens) std::cout << " STREAM";
+        std::cout << std::endl;
         bool first = true;
         std::string line;
         while (!input_closed && read_command(line)) {
@@ -600,9 +627,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             std::string count;
             in >> count;
             const uint32_t max_new = u32(count, "resident max-new-tokens");
-            const auto prompt = prompt_ids(in);
+            const auto prompt = prompt_ids(in, o.context_limit);
             if (!max_new || max_new > o.generate ||
                 uint64_t(prompt.size()) + max_new > limits.max_cells ||
+                uint64_t(prompt.size()) + max_new > o.context_limit ||
                 std::any_of(prompt.begin(), prompt.end(), [&](int32_t id) {
                     return static_cast<uint32_t>(id) >= limits.vocab;
                 }))

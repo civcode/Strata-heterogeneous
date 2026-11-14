@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 import queue
 import subprocess
 import sys
 import threading
+
+from serve.heterogeneous_contract import validate_request, Progress, timing_record
 
 
 def prepare_server(cfg):
@@ -21,7 +25,8 @@ def prepare_server(cfg):
     if not isinstance(opts, dict):
         raise ValueError("heterogeneous engine needs a heterogeneous config object")
     required = {"coordinator", "cuda_worker", "hip_worker", "config", "plan", "fingerprint"}
-    optional = {"layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared"}
+    optional = {"layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
+                "max_context", "stream_tokens", "restart_clean"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     for key in ("coordinator", "cuda_worker", "hip_worker", "plan"):
@@ -31,13 +36,17 @@ def prepare_server(cfg):
             isinstance(x, str) and x for x in opts["config"]):
         raise ValueError("heterogeneous.config must list ordered worker config paths")
     values = dict(layers=48, hc=4, n_embd=2560, max_new_tokens=32,
-                  prompt_chunk=1, timeout_ms=120000, shared=False)
+                  prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
+                  stream_tokens=False, restart_clean=False)
     values.update(opts)
-    for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms"):
+    for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
             raise ValueError(f"heterogeneous.{key} must be a positive integer")
-    if type(values["shared"]) is not bool:
-        raise ValueError("heterogeneous.shared must be boolean")
+    if type(values["prompt_chunk"]) is not int or not 0 <= values["prompt_chunk"] <= 8:
+        raise ValueError("heterogeneous.prompt_chunk must be 0..8")
+    for key in ("shared", "stream_tokens", "restart_clean"):
+        if type(values[key]) is not bool:
+            raise ValueError(f"heterogeneous.{key} must be boolean")
     args = argparse.Namespace(**values)
     argv, source, tokenizer, stops = prepare_native(args)
     template = model_template(source)
@@ -54,7 +63,11 @@ class ResidentEngine:
     def __init__(self, argv, source, stop_ids, max_new, chunk, timeout_ms, died):
         self.source = source
         self.stop_ids = set(stop_ids)
-        self.max_context = min(source["max_cells"], 4096)
+        self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
+        self.stream_tokens = source.get("stream_tokens", False)
+        self._restart_clean = source.get("restart_clean", False)
+        self._argv = tuple(argv)
+        self.last_metrics = None
         self.max_new = max_new
         self.chunk = chunk
         self.info = {"version": "heterogeneous-resident/experimental"}
@@ -69,7 +82,14 @@ class ResidentEngine:
         # per-operation timeouts remain authoritative.
         stages = argv.count("--config")
         self._deadline = max(10, timeout_ms / 1000 * (4 * stages + 4))
-        self.proc = subprocess.Popen(argv + ["--run"], stdin=subprocess.PIPE,
+        self._launch()
+
+    def _launch(self):
+        self._records = queue.Queue()
+        self._request = 0
+        self._failed = False
+        self.last_completion = self.last_metrics = None
+        self.proc = subprocess.Popen([*self._argv, "--run"], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=None, text=True,
                                      encoding="utf-8", errors="replace", bufsize=1,
                                      start_new_session=True)
@@ -77,7 +97,8 @@ class ResidentEngine:
                                         name="heterogeneous-native-output")
         self._reader.start()
         try:
-            if self._receive() != "HETERO_READY 1":
+            expected = "HETERO_READY 1 STREAM" if self.stream_tokens else "HETERO_READY 1"
+            if self._receive() != expected:
                 raise self._died("native resident readiness not acknowledged")
             print(f"HETERO_READY coordinator_pid={self.proc.pid}", file=sys.stderr, flush=True)
         except BaseException:
@@ -131,17 +152,36 @@ class ResidentEngine:
         return not self._closed and not self._failed and self.proc.poll() is None
 
     def restart(self):
-        # Never automatically reload or reuse an uncertain worker set.
-        raise self._died("heterogeneous resident engine stopped; restart the server explicitly")
+        # Opt-in only; never replay a failed request or overlap worker sets.
+        # Native children inherit the coordinator's new process group.
+        if not self._restart_clean or self._closed:
+            raise self._died("heterogeneous resident engine stopped; restart the server explicitly")
+        with self._lock:
+            if self.alive():
+                return
+            self._poison()
+            self._wait_exit()
+            self._reader.join(timeout=self._deadline)
+            if self._reader.is_alive():
+                raise self._died("old coordinator reader still active; restart refused")
+            try:
+                os.killpg(self.proc.pid, 0)  # existence check only, no signal delivery
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                raise self._died("cannot verify old process group exit; restart refused") from exc
+            else:
+                raise self._died("old process group still exists; restart refused")
+            self.proc.stdout.close()
+            self._launch()
 
     def exit_code(self):
         return self.proc.poll()
 
     def _validate(self, ids, max_new, sampling, embeddings):
-        if (embeddings is not None or type(max_new) is not int or not 1 <= max_new <= self.max_new or
-                not ids or len(ids) > 4096 or len(ids) + max_new > self.max_context or
-                any(type(t) is not int or not 0 <= t < self.source["vocab"] for t in ids)):
-            raise ValueError("unsupported resident request, prompt tokens or completion budget")
+        if embeddings is not None or type(max_new) is not int or not 1 <= max_new <= self.max_new:
+            raise ValueError("unsupported resident request or completion budget")
+        validate_request(ids, max_new, self.source["vocab"], self.max_context)
         sampling = sampling or {}
         allowed = {"temperature": (None, 0), "top_p": (None, 1),
                    "top_k": (None, 0, 1), "min_p": (None, 0),
@@ -190,30 +230,38 @@ class ResidentEngine:
             if not self.alive():
                 raise self._died("resident engine unavailable; restart required")
             self._request += 1
-            self.last_completion = None
-            waiting = False
-            completed = False
-            cancelled = False
-            window = pos = 0
+            self.last_completion = self.last_metrics = None
+            waiting = completed = cancelled = False
+            progress = Progress(self._request, len(ids), max_new, self.chunk,
+                                self.source["vocab"], self.stop_ids, self.stream_tokens)
+            start = time.perf_counter()
+            prefill_end = last_checkpoint = first_output = None
+            emitted = 0
             try:
                 self._send(" ".join(map(str, [max_new, *ids])))
                 while True:
                     line = self._receive()
                     if line.startswith("HETERO_PROGRESS "):
-                        # No output token is exposed before the native request
-                        # completes. Heartbeats let Service notice disconnects.
                         try:
-                            request, current, end = map(int, line.split()[1:])
-                        except (ValueError, TypeError) as exc:
-                            raise self._died("malformed resident progress") from exc
-                        expected = pos + (min(self.chunk, len(ids) - pos) if pos < len(ids) else 1)
-                        if (cancelled or request != self._request or current != window + 1 or
-                                end != expected or end > len(ids) + max_new - 1):
-                            raise self._died("resident progress identity or position mismatch")
-                        window, pos = current, end
+                            if cancelled:
+                                raise ValueError("progress after cancellation")
+                            token = progress.accept(line)
+                        except ValueError as exc:
+                            raise self._died("invalid resident progress") from exc
+                        last_checkpoint = time.perf_counter()
+                        if progress.pos >= len(ids) and prefill_end is None:
+                            prefill_end = last_checkpoint
                         waiting = True
                         if not cancel.is_set():
-                            yield None
+                            # Service may close at the output cap: validate the
+                            # final record before releasing the last capped token.
+                            if token is not None and len(progress.tokens) < max_new:
+                                if first_output is None:
+                                    first_output = time.perf_counter()
+                                emitted += 1
+                                yield token
+                            else:
+                                yield None
                         cancelled = cancel.is_set()
                         self._send("cancel" if cancelled else "continue")
                         waiting = False
@@ -222,16 +270,24 @@ class ResidentEngine:
                         reason = record["finish_reason"]
                         expected = len(ids) + len(record["token_ids"]) - (reason == "length")
                         if (cancelled != (reason == "cancelled") or
-                                (not cancelled and pos != expected)):
-                            raise self._died("resident completion disagrees with committed positions")
+                                (not cancelled and progress.pos != expected) or
+                                (self.stream_tokens and not cancelled and
+                                 (progress.tokens != record["token_ids"] or
+                                  progress.terminal != (reason == "stop")))):
+                            raise self._died("resident completion disagrees with committed positions or streamed tokens")
                         self.last_completion = record
-                        print(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={pos}",
+                        end = time.perf_counter()
+                        if first_output is None and record["token_ids"]:
+                            first_output = end
+                        self.last_metrics = timing_record(start, end, prefill_end, last_checkpoint,
+                                                          first_output, len(ids), progress.pos,
+                                                          len(record["token_ids"]))
+                        print(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}",
                               file=sys.stderr, flush=True)
                         completed = True
                         break
             except GeneratorExit:
-                # The only suspension before completion is a committed
-                # checkpoint. Drain its cancellation ACK before releasing FIFO.
+                # Drain cancellation at a committed checkpoint before unlocking.
                 if waiting:
                     try:
                         self._send("cancel")
@@ -239,7 +295,7 @@ class ResidentEngine:
                         if record["finish_reason"] != "cancelled":
                             raise self._died("resident cancellation not acknowledged")
                         self.last_completion = record
-                        print(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={pos}",
+                        print(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}",
                               file=sys.stderr, flush=True)
                         completed = True
                         waiting = False
@@ -255,7 +311,7 @@ class ResidentEngine:
                     self._poison()
             if cancelled or cancel.is_set():
                 return
-            for token in record["token_ids"]:
+            for token in record["token_ids"][emitted:]:
                 if cancel.is_set():
                     return
                 yield token
@@ -280,6 +336,10 @@ class ResidentEngine:
                     raise
             self._poison()
             code = self._wait_exit()
+            self._reader.join(timeout=self._deadline)
+            if self._reader.is_alive():
+                raise self._died("native output reader did not exit; operator inspection required")
+            self.proc.stdout.close()
             self._closed = True
             if code:
                 raise self._died(f"native resident coordinator exited with status {code}")
