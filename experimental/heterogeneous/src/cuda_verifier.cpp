@@ -128,7 +128,9 @@ bool CudaVerifierDriver::wait_upload(std::string& error) {
     if (!expect(State::uploading, error) || !wait(error)) return false;
     if (plan_.stages[index_].first_layer != 0 &&
         !capture_device_handoff(input_, staging_, bytes_, index_, request_,
-                                window_, "in", error)) return false;
+                                window_, "in", verifier_->stream(),
+                                [this](std::string& e) { return record(e) && wait(e); },
+                                error)) return false;
     state_ = State::uploaded; return true;
 }
 bool CudaVerifierDriver::enqueue_execute(const Frame& frame, std::string& error) {
@@ -165,7 +167,9 @@ bool CudaVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::stri
 bool CudaVerifierDriver::wait_download(std::string& error) {
     if (!expect(State::downloading, error) || !wait(error)) return false;
     if (!capture_device_handoff(output_, staging_, bytes_, index_, request_,
-                                window_, "out", error)) return false;
+                                window_, "out", verifier_->stream(),
+                                [this](std::string& e) { return record(e) && wait(e); },
+                                error)) return false;
     std::memcpy(download_host_, staging_, bytes_);
     download_host_ = nullptr;
     state_ = State::downloaded; return true;

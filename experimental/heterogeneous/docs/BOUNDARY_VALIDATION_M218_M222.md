@@ -16,6 +16,10 @@
 
 These audit results are **not GPU PASS claims**.
 
+### First Oberon build attempt and correction
+
+At `0f757ab`, the host build stopped before CTest, native builds or GPU execution: the four CUDA/HIP verifier contract-test targets could not compile the new synchronous `cudaMemcpy` call because the existing CPU runtime stub exposes only `cudaMemcpyAsync`. The worker capture now uses the same asynchronous D2H API, owned pinned staging buffer, verifier stream and bounded event wait as the production path. It snapshots the original host bytes and invalidates the staging bytes before readback so a skipped or partial copy cannot masquerade as equality. Publication requires a full byte match. No stub extension, new inference code, or new test fixture is needed. Retry the full host gate before native builds; all fresh hardware results remain UNVERIFIED.
+
 ## M2.19: real-device evidence with minimal code
 
 The existing `strata_heterogeneous_live_smoke` accepts `--boundary-capture` together with `--capture-prefix`. The actual native worker, **after existing stream fences**, reads its device output/input buffer back, compares each byte to the pinned transfer buffer, and writes the raw bytes to an exclusive 0600 file. Readback is **before** receiver arithmetic or **after** producer arithmetic. A mismatch fails the window. Disabled: no additional copies or files. No inference arithmetic, transport format, kernel or standalone test executable changed.

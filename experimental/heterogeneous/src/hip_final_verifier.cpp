@@ -176,7 +176,9 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
                                    verifier_->stream()), error) ||
             !fence(error) || !wait_fence(error) ||
             !capture_device_handoff(input_, staging_, bytes, index_, request_,
-                                    window_, "in", error)) return false;
+                                    window_, "in", verifier_->stream(),
+                                    [this](std::string& e) { return fence(e) && wait_fence(e); },
+                                    error)) return false;
     } // layer-zero native Verifier uses token embeddings, not handoff bytes
 
     std::vector<int32_t> predictions(spec_.token_ids.size());
