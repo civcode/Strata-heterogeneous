@@ -775,9 +775,10 @@ outputs are not directly interpretable as a kernel mismatch.
 This is diagnostic instrumentation, not a new numerical tolerance,
 new kernel or readiness proof. See
 [docs/STAGE_BRANCH_LOCALIZATION_M215.md](docs/STAGE_BRANCH_LOCALIZATION_M215.md).
-Native M2.15 GPU execution remains UNVERIFIED. Prior M2.10–M2.14
-CPU regression fixtures still pass locally (64/64); new M2.15
-fixtures require Oberon build/test validation.
+M2.15 has now run successfully on Oberon: **83/83** diagnostic
+Python tests, **37/37** host CTest, both native CUDA/HIP builds and
+the sequential two-window GPU runs passed. Numerical parity remains
+FAIL. See the confirmed findings in M2.16 below.
 
 
 ### M2.16 — Shared-expert stream/swiglu controls after M2.15
