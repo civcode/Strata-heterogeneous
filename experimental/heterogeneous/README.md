@@ -808,3 +808,34 @@ an open next capture if QKV/z still match.
 
 See [docs/SHARED_EXPERT_CONTROL_M216.md](docs/SHARED_EXPERT_CONTROL_M216.md).
 M2.16 hardware results are pending; acceptance thresholds unchanged.
+
+
+### M2.17 — Shared projection microtrace + pre-GDN conv history
+
+M2.16's confirmed hardware controls did **not** reduce the
+position-0 layer-5 shared-expert relative L2 (**0.002823**) when
+both workers used STRATA_SH_STREAM=0 or when both additionally
+disabled fused SwiGLU/Q8. Position-1 layer-6 QKV and z were still
+identical, while convolution relative L2 remained **0.000267**
+and final GDN bo **0.002753**. Both arms committed two windows
+and predicted 198/271; numerical parity remains FAIL:
+KL 0.005003/0.037718 in Arm A and 0.010083/0.037814 in B.
+
+M2.17 adds a manual `--micro-probe --capture-prefix ... --rows 1`
+to the isolated native verifier, with extra GPU allocations and
+copies **only when enabled**. It captures layer-5 shared input,
+raw native gate/up, exact input and SwiGLU Q8_1 bytes, unscaled
+down projection, scalar gate and final shared result; and layer-6
+QKV, **pre-convolution history state** and convolution output.
+The shared producer-stream snapshots precede scratch overwrite;
+the convolution history snapshot precedes the conv consumer.
+The new checksummed, bounded STM0/v1 record is written to
+`PREFIX.stage0.wN.stm0`.
+
+CPU `tools/heterogeneous_stage_micro.py` requires completed
+STFR/manifest plus M2.15 STB0 and checks bitwise overlap for the
+shared output, QKV and conv output before comparing backends.
+21 new synthetic CPU cases registered. These new tests and
+native CUDA/HIP builds are **not yet verified** on Oberon.
+See [docs/STAGE_MICRO_LOCALIZATION_M217.md](docs/STAGE_MICRO_LOCALIZATION_M217.md).
+No kernel arithmetic or KL tolerances were changed.
