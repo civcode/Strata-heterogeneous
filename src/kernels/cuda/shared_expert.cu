@@ -215,23 +215,48 @@ bool fused_swiglu_q81_enabled() {
 
 void shared_expert_multi(int n_tok, const float* x, const uint16_t* x_bf16, const NativeSharedWeights& nw,
                          const uint16_t* gate_inp_bf16, float* gate, float* up, float* g, float* out, int64_t n_embd,
-                         int64_t n_ff, void* stream, const void* x_q8_1_ready, int lfuse) {
+                         int64_t n_ff, void* stream, const void* x_q8_1_ready, int lfuse,
+                         SharedExpertMicrotrace* trace) {
     const bool gate_deferred = (lfuse & 1) != 0, pair = (lfuse & 2) != 0;
+    if (trace != nullptr && (n_tok != 1 || gate_deferred || n_embd <= 0 ||
+                            n_ff <= 0 || (n_embd % 32) != 0 || (n_ff % 32) != 0))
+        throw std::invalid_argument("M2.17 shared microtrace needs one nondeferred token and block32 dimensions");
     if (n_tok < 1 || n_tok > kVerifyMaxT || !nw.q8_1 || !nw.gate_data || !nw.up_data || !nw.down_data || !stream)
         throw std::invalid_argument("shared_expert_multi: needs 1..8 tokens (16 in a wide build), native weights, scratch and a stream");
     cudaStream_t cs = (cudaStream_t) stream;
+    // Enqueue snapshots on the same native stream as the producer kernels.
+    // Do not copy asynchronously to the host during graph capture.
+    auto trace_copy = [&](void* dst, const void* src, size_t nbytes, const char* field) {
+        if (trace == nullptr) return;
+        if (dst == nullptr || src == nullptr ||
+            cudaMemcpyAsync(dst, src, nbytes, cudaMemcpyDeviceToDevice, cs) != cudaSuccess)
+            throw std::runtime_error(std::string("M2.17 native shared trace ") + field + " failed");
+    };
+    if (trace != nullptr)
+        std::fprintf(stderr,
+            "STRATA_SHARED_MICRO_PATH native_bf16=%d fused_swiglu=%d qdedup_ready=%d "
+            "pair_requested=%d gate_type=%d up_type=%d down_type=%d\n",
+            (int) native_bf16, (int) fused_swiglu_q81_enabled(),
+            (int) (x_q8_1_ready != nullptr), (int) pair,
+            (int) nw.gate_type, (int) nw.up_type, (int) nw.down_type);
     // the activation's q8_1: the caller's (STRATA_VERIFY_QDEDUP, x_q8_1_ready) or the descriptor's, else quantized here
     const void* x_q8_1 = x_q8_1_ready ? x_q8_1_ready : nw.x_q8_1;
     if (!x_q8_1) {
         native_quantize_q8_1(x, nw.q8_1, (int) n_embd, n_tok, stream);
         x_q8_1 = nw.q8_1;
     }
+    trace_copy(trace ? trace->input_q8 : nullptr, x_q8_1,
+               (size_t) (n_embd / 32) * 36, "input_q8");
     // S26 STRATA_LFUSE (gate_deferred): gate and up in one launch where the pair applies (bitwise the two calls)
     if (!(pair && nw.gate_type == nw.up_type &&
           native_mmvq_pair(nw.gate_type, nw.gate_data, nw.up_data, x_q8_1, gate, up, (int) n_embd, (int) n_ff, n_tok, stream))) {
         native_mmvq(nw.gate_type, nw.gate_data, x_q8_1, gate, (int) n_embd, (int) n_ff, n_tok, stream);
         native_mmvq(nw.up_type, nw.up_data, x_q8_1, up, (int) n_embd, (int) n_ff, n_tok, stream);
     }
+    trace_copy(trace ? trace->gate_raw : nullptr, gate,
+               (size_t) n_ff * sizeof(float), "gate_raw");
+    trace_copy(trace ? trace->up_raw : nullptr, up,
+               (size_t) n_ff * sizeof(float), "up_raw");
     const int n = (int) (n_ff * n_tok);
     if (fused_swiglu_q81_enabled()) {
         native_swiglu_quantize_q8_1(gate, up, nw.q8_1, (int) n_ff, n_tok, stream);
@@ -239,7 +264,11 @@ void shared_expert_multi(int n_tok, const float* x, const uint16_t* x_bf16, cons
         native_swiglu_kernel<<<(unsigned) ((n + THREADS - 1) / THREADS), THREADS, 0, cs>>>(gate, up, gate, n);
         native_quantize_q8_1(gate, nw.q8_1, (int) n_ff, n_tok, stream);
     }
+    trace_copy(trace ? trace->swiglu_q8 : nullptr, nw.q8_1,
+               (size_t) (n_ff / 32) * 36, "swiglu_q8");
     native_mmvq(nw.down_type, nw.down_data, nw.q8_1, out, (int) n_ff, (int) n_embd, n_tok, stream);
+    trace_copy(trace ? trace->down_unscaled : nullptr, out,
+               (size_t) n_embd * sizeof(float), "down_unscaled");
     if (gate_deferred) {   // the caller computed g (raw) with the router and scales `out` in the combine
         const cudaError_t e = cudaGetLastError();
         if (e != cudaSuccess) throw std::runtime_error(std::string("shared_expert_multi: ") + cudaGetErrorString(e));
@@ -264,6 +293,8 @@ void shared_expert_multi(int n_tok, const float* x, const uint16_t* x_bf16, cons
         scale_rows_kernel<<<dim3((unsigned) ((n_embd + THREADS - 1) / THREADS), (unsigned) n_tok), THREADS, 0, cs>>>(
             out, g, (int) n_embd);
     }
+    trace_copy(trace ? trace->gate_scale : nullptr, g,
+               sizeof(float), "gate_scale");
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) throw std::runtime_error(std::string("shared_expert_multi: ") + cudaGetErrorString(e));
 }
