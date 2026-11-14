@@ -1,6 +1,6 @@
 # M2.18–M2.22: real CUDA → HIP architecture validation
 
-**Status:** M2.18 source audit PASS; M2.19 device-boundary PASS and M2.21 bounded end-to-end PASS on `5e1f868` (operator-reported Oberon runs). M2.20 partial-prefix state/live failure-path qualification and M2.22 final consolidation UNVERIFIED. The [active contract](IMPLEMENTATION_CONTRACT.md) is authoritative. No new inference engine, mathematical reference or fixture data is introduced.
+**Status:** M2.18 source audit PASS; M2.19 exact GPU boundary PASS and M2.21 bounded end-to-end PASS on `5e1f868`; M2.20 bounded positive partial-prefix state qualification PASS on `1fdfc4e` (operator-reported Oberon runs). M2.22 consolidation review completed without further implementation changes. Comprehensive architecture acceptance remains UNVERIFIED for native fail-stop/partial-commit failure behavior; partial-prefix shared-memory and capture-disabled equivalence have not been measured in these reports. This is a qualified success of the tested real inference path, not general production readiness. The [active contract](IMPLEMENTATION_CONTRACT.md) is authoritative. No new inference engine, mathematical reference or fixture data is introduced.
 
 ## M2.18: audit of existing native production code
 
@@ -89,7 +89,7 @@ Stop on any failure, and never overwrite a used output prefix. The existing
 execution and committed prefix metadata from the real workers; compare its
 per-stage request/window/position/commit events to the final STFR record. After confirming socket success, repeat the **same native run** with `--shared` and a fresh `$OUT/shared` prefix; compare both producer/consumer pairs for both windows. Retain logs, device PCI identifiers, model/index/GGUF/profile provenance, raw bytes and completion/ACK evidence.
 
-## M2.20–M2.22: remaining gates
+## M2.20–M2.22: qualification criteria at the start of this roadmap
 
 **M2.20 (state/commits):** verify real window positions, state ownership, every worker's accepted-prefix ACK and fail-stop behavior. Keep existing CPU protocol error tests; no numeric fixtures.
 
@@ -99,7 +99,7 @@ per-stage request/window/position/commit events to the final STFR record. After 
 
 The historical all-HIP KL ≤0.001 remains a **non-gating numerical parity diagnostic**. Preserve previously observed FAIL values.
 
-## M2.20 follow-up: positive partial-prefix qualification
+## M2.20: positive partial-prefix regression procedure (completed on socket)
 
 The existing native smoke runner now accepts optional `--keep N`, defaulting to `--rows`. It calls the unchanged commit interface, advances position by accepted count and records that count in each manifest. STFR retains every evaluated row; the live log publishes accepted predictions only. Existing parity comparisons still require full commits. For partial-prefix captures, explicitly use `read_run(prefix, allow_partial=True)`.
 
@@ -172,3 +172,52 @@ PY
 ~~~
 
 Exact byte equality within each transport remains mandatory. Across independent computations, record observed differences without imposing a new KL or bitwise-arithmetic threshold. A/B equality supports rejected-suffix independence; A/C difference supports accepted-history sensitivity. If outputs vary, compare an identical fresh A repeat once before assigning cause. Report inconclusive where appropriate. These are bounded observable state checks, not independent proof of every stage's K/V or recurrent tensor. Existing host protocol tests cover fail-stop logic; intentional native GPU fault injection is not authorized and remains UNVERIFIED. No broad architecture acceptance or production-readiness claim until limitations are reviewed.
+
+## Reported Oberon results: positive partial-prefix qualification
+
+Tested implementation commit: `1fdfc4ef38ec63b0e124c226847a021c9cca68a2`. The operator reports that the host build, 38/38 CPU CTests, separate native CUDA and HIP builds and all three sequential native socket sessions passed. Raw evidence remains in the Oberon workspace; these results were transcribed from the operator report, not independently retrieved.
+
+The previously approved 48-layer heterogeneous plan was used. Each of the six windows evaluated two rows and acknowledged keep=1 at every stage. All workers advanced positions 0 → 1 → 2. Every corresponding producer/consumer device readback pair matched across both boundaries (12 exact comparisons total, 102,432 bytes per image). STFR packet checksums, manifests, identities and 496,640 finite logits per window passed validation.
+
+| Session | First evaluated window | Accepted token | Second evaluated window | Accepted first prediction | Accepted continuation prediction |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | [1, 271] | 1 | [198, 271] | 198 | 262 |
+| B | [1, 1] | 1 | [198, 271] | 198 | 262 |
+| C | [198, 271] | 198 | [198, 271] | 285 | 248044 |
+
+Measured continuation comparisons:
+
+| Check | Reported result |
+| --- | --- |
+| A/B predictions | Identical |
+| A/B full evaluated FP32 logits bytes | Identical |
+| A/B actual stage 0 and 1 output bytes | Identical at each stage |
+| A/C full evaluated FP32 logits bytes | Different |
+| A/C actual stage 0 and 1 output bytes | Different at each stage |
+
+**M2.20: PASS, bounded observable positive-prefix state semantics.** With the same two-row shape and next-window inputs, changing a rejected token did not change the observed continuation; changing an accepted token did. This supports correct retained history and rejection of the evaluated suffix, without a second inference implementation. It does not independently verify every K/V, recurrent or PLE tensor or prove general state correctness.
+
+Artifacts: `/home/chris/tmp/strata-heterogeneous/m220-run-4rguIbWU/`. Includes sync/build/ctest logs, a/b/c preflight and execution logs, comparisons, state-validation.log, raw .f32, STFR and manifests. No validation failure, kernel changes, new numerical probes or fault injection reported. The pre-existing untracked pool probe was untouched. The partial-prefix runs were socket-only; previous shared-memory evidence belongs to `5e1f868`. No new cross-backend KL test was reported.
+
+## M2.22 consolidation and acceptance record
+
+| Requirement | Evidence / disposition |
+| --- | --- |
+| M2.18 source audit | PASS |
+| M2.19 actual CUDA → HIP / HIP → HIP device handoff | PASS, tested one-row socket and memfd at 5e1f868; two-row socket at 1fdfc4e |
+| Synchronization, identity and finite-result checks | PASS for reported successful windows |
+| M2.20 positive-prefix commits and observable state | PASS, bounded full/partial-prefix tests; partial-prefix memfd not yet measured |
+| Fail-stop and partial-commit failure handling | Existing CPU protocol and process tests PASS; actual native GPU failure behavior UNVERIFIED |
+| M2.21 full pipeline and repeatability | PASS, bounded full-window socket and memfd and fresh socket repeat; three partial-prefix socket sessions complete |
+| M2.22 maintainability review | Complete: retain one opt-in boundary readback helper, existing smoke runner and existing STFR reader; no new source changes required |
+| Unconditional architecture / general production readiness | Not established |
+
+The failure handling source audit finds that `FinalPipelineSession::commit` waits for matching positive-prefix acknowledgments before releasing the result and poisons the session on failure; `serve_final_worker` abandons a failed window; `WorkerProcessGroup` provides bounded shutdown and child reaping. Existing `final_pipeline_tests.cpp` covers bad ACK, nonfinite output and a failed last-stage commit poisoning all peers; `window_admission_process_tests.cpp` covers zero-prefix and replay rejection and positive-prefix acknowledgments; `process_tests.cpp` covers mismatched/closed children, poisoned coordinators and child reaping. These are CPU protocol/control-flow checks, not GPU numerical evidence. Retain them and the existing fail-closed contract. A native hardware failure is not a verified PASS; do not inject GPU faults, kill live workers or weaken guards to close that gap.
+
+**Consolidation decision:** the measured normal native path meets the bounded transition/state objective. Stop cross-backend arithmetic localization. Do not add more numerical probes, duplicate inference paths or speculative kernel cleanup. Keep historical opt-in probes and records intact unless a separately justified removal is approved. The old KL threshold remains unchanged and non-gating.
+
+If final regression qualification is useful before integration, use the existing smoke command, no new implementation:
+- One fresh socket A run with `--keep 1 --rows 2 --windows 2 --tokens 1,271,198,271` and `--capture-prefix`, but **without** `--boundary-capture`. Validate the existing STFR files and commit trace; verify no boundary .f32 files were created. Compare accepted predictions and continuation logits with recorded A. Report any differences, not an assumed bitwise-arithmetic guarantee.
+- One fresh A run using identical arguments and `--shared --boundary-capture`, with its own unused prefix. Validate the same 102,432-byte endpoint pairs for both windows and partial-prefix position/commit evidence. Compare observed outcomes to socket A.
+
+Keep both checks sequential; no changes to model, device layout, precision defaults, or admission limits. Use `read_run(..., allow_partial=True)` and exact `cmp` only between corresponding *within-run* GPU producer/consumer images. Stop on unexpected failure. These are targeted checks of the disabled production observation and shared-memory partial-prefix combinations, not a request for additional numerical research. Do not imply they ran on the listed commits. Further work should focus on practical integration with existing Strata tokenization, generation and serving entry points, after review of the bounded evidence and outstanding safety qualification.

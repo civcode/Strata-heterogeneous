@@ -45,6 +45,6 @@ Do not claim that KL passed, relax its original target, or demand bitwise equali
 
 Work only in `/home/chris/workspace/Strata-heterogeneous` and `/home/chris/tmp/strata-heterogeneous` on Oberon, never in either `Strata-dev` directory. No GPU reset/reboot or driver unload; keep builds separate and ≤28 parallel jobs, preserve VRAM reserves and model checks. **No GitHub Actions runs or automatic triggers.** No hardware PASS claims without actual measurements.
 
-Prepared [M2.18–M2.22 source audit and native boundary runbook](BOUNDARY_VALIDATION_M218_M222.md).
+[M2.18–M2.22 source audit, native boundary runbook and Oberon evidence](BOUNDARY_VALIDATION_M218_M222.md): the reported real CUDA → HIP → HIP boundary and bounded positive-prefix tests passed on `5e1f868` / `1fdfc4e`. The normal-path objective is demonstrated for those measured configurations; native fail-stop/partial-commit failure behavior and general readiness remain unverified. This evidence does not alter the requirements above.
 
 Historical evidence: [M2.9 mixed native run](LIVE_GPU_HANDOFF_M29.md), [M2.10 numerical parity](NUMERICAL_PARITY_M210.md), [M2.17 diagnostic](STAGE_MICRO_LOCALIZATION_M217.md). Production interfaces: [CUDA verifier](../src/cuda_verifier.cpp), [HIP verifier](../src/hip_verifier.cpp), [framing](../src/host.cpp), [window protocol](VERIFIER_WINDOW_V4.md).

@@ -7,7 +7,11 @@ of existing CUDA-only or HIP-only inference.
 
 **Authoritative implementation contract:**
 [docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
-Manual GPU test procedure: [docs/BOUNDARY_VALIDATION_M218_M222.md](docs/BOUNDARY_VALIDATION_M218_M222.md).
+Manual GPU validation and reported Oberon results:
+[docs/BOUNDARY_VALIDATION_M218_M222.md](docs/BOUNDARY_VALIDATION_M218_M222.md).
+Native CUDA → HIP boundary and bounded state qualification passed on
+`5e1f868` and `1fdfc4e`; remaining native failure-path qualification is
+UNVERIFIED. Do not restart historical kernel-localization work.
 Validate the real production CUDA → HIP boundary and full native pipeline
 with minimal durable code; no duplicate inference engine, test-only numeric
 fixtures or prerequisite CUDA-to-CUDA/KL parity detour.
@@ -1019,7 +1023,7 @@ download huge model files merely to validate the CPU transport.
   numerical-parity diagnostic, not the M2.18 transition acceptance gate.
   Handoff: docs/STAGE_MICRO_LOCALIZATION_M217.md.
 
-### M2.18 — Active priority: CUDA → HIP production handoff
+### M2.18 — CUDA → HIP production handoff (bounded validation reported)
 
 - Follow [docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
   Reuse the existing native CUDA/HIP verifier execution paths.
@@ -1028,3 +1032,19 @@ download huge model files merely to validate the CPU transport.
 - Audit existing production buffers/logs before adding any code; add only
   durable, opt-in boundary observations if needed. No new inference kernel,
   synthetic numerical fixtures, or mandatory CUDA-to-CUDA/KL detours.
+
+### M2.19–M2.22 — Bounded native qualification and consolidation
+
+- Oberon reported both native builds and 38/38 CTests PASS on `5e1f868`
+  and `1fdfc4e`; exact real CUDA→HIP/HIP→HIP endpoints passed in native
+  socket/memfd one-row runs and socket two-row runs. Full-window inference
+  repeated consistently; three partial-prefix arms qualified observable
+  retained history and rejected-suffix independence.
+- M2.20 bounded positive-prefix semantics PASS. M2.22 consolidation review
+  complete: retain opt-in `--boundary-capture`, `--keep` and STFR reader;
+  no new inference code or test framework required. Actual native failure
+  handling, partial-prefix memfd and capture-disabled comparison UNVERIFIED.
+- Keep fail-stop guards/CPU regression tests; do not deliberately inject GPU
+  faults. No broad production-readiness claim. Follow the active contract
+  and runbook for targeted final regression if needed; next practical work
+  should reuse Strata generation and serving interfaces.

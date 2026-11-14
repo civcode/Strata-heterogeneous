@@ -3,13 +3,17 @@
 **Active contract:** [CUDA → HIP production-path validation and acceptance](docs/IMPLEMENTATION_CONTRACT.md).
 **Manual Oberon runbook:** [M2.18–M2.22 boundary validation](docs/BOUNDARY_VALIDATION_M218_M222.md).
 The old demo and protocol fixtures remain CPU-only, but separately compiled
-native CUDA and HIP workers have executed real staged-model windows. M2.17
-reported two committed windows and predictions 198/271; KL against an all-HIP
-reference still fails its historical target. Prioritize actual transfer bytes,
-fences, identity, state/commits and end-to-end CUDA → HIP → HIP completion.
-Use as little new code as possible: no duplicate native inference or disposable
-numeric fixtures. Experimental/opt-in only; no production readiness claim.
-The M1–M2.17 sections below record historical milestones.
+native CUDA and HIP workers have executed real staged-model windows. Oberon
+reported 38/38 CTests, both native builds, exact CUDA → HIP and HIP → HIP
+boundary bytes on socket/memfd plus a fresh socket repeat (`5e1f868`), and
+successful bounded two-row partial-prefix qualification (`1fdfc4e`). Varying
+a rejected token left continuation bytes equal; varying the accepted token
+changed them. Native failure paths, partial-prefix memfd and capture-disabled
+comparisons were not measured in those reports. The bounded normal-path
+objective is met; this remains experimental, not general production readiness.
+Historical cross-backend KL remains FAIL and non-gating.
+Use minimal existing inference and production paths, no disposable numeric
+fixtures. The M1–M2.17 sections below record historical milestones.
 
 ## Exact Strata boundary used
 
@@ -844,5 +848,7 @@ windows committed, predicted 198/271 and passed STM0/STB0 integrity.
 Layer-5/6 differences precede the CUDA → HIP boundary; full-head KL
 0.005003 / 0.037718 still FAILS the historical <=0.001 target.
 See [docs/STAGE_MICRO_LOCALIZATION_M217.md](docs/STAGE_MICRO_LOCALIZATION_M217.md).
-The next step follows the [M2.18 contract](docs/IMPLEMENTATION_CONTRACT.md),
-not another cross-backend kernel localization.
+The subsequent [M2.18–M2.22 validation](docs/BOUNDARY_VALIDATION_M218_M222.md)
+reported exact native handoff bytes and bounded partial-prefix success, not
+another cross-backend kernel localization. Retain the opt-in observation and
+existing runner; no additional kernel changes are justified by this evidence.
