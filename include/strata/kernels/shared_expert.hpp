@@ -86,7 +86,7 @@ struct SharedExpertMicrotrace {
     float* up_raw = nullptr;        // n_ff values, BEFORE SwiGLU
     uint8_t* swiglu_q8 = nullptr;   // n_ff / 32 * 36 bytes
     float* down_unscaled = nullptr; // n_embd values
-    float* gate_scale = nullptr;    // one sigmoid scalar (after its computation)
+    float* gate_logit = nullptr;    // one raw native BF16 gate logit (pre-sigmoid)
 };
 
 void shared_expert_multi(int n_tok, const float* x, const uint16_t* x_bf16, const NativeSharedWeights& nw,
