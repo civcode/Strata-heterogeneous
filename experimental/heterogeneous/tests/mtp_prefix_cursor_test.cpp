@@ -35,6 +35,15 @@ int main() {
             for (unsigned keep=0;keep<7;++keep)
                 check(mtp_three_commit_fits(pos,keep,round)==
                     (round<3 && pos>=7+int64_t(round) && keep>=1 && keep<=5 && pos+keep+2-int64_t(round)<=12));
+    for(unsigned n=0;n<=9;++n) {
+        check(mtp_three_shape(n,3,false,false,false,true)==(n>=1 && n<=7));
+        for(unsigned round=0;round<5;++round)
+            for(int64_t pos=-1;pos<18;++pos)
+                for(unsigned keep=0;keep<7;++keep)
+                    check(mtp_three_commit_fits(pos,keep,round,n)==
+                        (n>=1 && n<=7 && round<3 && pos>=int64_t(n+round) &&
+                         keep>=1 && keep<=5 && pos+keep+2-int64_t(round)<=12));
+    }
     std::string e;
     std::array<float,8> r{11,12,21,22,31,32,41,42};
     using Row=std::tuple<float,int32_t,int64_t>;

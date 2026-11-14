@@ -135,6 +135,27 @@ class ParityFixtures(unittest.TestCase):
                 with self.assertRaises(parity.ParityError):
                     parity.read_run(self.het, allow_partial=True, mtp_three_round=True)
 
+    def test_variable_three_round_marker(self):
+        plan = "cuda:0:0-12,hip:0:12-30,hip:1:30-48"
+        for prompt in (0, 1, 6, 7, 8):
+            self.write_run(self.het, plan, count=prompt+3)
+            marker = Path(f"{self.het}.complete.json")
+            data = json.loads(marker.read_text())
+            data.update(mtp_three_round=True, mtp_three_round_variable=True, mtp_prompt_windows=prompt)
+            marker.write_text(json.dumps(data))
+            if 1 <= prompt <= 7:
+                self.assertEqual(len(parity.read_run(self.het, allow_partial=True, mtp_three_round=True)), prompt+3)
+            else:
+                with self.assertRaises(parity.ParityError):
+                    parity.read_run(self.het, allow_partial=True, mtp_three_round=True)
+        self.write_run(self.het, plan, count=9)
+        marker = Path(f"{self.het}.complete.json")
+        data = json.loads(marker.read_text())
+        data.update(mtp_three_round=True, mtp_three_round_variable=False, mtp_prompt_windows=6)
+        marker.write_text(json.dumps(data))
+        with self.assertRaises(parity.ParityError):
+            parity.read_run(self.het, allow_partial=True, mtp_three_round=True)
+
     def test_prediction_mismatch_fails_even_when_logits_match(self):
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48",
                        predictions=[2])

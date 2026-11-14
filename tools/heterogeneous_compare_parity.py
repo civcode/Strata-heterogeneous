@@ -84,6 +84,12 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
     completed = Path(str(prefix) + ".complete.json")
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
+    variable = marker.get("mtp_three_round_variable", False)
+    prompt_windows = marker.get("mtp_prompt_windows", 7 if mtp_three_round else 0)
+    require(type(variable) is bool and type(prompt_windows) is int and
+            ((not mtp_three_round and not variable and prompt_windows == 0) or
+             (mtp_three_round and (1 <= prompt_windows <= 7 if variable else prompt_windows == 7))),
+            "invalid three-round prompt marker")
     require(marker.get("schema") == SCHEMA and
             type(marker.get("placement_capture", False)) is bool and
             marker.get("placement_capture", False) == placement and
@@ -92,7 +98,7 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
             type(marker.get("mtp_three_round", False)) is bool and
             marker.get("mtp_three_round", False) == mtp_three_round and
             type(marker.get("windows")) is int and
-            (marker["windows"] == 10 if mtp_three_round else
+            (marker["windows"] == prompt_windows + 3 if mtp_three_round else
              1 <= marker["windows"] <= (128 if placement else 12 if mtp_fresh_replay else 8)) and
             type(marker.get("model_fingerprint")) is int and marker["model_fingerprint"] > 0 and
             isinstance(marker.get("plan"), str) and marker["plan"],

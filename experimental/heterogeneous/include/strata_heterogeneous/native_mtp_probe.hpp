@@ -36,10 +36,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false)
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -51,8 +51,11 @@ public:
         }
         if (front_trace_ && trace_prefix_.empty()) {error="MTP front trace needs state trace";return false;}
         if (repeat_round_ && (!front_trace_ || relay_rounds_)) {error="MTP repeat needs one-shot front trace";return false;}
-        // Sole exception: an explicit nonresident, fixed-prompt qualification.
-        if (three_round_ && (!mtp_three_shape(windows_,relay_rounds_,fresh_replay_,repeat_round_,reprime_tail_) ||
+        // Sole exception: explicit nonresident bounded qualification.
+        if (three_round_variable_ && !three_round_) {
+            error="variable prefix requires three-round mode"; return false;
+        }
+        if (three_round_ && (!mtp_three_shape(windows_,relay_rounds_,fresh_replay_,repeat_round_,reprime_tail_,three_round_variable_) ||
             (trace_prefix_.empty()==front_trace_))) {
             error="invalid MTP three-round diagnostic"; return false;
         }
@@ -147,9 +150,9 @@ public:
         }
         if (three_round_) {
             const bool prompt=window<=windows_;
-            if ((prompt && (spec.pos0!=int64_t(window-1) ||
-                            spec.token_ids!=std::vector<int32_t>{mtp_three_prompt[window-1]})) ||
-                (!prompt && !mtp_three_window_fits(spec.pos0,spec.token_ids.size(),unsigned(window-windows_-1)))) {
+            if ((prompt && (spec.pos0!=int64_t(window-1) || spec.token_ids.size()!=1 ||
+                            (!three_round_variable_ && spec.token_ids.front()!=mtp_three_prompt[window-1]))) ||
+                (!prompt && !mtp_three_window_fits(spec.pos0,spec.token_ids.size(),unsigned(window-windows_-1),windows_))) {
                 error="MTP three-round window bound or prompt mismatch"; return false;
             }
         }
@@ -168,7 +171,7 @@ public:
         // Coordinator enforces the same budget BEFORE sending any commit.
         // This is a defensive observer check, not a distributed rollback.
         if (three_round_ && window>windows_ &&
-            !mtp_three_commit_fits(spec.pos0,keep,unsigned(window-windows_-1))) {
+            !mtp_three_commit_fits(spec.pos0,keep,unsigned(window-windows_-1),windows_)) {
             error="MTP three-round committed prefix exceeds diagnostic budget"; return false;
         }
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
@@ -270,6 +273,7 @@ private:
     bool repeat_round_=false;
     bool fresh_replay_=false;
     bool three_round_=false;
+    bool three_round_variable_=false;
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;

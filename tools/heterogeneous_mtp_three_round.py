@@ -15,17 +15,19 @@ def require(ok, message):
         raise ValueError(message)
 
 
-def checkpoints(run):
+def checkpoints(run, prompt=PROMPT):
     """Derive four actual replay prefixes and the three live greedy commits."""
-    require(len(run) == len(PROMPT)+ROUNDS, 'expected exactly seven prompt and three relay windows')
+    require(type(prompt) is list and 1 <= len(prompt) <= len(PROMPT) and
+            all(type(t) is int and 0 <= t < 248320 for t in prompt), 'invalid explicit prompt')
+    require(len(run) == len(prompt)+ROUNDS, 'expected prompt windows and exactly three relay windows')
     prefix = []
-    for i, (m, p) in enumerate(run[:len(PROMPT)]):
+    for i, (m, p) in enumerate(run[:len(prompt)]):
         require(m['pos0'] == i and m['rows'] == m['n_keep'] == 1 and
-                m['token_ids'] == [PROMPT[i]] and len(p['predictions']) == 1, 'wrong prompt capture')
-        prefix.append(PROMPT[i])
+                m['token_ids'] == [prompt[i]] and len(p['predictions']) == 1, 'wrong prompt capture')
+        prefix.append(prompt[i])
     out = []
-    anchor = run[len(PROMPT)-1][1]['predictions'][0]
-    for i, (m, p) in enumerate(run[len(PROMPT):]):
+    anchor = run[len(prompt)-1][1]['predictions'][0]
+    for i, (m, p) in enumerate(run[len(prompt):]):
         ids, preds = m['token_ids'], p['predictions']
         require(m['pos0'] == len(prefix) and 2 <= len(ids) == len(preds) == m['rows'] <= 5 and
                 ids[0] == anchor and len(prefix)+len(ids) <= 16, 'wrong live offer extent or anchor')
@@ -64,13 +66,13 @@ def trace_events(prefix):
     return events, drafts
 
 
-def analyze(reused_prefix, reused_log, fresh_pairs, traced=False):
+def analyze(reused_prefix, reused_log, fresh_pairs, traced=False, prompt=PROMPT):
     from heterogeneous_compare_parity import read_run, compare
     from heterogeneous_mtp_reuse import read_offer, accepted_rows
     require(len(fresh_pairs) == ROUNDS+1 and len({p.resolve() for p, _ in fresh_pairs} | {reused_prefix.resolve()}) == ROUNDS+2,
             'four distinct fresh captures and a distinct reused capture required')
     reused = read_run(reused_prefix, allow_partial=True, mtp_three_round=True)
-    points = checkpoints(reused)
+    points = checkpoints(reused, prompt)
     vocab = reused[0][1]['vocab']
     final = read_offer(reused_log, ROUNDS, vocab, traced=traced)
     require((final['cell'], final['anchor']) == (points[-1]['cell'], points[-1]['anchor']), 'wrong terminal diagnostic pair')
@@ -108,7 +110,9 @@ def analyze(reused_prefix, reused_log, fresh_pairs, traced=False):
         gate['status'] = 'PASS' if passed else 'FAIL'
         gates.append(gate)
     a, r = outcome(points)
-    return dict(status='PASS' if a and r and all(g['status']=='PASS' for g in gates) else 'FAIL',
+    parity_passed = all(g['status']=='PASS' for g in gates)
+    return dict(status='PASS' if a and r and parity_passed else 'FAIL',
+                parity_status='PASS' if parity_passed else 'FAIL',
                 accepted_drafts=a, rejected_drafts=r, traced=traced, checkpoints=gates,
                 production_admission='NOT QUALIFIED')
 
@@ -123,15 +127,18 @@ def main():
     gate.add_argument('--reused-log', type=Path, required=True)
     gate.add_argument('--fresh', nargs=2, metavar=('PREFIX','LOG'), action='append', required=True, type=Path)
     gate.add_argument('--traced', action='store_true')
+    for command in (derive, gate):
+        command.add_argument('--prompt-ids', type=lambda raw: [int(t) for t in raw.split(',')],
+                             default=PROMPT, help='exact explicit prompt IDs, comma separated')
     args = parser.parse_args()
     try:
         if args.action == 'prefixes':
             from heterogeneous_compare_parity import read_run
-            points = checkpoints(read_run(args.reused_prefix, allow_partial=True, mtp_three_round=True))
+            points = checkpoints(read_run(args.reused_prefix, allow_partial=True, mtp_three_round=True), args.prompt_ids)
             result = dict(status='PASS', checkpoints=points)
         else:
             result = analyze(args.reused_prefix, args.reused_log.read_text(),
-                             [(p, log.read_text()) for p, log in args.fresh], args.traced)
+                             [(p, log.read_text()) for p, log in args.fresh], args.traced, args.prompt_ids)
         print(json.dumps(result, indent=2))
         return 0 if result['status']=='PASS' else 1
     except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:

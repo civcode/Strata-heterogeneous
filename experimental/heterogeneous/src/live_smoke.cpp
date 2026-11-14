@@ -65,7 +65,7 @@ struct Options {
     bool cuda_mapped_egress = false;
     std::string mtp_probe_rt;
     uint32_t mtp_relay_rounds=0;
-    bool mtp_fresh_replay=false, mtp_three_round=false;
+    bool mtp_fresh_replay=false, mtp_three_round=false, mtp_three_round_variable=false;
     bool mtp_state_trace=false, mtp_reprime_tail=false, mtp_front_trace=false, mtp_repeat_native_round=false;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
@@ -116,6 +116,7 @@ void usage() {
         "  --mtp-reprime-tail: diagnostic native prefill of offered tail after first draft.\n"
         "  --mtp-fresh-replay: isolated one-row MTP reference, up to 12 windows, full capture, no relay.\n"
         "  --mtp-three-round: explicit three-relay qualification of the known seven-token prompt; 12 committed rows max.\n"
+        "  --mtp-three-round-variable: requires --mtp-three-round; explicit alternate 1..7 one-row prompt.\n"
         "  --mtp-relay-rounds N: after fixed prompt windows, relay 1..8 actual native proposals and commit greedy prefixes.\n"
         "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
@@ -199,6 +200,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--mtp-reprime-tail") o.mtp_reprime_tail=true;
         else if (key == "--mtp-fresh-replay") o.mtp_fresh_replay=true;
         else if (key == "--mtp-three-round") o.mtp_three_round=true;
+        else if (key == "--mtp-three-round-variable") o.mtp_three_round_variable=true;
         else if (key == "--mtp-relay-rounds") {
             o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
             if (!o.mtp_relay_rounds || o.mtp_relay_rounds>8) throw std::invalid_argument("MTP relay rounds must be 1..8");
@@ -343,14 +345,17 @@ Options parse(int argc, char** argv) {
         o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
         o.micro_probe || o.boundary_capture || o.mtp_reprime_tail))
         throw std::invalid_argument("MTP fresh replay requires 1..12 explicit one-row full commits, capture, no relay or repeat");
+    if (o.mtp_three_round_variable && !o.mtp_three_round)
+        throw std::invalid_argument("variable prefix requires explicit MTP three-round diagnostic");
     if (o.mtp_three_round && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
-        !hetero::mtp_three_shape(o.windows,o.mtp_relay_rounds,o.mtp_fresh_replay,o.mtp_repeat_native_round,o.mtp_reprime_tail) ||
-        o.rows!=1 || o.keep!=1 ||
-        o.tokens!=std::vector<int32_t>(hetero::mtp_three_prompt.begin(),hetero::mtp_three_prompt.end()) ||
+        !hetero::mtp_three_shape(o.windows,o.mtp_relay_rounds,o.mtp_fresh_replay,o.mtp_repeat_native_round,o.mtp_reprime_tail,o.mtp_three_round_variable) ||
+        o.rows!=1 || o.keep!=1 || o.tokens.size()!=o.windows ||
+        (!o.mtp_three_round_variable &&
+         o.tokens!=std::vector<int32_t>(hetero::mtp_three_prompt.begin(),hetero::mtp_three_prompt.end())) ||
         o.generate || o.resident || o.describe_source || o.warmup_windows || o.placement_capture ||
         o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
         o.micro_probe || o.boundary_capture || o.mtp_state_trace!=o.mtp_front_trace))
-        throw std::invalid_argument("MTP three-round diagnostic requires exact seven-row prompt, three relays, capture and either both traces or neither");
+        throw std::invalid_argument("MTP three-round diagnostic requires qualified fixed or explicit bounded variable prompt, three relays, capture and either both traces or neither");
     if (o.mtp_state_trace && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
         (!o.mtp_three_round && (o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))))
         throw std::invalid_argument("MTP state trace requires fresh capture, at most 16 cells and one relay");
@@ -704,7 +709,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         ::setenv("STRATA_HETERO_MTP_FRONT_TRACE",o.mtp_front_trace?"1":"0",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_REPEAT_NATIVE_ROUND",o.mtp_repeat_native_round?"1":"0",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_FRESH_REPLAY",o.mtp_fresh_replay?"1":"0",1)!=0 ||
-        ::setenv("STRATA_HETERO_MTP_THREE_ROUND",o.mtp_three_round?"1":"0",1)!=0)
+        ::setenv("STRATA_HETERO_MTP_THREE_ROUND",o.mtp_three_round?"1":"0",1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_THREE_ROUND_VARIABLE",o.mtp_three_round_variable?"1":"0",1)!=0)
         throw std::runtime_error("cannot configure MTP state trace");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
@@ -1022,7 +1028,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         for(uint32_t round=0;round<o.mtp_relay_rounds;++round) {
             const auto spec=session.request_mtp_proposal();
             const uint64_t id=uint64_t(o.windows)+round+1;
-            if (o.mtp_three_round && !hetero::mtp_three_window_fits(spec.pos0,spec.token_ids.size(),round)) {
+            if (o.mtp_three_round && !hetero::mtp_three_window_fits(spec.pos0,spec.token_ids.size(),round,o.windows)) {
                 std::cerr << "MTP_THREE_BOUND_REFUSED phase=offer round=" << round+1 << " pos0=" << spec.pos0 << '\n';
                 std::string drain;
                 if (!workers.finish(drain,o.timeout_ms,false)) std::cerr << "MTP diagnostic drain: " << drain << '\n';
@@ -1031,7 +1037,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             const auto provisional=session.execute(initial_frame(spec,id),spec);
             if(provisional.has_nonfinite()) throw std::runtime_error("nonfinite MTP verification");
             const uint32_t keep=hetero::greedy_accepted_prefix(spec.token_ids,provisional.predicted_tokens);
-            if (o.mtp_three_round && !hetero::mtp_three_commit_fits(spec.pos0,keep,round)) {
+            if (o.mtp_three_round && !hetero::mtp_three_commit_fits(spec.pos0,keep,round,o.windows)) {
                 // No commit frame has been sent. Workers are waiting for commit;
                 // EOF abandons the provisional window and drains the session.
                 std::cerr << "MTP_THREE_BOUND_REFUSED phase=precommit round=" << round+1
@@ -1066,6 +1072,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << o.windows+o.mtp_relay_rounds << ",\"placement_capture\":" << (o.placement_capture ? "true" : "false")
                  << ",\"mtp_fresh_replay\":" << (o.mtp_fresh_replay ? "true" : "false")
                  << ",\"mtp_three_round\":" << (o.mtp_three_round ? "true" : "false")
+                 << ",\"mtp_three_round_variable\":" << (o.mtp_three_round_variable ? "true" : "false")
+                 << ",\"mtp_prompt_windows\":" << (o.mtp_three_round ? o.windows : 0u)
                  << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
         complete.flush();
