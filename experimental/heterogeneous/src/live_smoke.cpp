@@ -63,6 +63,7 @@ struct Options {
     bool cuda_mapped_egress = false;
     std::string mtp_probe_rt;
     uint32_t mtp_relay_rounds=0;
+    bool mtp_state_trace=false, mtp_reprime_tail=false;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
     bool layer_zero_probe = false;
@@ -106,6 +107,8 @@ void usage() {
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification; full-logit fixed-token smoke only.\n"
+        "  --mtp-state-trace: bounded exact terminal R and committed draft KV; capture-prefix required.\n"
+        "  --mtp-reprime-tail: diagnostic native prefill of offered tail after first draft.\n"
         "  --mtp-relay-rounds N: after fixed prompt windows, relay 1..8 actual native proposals and commit greedy prefixes.\n"
         "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
@@ -183,6 +186,8 @@ Options parse(int argc, char** argv) {
         else if (key == "--hip-split-overlap") o.hip_split_overlap = true;
         else if (key == "--receiver-arm") o.receiver_arm = true;
         else if (key == "--cuda-mapped-egress") o.cuda_mapped_egress = true;
+        else if (key == "--mtp-state-trace") o.mtp_state_trace=true;
+        else if (key == "--mtp-reprime-tail") o.mtp_reprime_tail=true;
         else if (key == "--mtp-relay-rounds") {
             o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
             if (!o.mtp_relay_rounds || o.mtp_relay_rounds>8) throw std::invalid_argument("MTP relay rounds must be 1..8");
@@ -320,6 +325,11 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.mtp_state_trace && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
+        o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))
+        throw std::invalid_argument("MTP state trace requires fresh capture, at most 16 cells and one relay");
+    if (o.mtp_reprime_tail && (!o.mtp_state_trace || o.mtp_relay_rounds!=1))
+        throw std::invalid_argument("MTP tail reprime requires explicit state trace and one relay");
     if (o.mtp_relay_rounds && (o.mtp_probe_rt.empty() || o.capture_prefix.empty()))
         throw std::invalid_argument("MTP relay requires explicit MTP probe and full-logit capture prefix");
     if (!o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || o.generate ||
@@ -657,6 +667,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     }
     if (::setenv("STRATA_HETERO_HIP_SPLIT_OVERLAP", o.hip_split_overlap ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit HIP split overlap mode");
+    if (::setenv("STRATA_HETERO_MTP_STATE_PREFIX",o.mtp_state_trace?o.capture_prefix.c_str():"",1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_REPRIME_TAIL",o.mtp_reprime_tail?"1":"0",1)!=0)
+        throw std::runtime_error("cannot configure MTP state trace");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
             ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.windows).c_str(),1)!=0 ||

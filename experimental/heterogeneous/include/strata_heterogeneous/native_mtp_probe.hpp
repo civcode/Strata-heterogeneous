@@ -5,6 +5,7 @@
 // Run the read-only asset audit first, against the exact configured target.
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
+#include "strata_heterogeneous/mtp_state_trace.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 // Vanilla PinnedRing intentionally discards cleanup/error-clear return values;
 // HIP annotates them nodiscard and this worker builds with -Werror.
@@ -32,15 +33,20 @@ namespace strata::heterogeneous {
 class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
-                   uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0)
+                   uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
+                   std::string trace_prefix = {}, bool reprime_tail = false)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
-          arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds) {}
+          arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
         const auto& g=b.geometry;
         // Fresh-prefix qualification found divergent subsequent native offers
         // after rejection. Do not reuse speculative draft state until fixed.
+        if (!trace_prefix_.empty() && (std::getenv("STRATA_PARK_ASYNC") || std::getenv("STRATA_PARK_VRAM_MIB"))) {
+            error="MTP state trace needs ordinary synchronous native snapshot configuration"; return false;
+        }
         if (relay_rounds_ > 1) {
             error="MTP relay draft-state reuse failed fresh-prefix qualification";
             return false;
@@ -109,6 +115,7 @@ public:
                 !ck(cudaDeviceSynchronize(),error) || !room(0,error)) return false;
             cursor_=std::make_unique<MtpPrefixCursor>(stride_,b.session.max_cells,g.n_vocab,b.max_t);
             n_vocab_=g.n_vocab;
+            if (!trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
             std::fprintf(stderr,"HETERO_MTP_PROBE_LOADED device=%d draft_vram=%llu estimate=%llu\n",
                          device_,static_cast<unsigned long long>(drafter_->vram_bytes()),
                          static_cast<unsigned long long>(estimate));
@@ -137,7 +144,10 @@ public:
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
         ++committed_;
         verified_next_=predictions[keep-1];
-        if (relay_rounds_ || committed_!=windows_) return true;
+        // With a trace, finish the sole live relay with a second native draft
+        // for diagnosis ONLY, never submit another candidate window.
+        if (committed_!=(relay_rounds_ ? windows_+relay_rounds_ : windows_) ||
+            (relay_rounds_ && !trace_)) return true;
         return cursor_->finish(predictions[keep-1],
             [this](const float* row,int32_t next,int64_t cell,std::string& e) {
                 std::array<int32_t,8> tokens{};
@@ -146,9 +156,10 @@ public:
                 core::MtpDrafter::DraftResult result;
                 // Native draft_first copies into probe-owned scratch, never
                 // clobbers verifier R or submits candidates to target.
-                if (!room(512ull<<20,e) ||
+                if (!capture("draft_before",row,&next,1,cell,cell,e) ||
+                    !room(512ull<<20,e) ||
                     !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
-                    !room(0,e)) return false;
+                    !room(0,e) || !capture("draft_after",row,&next,1,cell,cell+1,e)) return false;
                 if (n<1 || n>4 || result.generated!=n) {e="MTP probe invalid generated count";return false;}
                 for(int i=0;i<n;++i)
                     if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
@@ -176,9 +187,14 @@ public:
                 std::array<float,8> probs{};
                 int n=0;
                 core::MtpDrafter::DraftResult result;
-                if (!room(512ull<<20,e) ||
+                if (!capture("draft_before",row,&next,1,cell,cell,e) ||
+                    !room(512ull<<20,e) ||
                     !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
-                    !room(0,e)) return false;
+                    !room(0,e) || !capture("draft_after",row,&next,1,cell,cell+1,e)) return false;
+                // Experimental diagnostic only: rewrite the exact accepted
+                // pair with vanilla prefill, keeping the already-made offer.
+                if (reprime_tail_ && (!drafter_->prefill(row,&next,1,cell,e,true) ||
+                    !room(0,e) || !capture("reprime_after",row,&next,1,cell,cell+1,e))) return false;
                 if (n<1 || n>4 || result.generated!=n) {e="MTP relay invalid count";return false;}
                 for(int i=0;i<n;++i)
                     if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
@@ -212,6 +228,9 @@ private:
     unsigned windows_,relay_rounds_=0,committed_=0;
     int32_t verified_next_=-1;
     bool relay_pending_=false;
+    std::string trace_prefix_;
+    bool reprime_tail_=false;
+    std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;
     int64_t n_vocab_=0;
     size_t stride_=0;
@@ -234,10 +253,15 @@ private:
         }
         return true;
     }
+    bool capture(const char* phase,const float* rows,const int32_t* next,size_t n,
+                 int64_t cell,int64_t upto,std::string& e) {
+        return !trace_ || trace_->capture(phase,drafter_->kv_state(),rows,next,n,cell,upto,e);
+    }
     std::function<bool(const float*,const int32_t*,size_t,int64_t,std::string&)> prime() {
         return [this](const float* rows,const int32_t* next,size_t n,int64_t cell,std::string& e) {
-            if (!room(512ull<<20,e) || !drafter_->prefill(rows,next,static_cast<int64_t>(n),cell,e,true) ||
-                !room(0,e)) return false;
+            if (!capture("prime_before",rows,next,n,cell,cell,e) || !room(512ull<<20,e) ||
+                !drafter_->prefill(rows,next,static_cast<int64_t>(n),cell,e,true) ||
+                !room(0,e) || !capture("prime_after",rows,next,n,cell,cell+int64_t(n),e)) return false;
             std::fprintf(stderr,"HETERO_MTP_PROBE_PRIMED cell=%lld rows=%zu\n",static_cast<long long>(cell),n);
             return true;
         };
