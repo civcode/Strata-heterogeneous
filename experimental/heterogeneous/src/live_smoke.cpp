@@ -195,7 +195,7 @@ Options parse(int argc, char** argv) {
                 throw std::invalid_argument("native prefill chunk outside bounded range");
         } else if (key == "--prefill-parity-at") {
             generation_arg = true;
-            o.prefill_parity_at = u32(required_value(i, argv, "--prefill-parity-at"), "prefill-parity-at");
+            o.prefill_parity_at = u32(required_value(i, argc, argv, "--prefill-parity-at"), "prefill-parity-at");
             if (!o.prefill_parity_at) throw std::invalid_argument("prefill-parity-at must be positive");
         } else if (key == "--source-gguf") {
             generation_arg = true;
@@ -573,9 +573,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot clear inherited native microprobe");
     }
     // Explicit opt-in only. Clear inherited capture state for normal runs.
-    if (o.boundary_capture) {
+    if (o.boundary_capture || o.prefill_parity_at) {
+        const std::string verifier_prefix = o.prefill_parity_at ? o.capture_prefix + ".verifier" : o.capture_prefix;
         if (::setenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX",
-                     o.capture_prefix.c_str(), 1) != 0)
+                     verifier_prefix.c_str(), 1) != 0)
             throw std::runtime_error("cannot enable native boundary capture");
     } else if (::unsetenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX") != 0) {
         throw std::runtime_error("cannot clear inherited boundary capture");
