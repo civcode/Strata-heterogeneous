@@ -64,6 +64,7 @@ struct Options {
     bool micro_probe = false;
     bool boundary_capture = false;
     bool placement_capture = false;
+    uint32_t prefill_parity_at = 0; // diagnostic: number of known prefix tokens before teacher-forced rows
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -99,7 +100,10 @@ void usage() {
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
         "  --native-prefill-chunk N (grouped HIP resident native prefill, 1..2048)\n"
-        "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
+        "  --prefill-parity-at N --capture-prefix PATH: grouped diagnostic A/B/A, prefix N,\n"
+        "    --generate 1 --native-prefill-chunk N --prompt-chunk 1, nonresident stdin tokens.\n"
+        "    Captures full committed logits on the remaining 1..128 teacher-forced tokens and native bridge bytes.\n"
+        "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
         "  --lookup-draft: verified suffix lookup (buffered only, prompt-chunk 2..8).\n"
@@ -189,6 +193,10 @@ Options parse(int argc, char** argv) {
             o.native_prefill_chunk=u32(required_value(i,argc,argv,"--native-prefill-chunk"),"native-prefill-chunk");
             if (!o.native_prefill_chunk || o.native_prefill_chunk>hetero::max_native_prefill_chunk)
                 throw std::invalid_argument("native prefill chunk outside bounded range");
+        } else if (key == "--prefill-parity-at") {
+            generation_arg = true;
+            o.prefill_parity_at = u32(required_value(i, argv, "--prefill-parity-at"), "prefill-parity-at");
+            if (!o.prefill_parity_at) throw std::invalid_argument("prefill-parity-at must be positive");
         } else if (key == "--source-gguf") {
             generation_arg = true;
             o.source_gguf = required_value(i, argc, argv, "--source-gguf");
@@ -278,13 +286,16 @@ Options parse(int argc, char** argv) {
     if (generation_arg && !o.generate)
         throw std::invalid_argument("generation options require --generate");
     if (o.generate || o.describe_source) {
-        if (smoke_shape || !o.capture_prefix.empty() || o.layer_taps ||
+        if (smoke_shape || (!o.capture_prefix.empty() && !o.prefill_parity_at) || o.layer_taps ||
             o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
-    if (o.native_prefill_chunk && (!o.group_hip || !o.resident || !o.generate))
-        throw std::invalid_argument("native bulk prefill requires grouped HIP resident generation");
+    if (o.prefill_parity_at && (o.generate != 1 || !o.group_hip || o.resident || o.stream_tokens ||
+        o.lookup_draft || o.prompt_chunk != 1 || !o.native_prefill_chunk || o.capture_prefix.empty()))
+        throw std::invalid_argument("prefill parity requires grouped, nonresident --generate 1, native chunk, one-row control and capture prefix");
+    if (o.native_prefill_chunk && (!o.group_hip || (!o.resident && !o.prefill_parity_at) || !o.generate))
+        throw std::invalid_argument("native bulk prefill requires grouped HIP resident generation or explicit parity diagnostic");
     if (o.stream_tokens && !o.resident)
         throw std::invalid_argument("--stream-tokens requires --resident");
     if (o.lookup_draft && (o.stream_tokens || o.prompt_chunk < 2))
@@ -298,6 +309,9 @@ Options parse(int argc, char** argv) {
             o.tokens = prompt_from_stdin(o.context_limit);
             if (uint64_t(o.tokens.size()) + o.generate > o.context_limit)
                 throw std::invalid_argument("prompt and completion exceed context limit");
+            if (o.prefill_parity_at && (o.prefill_parity_at >= o.tokens.size() ||
+                o.tokens.size() - o.prefill_parity_at > 128))
+                throw std::invalid_argument("prefill parity requires a nonempty prefix and 1..128 teacher-forced rows");
         }
     } else if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows) {
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
@@ -407,8 +421,18 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                 o.capture_prefix.find('\r') != std::string::npos ||
                 !std::filesystem::is_directory(prefix.parent_path(), ec))
                 throw std::invalid_argument("capture prefix must be an absolute path in an existing directory");
-            if (std::filesystem::exists(o.capture_prefix + ".complete.json"))
+            if (std::filesystem::exists(o.capture_prefix + ".complete.json") ||
+                std::filesystem::exists(o.capture_prefix + ".prefill.json"))
                 throw std::invalid_argument("capture already completed; use a fresh prefix");
+            if (o.prefill_parity_at) {
+                // All potentially emitted files must be fresh; mode identities are not legacy smoke window IDs.
+                const std::string stem = prefix.filename().string() + ".";
+                for (const auto& entry : std::filesystem::directory_iterator(prefix.parent_path())) {
+                    const auto name = entry.path().filename().string();
+                    if (name.compare(0, stem.size(), stem) == 0)
+                        throw std::invalid_argument("prefill parity capture exists; use a fresh prefix");
+                }
+            }
             for (uint32_t n = 1; n <= o.windows; ++n) {
                 const std::string base = o.capture_prefix + ".w" + std::to_string(n);
                 if (o.layer_zero_probe &&
@@ -556,18 +580,25 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     } else if (::unsetenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX") != 0) {
         throw std::runtime_error("cannot clear inherited boundary capture");
     }
+    // This diagnostic only captures the cross-vendor prompt residual, never a grouped decode probe.
+    if (o.prefill_parity_at) {
+        if (::setenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX", o.capture_prefix.c_str(), 1) != 0)
+            throw std::runtime_error("cannot enable native prefill boundary readback");
+    } else if (::unsetenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX") != 0) {
+        throw std::runtime_error("cannot clear inherited native prefill capture");
+    }
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
     (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
-    if (compact && !o.generate)
-        throw std::invalid_argument("compact head results are only supported in generation mode");
+    if (compact && (!o.generate || o.prefill_parity_at))
+        throw std::invalid_argument("compact head results are not supported in diagnostic modes");
     // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
         throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip);
-    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident,
+    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
                                          fanout, compact, o.group_hip);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
@@ -594,6 +625,54 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             throw std::runtime_error("committed head predictions malformed or nonfinite");
         return committed;
     };
+    if (o.prefill_parity_at) {
+        // One physical topology, identical fixed inputs, explicit fresh reset before each pass.
+        // Never feed a prediction back or stop on a generated token in this diagnostic.
+        const size_t cut = o.prefill_parity_at;
+        const std::vector<int32_t> prefix(o.tokens.begin(), o.tokens.begin() + cut);
+        const char* modes[] = {"serial-a", "native", "serial-b"};
+        for (size_t pass = 0; pass < 3; ++pass) {
+            request_id = pass + 1;
+            session.begin_request(request_id);
+            uint64_t window = 0;
+            if (pass == 1) {
+                session.native_prefill(prefix, o.native_prefill_chunk);
+                window = 1;
+            } else {
+                for (size_t pos = 0; pos < cut; ++pos) {
+                    hetero::WindowSpec spec{static_cast<int64_t>(pos), {o.tokens[pos]}};
+                    (void)run_window(spec, ++window, 1);
+                }
+            }
+            Options capture = o;
+            capture.capture_prefix += std::string(".") + modes[pass];
+            for (size_t pos = cut; pos < o.tokens.size(); ++pos) {
+                hetero::WindowSpec spec{static_cast<int64_t>(pos), {o.tokens[pos]}};
+                const auto committed = run_window(spec, ++window, 1);
+                capture_window(capture, plan, spec, committed);
+            }
+            std::cout << "PREFILL_PARITY_CAPTURE mode=" << modes[pass]
+                      << " prefix=" << cut << " rows=" << o.tokens.size() - cut << std::endl;
+        }
+        std::string error;
+        if (!workers.finish(error)) throw std::runtime_error("parity worker shutdown failed: " + error);
+        // Completion is evidence of capture, not numerical parity. Publish only after all ACKs and cleanup.
+        std::ofstream complete(o.capture_prefix + ".prefill.json", std::ios::binary);
+        if (!complete) throw std::runtime_error("cannot create prefill parity completion marker");
+        complete << "{\"schema\":\"strata-heterogeneous-prefill-parity/v1\""
+                 << ",\"plan\":" << json_string(hetero::plan_spec(plan))
+                 << ",\"model_fingerprint\":" << o.fingerprint
+                 << ",\"prefix_rows\":" << cut << ",\"chunk\":" << o.native_prefill_chunk
+                 << ",\"hc\":" << o.hc << ",\"n_embd\":" << o.n_embd << ",\"token_ids\":[";
+        for (size_t pos = 0; pos < o.tokens.size(); ++pos) {
+            if (pos) complete << ',';
+            complete << o.tokens[pos];
+        }
+        complete << "]}\n";
+        complete.flush();
+        if (!complete) throw std::runtime_error("prefill parity completion write failed");
+        return 0;
+    }
     // Emitted only after successful all-stage commit and result validation.
     auto trace_committed = [&](const char* phase, const hetero::WindowSpec& spec,
                                uint64_t window, uint32_t keep) {

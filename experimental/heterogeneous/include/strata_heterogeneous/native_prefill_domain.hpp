@@ -2,6 +2,7 @@
 // Native chunk-major Prefill in each backend. Only the R-only transport is new.
 // The caller owns weights/cache/session, and has completed its resident reset.
 #include "strata_heterogeneous/native_prefill_init.hpp"
+#include "strata_heterogeneous/boundary_capture.hpp"
 #include "strata_heterogeneous/host.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 #include <algorithm>
@@ -55,7 +56,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
     };
     try {
         validate_wire_frame(cmd);
-        if (cmd.kind != Kind::prefill_spec || stages.size() != (sender ? 1u : 2u)) {
+        if (cmd.kind != Kind::prefill_spec || stages.size() != (sender ? 1u : 2u) ||
+            cmd.stage_index < stages.size() - 1) {
             error = "native prefill domain command/topology mismatch"; return false;
         }
         const int64_t n = cmd.rows;
@@ -95,6 +97,22 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         if (!check(cudaSetDevice(first.device),"prefill bridge device") ||
             !check(cudaMallocHost(reinterpret_cast<void**>(&owned.pinned),size_t(chunk)*stride*sizeof(float)),
                    "prefill bridge pinned staging")) return false;
+        // Physical receiving stage, not the terminal HIP domain endpoint (2).
+        const size_t boundary_stage = cmd.stage_index - (stages.size() - 1);
+        const char* capture_prefix = std::getenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX");
+        const bool capture_bridge = capture_prefix && *capture_prefix;
+        auto verify_piece = [&](const float* device, size_t off, size_t count,
+                                int64_t pos, const char* direction, cudaStream_t stream, std::string& err) {
+            return capture_device_handoff(device + off * stride, owned.pinned + off * stride,
+                count * stride * sizeof(float), boundary_stage, cmd.request_id,
+                uint64_t(pos) + off + 1, direction, stream,
+                [&](std::string& e) {
+                    const auto rc = cudaStreamSynchronize(stream);
+                    if (rc == cudaSuccess) return true;
+                    e = std::string("native prefill capture fence: ") + cudaGetErrorString(rc);
+                    return false;
+                }, err, "STRATA_HETERO_PREFILL_CAPTURE_PREFIX");
+        };
         int64_t offset=0;
         auto shape = [&](int64_t rows,int64_t pos) {
             return pos==offset && offset<n && rows==std::min(chunk,n-offset);
@@ -108,6 +126,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                                "native prefill residual D2H")) return false;
                     for (size_t off=0;off<size_t(rows);) {
                         const size_t count=std::min(cap,size_t(rows)-off);
+                        if (capture_bridge && !verify_piece(r, off, count, pos, "out", first.stream, err)) return false;
                         Frame f;
                         f.kind=Kind::prefill_rows; f.stage_index=cmd.stage_index; f.request_id=cmd.request_id;
                         f.window_id=uint64_t(pos)+off+1; f.plan_fingerprint=cmd.plan_fingerprint;
@@ -146,6 +165,11 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                     if (!check(cudaMemcpyAsync(dst,owned.pinned,size_t(rows)*stride*sizeof(float),
                                                cudaMemcpyHostToDevice,cs),"prefill residual H2D") ||
                         !check(cudaStreamSynchronize(cs),"prefill staging lifetime fence")) return false;
+                    for (size_t off = 0; capture_bridge && off < size_t(rows);) {
+                        const size_t count = std::min(cap, size_t(rows) - off);
+                        if (!verify_piece(dst, off, count, pos, "in", cs, err)) return false;
+                        off += count;
+                    }
                     offset+=rows; return true;
                 } catch (const std::exception& ex) { err=ex.what(); return false; }
             },false);

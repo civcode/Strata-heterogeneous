@@ -128,12 +128,17 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
 
 
 def compare(reference: list[tuple[dict, dict]],
-            heterogeneous: list[tuple[dict, dict]], max_kl: float, *, placement: bool = False) -> dict:
+            heterogeneous: list[tuple[dict, dict]], max_kl: float, *, placement: bool = False, prefill: bool = False) -> dict:
     require(len(reference) == len(heterogeneous) and bool(reference),
             "different or empty window counts")
     ref_plan = reference[0][0]["plan"].split(",")
     het_plan = heterogeneous[0][0]["plan"].split(",")
-    if placement:
+    require(not (placement and prefill), "conflicting comparison modes")
+    if prefill:
+        require(ref_plan == het_plan and len(ref_plan) == 3 and
+                [x.split(":")[0] for x in ref_plan] == ["cuda", "hip", "hip"],
+                "prefill parity requires identical ordered grouped CUDA/HIP plans")
+    elif placement:
         def placement_identity(plan):
             devices = []
             end = 0
@@ -166,6 +171,8 @@ def compare(reference: list[tuple[dict, dict]],
     for window, ((ref_meta, ref), (het_meta, het)) in enumerate(zip(reference, heterogeneous), 1):
         for key in ("model_fingerprint", "pack_index_sha256", "gguf_shards",
                     "profile_path", "window_id", "pos0", "rows", "n_keep", "token_ids"):
+            if prefill and key == "window_id":
+                continue  # native prefix is one command, serial prefix is many windows
             require(ref_meta[key] == het_meta[key],
                     f"window {window} source/sequence differs: {key}")
         require(ref["rows"] == het["rows"] and ref["vocab"] == het["vocab"],
@@ -212,7 +219,7 @@ def compare(reference: list[tuple[dict, dict]],
             "prediction_disagreements": prediction_disagreements,
             "top1_disagreements": top1_disagreements, "max_kl_ref_to_hetero": worst_kl,
             "max_abs_logit_difference": worst_max_abs, "max_rmse_logits": worst_rmse,
-            "kl_threshold": max_kl, "comparison": "placement" if placement else "unsplit", "row_metrics": diagnostics}
+            "kl_threshold": max_kl, "comparison": "prefill" if prefill else "placement" if placement else "unsplit", "row_metrics": diagnostics}
 
 
 def main() -> int:

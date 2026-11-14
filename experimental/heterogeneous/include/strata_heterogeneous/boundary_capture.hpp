@@ -20,8 +20,9 @@ inline bool capture_device_handoff(const void* device, void* pinned,
                                    size_t bytes, size_t stage, uint64_t request,
                                    uint64_t window, const char* direction,
                                    cudaStream_t stream, WaitForReadback&& wait_for_readback,
-                                   std::string& error) {
-    const char* prefix = std::getenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX");
+                                   std::string& error,
+                                   const char* prefix_env = "STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX") {
+    const char* prefix = std::getenv(prefix_env);
     if (!prefix || !*prefix) return true;
     if (!device || !pinned || !bytes || bytes > 16u * 1024u * 1024u ||
         !direction || (std::strcmp(direction, "in") != 0 &&
