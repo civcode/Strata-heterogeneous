@@ -24,11 +24,13 @@ def make_stm0(*, change=None, delta=0.0, change_q8=None,
             v = 0.25 + old_field * 0.1
         else:
             v = 0.15 + field * 0.1
+        start = len(data)
         for i in range(size):
-            value = v + 0.0001 * i
-            if change == field and i == 0:
-                value += delta
-            data.append(value)
+            data.append(v + 0.0001 * i)
+        # Match the legacy STB0 fixture's FP32 rounding order: first
+        # round into array('f'), then apply the deliberate perturbation.
+        if change == field:
+            data[start] += delta
     q8in = bytearray((i * 7) % 256 for i in range(n // 32 * 36))
     q8sw = bytearray((i * 11) % 256 for i in range(ff // 32 * 36))
     if change_q8 == "shared_input_q8":
