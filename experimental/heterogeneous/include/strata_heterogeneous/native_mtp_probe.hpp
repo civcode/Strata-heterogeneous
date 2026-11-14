@@ -39,6 +39,12 @@ public:
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
         const auto& g=b.geometry;
+        // Fresh-prefix qualification found divergent subsequent native offers
+        // after rejection. Do not reuse speculative draft state until fixed.
+        if (relay_rounds_ > 1) {
+            error="MTP relay draft-state reuse failed fresh-prefix qualification";
+            return false;
+        }
         if (device_>=0 || !windows_ || windows_>8 || relay_rounds_>8 || arena_budget_ ||
             b.session.layer_hi!=g.n_layers || b.session.max_cells!=2048 ||
             g.n_layers!=48 || g.n_embd!=2560 || g.hc!=4 || g.n_expert!=512 ||
