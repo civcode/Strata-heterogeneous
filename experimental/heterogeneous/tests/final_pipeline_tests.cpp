@@ -1,5 +1,6 @@
 // CPU-only final-worker protocol. Real forked worker processes, no GPU model.
 #include "strata_heterogeneous/final_pipeline.hpp"
+#include "strata_heterogeneous/backend_domains.hpp"
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/shared.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
@@ -36,6 +37,7 @@ Frame input_frame(const Plan& plan, uint64_t request = 17, uint64_t window = 1) 
 class MockFinal final : public FinalStageExecutor {
 public:
     bool bad_identity = false;
+    bool grouped = false;
     bool nonfinite = false;
     bool fail_commit = false;
     bool fail_reset = false;
@@ -67,7 +69,7 @@ public:
         // Verify that real intermediate protocol workers handed off every layer,
         // not just that token metadata reached the final mock.
         float expected = 0.25f;
-        for (uint32_t layer = 0; layer < plan_.stages[index_].first_layer; ++layer)
+        for (uint32_t layer = 0; layer < plan_.stages[grouped ? index_-1 : index_].first_layer; ++layer)
             expected += static_cast<float>(layer + 1) * 0.0001f;
         ByteRange all{input.data(), input.bytes()};
         for (size_t i = 0; i < input.bytes() / sizeof(float); ++i) {
@@ -137,9 +139,10 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool nonfinite = false, bool fail_commit = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
                    bool resident = false, bool fail_reset = false,
-                   bool delayed_startup = false) {
+                   bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false) {
     WorkerGroup group;
-    for (size_t i = 0; i < plan.stages.size(); ++i) {
+    for (const auto& domain : worker_domains(plan,grouped)) {
+        const size_t i = domain.terminal_stage();
         int fd[2]{};
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fd) != 0) throw std::runtime_error("socketpair");
         const pid_t pid = ::fork();
@@ -153,12 +156,13 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     if (delayed_startup) ::usleep(1600000);
                     MockFinal final;
                     final.bad_identity = bad;
+                    final.grouped = grouped;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
                     final.fail_reset = fail_reset;
                     serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, resident ? &limits : nullptr,
-                                             delayed_startup ? 4000 : -1);
+                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello);
                 } else {
                     MockStageExecutor intermediate;
                     serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, resident ? &limits : nullptr,
@@ -235,6 +239,34 @@ void resident_lifecycle(bool shared, bool fanout) {
         fails([&]{ pipe.begin_request(1); }, "later worker reset refusal");
         check(pipe.poisoned(), "partial reset poisons all peers");
         fails([&]{ pipe.begin_request(2); }, "poisoned workers not reusable");
+    }
+}
+void grouped_domain(bool shared, bool fanout) {
+    const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    {
+        auto w = launch(p,shared,false,false,false,false,0.f,true,false,false,true);
+        check(w.pids.size()==2,"two backend children for three physical stages");
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,fanout,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        auto result=pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        check(result.stage_index==2 && result.plan_fingerprint==p.fingerprint(),"physical terminal identity retained");
+        check(pipe.commit(1).predicted_tokens.front()==18,"one domain ACK publishes result");
+        pipe.begin_request(2);
+        (void)pipe.execute(input_frame(p,2,1),{0,{3,2,1}});
+        check(pipe.commit(3).request_id==2,"grouped reset and new request");
+    }
+    {
+        auto w=launch(p,shared,false,false,true,false,0.f,true,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,fanout,false,true);
+        pipe.initialize();pipe.begin_request(1);
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        fails([&]{(void)pipe.commit(1);},"later group commit failure");
+        check(pipe.poisoned(),"failed group cannot publish");
+    }
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,fanout,false,true);
+        fails([&]{pipe.initialize();},"terminal-only hello must not pass grouped readiness");
     }
 }
 void bad_ack(bool fanout) {
@@ -395,6 +427,7 @@ int main() {
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);
             negative(false,fanout); negative(true,fanout);
             compact_and_prefix(false,fanout); compact_and_prefix(true,fanout);
+            grouped_domain(false,fanout); grouped_domain(true,fanout);
             bad_ack(fanout);
         }
         std::cout << "final pipeline tests: PASS (" << assertions

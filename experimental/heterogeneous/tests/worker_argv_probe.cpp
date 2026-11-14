@@ -6,16 +6,19 @@
 #include <string>
 using namespace strata::heterogeneous;
 int main(int argc, char** argv) {
-    if (argc != 10 || !argv || !argv[8] || std::string(argv[8]) != "--config") return 12;
+    if ((argc != 10 && argc != 12) || !argv || !argv[8] || std::string(argv[8]) != "--config") return 12;
     const std::string mode(argv[1]);
-    if (mode != "--worker" && mode != "--worker-shared") return 13;
+    const bool grouped = mode=="--worker-hip-domain" || mode=="--worker-hip-domain-shared";
+    if ((!grouped && mode!="--worker" && mode!="--worker-shared") || argc!=(grouped?12:10)) return 13;
     uint32_t index = 0;
     const std::string value(argv[7]);
     const auto parsed = std::from_chars(value.data(), value.data() + value.size(), index);
     if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || index > 2)
         return 14;
-    if (std::string(argv[9]) != "/tmp/m20-stage-" + std::to_string(index) + ".cfg")
-        return 15;
+    if (grouped) {
+        if(index!=2 || std::string(argv[9])!="/tmp/m20-stage-1.cfg" ||
+           std::string(argv[10])!="--config" || std::string(argv[11])!="/tmp/m20-stage-2.cfg") return 15;
+    } else if (std::string(argv[9]) != "/tmp/m20-stage-" + std::to_string(index) + ".cfg") return 15;
     try {
         const Plan plan = parse_plan(argv[2], 10, {2, 6}, 999);
         if (plan.stages.size() != 3 ||

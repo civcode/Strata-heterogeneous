@@ -56,6 +56,18 @@ int main() {
         need(!parse_hip_worker_invocation(9, argv, parsed, error), "missing config argument");
         need(!parse_hip_worker_invocation(10, nullptr, parsed, error), "missing argv array");
         need(parsed.stage_index == 2, "failed argc leaves result unchanged");
+        const char* group[] = {"worker","--worker-hip-domain-shared","cuda:0:0-3,hip:0:3-7,hip:1:7-10",
+            "10","2","6","999","2","--config","/tmp/hip-stage1.cfg","--config","/tmp/hip-stage2.cfg"};
+        need(parse_hip_worker_invocation(12,group,parsed,error),"grouped HIP argv");
+        need(parsed.stage_index==2 && parsed.shared_memory && parsed.domain_configs.size()==2 &&
+            parsed.domain_configs[0]=="/tmp/hip-stage1.cfg" && parsed.domain_configs[1]=="/tmp/hip-stage2.cfg",
+            "grouped ordered physical config routing");
+        group[7]="1"; need(!parse_hip_worker_invocation(12,group,parsed,error),"group requires terminal endpoint");
+        group[7]="2"; group[11]=group[9];
+        need(!parse_hip_worker_invocation(12,group,parsed,error),"duplicate config refused");
+        group[11]="relative.cfg";
+        need(!parse_hip_worker_invocation(12,group,parsed,error),"unsafe second config refused");
+        need(parsed.domain_configs[1]=="/tmp/hip-stage2.cfg","group failure leaves output unchanged");
         std::cout << "HIP bootstrap: PASS (" << checks << " assertions, no HIP runtime)\n";
         return 0;
     } catch (const std::exception& ex) {

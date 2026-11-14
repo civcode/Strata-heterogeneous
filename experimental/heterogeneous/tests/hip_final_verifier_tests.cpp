@@ -161,6 +161,48 @@ void nonfinite_fail_closed() {
     }
     check(fake_cuda::allocations==0,"guard cleanup");
 }
+void grouped_native_chain() {
+    fv::reset(); Fixture f; std::string err;
+    f.plan.stages = {{Backend::cuda,0,0,2},{Backend::hip,0,2,3},{Backend::hip,1,3,4}};
+    strata::core::SessionState front{2,3,32};
+    int pools0=0, pools1=0;
+    int32_t r0[8]={-1,-1,-1,-1,0,1,-1,-1};
+    int32_t r1[8]={-1,-1,-1,-1,-1,-1,0,1};
+    uint8_t cache=1;
+    const auto zero=[](strata::core::SessionState&,const strata::core::ModelGeometry&,void*){};
+    std::vector<HipNativeChainStage> bindings={
+        {{f.weights,f.model,front,{r0,r0,&cache,nullptr,2},pool,&pools0,123,8,4,0,zero},0},
+        {{f.weights,f.model,f.session,{r1,r1,&cache,nullptr,2},pool,&pools1,123,8,4,0,zero},0}
+    };
+    {
+        HipFinalVerifierExecutor stage(bindings);
+        check(stage.prepare(f.plan,2,err),"grouped final native chain prepared");
+        check(fake_cuda::allocations==3,"one mapped local handoff and one cross-runtime input/staging pair");
+        check(stage.reset_request(1,err),"all stages reset");
+        check(stage.begin_window({0,{5,6}},1,1,err),"grouped window admitted");
+        Buffer input(2,f.plan.geometry); FinalStageResult output;
+        const int copies=fake_cuda::copies;
+        check(stage.run_final_window(f.frame(),input.view,output,err),"grouped head result");
+        check(fake_cuda::copies==copies+1,"only cross-runtime input upload");
+        check(fv::run_devices==std::vector<int>({0,1}) && pools0==1 && pools1==1,"native local run chain");
+        check(fv::logit_devices==std::vector<int>({1,1}),"logits copied on head owner");
+        check(stage.commit_prefix(1,1,1,err) && fv::commit_devices==std::vector<int>({0,1}),"native local prefix commit");
+        check(stage.begin_window({1,{7,8}},1,2,err),"position advances by accepted prefix");
+        check(stage.run_final_window(f.frame(2,1,2),input.view,output,err),"second grouped window");
+        fv::fail_commit_device=1;
+        check(!stage.commit_prefix(1,2,1,err),"later HIP commit failure is not ACKed");
+        stage.abandon_window();
+        stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"grouped graph and mapped handoff teardown");
+    r0[4]=-1;
+    {
+        HipFinalVerifierExecutor stage(bindings);
+        check(!stage.prepare(f.plan,2,err),"grouping refuses incomplete residency");
+        stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"failed group allocation cleanup");
+}
 void fault_injection() {
     Fixture f;std::string err;
     for (int fault=0;fault<7;++fault) {
@@ -209,7 +251,7 @@ void fault_injection() {
 }
 int main() {
     try {
-        success_and_replay(); invalid_inputs(); nonfinite_fail_closed(); fault_injection();
+        success_and_replay(); invalid_inputs(); nonfinite_fail_closed(); fault_injection(); grouped_native_chain();
         std::cout << "HIP final verifier CPU-double tests: PASS (" << assertions << " assertions; no GPU)\n";
         return 0;
     } catch (const std::exception& e) {

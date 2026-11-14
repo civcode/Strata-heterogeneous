@@ -241,11 +241,13 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
                             predictions.data(), error) ||
             !fence(error) || !wait_fence(error)) return false;
     }
-    if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
-    if (!layer_zero_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
-    if (!stage0_phases_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
-    if (!branch_probe_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
-    if (!micro_probe_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+    if (chain_stages_.empty()) {
+        if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+        if (!layer_zero_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+        if (!stage0_phases_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+        if (!branch_probe_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+        if (!micro_probe_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
+    }
     FinalStageResult pending;
     pending.stage_index = static_cast<uint32_t>(index_);
     pending.request_id = request_;

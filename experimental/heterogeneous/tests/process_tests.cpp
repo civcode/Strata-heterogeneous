@@ -91,6 +91,13 @@ int main() {
         auto routed = WorkerProcessGroup::launch(plan, probe, probe, false, {}, paths);
         check(routed.size() == 3, "three stage-indexed children launched");
         check(routed.finish(error, 1000), "correct config in every child process");
+        for (bool shared : {false,true}) {
+            auto native_domains = WorkerProcessGroup::launch(plan,probe,probe,shared,{},paths,true);
+            check(native_domains.size()==2,"one child per backend domain");
+            check(native_domains.finish(error,1000),"grouped child received ordered native configs");
+        }
+        should_throw([&]{(void)WorkerProcessGroup::launch(plan,probe,probe,false,{}, {},true);},
+                     "group requires every physical config");
         auto routed_shared = WorkerProcessGroup::launch(plan, probe, probe, true, {}, paths);
         check(routed_shared.finish(error, 1000), "stage config routes in shared mode");
         should_throw([&] {
