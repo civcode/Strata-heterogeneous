@@ -67,6 +67,17 @@ struct StageBranchProbe {
     std::vector<int32_t> ids;
 };
 
+// M2.17 opt-in native stage-zero suboperation trace. Fixed float-field
+// order: layer5 shared input, gate/up raw, down unscaled, gate scale,
+// final shared output; layer6 QKV, preconv history, convolved output.
+// Raw Q8_1 buffers are exact native consumer images, not dequantizations.
+struct StageMicroProbe {
+    uint32_t n_embd = 0, n_ff = 0, conv_channels = 0, conv_kernel = 0;
+    std::vector<float> data;
+    std::vector<uint8_t> input_q8;
+    std::vector<uint8_t> swiglu_q8;
+};
+
 /// 0.1.43 (STRATA_ADAPT_OVERLAP): the adaptive tier's copies still landing while a decode window runs.  The window's
 /// residency tables are the baseline's (the swapped-in experts are resident from the window's first layer), but their
 /// bytes arrive layer by layer: `run` holds a layer's plan (the first thing that lets the GPU read the layer's expert
@@ -249,6 +260,8 @@ public:
     // Set before init. Extra device memory and memcpy nodes exist ONLY when enabled.
     void set_stage_branch_probe(bool on) { branch_probe_on_ = on; }
     bool copy_stage_branch_probe(StageBranchProbe& result, std::string& err) const;
+    void set_stage_micro_probe(bool enabled) { micro_probe_on_ = enabled; }
+    bool copy_stage_micro_probe(StageMicroProbe& result, std::string& err) const;
     /// Is the zero-doorbell graph the one a batch window would run now (every expert of the stage in VRAM by the host
     /// table)?  Looks at the table, as each window does.  (STRATA_ADMIT_MERGE_FIRST's gate.)
     bool ar_live() { refresh_ar(); return ar_on(); }
@@ -689,6 +702,16 @@ private:
     size_t branch_floats_ = 0;
     bool branch_capture(int64_t layer, int phase, const void* src,
                         cudaStream_t stream, std::string& err) const;
+    static constexpr size_t kMicroFields = 9;
+    bool micro_probe_on_ = false;
+    float* micro_dev_ = nullptr;
+    uint8_t* micro_input_q8_ = nullptr;
+    uint8_t* micro_swiglu_q8_ = nullptr;
+    std::array<size_t, kMicroFields> micro_offsets_{};
+    std::array<size_t, kMicroFields> micro_lengths_{};
+    size_t micro_floats_ = 0;
+    bool micro_capture(int layer, int field, const float* src,
+                       cudaStream_t stream, std::string& err) const;
     bool stage0_phase_on_ = false;
     float* stage0_phase_dev_ = nullptr;   // [T][12 layers][4 phases][n_embd]
     bool stage0_phase_capture(int64_t layer, int row0, int rows, int phase,
