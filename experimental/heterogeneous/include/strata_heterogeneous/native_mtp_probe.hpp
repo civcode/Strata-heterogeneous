@@ -165,7 +165,7 @@ public:
                     core::MtpDrafter::DraftResult result;
                     if (!capture("draft_before",row,&next,1,cell,cell,e) ||
                         !room(512ull<<20,e) ||
-                        !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
+                        !draft_ordered(row,next,cell,tokens.data(),probs.data(),n,result,e) ||
                         !room(0,e) || !capture("draft_after",row,&next,1,cell,cell+1,e)) return false;
                     if (n<1 || n>4 || result.generated!=n) {e="MTP probe invalid generated count";return false;}
                     for(int i=0;i<n;++i)
@@ -198,7 +198,7 @@ public:
                 core::MtpDrafter::DraftResult result;
                 if (!capture("draft_before",row,&next,1,cell,cell,e) ||
                     !room(512ull<<20,e) ||
-                    !drafter_->draft_first(1,row,next,cell,tokens.data(),e,probs.data(),0.f,&n,&result) ||
+                    !draft_ordered(row,next,cell,tokens.data(),probs.data(),n,result,e) ||
                     !room(0,e) || !capture("draft_after",row,&next,1,cell,cell+1,e)) return false;
                 // Experimental diagnostic only: rewrite the exact accepted
                 // pair with vanilla prefill, keeping the already-made offer.
@@ -253,6 +253,20 @@ private:
     std::unique_ptr<core::NativeEmbed> embed_;
     std::unique_ptr<core::MtpDrafter> drafter_;
     std::unique_ptr<MtpPrefixCursor> cursor_;
+    // Use vanilla's stream-ordered source staging. draft_first stages through
+    // a default-stream device copy, which is not ordered with the drafter's
+    // non-default stream on the observed HIP runtime. The verifier row stays
+    // live until the synchronous draft returns; clear the borrowed pointer on
+    // both success and failure, including exceptions.
+    bool draft_ordered(const float* row,int32_t next,int64_t cell,int32_t* tokens,float* probs,
+                       int& n,core::MtpDrafter::DraftResult& result,std::string& e) {
+        struct ClearSource {
+            core::MtpDrafter& d;
+            ~ClearSource() { d.set_source_R(nullptr); }
+        } clear{*drafter_};
+        drafter_->set_source_R(row);
+        return drafter_->draft(1,&next,cell,0,tokens,e,probs,0.f,&n,&result);
+    }
     bool ck(cudaError_t rc,std::string& e) const {
         if(rc==cudaSuccess) return true;
         e=std::string("MTP probe HIP: ")+cudaGetErrorString(rc); return false;

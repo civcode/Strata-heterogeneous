@@ -13,6 +13,7 @@ FIELDS = (
     ('hidden_norm', 40960), ('hidden_fc', 40960), ('mixed_residual', 40960),
     ('inject', 16), ('mixed', 10240), ('q8_mixed', 2880),
     ('k_project', 2048), ('v_project', 2048), ('k_append', 2048), ('v_append', 2048),
+    ('source_before', 40960), ('source_after', 40960),
 )
 BYTES = sum(size for _, size in FIELDS)
 
@@ -32,7 +33,8 @@ def staging(fields, cell, token, residual):
     pos = struct.pack('<24i', *([cell]*24))
     expected = {'token': struct.pack('<i', token), 'step': step, 'position': pos,
                 'rest_step': step, 'rest_position': pos,
-                'selected_row': struct.pack('<2i', 0, 0), 'residual': residual}
+                'selected_row': struct.pack('<2i', 0, 0), 'residual': residual,
+                'source_before': residual, 'source_after': residual}
     return [name for name, raw in expected.items() if fields[name] != raw]
 
 
@@ -45,7 +47,7 @@ def load_front(path):
     from heterogeneous_mtp_state import load, require
     completion, m, state = load(path)
     require(m['phase'] == 'draft_after' and len(m['tokens']) == 1 and
-            m.get('front_schema') == 1 and m.get('front_bytes') == BYTES,
+            m.get('front_schema') == 2 and m.get('front_bytes') == BYTES,
             'manifest not a completed one-row front trace')
     raw_path = Path(path).with_suffix('.front.bin')
     require(raw_path.stat().st_size == BYTES, 'invalid front trace extent')
@@ -63,7 +65,8 @@ def compare(a, b):
     aa = staging(fa, ma['cell'], ma['tokens'][0], sa['r'])
     ab = staging(fb, mb['cell'], mb['tokens'][0], sb['r'])
     counts = differences(fa, fb)
-    first = next((name for name, count in counts.items() if count), None)
+    order = ('source_before', 'source_after') + tuple(name for name, _ in FIELDS if name not in ('source_before', 'source_after'))
+    first = next((name for name in order if counts[name]), None)
     return {'status': 'IDENTICAL' if not first and not aa and not ab else 'DIFFERENT',
             'cell': ma['cell'], 'token': ma['tokens'][0],
             'staging_mismatches_a': aa, 'staging_mismatches_b': ab,

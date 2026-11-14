@@ -95,7 +95,7 @@ public:
         meta<<"{\"schema\":\"strata-mtp-state/v2\",\"event\":"<<events_
             <<",\"phase\":\""<<phase<<"\",\"cell\":"<<cell<<",\"upto\":"<<upto
             <<",\"residual_stride\":"<<stride<<",\"format\":"<<kv.format
-            <<",\"front_schema\":"<<(front?1:0)<<",\"front_bytes\":"<<(front?core::mtp_front_bytes:0)
+            <<",\"front_schema\":"<<(front?2:0)<<",\"front_bytes\":"<<(front?core::mtp_front_bytes:0)
             <<",\"kv_strides\":["<<strides[0]<<','<<strides[1]<<','<<strides[2]<<','<<strides[3]
             <<"],\"tokens\":[";
         for(size_t i=0;i<n;++i){if(i)meta<<',';meta<<tokens[i];}

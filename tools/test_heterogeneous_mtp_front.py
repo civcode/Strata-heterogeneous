@@ -6,11 +6,13 @@ import heterogeneous_mtp_front as f
 
 class FrontTests(unittest.TestCase):
     def test_layout(self):
-        self.assertEqual(f.BYTES, 216124)
+        self.assertEqual(f.BYTES, 298044)
         raw = bytes(i % 251 for i in range(f.BYTES))
         fields = f.split(raw)
         self.assertEqual(fields['residual'], raw[236:41196])
-        self.assertEqual(fields['v_append'], raw[-2048:])
+        self.assertEqual(fields['v_append'], raw[214076:216124])
+        self.assertEqual(fields['source_before'], raw[216124:257084])
+        self.assertEqual(fields['source_after'], raw[257084:])
         self.assertEqual(b''.join(fields.values()), raw)
 
     def test_bad_extent(self):
@@ -26,7 +28,8 @@ class FrontTests(unittest.TestCase):
         self.assertEqual(f.staging(fields,6,2724,bytes(40960)), [])
         self.assertEqual(f.staging(fields,6,264,bytes(40960)), ['token'])
         fields['rest_step'] = bytes(16)
-        self.assertEqual(f.staging(fields,6,2724,bytes(40960)), ['rest_step'])
+        fields['source_before'] = b'x' + bytes(40959)
+        self.assertEqual(f.staging(fields,6,2724,bytes(40960)), ['rest_step', 'source_before'])
 
     def test_first_difference(self):
         a = f.split(bytes(f.BYTES))

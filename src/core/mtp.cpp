@@ -1488,9 +1488,13 @@ bool MtpDrafter::capture_round(int T, bool coupled, std::string& err) {
     const MappedCopy in[7] = {{tok_, m_tok_, T}, {step_, m_step_, (int64_t) 2 * T * 4}, {pos_, m_pos_, 2 * T * NH},
                               {row_, m_row_, 2}, {Rin_, window_R_, T * HCN}, {step_ + ra * 4, m_step_ + ra * 4, 4},
                               {pos_ + ra * NH, m_pos_ + ra * NH, NH}};
-    copy_from_mapped_multi(in, 7, cs_);
-    if (front_trace_) {
-        ok=trace_front_copy(MtpFrontField::rest_step,step_+ra*4,cs_,err) &&
+    // Diagnostic-only taps bracket the native staging copy. They distinguish
+    // the bound source buffer from Rin_ without changing inference arithmetic.
+    if (front_trace_) ok=trace_front_copy(MtpFrontField::source_before,window_R_,cs_,err);
+    if (ok) copy_from_mapped_multi(in, 7, cs_);
+    if (front_trace_ && ok) {
+        ok=trace_front_copy(MtpFrontField::source_after,window_R_,cs_,err) &&
+           trace_front_copy(MtpFrontField::rest_step,step_+ra*4,cs_,err) &&
            trace_front_copy(MtpFrontField::rest_position,pos_+ra*NH,cs_,err) &&
            trace_front_copy(MtpFrontField::selected_row,row_,cs_,err);
     }
