@@ -22,6 +22,11 @@ int main() {
             session.layer_hi = plan.stages[index].end_layer;
             auto b = bindings(); b.initial_position = 4;
             CudaVerifierDriver driver(b);
+            int observations = 0;
+            driver.set_prefix_observer([&](uint64_t request, int64_t pos, std::string&) {
+                REQUIRE(request == 1 && pos == 5 && fv::keep == 1);
+                ++observations; return true;
+            });
             DeviceStageExecutor executor(driver);
             REQUIRE(executor.prepare(plan, index, error));
             REQUIRE(fv::publish && fv::rows == 8 && fv::begin == session.layer_lo && fv::end == session.layer_hi);
@@ -41,8 +46,9 @@ int main() {
             REQUIRE(fake_cuda::copies - copies_before == (index ? 2 : 1));
             REQUIRE(out.payload == std::vector<float>(22, index ? 8 : 42));
             REQUIRE(fv::tokens == std::vector<int32_t>({5,6}) && fv::pos == 4);
+            REQUIRE(observations == 0);
             REQUIRE(executor.commit_prefix(1, 1, 1, error));
-            REQUIRE(fv::keep == 1);
+            REQUIRE(fv::keep == 1 && observations == 1);
             // T=1 must still defer commit (set_always_publish above).
             REQUIRE(executor.begin_window({5,{6}}, 1, 2, error));
             in.window_id = 2; in.rows = 1; in.payload.resize(11);
@@ -121,6 +127,25 @@ int main() {
             REQUIRE(!executor.prepare(p, fault == 0 ? 2 : 0, error));
             REQUIRE(fake_cuda::allocations == 0);
             session.layer_hi = 2;
+        }
+        // Native adoption uses the same post-drain observer, without a verifier window.
+        for (bool accept : {true, false}) {
+            auto b = bindings();
+            b.zero_session = [](auto&, const auto&, void*) {};
+            CudaVerifierDriver driver(b);
+            int observations = 0;
+            driver.set_prefix_observer([&](uint64_t request, int64_t pos, std::string& why) {
+                REQUIRE(request == 7 && pos == 2);
+                ++observations;
+                if (!accept) why = "synthetic state capture refusal";
+                return accept;
+            });
+            REQUIRE(driver.prepare(plan, 0, error));
+            REQUIRE(driver.reset_request(7, error));
+            REQUIRE(!driver.adopt_native_prefill(8, 2, error) && observations == 0);
+            REQUIRE(driver.adopt_native_prefill(7, 2, error) == accept && observations == 1);
+            if (accept) REQUIRE(driver.begin_window({2,{3}}, 7, 2, error));
+            driver.shutdown();
         }
         geometry.hc = 1000000000; geometry.n_embd = 1000000000;
         {

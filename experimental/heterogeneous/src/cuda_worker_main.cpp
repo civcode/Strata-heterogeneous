@@ -14,6 +14,7 @@
 #include "native_worker_defaults.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/native_prefill_domain.hpp"
+#include "strata_heterogeneous/prefill_state_capture.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -149,7 +150,14 @@ int main(int argc,char** argv) {
                     &window_limits, startup_wait_ms);
                 final.shutdown(); // before owner releases stage weights and experts
             } else {
+                hetero::PrefillStateCapture state_capture;
+                if (!state_capture.configure(index, bindings.session, bindings.geometry, error))
+                    throw std::runtime_error("prefix state diagnostic: " + error);
                 hetero::CudaVerifierDriver driver(bindings);
+                if (state_capture.active())
+                    driver.set_prefix_observer([&](uint64_t request, int64_t position, std::string& e) {
+                        return state_capture.observe(request, position, bindings.session, bindings.geometry, e);
+                    });
                 hetero::DeviceStageExecutor executor(driver);
                 hetero::serve_worker_stateful(3,plan,index,executor,
                     static_cast<int>(config.io_timeout_ms),invocation.shared_memory,

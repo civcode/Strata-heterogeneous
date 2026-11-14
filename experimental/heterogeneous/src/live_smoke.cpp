@@ -65,6 +65,7 @@ struct Options {
     bool boundary_capture = false;
     bool placement_capture = false;
     uint32_t prefill_parity_at = 0; // diagnostic: number of known prefix tokens before teacher-forced rows
+    bool prefill_state_capture = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -103,6 +104,7 @@ void usage() {
         "  --prefill-parity-at N --capture-prefix PATH: grouped diagnostic A/B/A, prefix N,\n"
         "    --generate 1 --native-prefill-chunk N --prompt-chunk 1, nonresident stdin tokens.\n"
         "    Captures full committed logits on the remaining 1..128 teacher-forced tokens and native bridge bytes.\n"
+        "    --prefill-state-capture: also snapshot the entry CUDA committed prefix (cut 1..16 only).\n"
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
@@ -168,6 +170,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--placement-capture") o.placement_capture = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--group-native-hip") o.group_hip = true;
+        else if (key == "--prefill-state-capture") o.prefill_state_capture = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
@@ -291,6 +294,8 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.prefill_state_capture && (!o.prefill_parity_at || o.prefill_parity_at > 16))
+        throw std::invalid_argument("prefill state capture requires explicit A/B/A and cut 1..16");
     if (o.prefill_parity_at && (o.generate != 1 || !o.group_hip || o.resident || o.stream_tokens ||
         o.lookup_draft || o.prompt_chunk != 1 || !o.native_prefill_chunk || o.capture_prefix.empty()))
         throw std::invalid_argument("prefill parity requires grouped, nonresident --generate 1, native chunk, one-row control and capture prefix");
@@ -588,6 +593,14 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     } else if (::unsetenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX") != 0) {
         throw std::runtime_error("cannot clear inherited native prefill capture");
     }
+    if (o.prefill_state_capture) {
+        if (::setenv("STRATA_HETERO_PREFILL_STATE_PREFIX", o.capture_prefix.c_str(), 1) != 0 ||
+            ::setenv("STRATA_HETERO_PREFILL_STATE_AT", std::to_string(o.prefill_parity_at).c_str(), 1) != 0)
+            throw std::runtime_error("cannot configure CUDA prefix state capture");
+    } else if (::unsetenv("STRATA_HETERO_PREFILL_STATE_PREFIX") != 0 ||
+               ::unsetenv("STRATA_HETERO_PREFILL_STATE_AT") != 0) {
+        throw std::runtime_error("cannot clear inherited CUDA prefix state capture");
+    }
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
@@ -664,6 +677,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan))
                  << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"prefix_rows\":" << cut << ",\"chunk\":" << o.native_prefill_chunk
+                 << ",\"state_capture\":" << (o.prefill_state_capture ? "true" : "false")
                  << ",\"hc\":" << o.hc << ",\"n_embd\":" << o.n_embd << ",\"token_ids\":[";
         for (size_t pos = 0; pos < o.tokens.size(); ++pos) {
             if (pos) complete << ',';

@@ -120,6 +120,7 @@ bool CudaVerifierDriver::adopt_native_prefill(uint64_t request,uint32_t rows,std
         !rows || rows>=bindings_.session.max_cells) {
         error="native prefill position adoption refused"; return false;
     }
+    if (prefix_observer_ && !prefix_observer_(request, rows, error)) return false;
     next_position_=rows; window_=1; return true;
 }
 bool CudaVerifierDriver::begin_window(const WindowSpec& spec, uint64_t request,
@@ -235,7 +236,9 @@ bool CudaVerifierDriver::enqueue_commit_prefix(uint64_t request, uint64_t window
 bool CudaVerifierDriver::wait_commit(std::string& error) {
     PerformanceSpan perf("worker", "wait_commit", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::committing, error) || !wait(error)) return false;
-    next_position_ += keep_;
+    const int64_t committed = next_position_ + keep_;
+    if (prefix_observer_ && !prefix_observer_(request_, committed, error)) return false;
+    next_position_ = committed;
     state_ = State::ready; spec_ = {}; return true;
 }
 void CudaVerifierDriver::abort() noexcept {

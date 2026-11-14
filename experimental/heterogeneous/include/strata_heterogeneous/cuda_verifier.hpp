@@ -9,6 +9,8 @@
 #include "strata_heterogeneous/stage_micro_probe.hpp"
 #include "strata/core/verify.hpp"
 #include <memory>
+#include <functional>
+#include <utility>
 
 namespace strata::heterogeneous {
 
@@ -43,6 +45,10 @@ public:
     bool prepare(const Plan&, size_t, std::string&) override;
     bool reset_request(uint64_t, std::string&) override;
     bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
+    // Diagnostic only. Invoked on the owning device after the accepted state
+    // is fenced, including a fully drained native prompt. Failure prevents ACK.
+    using PrefixObserver = std::function<bool(uint64_t, int64_t, std::string&)>;
+    void set_prefix_observer(PrefixObserver observer) { prefix_observer_ = std::move(observer); }
     bool begin_window(const WindowSpec&, uint64_t, uint64_t, std::string&) override;
     bool enqueue_upload(const uint8_t*, size_t, std::string&) override;
     bool wait_upload(std::string&) override;
@@ -78,6 +84,7 @@ private:
     int device_ = -1;
     int64_t next_position_ = 0;
     uint32_t keep_ = 0;
+    PrefixObserver prefix_observer_;
     bool expect(State, std::string&);
     bool check(cudaError_t, std::string&);
     bool record(std::string&);
