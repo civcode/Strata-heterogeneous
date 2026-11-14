@@ -958,3 +958,32 @@ download huge model files merely to validate the CPU transport.
 - No GitHub Actions, GPU reset/reboot/driver unload, Strata-dev
   access or new kernel precision changes. Local build <=28 jobs.
   Exact handoff docs/STAGE_BRANCH_LOCALIZATION_M215.md.
+
+
+### M2.16 — Native shared-expert execution-mode control, not kernel edits
+
+- M2.15 confirmed selected expert IDs match at both positions.
+  Position-0 layer-5 shared expert relative L2=0.002823 versus
+  routed parts 2.86e-7; combined MoE=0.001073.
+  Position-1 GDN QKV/z identical, convolution intermediate
+  relL2=0.000267, y=0.000567, bo=0.002753.
+- M2.10 full-head numerical parity still FAILS:
+  KL(ref||het)=0.005003/0.037718 with STRATA_HC_Q8=0
+  on both, versus unchanged 0.001 acceptance.
+- Source audit: CUDA defaults STRATA_SH_STREAM ON, HIP OFF.
+  All worker adapters set_always_publish(true), disabling the
+  per-token self-commit shortcut despite differing backend
+  defaults. STRATA_ONE_TOKEN_COMMIT is an INERT control here.
+- Scoped M2.16 **documentation-only** live test:
+  STRATA_SH_STREAM=0 on both reference and mixed stage-zero;
+  only if shared output remains materially different, also
+  set STRATA_FUSED_SWIGLU_Q81=0 on both. Reuse existing
+  M2.15 --branch-probe and completed-manifest checks.
+- Existing M2.15 handoff fixed to enable --layer0-probe where
+  it greps STRATA_GR0_PATH. Do not run Actions, reset/reboot
+  GPUs, touch Strata-dev, bypass memory/provenance checks or
+  change KL threshold. Builds <=28 jobs if needed.
+- Position-1 GDN convolution needs an explicit pre-convolution
+  history-state capture to distinguish prior state from kernel
+  arithmetic if it remains different. STB0 lacks that history.
+  Handoff: docs/SHARED_EXPERT_CONTROL_M216.md.
