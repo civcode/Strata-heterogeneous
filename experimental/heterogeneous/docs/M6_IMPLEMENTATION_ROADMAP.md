@@ -1,5 +1,7 @@
 # M6 — Performance implementation roadmap
 
+**Superseded as an execution plan by [M7](M7_NATIVE_REUSE.md).** Handoff 0010 was cancelled before qualification; retain B1/B2 code and existing historical measurements, but do not qualify the deprecated per-GPU process topology.
+
 Target: median >=160 accepted output tok/s on real-world single-agent coding; 95–100% productive GPU utilization and sustained useful power within existing hardware limits. No repetitive-copy success criterion.
 
 | ID | Implementation milestone | State |
