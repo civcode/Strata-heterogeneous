@@ -1,6 +1,6 @@
 # M4 — bounded performance, context and deployment
 
-Baseline: M3.5a–e passed on Oberon at `992fc289`; see report 0002. Keep separate CUDA/HIP processes, original tokenizer, model/plan identity, finite guards and positive-prefix commit ACKs. No new kernels or alternate engine. M4.1–M4.6 bounded acceptance PASS on Oberon at `e619892c823c98a03ec7ec090a737b042b6f544c`; [report 0003](../../../.ai/reports/report-0003.md). M4.7 full stage expert residency source changes are pending qualification.
+Baseline: M3.5a–e passed on Oberon at `992fc289`; see report 0002. Keep separate CUDA/HIP processes, original tokenizer, model/plan identity, finite guards and positive-prefix commit ACKs. No new kernels or alternate engine. M4.1–M4.6 bounded acceptance PASS on Oberon at `e619892c823c98a03ec7ec090a737b042b6f544c`; [report 0003](../../../.ai/reports/report-0003.md). M4.7 bounded full-stage routed-expert residency PASS on Oberon at `6e295857e2781cd79a59ebccd11b4680f80153eb`; [report 0004](../../../.ai/reports/report-0004.md). All M4 gates have bounded acceptance, not production qualification.
 
 | Step | Implementation in this increment | Oberon acceptance |
 | --- | --- | --- |
@@ -15,6 +15,10 @@ Baseline: M3.5a–e passed on Oberon at `992fc289`; see report 0002. Keep separa
 ## Reported M4.1–M4.6 results
 
 39/39 host CTests, 402 existing frontend/server tests, 9/9 resident wire tests, separate native builds PASS. Same A/B/A token IDs across socket/shared and chunk 1/8. Warm A samples: socket chunk 1/8 20.70/39.33 prompt tok/s; shared 21.38/41.64 prompt tok/s. Feedback decode 21.16–21.37 tok/s. Passive telemetry sampled all three PCI devices. Context resolved to 2048 total, longest actual prompt 1159 tokens; larger over-cap request refused. Actual SSE deltas before native completion, active cancellation, post-cancel A, stable processes and orderly owner shutdown passed. Exclusive config generation and existing loopback server passed. Native fault recovery, wider context, bulk-prefill engine, full packaging, install/profile launcher and concurrent serving remain unqualified. These are reported bounded observations, not general throughput or numerical-parity claims. Raw evidence remains on Oberon; see report 0003.
+
+## Reported M4.7 results
+
+39/39 host CTests and both independent native builds PASS. With unchanged plan, precision, 2048-cell context, and reserve, the three stage caches increased from 16 slots each to 6144/9216/9216. All 24,576 experts were verified; all three native graphs selected zero-doorbell execution and reported zero host callbacks/misses. Matched 42-prompt-token / 64-completion-token socket auto-chunk runs 2 and 3: hybrid 21.31/21.37 vs full 36.82/36.85 feedback tok/s; warm prefill 915.17/907.44 vs 415.03/423.51 ms. Startup 1249.4 vs 7271.74 ms in the matched sample. Full-resident HTTP streaming, cancellation, post-cancel isolation and normal cleanup passed. Fresh and resident results were reproducible within each mode; some tokens differed between modes, cause and broader numerical parity unverified. See [report 0004](../../../.ai/reports/report-0004.md) for measurements, PCI IDs and exact limitations. No raw-log independent review or general speedup guarantee.
 
 ## Usage
 
