@@ -153,7 +153,7 @@ if(STRATA_HETERO_HOST_TESTS)
       ${_hardening_root}/tests/core/conversation_lifetime_test.cpp)
     target_include_directories(hetero_conversation_lifetime_${_backend}_test BEFORE PRIVATE
       ${_hardening_root}/tests/core/conversation_fake ${_hardening_root}/src/core ${_hardening_root}/include)
-    target_compile_features(hetero_conversation_lifetime_${_backend}_test PRIVATE cxx_std_17)
+    target_compile_features(hetero_conversation_lifetime_${_backend}_test PRIVATE cxx_std_20)
     target_link_libraries(hetero_conversation_lifetime_${_backend}_test PRIVATE Threads::Threads)
     if(_backend STREQUAL "hip")
       target_compile_definitions(hetero_conversation_lifetime_${_backend}_test PRIVATE STRATA_USE_HIP=1)
@@ -169,7 +169,7 @@ if(STRATA_HETERO_HOST_TESTS)
   add_executable(hetero_conversation_restore_attempt_test
     ${_hardening_root}/src/program/conversation_restore_orchestration_test.cpp)
   target_include_directories(hetero_conversation_restore_attempt_test PRIVATE ${_hardening_root}/include)
-  target_compile_features(hetero_conversation_restore_attempt_test PRIVATE cxx_std_17)
+  target_compile_features(hetero_conversation_restore_attempt_test PRIVATE cxx_std_20)
   target_link_libraries(hetero_conversation_restore_attempt_test PRIVATE Threads::Threads)
   # Imported spec harness: not evidence of destination generate.cpp wiring.
   add_test(NAME hetero_conversation_restore_attempt_test COMMAND hetero_conversation_restore_attempt_test)
