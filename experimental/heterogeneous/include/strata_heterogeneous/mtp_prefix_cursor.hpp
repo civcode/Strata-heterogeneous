@@ -74,12 +74,12 @@ public:
     // before reading them. No physical suffix zeroing is claimed; qualify
     // native causal overwrite against independent fresh-prefix replay.
     template<class Draft>
-    bool offer(int32_t anchor, std::vector<int32_t>& output, Draft&& draft, std::string& error) {
+    bool offer(int32_t anchor, std::vector<int32_t>& output, Draft&& draft, std::string& error, bool allow_anchor_only=false) {
         if (state_ != State::ready || !tail_ || !offered_.empty() ||
             next_ <= 0 || next_ > context_ - 5 || anchor < 0 || anchor >= vocab_)
             return fail(error,"MTP relay offer identity or context mismatch");
         std::vector<int32_t> candidates;
-        if (!draft(tail_,anchor,next_-1,candidates,error) || candidates.empty() || candidates.size()>4)
+        if (!draft(tail_,anchor,next_-1,candidates,error) || (!allow_anchor_only && candidates.empty()) || candidates.size()>4)
             return fail(error,"MTP native offer failed");
         for (auto id:candidates) if (id<0 || id>=vocab_) return fail(error,"MTP candidate outside vocabulary");
         offered_={anchor};

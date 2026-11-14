@@ -55,4 +55,9 @@ bool validate_cuda_worker_config(const CudaWorkerConfig& config,
 bool validate_cuda_worker_files(const CudaWorkerConfig& config,
                                 std::string& error);
 
+// Approved bounded qualification asset identity (report 0017).
+// Hash equality is not evidence of target checkpoint conversion provenance.
+inline constexpr char mtp_qualification_index[]="c344c01f59f547ed8a59003857a82eb90499e5299154241dbca787acb54b5b7c";
+bool validate_mtp_qualification_runtime(const std::string& dir,const std::string& index,std::string& error);
+
 } // namespace strata::heterogeneous

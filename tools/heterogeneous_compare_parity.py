@@ -72,18 +72,25 @@ def read_stfr(path: Path) -> dict:
 
 
 def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = False,
-             mtp_fresh_replay: bool = False, mtp_three_round: bool = False) -> list[tuple[dict, dict]]:
+             mtp_fresh_replay: bool = False, mtp_three_round: bool = False,
+             generation_capture: bool = False) -> list[tuple[dict, dict]]:
     """Read completed captures; legacy parity callers require full commits.
 
     For explicit partial-prefix callers, STFR contains all evaluated rows;
     only n_keep rows belong to the accepted prefix.
     """
     require(not (mtp_fresh_replay and (placement or allow_partial)) and
-            not (mtp_three_round and (placement or mtp_fresh_replay or not allow_partial)),
+            not (mtp_three_round and (placement or mtp_fresh_replay or not allow_partial)) and
+            not (generation_capture and (placement or mtp_fresh_replay or mtp_three_round)),
             "conflicting MTP comparison mode")
     completed = Path(str(prefix) + ".complete.json")
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
+    captured = marker.get("generation_capture", False)
+    mtp_generation = marker.get("mtp_generation", False)
+    require(type(captured) is bool and captured == generation_capture and
+            type(mtp_generation) is bool and (not mtp_generation or captured) and
+            (not captured or allow_partial == mtp_generation), "invalid generation capture mode")
     variable = marker.get("mtp_three_round_variable", False)
     prompt_windows = marker.get("mtp_prompt_windows", 7 if mtp_three_round else 0)
     require(type(variable) is bool and type(prompt_windows) is int and
@@ -99,7 +106,7 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
             marker.get("mtp_three_round", False) == mtp_three_round and
             type(marker.get("windows")) is int and
             (marker["windows"] == prompt_windows + 3 if mtp_three_round else
-             1 <= marker["windows"] <= (128 if placement else 12 if mtp_fresh_replay else 8)) and
+             1 <= marker["windows"] <= (128 if placement else 12 if mtp_fresh_replay or generation_capture else 8)) and
             type(marker.get("model_fingerprint")) is int and marker["model_fingerprint"] > 0 and
             isinstance(marker.get("plan"), str) and marker["plan"],
             "invalid parity completion marker")

@@ -147,7 +147,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                     WindowSpec offer;
                     if (!executor.propose_mtp(*request->window,offer,error))
                         throw std::runtime_error(error.empty()?"native MTP proposal failed":error);
-                    if (offer.pos0 != request->window->pos0 || offer.token_ids.size()<2 ||
+                    if (offer.pos0 != request->window->pos0 || offer.token_ids.size()<(executor.mtp_anchor_only_enabled()?1u:2u) ||
                         offer.token_ids.size()>5 || offer.token_ids.front()!=request->window->token_ids.front())
                         throw std::runtime_error("invalid native MTP offer");
                     Frame response=*request;
@@ -264,10 +264,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
@@ -276,6 +276,7 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
         throw std::invalid_argument("final pipeline needs one worker per domain and valid timeout");
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
+    if (mtp_anchor_only_ && !mtp_relay_) throw std::invalid_argument("anchor-only MTP requires relay");
     if (mtp_relay_ && (!group_hip || resident_ || receiver_arm_ || require_compact_ || fds_.size()!=2 || !timeout_ms_))
         throw std::invalid_argument("MTP relay requires bounded nonresident full-logit grouped HIP");
 }
@@ -549,7 +550,7 @@ WindowSpec FinalPipelineSession::request_mtp_proposal() {
         request.rows=reply->rows;
         match(*reply,request,Kind::mtp_proposal);
         if (!reply->window || reply->window->pos0!=mtp_anchor_->pos0 ||
-            reply->window->token_ids.size()<2 || reply->window->token_ids.size()>5 ||
+            reply->window->token_ids.size()<(mtp_anchor_only_?1u:2u) || reply->window->token_ids.size()>5 ||
             reply->window->token_ids.front()!=mtp_anchor_->token_ids.front() ||
             std::any_of(reply->window->token_ids.begin(),reply->window->token_ids.end(),
                 [this](int32_t id){return id<0 || static_cast<uint32_t>(id)>=mtp_vocab_;}))

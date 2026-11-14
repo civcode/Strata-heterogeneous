@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
+#include "strata/core/pipeline_window.hpp"
 
 namespace strata::heterogeneous {
 
@@ -18,10 +19,10 @@ inline uint32_t greedy_accepted_prefix(const std::vector<int32_t>& inputs,
     for (size_t i = 0; i < inputs.size(); ++i)
         if (inputs[i] < 0 || predictions[i] < 0)
             throw std::invalid_argument("negative speculative token");
-    uint32_t keep = 1;
-    while (keep < inputs.size() && predictions[keep - 1] == inputs[keep])
-        ++keep;
-    return keep;
+    core::PipelineWindow window;
+    window.T=static_cast<int>(inputs.size());
+    std::copy(inputs.begin(),inputs.end(),window.tok);
+    return static_cast<uint32_t>(1+core::pipeline_accepted_drafts(window,predictions.data()));
 }
 
 } // namespace strata::heterogeneous

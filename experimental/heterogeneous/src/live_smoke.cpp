@@ -8,6 +8,7 @@
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
+#include "strata_heterogeneous/mtp_generation.hpp"
 #include "strata/spec/suffix_drafter.hpp"
 #include "strata_heterogeneous/process.hpp"
 
@@ -66,6 +67,7 @@ struct Options {
     std::string mtp_probe_rt;
     uint32_t mtp_relay_rounds=0;
     bool mtp_fresh_replay=false, mtp_three_round=false, mtp_three_round_variable=false;
+    bool generation_capture=false, mtp_generation=false;
     bool mtp_state_trace=false, mtp_reprime_tail=false, mtp_front_trace=false, mtp_repeat_native_round=false;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
@@ -109,7 +111,9 @@ void usage() {
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--run]\n"
-        "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification; full-logit fixed-token smoke only.\n"
+        "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
+        "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
+        "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
         "  --mtp-repeat-native-round: one-shot same cell twice, no target step between; requires front trace.\n"
         "  --mtp-front-trace: capture native one-row draft round staged input and front intermediates. Requires state trace.\n"
         "  --mtp-state-trace: bounded exact terminal R and committed draft KV; capture-prefix required.\n"
@@ -200,6 +204,8 @@ Options parse(int argc, char** argv) {
         else if (key == "--mtp-reprime-tail") o.mtp_reprime_tail=true;
         else if (key == "--mtp-fresh-replay") o.mtp_fresh_replay=true;
         else if (key == "--mtp-three-round") o.mtp_three_round=true;
+        else if (key == "--generation-parity-capture") o.generation_capture=true;
+        else if (key == "--mtp-generation-qualification") o.mtp_generation=true;
         else if (key == "--mtp-three-round-variable") o.mtp_three_round_variable=true;
         else if (key == "--mtp-relay-rounds") {
             o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
@@ -333,11 +339,21 @@ Options parse(int argc, char** argv) {
     if (generation_arg && !o.generate)
         throw std::invalid_argument("generation options require --generate");
     if (o.generate || o.describe_source) {
-        if (smoke_shape || (!o.capture_prefix.empty() && !o.prefill_parity_at) || o.layer_taps ||
+        if (smoke_shape || (!o.capture_prefix.empty() && !o.prefill_parity_at && !o.generation_capture) || o.layer_taps ||
             o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.mtp_generation && !o.generation_capture)
+        throw std::invalid_argument("native MTP generation requires explicit bounded parity capture");
+    if (o.generation_capture && (!o.generate || o.capture_prefix.empty() || !o.group_hip || !o.hip_split_overlap ||
+        o.resident || o.stream_tokens || o.lookup_draft || o.prompt_chunk!=1 || o.context_limit!=2048 ||
+        o.receiver_arm || o.cuda_mapped_egress || o.native_prefill_chunk || o.prefill_parity_at || o.prefill_state_capture ||
+        o.placement_capture || o.warmup_windows || o.mtp_fresh_replay || o.mtp_three_round || o.mtp_three_round_variable ||
+        o.mtp_relay_rounds || o.mtp_reprime_tail || o.mtp_repeat_native_round ||
+        (o.mtp_generation ? (o.mtp_probe_rt.empty() || o.mtp_state_trace!=o.mtp_front_trace)
+                          : (!o.mtp_probe_rt.empty() || o.mtp_state_trace || o.mtp_front_trace))))
+        throw std::invalid_argument("generation parity requires bounded nonresident one-row greedy grouped HIP overlap, no other probes");
     if (o.mtp_fresh_replay && (o.mtp_probe_rt.empty() || o.tokens.empty() ||
         !hetero::mtp_probe_window_count(o.windows,o.mtp_relay_rounds,true) ||
         !hetero::mtp_fresh_replay_shape(o.rows,o.keep,!o.capture_prefix.empty(),o.mtp_repeat_native_round) ||
@@ -357,7 +373,7 @@ Options parse(int argc, char** argv) {
         o.micro_probe || o.boundary_capture || o.mtp_state_trace!=o.mtp_front_trace))
         throw std::invalid_argument("MTP three-round diagnostic requires qualified fixed or explicit bounded variable prompt, three relays, capture and either both traces or neither");
     if (o.mtp_state_trace && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
-        (!o.mtp_three_round && (o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))))
+        (!o.mtp_three_round && !o.mtp_generation && (o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))))
         throw std::invalid_argument("MTP state trace requires fresh capture, at most 16 cells and one relay");
     if (o.mtp_repeat_native_round && (!o.mtp_front_trace || o.mtp_relay_rounds))
         throw std::invalid_argument("MTP repeat requires one-shot front trace");
@@ -367,8 +383,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("MTP tail reprime requires explicit state trace and one relay");
     if (o.mtp_relay_rounds && (o.mtp_probe_rt.empty() || o.capture_prefix.empty()))
         throw std::invalid_argument("MTP relay requires explicit MTP probe and full-logit capture prefix");
-    if (!o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || o.generate ||
-        o.describe_source || o.warmup_windows || o.native_prefill_chunk || o.tokens.empty() ||
+    if (!o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || (o.generate && !o.mtp_generation) ||
+        o.describe_source || o.warmup_windows || o.native_prefill_chunk || (!o.mtp_generation && o.tokens.empty()) ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
         o.mtp_probe_rt.find_first_of("\r\n")!=std::string::npos))
         throw std::invalid_argument("MTP probe requires explicit fixed tokens, absolute runtime path, grouped HIP overlap, nonresident and no receiver arm");
@@ -402,6 +418,11 @@ Options parse(int argc, char** argv) {
             throw std::invalid_argument("generation requires validated source and stop IDs");
         if (!o.resident) {
             o.tokens = prompt_from_stdin(o.context_limit);
+            if (o.generation_capture) {
+                if (o.tokens.size()>hetero::MtpGenerationPolicy::max_prompt ||
+                    !hetero::MtpGenerationPolicy{static_cast<unsigned>(o.tokens.size()),o.generate,o.stop_ids}.valid())
+                    throw std::invalid_argument("bounded generation requires 1..7 prompt rows and at most 12 fed rows");
+            }
             if (uint64_t(o.tokens.size()) + o.generate > o.context_limit)
                 throw std::invalid_argument("prompt and completion exceed context limit");
             if (o.prefill_parity_at && (o.prefill_parity_at >= o.tokens.size() ||
@@ -436,7 +457,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         : o.generate ? uint64_t(o.tokens.size()) + o.generate
          : o.mtp_three_round ? hetero::mtp_three_provisional_max
          : uint64_t(o.windows - 1) * o.keep + o.rows + 5ull*o.mtp_relay_rounds;
-    const uint32_t rows = (o.resident || o.lookup_draft) ? o.prompt_chunk
+    const uint32_t rows = o.mtp_generation ? 5u : (o.resident || o.lookup_draft) ? o.prompt_chunk
         : o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) :
           std::max(o.rows,o.mtp_relay_rounds?5u:1u);
     const uint64_t stride = plan.geometry.floats_per_row();
@@ -470,6 +491,11 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                 config.model_fingerprint != common_model->model_fingerprint)
                 throw std::invalid_argument("cross-stage Q2_0 model source identity mismatch");
         } else common_model = config;
+        if (o.generation_capture && (config.index_sha256!=hetero::mtp_qualification_index ||
+            config.max_cells!=2048 || config.max_t!=8 || config.n_vocab!=248320 ||
+            config.max_cache_slots!=uint64_t(config.end_layer-config.first_layer)*512 ||
+            config.free_reserve_bytes!=536870912ull || config.arena_budget_bytes))
+            throw std::invalid_argument("generation qualification requires the previously approved unchanged model and resource config");
         const bool invalid_token = o.tokens.empty()
             ? config.n_vocab <= o.token
             : std::any_of(o.tokens.begin(), o.tokens.end(),
@@ -497,6 +523,13 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     if (o.generate && (o.source_gguf != common_model->gguf_shards.front() ||
                        o.source_index != common_model->index_sha256))
         throw std::invalid_argument("generation tokenizer source differs from validated worker source");
+    if (o.generation_capture && hetero::plan_spec(plan)!="cuda:0:0-12,hip:0:12-30,hip:1:30-48")
+        throw std::invalid_argument("generation qualification requires the approved 12/18/18 plan");
+    if (o.mtp_generation) {
+        std::string error;
+        if (!hetero::validate_mtp_qualification_runtime(o.mtp_probe_rt,common_model->index_sha256,error))
+            throw std::runtime_error(error);
+    }
     if (o.describe_source) {
         std::cout << "HETERO_SOURCE {\"gguf\":" << json_string(common_model->gguf_shards.front())
                   << ",\"pack_dir\":" << json_string(common_model->pack_dir)
@@ -522,7 +555,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
             if (std::filesystem::exists(o.capture_prefix + ".complete.json") ||
                 std::filesystem::exists(o.capture_prefix + ".prefill.json"))
                 throw std::invalid_argument("capture already completed; use a fresh prefix");
-            if (o.prefill_parity_at) {
+            if (o.prefill_parity_at || o.generation_capture) {
                 // All potentially emitted files must be fresh; mode identities are not legacy smoke window IDs.
                 const std::string stem = prefix.filename().string() + ".";
                 for (const auto& entry : std::filesystem::directory_iterator(prefix.parent_path())) {
@@ -712,9 +745,17 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         ::setenv("STRATA_HETERO_MTP_THREE_ROUND",o.mtp_three_round?"1":"0",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_THREE_ROUND_VARIABLE",o.mtp_three_round_variable?"1":"0",1)!=0)
         throw std::runtime_error("cannot configure MTP state trace");
+    std::string generation_stops;
+    if (o.mtp_generation) for (auto id:o.stop_ids) {
+        if (!generation_stops.empty()) generation_stops+=',';
+        generation_stops+=std::to_string(id);
+    }
+    if (::setenv("STRATA_HETERO_MTP_GENERATE_MAX_NEW",std::to_string(o.mtp_generation?o.generate:0u).c_str(),1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_GENERATE_STOPS",generation_stops.c_str(),1)!=0)
+        throw std::runtime_error("cannot configure explicit MTP generation mode");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
-            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.windows).c_str(),1)!=0 ||
+            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.mtp_generation?o.tokens.size():o.windows).c_str(),1)!=0 ||
             ::setenv("STRATA_HETERO_MTP_RELAY_ROUNDS",std::to_string(o.mtp_relay_rounds).c_str(),1)!=0)
             throw std::runtime_error("cannot configure one-shot MTP probe");
     } else if (::unsetenv("STRATA_HETERO_MTP_PROBE_RT")!=0 || ::unsetenv("STRATA_HETERO_MTP_PROBE_WINDOWS")!=0 ||
@@ -731,7 +772,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (o.warmup_windows && (hetero::performance_trace() || hetero::performance_flag("STRATA_HETERO_OVERLAP_TRACE") ||
         hetero::performance_flag("STRATA_HETERO_WINDOW_TRACE") || std::getenv("STRATA_VERIFY_TRACE")))
         throw std::invalid_argument("timed smoke requires tracing disabled (unset STRATA_VERIFY_TRACE)");
-    if (compact && (!o.generate || o.prefill_parity_at || o.receiver_arm || !o.mtp_probe_rt.empty()))
+    if (compact && (!o.generate || o.prefill_parity_at || o.generation_capture || o.receiver_arm || !o.mtp_probe_rt.empty()))
         throw std::invalid_argument("compact head results are not supported in diagnostic modes");
     // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
@@ -753,9 +794,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 std::cerr << "MTP diagnostic drain could not finish\n";
             }
         }
-    } diagnostic_drain{workers,o.mtp_three_round,o.timeout_ms};
+    } diagnostic_drain{workers,o.mtp_three_round || o.generation_capture,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
-                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0);
+                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
@@ -841,7 +882,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                      static_cast<unsigned long long>(window), phase, spec.token_ids.size(),
                      keep, static_cast<long long>(spec.pos0));
     };
-    std::vector<int32_t> generated;
+    std::vector<int32_t> generated, final_mtp_offer;
+    uint64_t generation_windows=0;
+    int32_t generation_next=-1;
     bool stopped = false, cancelled = false, input_closed = false;
     int32_t stop_token = -1;
     auto generate = [&](const std::vector<int32_t>& prompt, uint32_t max_new) {
@@ -851,6 +894,14 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         uint64_t window = 0;
         int64_t pos = 0;
         int32_t next = -1;
+        const auto mtp_policy=o.mtp_generation ?
+            hetero::MtpGenerationPolicy{static_cast<unsigned>(prompt.size()),max_new,o.stop_ids} : hetero::MtpGenerationPolicy{};
+        auto capture_generation=[&](const hetero::WindowSpec& spec,const hetero::FinalStageResult& committed,uint32_t keep) {
+            if (!o.generation_capture) return;
+            auto capture=o; capture.keep=keep;
+            capture_window(capture,plan,spec,committed);
+            generation_windows=window;
+        };
         // The coordinator only yields control after all stages acknowledged
         // commit. EOF/cancel here cannot leave a provisional GPU window.
         auto checkpoint = [&]() {
@@ -885,7 +936,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             hetero::WindowSpec spec;
             spec.pos0 = pos;
             spec.token_ids.assign(prompt.begin() + offset, prompt.begin() + offset + count);
-            next = run_window(spec, ++window, static_cast<uint32_t>(count)).predicted_tokens.back();
+            const auto committed=run_window(spec, ++window, static_cast<uint32_t>(count));
+            next=committed.predicted_tokens.back();
+            capture_generation(spec,committed,static_cast<uint32_t>(count));
             trace_committed("prefill", spec, window, static_cast<uint32_t>(count));
             offset += count;
             pos += static_cast<int64_t>(count);
@@ -920,7 +973,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             hetero::WindowSpec spec;
             spec.pos0 = pos;
             spec.token_ids = {next};
-            if (lookup) {
+            if (o.mtp_generation) {
+                spec=session.request_mtp_proposal();
+                if (spec.pos0!=pos || spec.token_ids.empty() || spec.token_ids.front()!=next ||
+                    !mtp_policy.live_window(pos,spec.token_ids))
+                    throw std::runtime_error("native MTP offer violates stop/length/anchor policy");
+            } else if (lookup) {
                 // Leave room for the final un-fed output token and never
                 // evaluate a proposed stop as input. Same bounds as prefill.
                 const int cap = static_cast<int>(std::min<size_t>(
@@ -933,8 +991,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                     spec.token_ids.push_back(drafts[i]);
             }
             uint32_t keep = 1;
-            if (spec.token_ids.size() > 1) {
-                ++lookup_windows;
+            if (spec.token_ids.size() > 1 || o.mtp_generation) {
+                if (lookup) ++lookup_windows;
                 proposed += spec.token_ids.size() - 1;
                 const auto provisional = session.execute(initial_frame(spec, ++window), spec);
                 if (provisional.has_nonfinite())
@@ -948,13 +1006,31 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 generated.insert(generated.end(), spec.token_ids.begin() + 1,
                                  spec.token_ids.begin() + keep);
                 accepted += keep - 1;
+                capture_generation(spec,committed,keep);
+                if (o.mtp_generation) std::cout << "HETERO_MTP_GENERATION_COMMITTED window=" << window
+                    << " pos0=" << pos << " proposed=" << spec.token_ids.size()-1 << " accepted=" << keep-1
+                    << " next=" << next << '\n';
             } else {
-                next = run_window(spec, ++window, 1).predicted_tokens.back();
+                const auto committed=run_window(spec, ++window, 1);
+                next=committed.predicted_tokens.back();
+                capture_generation(spec,committed,1);
             }
             trace_committed("decode", spec, window, keep);
             if (lookup) lookup->append(spec.token_ids.data(), keep);
             pos += keep;
             if (!checkpoint()) { generated.clear(); report_lookup(); return; }
+        }
+        if (o.generation_capture) generation_next=next;
+        if (o.mtp_generation) {
+            // After the terminal committed tail, request one diagnostic draft,
+            // never submit it to target. Applies even to immediate EOS/length.
+            if (!mtp_policy.can_draft(pos) || mtp_policy.live(pos,next))
+                throw std::runtime_error("MTP generation terminated outside stop/length policy");
+            const auto offer=session.request_mtp_proposal();
+            if (offer.pos0!=pos || offer.token_ids.size()<2 || offer.token_ids.front()!=next)
+                throw std::runtime_error("invalid terminal MTP diagnostic offer");
+            final_mtp_offer=offer.token_ids;
+            std::cerr << "HETERO_MTP_GENERATION_SUMMARY proposed=" << proposed << " accepted=" << accepted << '\n';
         }
         report_lookup();
     };
@@ -1055,13 +1131,38 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
     }
     std::string error;
-    if (!(o.mtp_three_round ? workers.finish(error,o.timeout_ms,false) : workers.finish(error)))
+    if (!((o.mtp_three_round || o.generation_capture) ? workers.finish(error,o.timeout_ms,false) : workers.finish(error)))
         throw std::runtime_error("worker shutdown failed: " + error);
     if (o.resident) {
         std::cout << "HETERO_CLOSED\n" << std::flush;
         return 0;
     }
     if (o.generate) {
+        if (o.generation_capture) {
+            // Publish evidence only after all commits and confirmed worker EOF.
+            std::ofstream complete(o.capture_prefix+".complete.json",std::ios::binary);
+            if (!complete) throw std::runtime_error("cannot create generation capture completion");
+            auto ids=[&](const std::vector<int32_t>& values) {
+                complete << '[';
+                for (size_t i=0;i<values.size();++i) { if (i) complete << ','; complete << values[i]; }
+                complete << ']';
+            };
+            complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"generation_capture\":true"
+                     << ",\"mtp_generation\":" << (o.mtp_generation?"true":"false")
+                     << ",\"windows\":" << generation_windows
+                     << ",\"plan\":" << json_string(hetero::plan_spec(plan))
+                     << ",\"model_fingerprint\":" << o.fingerprint
+                     << ",\"max_new\":" << o.generate << ",\"prompt_ids\":";
+            ids(o.tokens);
+            complete << ",\"stop_ids\":"; ids(o.stop_ids);
+            complete << ",\"token_ids\":"; ids(generated);
+            complete << ",\"finish_reason\":\"" << (stopped?"stop":"length")
+                     << "\",\"stop_token\":" << stop_token << ",\"next\":" << generation_next
+                     << ",\"final_offer\":"; ids(final_mtp_offer);
+            complete << "}\n";
+            complete.flush();
+            if (!complete) throw std::runtime_error("generation capture completion write failed");
+        }
         publish(o.tokens.size());
         return 0;
     }

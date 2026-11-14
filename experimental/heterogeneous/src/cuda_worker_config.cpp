@@ -96,11 +96,11 @@ void regular_file(const std::string& path,const char* key) {
     if(!std::filesystem::is_regular_file(path,ec)||ec)
         throw std::runtime_error(std::string(key)+" is not a readable regular file: "+path);
 }
-std::string file_digest(const std::string& path) {
+std::string file_digest(const std::string& path, uint64_t max_bytes=8ull*1024*1024) {
     regular_file(path,"index.txt");
     std::error_code ec;
     const auto size=std::filesystem::file_size(path,ec);
-    if(ec||size==0||size>8ull*1024*1024)throw std::runtime_error("pack index size is invalid (max 8 MiB)");
+    if(ec||size==0||size>max_bytes)throw std::runtime_error(max_bytes==8ull*1024*1024?"pack index size is invalid (max 8 MiB)":"preflight digest file size outside limit");
     std::ifstream in(path,std::ios::binary);
     if(!in)throw std::runtime_error("cannot open pack index: "+path);
     Sha256 sha;
@@ -147,6 +147,27 @@ void gguf_header(const std::string& path) {
         throw std::runtime_error("GGUF shard lacks valid GGUF magic: " + path);
 }
 } // namespace
+
+bool validate_mtp_qualification_runtime(const std::string& dir,const std::string& index,std::string& error) {
+    try {
+        absolute_path(dir,"MTP runtime");
+        if (index!=mtp_qualification_index) throw std::invalid_argument("unapproved MTP qualification pack");
+        struct File {const char* name; uint64_t size; const char* digest;};
+        constexpr File files[]={
+            {"dense.txt",1851,"991456cf4eb266eb8a888c349e548d11bc640f5dbd9149439aa9786af0f732fd"},
+            {"dense.bin",116099072,"c724dc0b0822ada5d2977bf5bde821605feabaa64ea2e0045b67ca656329070a"},
+            {"experts.bin",707788800,"09398406be61f1f54c93861f449e48b8df0bfccbc9ec9b2b7636775a6ea9244f"},
+            {"draft_vocab.bin",425196,"b1e1d3a7a9e4bf862dcd5923ce661fb59bbd07907e594df5cf86a62ac235cb91"}
+        };
+        for (const auto& f:files) {
+            const std::string path=dir+"/"+f.name;
+            regular_file(path,"MTP runtime file");
+            if (std::filesystem::file_size(path)!=f.size || file_digest(path,f.size)!=f.digest)
+                throw std::runtime_error("approved MTP runtime identity mismatch: "+path);
+        }
+        return true;
+    } catch (const std::exception& ex) {error=ex.what();return false;}
+}
 
 bool read_cuda_worker_config(const std::string& filename,CudaWorkerConfig& out,std::string& error) {
     try {

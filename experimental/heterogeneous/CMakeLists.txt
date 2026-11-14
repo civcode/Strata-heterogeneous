@@ -9,7 +9,7 @@ option(STRATA_HETERO_HOST_TESTS "Build CPU-only cross-backend host protocol test
 add_library(strata_heterogeneous_host STATIC src/host.cpp src/session.cpp src/process.cpp src/shared.cpp src/activation.cpp src/device.cpp src/final_result.cpp src/final_pipeline.cpp src/stage_weights.cpp
   src/cuda_worker_config.cpp src/cuda_worker_bootstrap.cpp
   src/hip_worker_bootstrap.cpp src/hip_worker_config.cpp src/window_admission.cpp)
-target_include_directories(strata_heterogeneous_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(strata_heterogeneous_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
 target_compile_features(strata_heterogeneous_host PUBLIC cxx_std_17)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(strata_heterogeneous_host PRIVATE -Wall -Wextra -Wpedantic -Werror)

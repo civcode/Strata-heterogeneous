@@ -129,7 +129,7 @@ void validate_frame(const Frame& f) {
         case Kind::mtp_proposal:
             if (!f.window_id || !zero_identity || f.shared_checksum || !f.payload.empty() ||
                 !f.error.empty() || !f.window ||
-                (f.kind == Kind::mtp_proposal_request ? f.rows != 1 : (f.rows < 2 || f.rows > 5)))
+                (f.kind == Kind::mtp_proposal_request ? f.rows != 1 : f.rows > 5))
                 throw std::invalid_argument("invalid MTP proposal control");
             f.window->validate(f.rows);
             break;

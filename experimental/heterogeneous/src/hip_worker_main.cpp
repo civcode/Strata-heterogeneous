@@ -182,9 +182,19 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
             (trace_prefix.empty()==front_trace))) throw std::runtime_error("invalid three-round diagnostic mode");
         if ((!trace_prefix.empty() && (trace_prefix.front()!='/' || trace_prefix.size()>4096 || (relay>1 && !three_round))) ||
             (reprime && (trace_prefix.empty() || relay!=1)) || (front_trace && trace_prefix.empty())) throw std::runtime_error("invalid bounded MTP state trace");
+        const char* raw_budget=std::getenv("STRATA_HETERO_MTP_GENERATE_MAX_NEW");
+        const char* raw_stops=std::getenv("STRATA_HETERO_MTP_GENERATE_STOPS");
+        auto generation=hetero::mtp_generation_policy(windows,raw_budget?raw_budget:"0",raw_stops?raw_stops:"");
         const auto& last=configs.back().fields;
+        if (generation.enabled()) {
+            if (relay || fresh_replay || three_round || three_round_variable || reprime || repeat_round ||
+                (trace_prefix.empty()==front_trace))
+                throw std::runtime_error("invalid MTP generation qualification mode");
+            if (!hetero::validate_mtp_qualification_runtime(path,last.index_sha256,error))
+                throw std::runtime_error(error);
+        }
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
-                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round,three_round_variable);
+                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round,three_round_variable,std::move(generation));
     }
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
     if (mtp) final.set_observer(mtp.get());

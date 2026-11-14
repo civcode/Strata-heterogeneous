@@ -7,6 +7,8 @@
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
+#include "strata_heterogeneous/mtp_generation.hpp"
+#include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/mtp_state_trace.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 // Vanilla PinnedRing intentionally discards cleanup/error-clear return values;
@@ -36,10 +38,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false)
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false, MtpGenerationPolicy generation = {})
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable), generation_(std::move(generation)) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -58,6 +60,11 @@ public:
         if (three_round_ && (!mtp_three_shape(windows_,relay_rounds_,fresh_replay_,repeat_round_,reprime_tail_,three_round_variable_) ||
             (trace_prefix_.empty()==front_trace_))) {
             error="invalid MTP three-round diagnostic"; return false;
+        }
+        if (generation_.enabled() && (!generation_.valid() || generation_.prompt_rows!=windows_ ||
+            relay_rounds_ || three_round_ || three_round_variable_ || fresh_replay_ || repeat_round_ || reprime_tail_ ||
+            (trace_prefix_.empty()==front_trace_))) {
+            error="invalid MTP generation qualification"; return false;
         }
         if (relay_rounds_ > 1 && !three_round_) {
             error="MTP relay draft-state reuse failed fresh-prefix qualification";
@@ -134,6 +141,8 @@ public:
             if (!trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
             std::fprintf(stderr,"HETERO_MTP_PROBE_MODE state_trace=%d front_trace=%d repeat_round=%d relay_rounds=%u\n",
                          trace_?1:0,front_trace_?1:0,repeat_round_?1:0,relay_rounds_);
+            if (generation_.enabled()) std::fprintf(stderr,"HETERO_MTP_GENERATION_MODE prompt=%u max_new=%u\n",
+                         generation_.prompt_rows,generation_.max_new);
             std::fprintf(stderr,"HETERO_MTP_PROBE_LOADED device=%d draft_vram=%llu estimate=%llu\n",
                          device_,static_cast<unsigned long long>(drafter_->vram_bytes()),
                          static_cast<unsigned long long>(estimate));
@@ -142,11 +151,17 @@ public:
     }
 
     bool begin(const WindowSpec& spec,uint64_t request,uint64_t window,std::string& error) override {
-        if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_+relay_rounds_ ||
+        if (!cursor_ || request!=1 || window!=committed_+1 || window>window_limit() ||
             (window>windows_ && !relay_pending_) ||
             (fresh_replay_ && spec.token_ids.size()!=1) || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe window identity mismatch";
             return false;
+        }
+        if (generation_.enabled()) {
+            if (window<=windows_ ? (spec.pos0!=int64_t(window-1) || spec.token_ids.size()!=1)
+                                 : !generation_.live_window(spec.pos0,spec.token_ids)) {
+                error="MTP generation window outside admitted prefix/stop/length"; return false;
+            }
         }
         if (three_round_) {
             const bool prompt=window<=windows_;
@@ -162,7 +177,7 @@ public:
     }
     bool committed(const WindowSpec& spec,uint64_t request,uint64_t window,uint32_t keep,
                    core::Verifier& terminal,const std::vector<int32_t>& predictions,std::string& error) override {
-        if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_+relay_rounds_ ||
+        if (!cursor_ || request!=1 || window!=committed_+1 || window>window_limit() ||
             terminal.device()!=device_ || predictions.size()!=spec.token_ids.size() ||
             !keep || keep>predictions.size() || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe commit identity mismatch";
@@ -174,9 +189,15 @@ public:
             !mtp_three_commit_fits(spec.pos0,keep,unsigned(window-windows_-1),windows_)) {
             error="MTP three-round committed prefix exceeds diagnostic budget"; return false;
         }
+        if (generation_.enabled() && (window<=windows_ ? keep!=1 :
+             (!generation_.live_window(spec.pos0,spec.token_ids) ||
+              keep!=greedy_accepted_prefix(spec.token_ids,predictions)))) {
+            error="invalid MTP generation commit"; return false;
+        }
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
         ++committed_;
         verified_next_=predictions[keep-1];
+        if (generation_.enabled()) return true; // explicit next/terminal unsubmitted proposal requested by host
         // Finish the sole live relay with a second native draft for diagnosis
         // ONLY, even without tracing. Never submit another candidate window.
         // No front taps or state readbacks are added to the trace-free path.
@@ -208,9 +229,12 @@ public:
                 return true;
             },error);
     }
-    bool relay_enabled() const noexcept override { return relay_rounds_!=0; }
+    bool relay_enabled() const noexcept override { return relay_rounds_!=0 || generation_.enabled(); }
+    bool anchor_only_enabled() const noexcept override { return generation_.enabled(); }
     bool propose(const WindowSpec& anchor, WindowSpec& offer, std::string& error) override {
-        if (!relay_rounds_ || relay_pending_ || committed_<windows_ || committed_>=windows_+relay_rounds_ ||
+        if (!relay_enabled() || relay_pending_ || committed_<windows_ ||
+            (!generation_.enabled() && committed_>=windows_+relay_rounds_) ||
+            (generation_.enabled() && !generation_.can_draft(anchor.pos0)) ||
             !cursor_ || anchor.pos0!=cursor_->committed_position() ||
             anchor.token_ids!=std::vector<int32_t>{verified_next_} ||
             !ck(cudaSetDevice(device_),error)) {
@@ -237,10 +261,21 @@ public:
                     if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
                        probs[i]<0.f || probs[i]>1.f) {e="MTP relay invalid candidate";return false;}
                 candidates.assign(tokens.begin(),tokens.begin()+n);
+                if (generation_.enabled()) {
+                    // Record the original native list for independent fresh replay.
+                    // Truncate only the outgoing live IDs, not the native draft.
+                    std::string line="HETERO_MTP_GENERATION_OFFER cell="+std::to_string(cell)+
+                        " anchor="+std::to_string(next)+" tokens=";
+                    for (auto id:candidates) line+=std::to_string(id)+",";
+                    const auto count=generation_.candidate_count(cell+1,next,candidates);
+                    line+=" submitted="+std::to_string(count);
+                    std::fprintf(stderr,"%s\n",line.c_str());
+                    candidates.resize(count);
+                }
                 std::fprintf(stderr,"HETERO_MTP_RELAY_OFFER cell=%lld anchor=%d count=%d\n",
                              static_cast<long long>(cell),next,n);
                 return true;
-            },error);
+            },error,generation_.enabled());
         relay_pending_=ok;
         return ok;
     }
@@ -274,6 +309,8 @@ private:
     bool fresh_replay_=false;
     bool three_round_=false;
     bool three_round_variable_=false;
+    MtpGenerationPolicy generation_;
+    unsigned window_limit() const noexcept { return generation_.enabled()?generation_.feed_end():windows_+relay_rounds_; }
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;

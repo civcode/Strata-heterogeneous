@@ -48,9 +48,11 @@ public:
     }
     int mtp_mode = 0;
     bool mtp_relay_enabled() const noexcept override { return mtp_mode != 0; }
+    bool mtp_anchor_only_enabled() const noexcept override { return mtp_mode == 5; }
     bool propose_mtp(const WindowSpec& anchor, WindowSpec& offer, std::string& e) override {
         if (mtp_mode==2) {e="CPU proposal refusal";return false;}
         offer=anchor;
+        if (mtp_mode==5 || mtp_mode==6) return true;
         offer.token_ids.push_back((anchor.token_ids.front()+17)%1000);
         offer.token_ids.push_back(mtp_mode==3 ? 1000 : 0);
         if(mtp_mode==4) ++offer.pos0;
@@ -385,10 +387,31 @@ void mtp_relay_protocol(bool shared) {
         fails([&]{(void)pipe.commit(3);},"cannot commit rejected proposal suffix");
         check(pipe.poisoned(),"wrong greedy prefix poisons before sending commit");
     }
+    // Both endpoints must opt in to an anchor-only MTP response.
+    for (const int variant : {0,1,2}) {
+        auto w=launch(p,shared,false,false,false,false,0.f,false,false,false,true,false,false,0,variant==2?6:5);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,false,true,false,true,false,true,variant!=1);
+        pipe.initialize();
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        pipe.commit(2);
+        if (variant) {
+            fails([&]{(void)pipe.request_mtp_proposal();},"anchor-only relay without dual opt-in refused");
+            check(pipe.poisoned(),"singleton proposal refusal poisons pipeline");
+            continue;
+        }
+        const auto anchor=pipe.request_mtp_proposal();
+        check(anchor.pos0==2 && anchor.token_ids==std::vector<int32_t>{19},"anchor-only proposal identity");
+        auto one=input_frame(p,1,2);
+        one.rows=1; one.payload.resize(p.geometry.floats_per_row());
+        (void)pipe.execute(one,anchor);
+        check(pipe.commit(1).predicted_tokens[0]==36,"singleton target-authoritative commit");
+    }
     Frame f=input_frame(p,1,1);
     f.kind=Kind::mtp_proposal; f.stage_index=2; f.payload.clear();
     f.window=WindowSpec{2,{19,36,0}};
     check(decode(encode(f)).window->token_ids==f.window->token_ids,"proposal codec roundtrip");
+    f.rows=1; f.window->token_ids={19};
+    check(decode(encode(f)).window->token_ids==f.window->token_ids,"singleton codec; admission checked by endpoints");
     f.rows=6; f.window->token_ids.resize(6);
     fails([&]{(void)encode(f);},"oversized MTP proposal rejected");
 }
