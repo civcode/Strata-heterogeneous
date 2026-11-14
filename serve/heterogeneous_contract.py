@@ -33,10 +33,11 @@ def validate_request(ids, max_new, vocab, context):
 
 
 class Progress:
-    def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False):
+    def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False, native_prefill=False):
         if lookup and (stream or chunk < 2):
             raise ValueError("lookup requires buffered mode and chunk >= 2")
         self.lookup = lookup
+        self.native_prefill = native_prefill
         self.request, self.prompt, self.max_new = request, prompt, max_new
         self.chunk, self.vocab, self.stops, self.stream = chunk, vocab, stops, stream
         self.pos = self.window = 0
@@ -48,7 +49,10 @@ class Progress:
         if fields[0:1] != ["HETERO_PROGRESS"] or len(fields) != (5 if self.stream else 4):
             raise ValueError("wrong progress record shape")
         request, window, end = map(int, fields[1:4])
-        expected = self.pos + (min(self.chunk, self.prompt - self.pos) if self.pos < self.prompt else 1)
+        if self.native_prefill and self.window == 0 and self.prompt > 1:
+            expected = self.prompt - 1
+        else:
+            expected = self.pos + (min(self.chunk, self.prompt - self.pos) if self.pos < self.prompt else 1)
         valid_position = (expected <= end <= self.pos + self.chunk
                           if self.lookup and self.pos >= self.prompt else end == expected)
         if (self.terminal or request != self.request or window != self.window + 1 or

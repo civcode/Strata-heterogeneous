@@ -26,7 +26,8 @@ def prepare_server(cfg):
         raise ValueError("heterogeneous engine needs a heterogeneous config object")
     required = {"coordinator", "cuda_worker", "hip_worker", "config", "plan", "fingerprint"}
     optional = {"layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
-                "max_context", "stream_tokens", "restart_clean", "lookup_draft"}
+                "max_context", "stream_tokens", "restart_clean", "lookup_draft",
+                "group_native_hip", "native_prefill_chunk"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     for key in ("coordinator", "cuda_worker", "hip_worker", "plan"):
@@ -37,14 +38,17 @@ def prepare_server(cfg):
         raise ValueError("heterogeneous.config must list ordered worker config paths")
     values = dict(layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
-                  stream_tokens=False, restart_clean=False, lookup_draft=False)
+                  stream_tokens=False, restart_clean=False, lookup_draft=False,
+                  group_native_hip=False, native_prefill_chunk=0)
     values.update(opts)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
             raise ValueError(f"heterogeneous.{key} must be a positive integer")
     if type(values["prompt_chunk"]) is not int or not 0 <= values["prompt_chunk"] <= 8:
         raise ValueError("heterogeneous.prompt_chunk must be 0..8")
-    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft"):
+    if type(values["native_prefill_chunk"]) is not int or not 0 <= values["native_prefill_chunk"] <= 2048:
+        raise ValueError("heterogeneous.native_prefill_chunk must be 0..2048")
+    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft", "group_native_hip"):
         if type(values[key]) is not bool:
             raise ValueError(f"heterogeneous.{key} must be boolean")
     args = argparse.Namespace(**values)
@@ -238,7 +242,7 @@ class ResidentEngine:
             waiting = completed = cancelled = False
             progress = Progress(self._request, len(ids), max_new, self.chunk,
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
-                                 self.lookup_draft)
+                                 self.lookup_draft, bool(self.source.get("native_prefill_chunk", 0)))
             start = time.monotonic()
             prefill_end = last_checkpoint = first_output = None
             emitted = 0

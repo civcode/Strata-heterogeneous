@@ -34,6 +34,18 @@ class TestLimits(unittest.TestCase):
         with self.assertRaises(ValueError):
             Progress(1, 3, 8, 4, 100, {99}, True, True)
 
+    def test_native_prefill_progress_exact_prefix(self):
+        p = Progress(1, 17, 3, 8, 100, {99}, True, native_prefill=True)
+        for bad in ("HETERO_PROGRESS 1 1 8 -1", "HETERO_PROGRESS 1 1 17 -1",
+                    "HETERO_PROGRESS 2 1 16 -1"):
+            with self.assertRaises(ValueError):
+                p.accept(bad)
+        self.assertIsNone(p.accept("HETERO_PROGRESS 1 1 16 -1"))
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 2 17 10"), 10)
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 3 18 11"), 11)
+        p = Progress(1, 1, 3, 8, 100, {99}, False, native_prefill=True)
+        self.assertIsNone(p.accept("HETERO_PROGRESS 1 1 1"))
+
     def test_progress_and_timing(self):
         p = Progress(1, 3, 3, 2, 100, {99}, True)
         self.assertIsNone(p.accept("HETERO_PROGRESS 1 1 2 -1"))

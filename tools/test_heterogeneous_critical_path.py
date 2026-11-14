@@ -60,6 +60,22 @@ class CriticalPathTests(unittest.TestCase):
         b["completions"][0]["timing"]["phase_monotonic_s"]["decode_end"] = 500e-9
         self.assertFalse(verify_benchmark(r, b)["matched"])
 
+    def test_grouped_endpoints_and_untimed_native_prefix(self):
+        data = [s.replace("stage=1 ", "stage=2 ") for s in trace(2, 0, "prefill", 1, 3)]
+        data += ["HETERO_NATIVE_PREFILL_COMMITTED request=1 rows=3 chunk=8"]
+        r = summarize(data, 2, [0, 2])
+        self.assertEqual([s["stage"] for s in r["windows"][0]["stages"]], [0, 2])
+        self.assertNotIn("commit_barrier", r["windows"][0]["stages"][1]["coordinator_phase_ns"])
+        b = {"status": "complete", "completions": [{"request_id": 1, "finish_reason": "length",
+             "prompt_tokens": 4, "timing": {"decode_feedback_tokens": 0, "phase_monotonic_s": {
+                 "request_start": 0, "prefill_end": 400e-9, "decode_end": 400e-9}}}]}
+        coverage = verify_benchmark(r, b)
+        self.assertTrue(coverage["position_counts_match"])
+        self.assertFalse(coverage["matched"])
+        self.assertEqual(coverage["untimed_native_prefill_requests"], [1])
+        with self.assertRaises(ValueError):
+            summarize(data, 2, [2, 0])
+
     def test_bad_sequence(self):
         with self.assertRaises(ValueError):
             summarize(trace()+trace(2, 350, "decode", 1, 9), 2)

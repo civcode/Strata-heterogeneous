@@ -37,6 +37,8 @@ def add_arguments(parser):
     parser.add_argument("--benchmark-repeat", type=int, default=1, help="repeat resident prompt sequence 1..20 times; JSON includes timing")
     parser.add_argument("--timeout-ms", type=int, default=120000, help="per worker I/O operation")
     parser.add_argument("--shared", action="store_true", help="use existing memfd transport")
+    parser.add_argument("--group-native-hip", action="store_true", help="use one native HIP domain for both HIP stages")
+    parser.add_argument("--native-prefill-chunk", type=int, default=0, help="native bulk prefill chunk, 1..2048; 0 disables")
     parser.add_argument("--run", action="store_true", help="explicitly start native GPU workers; default is preflight only")
     parser.add_argument("--resident", action="store_true", help="reuse one native worker set across independent prompts")
     parser.add_argument("--additional-prompt", action="append", default=[], help="additional independent prompt in resident mode")
@@ -86,6 +88,12 @@ def prepare_native(args):
         argv.extend(("--config", _path(config)))
     if args.shared:
         argv.append("--shared")
+    group = getattr(args, "group_native_hip", False)
+    bulk = getattr(args, "native_prefill_chunk", 0)
+    if type(group) is not bool or type(bulk) is not int or not 0 <= bulk <= 2048 or (bulk and not group):
+        raise ValueError("native prefill needs grouped HIP and chunk 1..2048")
+    if group:
+        argv.append("--group-native-hip")
     # The native config parser determines the authorized tokenizer source;
     # never accept an independently supplied tokenizer or ByteTokenizer.
     source = _native(argv + ["--describe-source"], marker="HETERO_SOURCE")
@@ -108,7 +116,8 @@ def prepare_native(args):
         raise ValueError("lookup-draft requires buffered generation and chunk >= 2")
     source.update(context_limit=context, prompt_chunk=chunk,
                   stream_tokens=getattr(args, "stream_tokens", False),
-                  restart_clean=getattr(args, "restart_clean", False), lookup_draft=lookup)
+                  restart_clean=getattr(args, "restart_clean", False), lookup_draft=lookup,
+                  group_native_hip=group, native_prefill_chunk=bulk)
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -131,6 +140,8 @@ def prepare_native(args):
         native.append("--stream-tokens")
     if lookup:
         native.append("--lookup-draft")
+    if bulk:
+        native.extend(("--native-prefill-chunk", str(bulk)))
     return native, source, tok, stop_ids
 
 
@@ -175,7 +186,7 @@ def write_server_config(args):
            "heterogeneous": {key: getattr(args, key) for key in
                ("plan", "fingerprint", "layers", "hc", "n_embd", "max_new_tokens",
                 "prompt_chunk", "max_context", "timeout_ms", "shared", "stream_tokens",
-                "restart_clean", "lookup_draft")}}
+                "restart_clean", "lookup_draft", "group_native_hip", "native_prefill_chunk")}}
     for key in ("coordinator", "cuda_worker", "hip_worker"):
         cfg["heterogeneous"][key] = _path(getattr(args, key), True)
     cfg["heterogeneous"]["config"] = [_path(p) for p in args.config]
@@ -200,6 +211,8 @@ def run(args):
         return write_server_config(args)
     if args.restart_clean:
         raise ValueError("--restart-clean applies only to generated server config")
+    if getattr(args, "native_prefill_chunk", 0) and not args.resident:
+        raise ValueError("native prefill requires --resident")
     if (args.stream_tokens or args.benchmark_repeat != 1) and not args.resident:
         raise ValueError("stream-tokens and benchmark-repeat require --resident")
     if args.prompt_file is not None:

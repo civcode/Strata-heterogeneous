@@ -2,6 +2,8 @@
 
 **Production target:** CUDA0 [0,12) in one CUDA process, HIP0 [12,30) → HIP1 [30,48) in one native HIP process. Only CUDA/HIP communication is new. The full three-device physical plan/fingerprint, ownership and resource limits remain unchanged. The per-GPU process route is a historical regression control, not the target.
 
+**Qualification warning:** grouped native bulk-prefill remains explicitly experimental and off by default. On two source-bound coding prompts its output diverged reproducibly from the grouped serial verifier (including the first output token on one prompt). Do not treat its speed as a qualified improvement; diagnose with teacher-forced logits/state and retain all parity thresholds. See report 0011.
+
 | ID | Work | State |
 | --- | --- | --- |
 | M7.0 | Vanilla-first contract | Implemented |

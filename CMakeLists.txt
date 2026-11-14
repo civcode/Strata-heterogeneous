@@ -2515,6 +2515,11 @@ if(STRATA_NATIVE_EXPERTS)
     if(_strata_mmq_tqp)
       target_compile_definitions(strata_mmq PRIVATE STRATA_MMQ_TQP=1)
     endif()
+    # Before CUDA 12.1 the whole kernel parameter block is limited to 4 KiB.
+    # Propagate the smaller WideBatch layout to host and device callers.
+    if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 12.1)
+      target_compile_definitions(strata_mmq PUBLIC STRATA_CUDA_SMALL_KERNEL_PARAMS=1)
+    endif()
     target_link_libraries(strata_prefill PUBLIC strata_mmq)
     target_compile_definitions(strata_prefill PUBLIC STRATA_PREFILL_MMQ=1 STRATA_PREFILL_FUSED=1)
     if(STRATA_EXPERIMENTAL_SM60 AND NOT STRATA_HIP_GFX906)

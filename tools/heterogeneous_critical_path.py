@@ -47,9 +47,9 @@ def distribution(values):
             "p99_ms": quantile(.99)}
 
 
-def stage_summary(group, index):
+def stage_summary(group, index, endpoint):
     stages = [w["stages"][index] for w in group]
-    result = dict(stage=index, **{k: distribution([s[k] for s in stages]) for k in
+    result = dict(stage=endpoint, **{k: distribution([s[k] for s in stages]) for k in
         ("roundtrip_ns", "worker_covered_ns", "not_covered_by_worker_spans_ns")})
     for source in ("worker_phase_ns", "coordinator_phase_ns"):
         names = sorted({name for s in stages for name in s[source]})
@@ -59,10 +59,13 @@ def stage_summary(group, index):
     return result
 
 
-def summarize(lines, stage_count):
+def summarize(lines, stage_count, endpoints=None):
     if not 1 <= stage_count <= 64:
         raise ValueError("invalid stage count")
-    spans, commits = defaultdict(dict), {}
+    endpoints = list(range(stage_count)) if endpoints is None else list(endpoints)
+    if len(endpoints) != stage_count or any(type(x) is not int or x < 0 for x in endpoints) or sorted(set(endpoints)) != endpoints:
+        raise ValueError("endpoints must be distinct ascending nonnegative stage IDs")
+    spans, commits, native_prefill = defaultdict(dict), {}, []
     for line in lines:
         line = line.strip()
         if line.startswith("HETERO_PERF "):
@@ -75,6 +78,10 @@ def summarize(lines, stage_count):
             if not n or b < a or tag in spans[key]:
                 raise ValueError(f"invalid or duplicate span {key} {tag}")
             spans[key][tag] = (a, b, n)
+        elif line.startswith("HETERO_NATIVE_PREFILL_COMMITTED "):
+            r = fields(line, "HETERO_NATIVE_PREFILL_COMMITTED ")
+            native_prefill.append(dict(request=integer(r, "request", 1), rows=integer(r, "rows", 1),
+                                       chunk=integer(r, "chunk", 1)))
         elif line.startswith("HETERO_PERF_COMMITTED "):
             r = fields(line, "HETERO_PERF_COMMITTED ")
             key = integer(r, "request", 1), integer(r, "window", 1)
@@ -91,7 +98,7 @@ def summarize(lines, stage_count):
     previous = {}
     for key, (phase, rows, keep, pos) in sorted(commits.items()):
         data = spans.get(key, {})
-        required = [("coordinator", i, "stage_roundtrip") for i in range(stage_count)]
+        required = [("coordinator", i, "stage_roundtrip") for i in endpoints]
         required += [("coordinator", stage_count, "commit_barrier")]
         if any(tag not in data for tag in required) or any(x[2] != rows for x in data.values()):
             incomplete.append(dict(request=key[0], window=key[1], reason="missing spans or inconsistent rows"))
@@ -115,10 +122,10 @@ def summarize(lines, stage_count):
             if phase == prev[3]:
                 item["inter_window_gap_ns"] = start-prev[2]
         previous[key[0]] = (key[1], pos+keep, end, phase)
-        for i, (a, b) in enumerate(ordered[:-1]):
+        for i, (a, b) in zip(endpoints, ordered[:-1]):
             worker, coordinator = {}, {}
             for (component, stage, name), (x, y, _) in data.items():
-                if stage != i or name in ("stage_roundtrip", "commit_ack"):
+                if stage != i or name in ("stage_roundtrip", "commit_ack", "commit_barrier"):
                     continue
                 if component == "worker" and "commit" not in name:
                     worker[name] = (x, y)
@@ -141,10 +148,10 @@ def summarize(lines, stage_count):
             evaluated_rows=sum(w["rows"] for w in group),
             timing={k: distribution([w[k] for w in group if w[k] is not None]) for k in
                     ("critical_ns", "commit_ns", "dispatch_gap_ns", "inter_window_gap_ns")},
-            stages=[stage_summary(group, i) for i in range(stage_count)])
+            stages=[stage_summary(group, i, endpoint) for i, endpoint in enumerate(endpoints)])
     uncommitted = sorted(set(spans)-set(commits))
-    return dict(schema="strata-heterogeneous-critical-path/v1", stages=stage_count,
-        committed_markers=len(commits), complete_windows=len(windows), incomplete=incomplete,
+    return dict(schema="strata-heterogeneous-critical-path/v1", stages=stage_count, endpoints=endpoints,
+        native_prefill_markers=native_prefill, committed_markers=len(commits), complete_windows=len(windows), incomplete=incomplete,
         uncommitted=[list(k) for k in uncommitted], summaries=summaries, windows=windows,
         notes="Host monotonic spans only; same host/boot. Coverage is a union, not GPU busy time. "
               "Uncovered time is not necessarily IPC. Individual nested phase spans are not additive. "
@@ -162,6 +169,11 @@ def verify_benchmark(result, benchmark):
             raise ValueError("duplicate or unsuccessful benchmark request")
         completions[request] = r
     by_request = defaultdict(list)
+    native = {}
+    for marker in result.get("native_prefill_markers", []):
+        if marker["request"] in native:
+            raise ValueError("duplicate native prefill marker")
+        native[marker["request"]] = marker["rows"]
     for w in result["windows"]:
         by_request[w["request"]].append(w)
     mismatches = []
@@ -172,9 +184,11 @@ def verify_benchmark(result, benchmark):
         r, group = completions[req], by_request[req]
         expected = {"prefill": r["prompt_tokens"], "decode": r["timing"]["decode_feedback_tokens"]}
         observed = {p: sum(w["keep"] for w in group if w["phase"] == p) for p in expected}
+        observed["prefill"] += native.get(req, 0)
         if observed != expected:
             mismatches.append({"request": req, "reason": "accepted row counts", "expected": expected, "observed": observed})
-        if group[0]["window"] != 1 or group[0]["pos0"] != 0 or any(
+        prefix = native.get(req, 0)
+        if group[0]["window"] != (2 if prefix else 1) or group[0]["pos0"] != prefix or any(
                 b["window"] != a["window"] + 1 or b["pos0"] != a["pos0"] + a["keep"]
                 for a,b in zip(group, group[1:])):
             mismatches.append({"request": req, "reason": "missing or non-contiguous window sequence"})
@@ -185,7 +199,9 @@ def verify_benchmark(result, benchmark):
             if not bounds[lo] <= w["start_ns"] / 1e9 <= w["end_ns"] / 1e9 <= bounds[hi]:
                 mismatches.append({"request": req, "window": w["window"], "reason": "outside benchmark phase; verify clock and run identity"})
     return {"requests": len(completions), "mismatches": mismatches,
-            "matched": bool(completions) and not mismatches and not result["incomplete"] and not result["uncommitted"]}
+            "untimed_native_prefill_requests": sorted(native),
+            "position_counts_match": bool(completions) and not mismatches,
+            "matched": bool(completions) and not mismatches and not native and not result["incomplete"] and not result["uncommitted"]}
 
 
 def main(argv=None):
@@ -193,9 +209,11 @@ def main(argv=None):
     parser.add_argument("--trace", required=True)
     parser.add_argument("--stages", required=True, type=int)
     parser.add_argument("--benchmark", help="matching resident benchmark JSON for coverage/clock validation")
+    parser.add_argument("--endpoints", help="ordered physical stage IDs, e.g. 0,2 for grouped HIP")
     args = parser.parse_args(argv)
     with open(args.trace, encoding="utf-8") as stream:
-        result = summarize(stream, args.stages)
+        endpoints = None if args.endpoints is None else [int(x) for x in args.endpoints.split(",")]
+        result = summarize(stream, args.stages, endpoints)
     result["benchmark_coverage"] = None
     if args.benchmark:
         with open(args.benchmark, encoding="utf-8") as stream:
