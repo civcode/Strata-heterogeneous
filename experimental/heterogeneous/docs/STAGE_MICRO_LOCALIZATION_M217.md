@@ -51,7 +51,7 @@ Fixed FP32 component order:
 2. layer5 gate_raw — native gate projection before SwiGLU
 3. layer5 up_raw — native up projection before SwiGLU
 4. layer5 down_unscaled — down projection BEFORE scalar sigmoid gate
-5. layer5 gate_scale — the shared-expert sigmoid scalar
+5. layer5 gate_logit — raw native-BF16 gate projection scalar BEFORE sigmoid
 6. layer5 shared_final — post-scaling contribution to MoE
 7. layer6 QKV — input to GDN convolution
 8. layer6 conv_history — full last (ssm_d_conv-1) history for
@@ -65,8 +65,8 @@ Two additional exact **raw Q8_1 byte images**:
 
 The native shared_expert_multi tracing is on its *producer stream*,
 and copies gate/up before SwiGLU potentially modifies gate scratch,
-the raw quantized image before reuse, and down BEFORE sigmoid
-scaling. The verifier captures convolution history on its GDN
+the raw quantized image before reuse, and down BEFORE sigmoid scaling. In native-BF16 mode the scalar
+buffer is a PRE-sigmoid gate logit, not the applied sigmoid value. The verifier captures convolution history on its GDN
 consumer stream before convolution, not after the commit.
 
 The native worker prints STRATA_SHARED_MICRO_PATH with actual
@@ -221,7 +221,7 @@ or automatic Actions. Keep all raw captures and logs.
 | Input/Q8 match; gate/up differ | Native shared gate/up MMVQ or loaded weight path is implicated; compare isolated identical quantized input/weight bytes |
 | Gate/up match; swiglu Q8 differs | Fused SwiGLU/Q8 kernel difference candidate; inspect exact intermediate quantization |
 | SwiGLU Q8 matches; down_unscaled differs | Down MMVQ / Q2_0 accumulation is candidate |
-| Down and gate scalar match; shared_final differs | Shared scaling operation is candidate |
+| Down and gate logit match; shared_final differs | Sigmoid / shared scaling operation is candidate |
 | layer6 QKV matches; conv_history differs | **Prior committed convolution state** differs; trace accepted-prefix history update before comparing kernel |
 | QKV AND conv_history match; conv_output differs | Conv kernel arithmetic becomes a strong candidate; isolate direct one-step convolution with identical inputs and weights |
 | All microtrace fields match but previous STB0 differs | Fail the cross-record check; investigate capture semantics, not parity |
