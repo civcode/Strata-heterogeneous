@@ -735,6 +735,9 @@ Verifier::~Verifier() {
     if (stage0_phase_dev_) cudaFree(stage0_phase_dev_);
     if (branch_probe_dev_) cudaFree(branch_probe_dev_);
     if (branch_ids_dev_) cudaFree(branch_ids_dev_);
+    if (micro_dev_) cudaFree(micro_dev_);
+    if (micro_input_q8_) cudaFree(micro_input_q8_);
+    if (micro_swiglu_q8_) cudaFree(micro_swiglu_q8_);
     if (d_spec_) cudaFree(d_spec_);
     if (tap_file_) std::fclose(tap_file_);
 #if !defined(STRATA_GPU_METAL)   // (on Metal tap_dev_ is the window's unified-memory buffer, not an allocation of this object)
@@ -1131,6 +1134,33 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         if (cudaMalloc((void**) &layer_zero_mixed_, (size_t) T * g.n_embd * sizeof(float)) != cudaSuccess ||
             cudaMalloc((void**) &layer_zero_q8_, (size_t) T * q8stride) != cudaSuccess) {
             err = "layer-zero arithmetic probe GPU buffer allocation failed";
+            return false;
+        }
+    }
+    if (micro_probe_on_) {
+        if (lb_ != 0 || le_ <= 6 || g.n_layers != 48 ||
+            g.n_embd != 2560 || g.n_ff <= 0 || g.n_ff % 32 != 0 ||
+            g.ssm_conv_channels <= 0 || g.ssm_d_conv != 4 ||
+            is_qsa_layer(g, 6)) {
+            err = "M2.17 requires stage0, layer5 MoE and layer6 GDN with block32 geometry";
+            return false;
+        }
+        const size_t N = (size_t) g.n_embd, F = (size_t) g.n_ff;
+        const size_t C = (size_t) g.ssm_conv_channels, D = (size_t) g.ssm_d_conv;
+        const size_t sizes[kMicroFields] = {N, F, F, N, 1, N, C, C*(D-1), C};
+        micro_floats_ = 0;
+        for (size_t i = 0; i < kMicroFields; ++i) {
+            micro_offsets_[i] = micro_floats_;
+            micro_lengths_[i] = sizes[i];
+            micro_floats_ += sizes[i];
+        }
+        const size_t q8in = N / 32 * 36, q8out = F / 32 * 36;
+        if (micro_floats_ == 0 ||
+            micro_floats_ * sizeof(float) + q8in + q8out > (4u << 20) ||
+            cudaMalloc((void**) &micro_dev_, micro_floats_ * sizeof(float)) != cudaSuccess ||
+            cudaMalloc((void**) &micro_input_q8_, q8in) != cudaSuccess ||
+            cudaMalloc((void**) &micro_swiglu_q8_, q8out) != cudaSuccess) {
+            err = "M2.17 microprobe exceeds 4MiB or GPU allocation failed";
             return false;
         }
     }
@@ -1800,6 +1830,11 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 stamp(l, 2, grp);
                 if (l == 6 && grp == 0 &&
                     !branch_capture(l, 5, qkv + (size_t) tb * C, cs, err)) return false;
+                // Snapshot convolution history on its consumer stream BEFORE
+                // the history is read or possibly mutated by GDN convolution.
+                if (micro_probe_on_ && T == 1 && l == 6 && grp == 0 &&
+                    (!micro_capture(6, 6, qkv + (size_t) tb * C, cs, err) ||
+                     !micro_capture(6, 7, conv, cs, err))) return false;
                 if (batch_rec_) {   // contiguous rows may be proposals for the same slot
                     for (int t = tb; t < te;) {
                         const int first = t;
@@ -1824,6 +1859,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 stamp(l, 3, grp);
                 if (l == 6 && grp == 0 &&
                     !branch_capture(l, 6, hb + (size_t) tb * C, cs, err)) return false;
+                if (micro_probe_on_ && T == 1 && l == 6 && grp == 0 &&
+                    !micro_capture(6, 8, hb + (size_t) tb * C, cs, err)) return false;
                 if (br) {   // gate, beta and z, before the recurrence reads them
                     join(0);
                     join(1);
@@ -2280,6 +2317,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         stamp(l, 16, grp);
         if (!stage0_phase_capture(l, tb, n, 1, bo_, cs, err)) return false;
         const bool q8_ffn = gr_read_group(1, true, inj_, inj2_);   // true: nat_xq_ holds the MoE input's q8_1 (STRATA_QFUSE)
+        if (micro_probe_on_ && T == 1 && l == 5 && grp == 0 &&
+            !micro_capture(5, 0, mixed_ + (size_t) tb * N, cs, err)) return false;
         if (!stage0_phase_capture(l, tb, n, 2, mixed_, cs, err)) return false;
         stamp(l, 32, grp);   // the profile only: the FFN-side read ends here, the router starts
         // with CPU experts in the window the shared expert forks off once the doorbell is published (it no longer
@@ -2393,6 +2432,16 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 !native_of(wsd, v.name("ffn_down_shexp.weight"), err))
                 return false;
             NativeSharedWeights nsw;
+            strata::kernels::SharedExpertMicrotrace trace{};
+            const bool trace_on = micro_probe_on_ && T == 1 && l == 5 && grp == 0;
+            if (trace_on) {
+                trace.input_q8 = micro_input_q8_;
+                trace.gate_raw = micro_dev_ + micro_offsets_[1];
+                trace.up_raw = micro_dev_ + micro_offsets_[2];
+                trace.swiglu_q8 = micro_swiglu_q8_;
+                trace.down_unscaled = micro_dev_ + micro_offsets_[3];
+                trace.gate_scale = micro_dev_ + micro_offsets_[4];
+            }
             nsw.gate_type = wsg->native_type; nsw.gate_data = wsg->native_data;
             nsw.up_type = wsu->native_type; nsw.up_data = wsu->native_data;
             nsw.down_type = wsd->native_type; nsw.down_data = wsd->native_data;
@@ -2410,7 +2459,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 shared_expert_multi(n, xm, sh_bf16_ + tb * N, nsw, (const uint16_t*) wgi->data, sh_gate_ + (size_t) tb * g.n_ff,
                                     sh_up_ + (size_t) tb * g.n_ff, sh_g_ + tb, shared_ + tb * N, N, g.n_ff, sh_stream,
                                     qdedup ? (const void*) (nat_xq_ + (size_t) tb * (N / 32) * 36) : nullptr,
-                                    (sg_ready ? 1 : 0) | (lfuse_on(n) && g_lfuse_pair() ? 2 : 0));
+                                    (sg_ready ? 1 : 0) | (lfuse_on(n) && g_lfuse_pair() ? 2 : 0),
+                                    trace_on ? &trace : nullptr);
                 sg_gated_[grp] = sg_ready;
             } catch (const std::exception& e) {
                 err = std::string("verify shared expert: ") + e.what();
@@ -2564,6 +2614,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         if (sh_stream_on() && !prof_on_ && sh_cs_ != nullptr && ev_fork_ != nullptr && ev_join_ != nullptr) {
             cudaStreamWaitEvent(cs, ev_join_, 0);
         }
+        if (micro_probe_on_ && T == 1 && l == 5 && grp == 0 &&
+            !micro_capture(5, 5, shared_ + (size_t) tb * N, cs, err)) return false;
         if (l == 5 && grp == 0 &&
             (!branch_capture(l, 2, shared_ + tb * N, cs, err) ||
              !branch_capture(l, 3, parts_out, cs, err))) return false;
@@ -5291,6 +5343,59 @@ bool Verifier::copy_stage0_phase_probe(std::vector<float>& values,
         return false;
     }
     return true;
+}
+
+bool Verifier::micro_capture(int layer, int field, const float* src,
+                             cudaStream_t stream, std::string& err) const {
+    if (!micro_probe_on_) return true;
+    if (!micro_dev_ || !src || field < 0 || field >= (int) kMicroFields ||
+        !((layer == 5 && (field == 0 || field == 5)) ||
+          (layer == 6 && field >= 6 && field <= 8))) {
+        err = "M2.17 invalid microprobe field or source";
+        return false;
+    }
+    const size_t i = (size_t) field;
+    if (cudaMemcpyAsync(micro_dev_ + micro_offsets_[i], src,
+                        micro_lengths_[i] * sizeof(float),
+                        cudaMemcpyDeviceToDevice, stream) != cudaSuccess) {
+        err = "M2.17 microprobe GPU capture failed: layer " +
+              std::to_string(layer) + " field " + std::to_string(field);
+        return false;
+    }
+    return true;
+}
+
+bool Verifier::copy_stage_micro_probe(StageMicroProbe& result,
+                                      std::string& err) const {
+    if (!micro_probe_on_ || !micro_dev_ || !micro_input_q8_ ||
+        !micro_swiglu_q8_ || !g_ || lb_ != 0 || last_t_ != 1 ||
+        micro_floats_ == 0 || g_->n_ff <= 0 || g_->n_embd <= 0 ||
+        g_->ssm_conv_channels <= 0) {
+        err = "M2.17 export requires completed single-token stage-zero window";
+        return false;
+    }
+    const OnDevice on_device(device_);
+    const size_t qi = (size_t) g_->n_embd / 32 * 36;
+    const size_t qo = (size_t) g_->n_ff / 32 * 36;
+    result.n_embd = (uint32_t) g_->n_embd;
+    result.n_ff = (uint32_t) g_->n_ff;
+    result.conv_channels = (uint32_t) g_->ssm_conv_channels;
+    result.conv_kernel = (uint32_t) g_->ssm_d_conv;
+    result.data.resize(micro_floats_);
+    result.input_q8.resize(qi);
+    result.swiglu_q8.resize(qo);
+    auto copy = [&](void* dst, const void* src, size_t bytes,
+                    const char* name) -> bool {
+        const cudaError_t status = cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost);
+        if (status == cudaSuccess) return true;
+        err = std::string("M2.17 microprobe export ") + name + ": " +
+              cudaGetErrorString(status);
+        return false;
+    };
+    return copy(result.data.data(), micro_dev_,
+                micro_floats_ * sizeof(float), "FP32") &&
+           copy(result.input_q8.data(), micro_input_q8_, qi, "input Q8_1") &&
+           copy(result.swiglu_q8.data(), micro_swiglu_q8_, qo, "SwiGLU Q8_1");
 }
 
 bool Verifier::branch_capture(int64_t layer, int phase, const void* src,
