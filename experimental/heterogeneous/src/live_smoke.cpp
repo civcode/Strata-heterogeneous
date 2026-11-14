@@ -46,6 +46,7 @@ struct Options {
     bool layer_zero_probe = false;
     bool stage0_phases = false;
     bool branch_probe = false;
+    bool micro_probe = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -73,7 +74,7 @@ void usage() {
         "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
         "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
-        "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe]\n"
+        "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -86,6 +87,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--layer0-probe") o.layer_zero_probe = true;
         else if (key == "--stage0-phases") o.stage0_phases = true;
         else if (key == "--branch-probe") o.branch_probe = true;
+        else if (key == "--micro-probe") o.micro_probe = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--plan") o.plan = required_value(i, argc, argv, "--plan");
         else if (key == "--cuda-worker") o.cuda_worker = required_value(i, argc, argv, "--cuda-worker");
@@ -135,6 +137,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--stage0-phases requires --capture-prefix and --rows 1");
     if (o.branch_probe && (o.capture_prefix.empty() || o.rows != 1))
         throw std::invalid_argument("--branch-probe requires --capture-prefix and --rows 1");
+    if (o.micro_probe && (o.capture_prefix.empty() || o.rows != 1))
+        throw std::invalid_argument("--micro-probe requires --capture-prefix and --rows 1");
     if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows)
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     return o;
@@ -225,6 +229,10 @@ void preflight(const Options& o, const hetero::Plan& plan) {
                     std::filesystem::exists(o.capture_prefix + ".stage0.w" +
                                             std::to_string(n) + ".stb0"))
                     throw std::invalid_argument("branch probe record exists; use fresh prefix");
+                if (o.micro_probe &&
+                    std::filesystem::exists(o.capture_prefix + ".stage0.w" +
+                                            std::to_string(n) + ".stm0"))
+                    throw std::invalid_argument("microprobe record exists; use fresh prefix");
                 if (o.layer_taps)
                     for (size_t stage = 0; stage < plan.stages.size(); ++stage)
                         if (std::filesystem::exists(o.capture_prefix + ".stage" +
@@ -324,6 +332,13 @@ int execute(const Options& o, const hetero::Plan& plan) {
             throw std::runtime_error("cannot configure native branch probe");
     } else if (::unsetenv("STRATA_HETERO_BRANCH_PROBE_PREFIX") != 0) {
         throw std::runtime_error("cannot clear inherited native branch probe");
+    }
+    if (o.micro_probe) {
+        if (::setenv("STRATA_HETERO_MICRO_PROBE_PREFIX",
+                     o.capture_prefix.c_str(), 1) != 0)
+            throw std::runtime_error("cannot configure native microprobe");
+    } else if (::unsetenv("STRATA_HETERO_MICRO_PROBE_PREFIX") != 0) {
+        throw std::runtime_error("cannot clear inherited native microprobe");
     }
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
