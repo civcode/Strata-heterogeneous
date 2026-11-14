@@ -134,10 +134,10 @@ class MicroTests(unittest.TestCase):
         self.assertEqual(self.compare()["positions"][0]["first_nonidentical"],
                          "down_unscaled")
 
-    def test_scale_first(self):
+    def test_gate_logit_first(self):
         self.write(self.het, micro.HET_PLAN, change=4, delta=0.25)
         self.assertEqual(self.compare()["positions"][0]["first_nonidentical"],
-                         "gate_scale")
+                         "gate_logit")
 
     def test_shared_final_with_old_overlap(self):
         self.write(self.het, micro.HET_PLAN, change=5, delta=0.3)
