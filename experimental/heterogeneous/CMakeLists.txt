@@ -158,6 +158,13 @@ if(STRATA_HETERO_HOST_TESTS)
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
         -p test_heterogeneous_compare_parity.py)
     set_tests_properties(strata_heterogeneous_parity_capture_tests PROPERTIES TIMEOUT 30)
+    # M2.17: CPU-only STM0 exact shared-expert gate/up/down and
+    # pre-GDN-convolution history probes, including STB0 overlap.
+    add_test(NAME strata_heterogeneous_micro_probe_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_stage_micro.py)
+    set_tests_properties(strata_heterogeneous_micro_probe_tests PROPERTIES TIMEOUT 45)
     # M2.15: CPU-only STB0 native layer-5 routing/expert and layer-6
     # GDN substep identity, checksum and divergence fixtures.
     add_test(NAME strata_heterogeneous_branch_probe_tests
