@@ -79,18 +79,39 @@ uint32_t expected_bytes(const Frame& f) {
     return static_cast<uint32_t>(n);
 }
 void validate_frame(const Frame& f) {
-    if (f.kind != Kind::window_spec && f.window)
+    if (f.kind != Kind::window_spec && f.kind != Kind::prefill_spec && f.window)
         throw std::invalid_argument("unexpected window specification");
     if (f.kind != Kind::commit_prefix && f.kind != Kind::committed_prefix && f.keep_count)
         throw std::invalid_argument("unexpected accepted-token count");
     if (!f.request_id || !f.plan_fingerprint || !f.rows || !f.geometry.hc || !f.geometry.n_embd)
         throw std::invalid_argument("frame has unset request, plan, rows, or geometry");
+    if (f.kind != Kind::prefill_spec && f.prefill_chunk)
+        throw std::invalid_argument("unexpected native prefill chunk size");
     const bool zero_identity = f.identity == std::array<uint32_t, 4>{};
     switch (f.kind) {
         case Kind::data:
             if (f.shared_checksum || !zero_identity || !f.error.empty() ||
                 checked_mul(f.payload.size(), sizeof(float)) != expected_bytes(f))
                 throw std::invalid_argument("data frame has wrong handoff shape");
+            break;
+        case Kind::prefill_rows:
+            if (!f.window_id || f.shared_checksum || !zero_identity || !f.error.empty() ||
+                f.rows > prefill_piece_rows(f.geometry) ||
+                checked_mul(f.payload.size(), sizeof(float)) !=
+                    checked_mul(checked_mul(checked_mul(f.rows,f.geometry.hc),f.geometry.n_embd),sizeof(float)))
+                throw std::invalid_argument("native residual frame has wrong R-only shape");
+            break;
+        case Kind::prefill_spec:
+            if (f.window_id != 1 || !zero_identity || f.shared_checksum || !f.payload.empty() ||
+                !f.error.empty() || !f.window || f.window->pos0 != 0 ||
+                !f.prefill_chunk || f.prefill_chunk > max_native_prefill_chunk)
+                throw std::invalid_argument("invalid native prefill specification");
+            f.window->validate(f.rows);
+            break;
+        case Kind::prefill_done:
+            if (f.window_id != 1 || f.rows > max_window_tokens || f.shared_checksum ||
+                !zero_identity || !f.payload.empty() || !f.error.empty())
+                throw std::invalid_argument("invalid native prefill completion");
             break;
         case Kind::shared_data:
             if (!zero_identity || !f.payload.empty() || !f.error.empty())
@@ -256,6 +277,12 @@ Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uin
     out.validate();
     return out;
 }
+uint32_t prefill_piece_rows(Geometry g) {
+    if (!g.hc || !g.n_embd) throw std::invalid_argument("empty native residual geometry");
+    const uint64_t bytes = checked_mul(checked_mul(g.hc,g.n_embd),sizeof(float));
+    if (bytes > max_payload_bytes) throw std::invalid_argument("native residual row exceeds wire cap");
+    return static_cast<uint32_t>(max_payload_bytes / bytes);
+}
 void validate_wire_frame(const Frame& f) { check_host(); validate_frame(f); }
 std::vector<uint8_t> encode(const Frame& f) {
     validate_wire_frame(f);
@@ -265,18 +292,20 @@ std::vector<uint8_t> encode(const Frame& f) {
              f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final)
         for (uint32_t word : f.identity) add_u32(payload, word);
     else if (f.kind == Kind::shared_data) add_u32(payload, f.shared_checksum);
-    else if (f.kind == Kind::window_spec) {
+    else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec) {
         add_u64(payload, static_cast<uint64_t>(f.window->pos0));
         add_u32(payload, static_cast<uint32_t>(f.window->token_ids.size()));
         for (int32_t token : f.window->token_ids) add_u32(payload, static_cast<uint32_t>(token));
+        if (f.kind == Kind::prefill_spec) add_u32(payload,f.prefill_chunk);
     } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix)
         add_u32(payload, f.keep_count);
     // Data is already little-endian float32 (validate_wire_frame).
     // Hash and append directly from the original frame; avoid a temporary
     // activation-sized allocation and memcpy. Control payloads are unchanged.
-    const auto* data = f.kind == Kind::data
+    const bool floats = f.kind == Kind::data || f.kind == Kind::prefill_rows;
+    const auto* data = floats
         ? reinterpret_cast<const uint8_t*>(f.payload.data()) : payload.data();
-    const size_t size = f.kind == Kind::data
+    const size_t size = floats
         ? f.payload.size() * sizeof(float) : payload.size();
     std::vector<uint8_t> bytes;
     bytes.reserve(wire_header_bytes + size);
@@ -306,13 +335,14 @@ Frame decode(const std::vector<uint8_t>& bytes) {
     f.request_id = get_u64(bytes.data() + 24);
     f.window_id = get_u64(bytes.data() + 32);
     f.plan_fingerprint = get_u64(bytes.data() + 40);
-    if (f.kind == Kind::data) {
+    if (f.kind == Kind::data || f.kind == Kind::prefill_rows) {
         if (n % sizeof(float) != 0) throw std::invalid_argument("partial float in handoff");
         f.payload.resize(n / sizeof(float));
         if (n) std::memcpy(f.payload.data(), payload, n);
     } else if (f.kind == Kind::failure) f.error.assign(reinterpret_cast<const char*>(payload), n);
-    else if (f.kind == Kind::window_spec) {
-        if (n < 12 || (n - 12) % 4 != 0 || get_u32(payload + 8) != (n - 12) / 4 ||
+    else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec) {
+        const uint32_t fixed = f.kind == Kind::prefill_spec ? 16 : 12;
+        if (n < fixed || (n - fixed) % 4 != 0 || get_u32(payload + 8) != (n - fixed) / 4 ||
             get_u32(payload + 8) > max_window_tokens)
             throw std::invalid_argument("invalid token window wire length");
         WindowSpec w;
@@ -322,6 +352,7 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         for (uint32_t i = 0; i < count; ++i)
             w.token_ids.push_back(static_cast<int32_t>(get_u32(payload + 12 + 4 * i)));
         f.window = std::move(w);
+        if (f.kind == Kind::prefill_spec) f.prefill_chunk = get_u32(payload + n - 4);
     } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix) {
         if (n != 4) throw std::invalid_argument("invalid accepted-prefix wire length");
         f.keep_count = get_u32(payload);
@@ -335,7 +366,7 @@ Frame decode(const std::vector<uint8_t>& bytes) {
     }
     // Empty-control kinds must not smuggle unrecognized payload bytes.
     if ((f.kind == Kind::ready_resident || f.kind == Kind::begin_request ||
-         f.kind == Kind::request_ready) && n != 0)
+         f.kind == Kind::request_ready || f.kind == Kind::prefill_done) && n != 0)
         throw std::invalid_argument("resident control payload must be empty");
     validate_frame(f);
     return f;

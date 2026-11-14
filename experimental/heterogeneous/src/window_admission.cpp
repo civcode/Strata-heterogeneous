@@ -49,6 +49,30 @@ bool WindowAdmission::reset_request(uint64_t request, std::string& error) {
     return true;
 }
 
+bool WindowAdmission::begin_prefill(const Frame& f, std::string& error) {
+    if (state_ != State::ready || !first_request_ || f.request_id != first_request_ ||
+        next_position_ != 0 || last_window_ || f.kind != Kind::prefill_spec ||
+        f.stage_index != stage_ || f.plan_fingerprint != plan_fingerprint_ ||
+        f.geometry.hc != plan_.geometry.hc || f.geometry.n_embd != plan_.geometry.n_embd ||
+        f.rows >= static_cast<uint64_t>(limits_.max_cells))
+        return reject(error,"native prefill requires fresh resident context and matching physical endpoint");
+    try { validate_wire_frame(f); }
+    catch (const std::exception&) { return reject(error,"invalid native prefill metadata"); }
+    for (int32_t token : f.window->token_ids)
+        if (token < 0 || token >= limits_.n_vocab)
+            return reject(error,"native prompt token outside vocabulary");
+    rows_ = f.rows; window_ = f.window_id; pos0_ = 0;
+    state_ = State::prefilling;
+    return true;
+}
+bool WindowAdmission::finished_prefill(std::string& error) {
+    if (state_ != State::prefilling)
+        return reject(error,"native prefill completion without admission");
+    next_position_ = rows_; last_window_ = window_; state_ = State::ready;
+    error.clear();
+    return true;
+}
+
 bool WindowAdmission::begin(const WindowSpec& spec, uint64_t request,
                             uint64_t window, std::string& error) {
     if (state_ != State::ready || !request || !window ||

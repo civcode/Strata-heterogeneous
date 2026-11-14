@@ -56,7 +56,8 @@ enum class Kind : uint16_t {
     commit = 5, committed = 6, shared_data = 7, hello_shared = 8,
     window_spec = 9, commit_prefix = 10, committed_prefix = 11,
     hello_final = 12, hello_shared_final = 13,
-    ready_resident = 14, begin_request = 15, request_ready = 16
+    ready_resident = 14, begin_request = 15, request_ready = 16,
+    prefill_spec = 17, prefill_rows = 18, prefill_done = 19
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
@@ -67,6 +68,7 @@ struct WindowSpec {
     std::vector<int32_t> token_ids;
     void validate(uint32_t rows) const;
 };
+constexpr uint32_t max_native_prefill_chunk = 2048; // independent of decode max_t
 constexpr uint32_t max_window_tokens = 8192; // protocol ceiling, not Verifier::max_t
 
 struct Frame {
@@ -84,11 +86,16 @@ struct Frame {
     uint32_t shared_checksum = 0; // shared_data only, over mapped float32 bytes
     std::optional<WindowSpec> window; // window_spec only
     uint32_t keep_count = 0; // commit_prefix and committed_prefix only
+    uint32_t prefill_chunk = 0; // prefill_spec only
 };
 
 constexpr uint32_t max_payload_bytes = 16 * 1024 * 1024;
 constexpr size_t wire_header_bytes = 56;
 constexpr int default_io_timeout_ms = 30000;
+// Native prefill transfers R only. A native chunk can span several frames;
+// residual frame window_id is the piece's absolute position plus one.
+uint32_t prefill_piece_rows(Geometry);
+using NativePrefillHandler = std::function<bool(const Frame&, int, std::string&)>;
 
 // A borrowed view of one host-visible activation window. Bytes avoid treating
 // a Linux mmap as a constructed float[] (C++17 object-lifetime rules) and give
@@ -203,7 +210,8 @@ private:
 void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
                            StageExecutor& executor, int timeout_ms = default_io_timeout_ms,
                            bool shared_memory = false,
-                           const WindowLimits* limits = nullptr, int startup_wait_ms = -1);
+                           const WindowLimits* limits = nullptr, int startup_wait_ms = -1,
+                            NativePrefillHandler prefill = {});
 // Backwards-compatible CPU-test convenience; now uses the same transactional
 // handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);

@@ -27,6 +27,8 @@ public:
 
     // Admission is pure host logic; no CUDA work or model pointers involved.
     bool reset_request(uint64_t request, std::string& error);
+    bool begin_prefill(const Frame&, std::string& error);
+    bool finished_prefill(std::string& error);
     bool begin(const WindowSpec& spec, uint64_t request, uint64_t window,
                std::string& error);
     bool validate_input(const Frame& frame, bool shared_memory, std::string& error);
@@ -39,14 +41,14 @@ public:
     bool committed(uint32_t keep, std::string& error);
     void poison() noexcept { state_ = State::dead; }
 
-    bool pending() const noexcept { return state_ == State::begun || state_ == State::input_checked || state_ == State::provisional; }
+    bool pending() const noexcept { return state_ == State::prefilling || state_ == State::begun || state_ == State::input_checked || state_ == State::provisional; }
     bool poisoned() const noexcept { return state_ == State::dead; }
     int64_t next_position() const noexcept { return next_position_; }
     uint64_t committed_windows() const noexcept { return committed_windows_; }
     std::string diagnostic(const char* phase) const; // metadata only, never tokens or paths
 
 private:
-    enum class State { ready, begun, input_checked, provisional, dead };
+    enum class State { ready, prefilling, begun, input_checked, provisional, dead };
     Plan plan_;
     size_t stage_ = 0;
     WindowLimits limits_;

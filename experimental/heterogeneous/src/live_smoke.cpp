@@ -39,7 +39,7 @@ struct Options {
     std::string capture_prefix;
     std::string source_gguf, source_index;
     std::vector<int32_t> stop_ids;
-    uint32_t generate = 0, prompt_chunk = 1;
+    uint32_t generate = 0, prompt_chunk = 1, native_prefill_chunk = 0;
     bool describe_source = false;
     bool resident = false;
     bool stream_tokens = false;
@@ -98,6 +98,7 @@ void usage() {
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--run]\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
+        "  --native-prefill-chunk N (grouped HIP resident native prefill, 1..2048)\n"
         "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
@@ -183,6 +184,11 @@ Options parse(int argc, char** argv) {
             o.prompt_chunk = u32(required_value(i, argc, argv, "--prompt-chunk"), "prompt-chunk");
             if (!o.prompt_chunk || o.prompt_chunk > 8)
                 throw std::invalid_argument("--prompt-chunk must be in 1..8");
+        } else if (key == "--native-prefill-chunk") {
+            generation_arg = true;
+            o.native_prefill_chunk=u32(required_value(i,argc,argv,"--native-prefill-chunk"),"native-prefill-chunk");
+            if (!o.native_prefill_chunk || o.native_prefill_chunk>hetero::max_native_prefill_chunk)
+                throw std::invalid_argument("native prefill chunk outside bounded range");
         } else if (key == "--source-gguf") {
             generation_arg = true;
             o.source_gguf = required_value(i, argc, argv, "--source-gguf");
@@ -277,6 +283,8 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.native_prefill_chunk && (!o.group_hip || !o.resident || !o.generate))
+        throw std::invalid_argument("native bulk prefill requires grouped HIP resident generation");
     if (o.stream_tokens && !o.resident)
         throw std::invalid_argument("--stream-tokens requires --resident");
     if (o.lookup_draft && (o.stream_tokens || o.prompt_chunk < 2))
@@ -624,8 +632,17 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             if (command != "continue") throw std::invalid_argument("expected continue or cancel");
             return true;
         };
-        // Shared one-shot/resident generation: ordinary verifier windows.
-        for (size_t offset = 0; offset < prompt.size();) {
+        // Vanilla: bulk-prefill all but final prompt token, then verifier/head.
+        size_t prompt_offset=0;
+        if (o.native_prefill_chunk && prompt.size()>1) {
+            std::vector<int32_t> prefix(prompt.begin(),prompt.end()-1);
+            session.native_prefill(prefix,o.native_prefill_chunk);
+            window=1; pos=static_cast<int64_t>(prefix.size()); prompt_offset=prefix.size();
+            std::fprintf(stderr,"HETERO_NATIVE_PREFILL_COMMITTED request=%llu rows=%zu chunk=%u\n",
+                         static_cast<unsigned long long>(request_id),prefix.size(),o.native_prefill_chunk);
+            if (!checkpoint()) return;
+        }
+        for (size_t offset = prompt_offset; offset < prompt.size();) {
             const size_t count = std::min<size_t>(o.prompt_chunk, prompt.size() - offset);
             hetero::WindowSpec spec;
             spec.pos0 = pos;

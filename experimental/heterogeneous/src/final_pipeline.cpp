@@ -62,7 +62,8 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
 
 void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                               FinalStageExecutor& executor, int timeout_ms,
-                              bool shared_memory, const WindowLimits* limits, int startup_wait_ms, bool group_hip) {
+                              bool shared_memory, const WindowLimits* limits, int startup_wait_ms, bool group_hip,
+                              NativePrefillHandler prefill) {
     plan.validate();
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
@@ -114,6 +115,20 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 }
                 if (resident && (!active_request || request->request_id != active_request))
                     throw std::runtime_error("resident window lacks matching request reset");
+                if (request->kind == Kind::prefill_spec) {
+                    if (!resident || !gate || !prefill ||
+                        !gate->begin_prefill(*request,error) ||
+                        !prefill(*request,fd,error) ||
+                        !gate->finished_prefill(error))
+                        throw std::runtime_error(error.empty() ? "native prefill unavailable or failed" : error);
+                    Frame ack;
+                    ack.kind=Kind::prefill_done; ack.stage_index=request->stage_index;
+                    ack.request_id=request->request_id; ack.window_id=request->window_id;
+                    ack.rows=request->rows; ack.plan_fingerprint=request->plan_fingerprint;
+                    ack.geometry=request->geometry;
+                    send_frame(fd,ack,timeout_ms);
+                    continue;
+                }
                 if (request->kind != Kind::window_spec || !request->window)
                     throw std::runtime_error("final worker requires verifier window metadata");
                 if (request->stage_index != index ||
@@ -280,6 +295,46 @@ void FinalPipelineSession::begin_request(uint64_t request) {
         resident_request_ = request;
         last_request_ = request;
         last_window_ = 0;
+    } catch (...) { poison(); throw; }
+}
+
+void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk) {
+    if (!initialized_ || poisoned_ || pending_ || !resident_ || !resident_request_ || last_window_ ||
+        endpoints_.size()!=2 || starts_.back()==endpoints_.back() ||
+        tokens.empty() || tokens.size()>max_window_tokens || !chunk || chunk>max_native_prefill_chunk)
+        throw std::logic_error("native prefill requires freshly reset grouped resident pipeline");
+    try {
+        Frame spec=control(plan_,endpoints_[0],Kind::prefill_spec,resident_request_,1,static_cast<uint32_t>(tokens.size()));
+        spec.window=WindowSpec{0,tokens}; spec.prefill_chunk=chunk;
+        validate_wire_frame(spec);
+        auto receive_spec=spec; receive_spec.stage_index=static_cast<uint32_t>(endpoints_[1]);
+        send_frame(fds_[1],receive_spec,timeout_ms_);
+        send_frame(fds_[0],spec,timeout_ms_);
+        const uint32_t cap=prefill_piece_rows(plan_.geometry);
+        size_t offset=0;
+        while (offset<tokens.size()) {
+            const size_t count=std::min({size_t(cap),size_t(chunk)-offset%chunk,tokens.size()-offset});
+            auto piece=receive_frame(fds_[0],timeout_ms_);
+            if (!piece || piece->kind==Kind::failure)
+                throw std::runtime_error(piece ? piece->error : "CUDA closed during native prefill");
+            if (piece->kind!=Kind::prefill_rows || piece->stage_index!=endpoints_[0] ||
+                piece->request_id!=resident_request_ || piece->plan_fingerprint!=spec.plan_fingerprint ||
+                piece->window_id!=offset+1 || piece->rows!=count ||
+                piece->geometry.hc!=plan_.geometry.hc || piece->geometry.n_embd!=plan_.geometry.n_embd ||
+                !activation_finite(reinterpret_cast<const uint8_t*>(piece->payload.data()),piece->payload.size()*sizeof(float)))
+                throw std::runtime_error("native prefill residual identity, order or finite gate failed");
+            piece->stage_index=static_cast<uint32_t>(endpoints_[1]);
+            send_frame(fds_[1],*piece,timeout_ms_);
+            offset+=count;
+        }
+        for (size_t i=0;i<fds_.size();++i) {
+            auto done=receive_frame(fds_[i],timeout_ms_);
+            if (!done || done->kind==Kind::failure)
+                throw std::runtime_error(done ? done->error : "native prefill peer closed before drain");
+            const auto expected=control(plan_,endpoints_[i],Kind::prefill_done,resident_request_,1,spec.rows);
+            match(*done,expected,Kind::prefill_done);
+        }
+        last_window_=1;
     } catch (...) { poison(); throw; }
 }
 

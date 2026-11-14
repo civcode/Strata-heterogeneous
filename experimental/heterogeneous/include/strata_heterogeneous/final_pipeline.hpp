@@ -33,7 +33,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t stage_index,
                               int timeout_ms = default_io_timeout_ms,
                               bool shared_memory = false,
                               const WindowLimits* limits = nullptr, int startup_wait_ms = -1,
-                              bool group_hip = false);
+                              bool group_hip = false, NativePrefillHandler prefill = {});
 
 // Owns only protocol state and the optional shared activation slot, never
 // child processes or caller-owned file descriptors. The final worker uses
@@ -51,6 +51,7 @@ public:
     void initialize();
     // All workers must reset and ACK before a new resident request can run.
     void begin_request(uint64_t request);
+    void native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk);
     // Returns provisional head predictions; DOES NOT commit model state.
     FinalStageResult execute(Frame initial, const WindowSpec& spec);
     // Keep the provisional result in the gate without copying discarded logits.

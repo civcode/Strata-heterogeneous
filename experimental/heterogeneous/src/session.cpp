@@ -224,7 +224,7 @@ void MockStageExecutor::shutdown() noexcept { pending_ = false; has_spec_ = fals
 
 void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                            StageExecutor& executor, int timeout_ms, bool shared_memory,
-                           const WindowLimits* limits, int startup_wait_ms) {
+                           const WindowLimits* limits, int startup_wait_ms, NativePrefillHandler prefill) {
     plan.validate();
     if (index >= plan.stages.size()) throw std::invalid_argument("worker index out of range");
     if (timeout_ms < 0) throw std::invalid_argument("negative worker timeout");
@@ -269,6 +269,20 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                 }
                 if (resident && (!active_request || request->request_id != active_request))
                     throw std::runtime_error("resident window lacks matching request reset");
+                if (request->kind == Kind::prefill_spec) {
+                    if (!resident || !gate || !prefill ||
+                        !gate->begin_prefill(*request,error) ||
+                        !prefill(*request,fd,error) ||
+                        !gate->finished_prefill(error))
+                        throw std::runtime_error(error.empty() ? "native prefill unavailable or failed" : error);
+                    Frame ack;
+                    ack.kind=Kind::prefill_done; ack.stage_index=request->stage_index;
+                    ack.request_id=request->request_id; ack.window_id=request->window_id;
+                    ack.rows=request->rows; ack.plan_fingerprint=request->plan_fingerprint;
+                    ack.geometry=request->geometry;
+                    send_frame(fd,ack,timeout_ms);
+                    continue;
+                }
                 bool has_window_spec = false;
                 if (request->kind == Kind::window_spec) {
                     const Kind expected_data = shared_memory ? Kind::shared_data : Kind::data;
