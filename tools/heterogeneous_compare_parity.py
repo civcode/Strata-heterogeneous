@@ -71,7 +71,12 @@ def read_stfr(path: Path) -> dict:
             "predictions": predictions, "logits": logits}
 
 
-def read_run(prefix: Path) -> list[tuple[dict, dict]]:
+def read_run(prefix: Path, *, allow_partial: bool = False) -> list[tuple[dict, dict]]:
+    """Read completed captures; legacy parity callers require full commits.
+
+    For explicit partial-prefix callers, STFR contains all evaluated rows;
+    only n_keep rows belong to the accepted prefix.
+    """
     completed = Path(str(prefix) + ".complete.json")
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
@@ -94,7 +99,9 @@ def read_run(prefix: Path) -> list[tuple[dict, dict]]:
                 meta.get("plan_fingerprint") == packet["fingerprint"] and
                 meta.get("window_id") == number == packet["window"] and
                 meta.get("rows") == packet["rows"] and
-                meta.get("n_keep") == packet["rows"] and
+                type(meta.get("n_keep")) is int and
+                1 <= meta["n_keep"] <= packet["rows"] and
+                (allow_partial or meta["n_keep"] == packet["rows"]) and
                 packet["request"] == 1 and
                 type(meta.get("pos0")) is int and meta["pos0"] >= 0 and
                 type(meta.get("token_ids")) is list and

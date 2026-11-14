@@ -38,6 +38,7 @@ struct Options {
     uint64_t fingerprint = 0;
     uint32_t token = 1;
     uint32_t rows = 1;
+    uint32_t keep = 0; // unspecified: commit all evaluated rows
     uint32_t windows = 1;
     int timeout_ms = 120000;
     bool run = false;
@@ -74,7 +75,8 @@ void usage() {
         "  --config <cuda0.cfg> --config <hip0.cfg> --config <hip1.cfg>\n"
         "  [--cuda-worker /absolute/path] [--hip-worker /absolute/path]\n"
         "  [--layers 48] [--hc 4] [--n-embd 2560] [--token 1]\n"
-        "  [--rows 1] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
+        "  [--rows 1] [--keep N] [--windows 1] [--tokens 1,198,...] [--capture-prefix /absolute/path]\n"
+        "  --keep: positive accepted prefix per window (default: all rows)\n"
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
@@ -118,6 +120,10 @@ Options parse(int argc, char** argv) {
         else if (key == "--n-embd") o.n_embd = u32(required_value(i, argc, argv, "--n-embd"), "n-embd");
         else if (key == "--token") o.token = u32(required_value(i, argc, argv, "--token"), "token");
         else if (key == "--rows") o.rows = u32(required_value(i, argc, argv, "--rows"), "rows");
+        else if (key == "--keep") {
+            o.keep = u32(required_value(i, argc, argv, "--keep"), "keep");
+            if (!o.keep) throw std::invalid_argument("--keep must be positive");
+        }
         else if (key == "--windows") o.windows = u32(required_value(i, argc, argv, "--windows"), "windows");
         else if (key == "--timeout-ms") {
             const auto v = decimal(required_value(i, argc, argv, "--timeout-ms"), "timeout-ms");
@@ -132,6 +138,8 @@ Options parse(int argc, char** argv) {
         o.windows == 0 || o.windows > 8 || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
+    if (!o.keep) o.keep = o.rows;
+    if (o.keep > o.rows) throw std::invalid_argument("--keep cannot exceed --rows");
     if (o.layer_taps && o.capture_prefix.empty())
         throw std::invalid_argument("--layer-taps requires --capture-prefix");
     if (o.layer_zero_probe && (o.capture_prefix.empty() || o.rows != 1))
@@ -158,7 +166,8 @@ void require_executable(const std::string& path, const char* label) {
 void preflight(const Options& o, const hetero::Plan& plan) {
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
-    const uint64_t needed = uint64_t(o.rows) * o.windows;
+    // The last provisional window, including its discarded suffix, must fit.
+    const uint64_t needed = uint64_t(o.windows - 1) * o.keep + o.rows;
     const uint64_t stride = plan.geometry.floats_per_row();
     if (stride > hetero::max_payload_bytes / (sizeof(float) * o.rows))
         throw std::invalid_argument("requested activation geometry exceeds bounded 16 MiB transport");
@@ -310,7 +319,7 @@ void capture_window(const Options& o, const hetero::Plan& plan,
              << ",\"window_id\":" << committed.window_id
              << ",\"pos0\":" << spec.pos0
              << ",\"rows\":" << committed.rows
-             << ",\"n_keep\":" << o.rows
+             << ",\"n_keep\":" << o.keep
              << ",\"token_ids\":[";
     for (size_t t = 0; t < spec.token_ids.size(); ++t) {
         if (t) manifest << ',';
@@ -371,7 +380,7 @@ int execute(const Options& o, const hetero::Plan& plan) {
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket") << '\n';
     for (uint32_t n = 0; n < o.windows; ++n) {
         hetero::WindowSpec spec;
-        spec.pos0 = static_cast<int64_t>(uint64_t(n) * o.rows);
+        spec.pos0 = static_cast<int64_t>(uint64_t(n) * o.keep);
         if (o.tokens.empty()) spec.token_ids.assign(o.rows, static_cast<int32_t>(o.token));
         else spec.token_ids.assign(o.tokens.begin() + static_cast<size_t>(n) * o.rows,
                                    o.tokens.begin() + static_cast<size_t>(n + 1) * o.rows);
@@ -388,14 +397,15 @@ int execute(const Options& o, const hetero::Plan& plan) {
         initial.payload.assign(
             static_cast<size_t>(plan.geometry.floats_per_row()) * o.rows, 0.0f);
         (void)session.execute(std::move(initial), spec); // provisional only
-        const hetero::FinalStageResult committed = session.commit(o.rows);
+        const hetero::FinalStageResult committed = session.commit(o.keep);
         if (committed.predicted_tokens.size() != o.rows || committed.has_nonfinite())
             throw std::runtime_error("committed head predictions malformed or nonfinite");
         if (!o.capture_prefix.empty()) capture_window(o, plan, spec, committed);
         std::cout << "LIVE PASS window=" << n + 1 << " pos0=" << spec.pos0
-                  << " committed=" << o.rows << " predictions=";
-        for (const int32_t token : committed.predicted_tokens)
-            std::cout << token << ',';
+                  << " committed=" << o.keep << " predictions=";
+        // STFR records every evaluated row; log only the accepted prefix.
+        for (uint32_t t = 0; t < o.keep; ++t)
+            std::cout << committed.predicted_tokens[t] << ',';
         std::cout << '\n';
     }
     std::string error;
