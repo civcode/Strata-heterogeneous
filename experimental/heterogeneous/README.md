@@ -825,7 +825,7 @@ M2.17 adds a manual `--micro-probe --capture-prefix ... --rows 1`
 to the isolated native verifier, with extra GPU allocations and
 copies **only when enabled**. It captures layer-5 shared input,
 raw native gate/up, exact input and SwiGLU Q8_1 bytes, unscaled
-down projection, scalar gate and final shared result; and layer-6
+down projection, pre-sigmoid gate logit and final shared result; and layer-6
 QKV, **pre-convolution history state** and convolution output.
 The shared producer-stream snapshots precede scratch overwrite;
 the convolution history snapshot precedes the conv consumer.
