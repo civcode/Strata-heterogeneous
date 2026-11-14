@@ -159,13 +159,16 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         if (compact || !overlap || arm) throw std::runtime_error("one-shot MTP probe requires HIP overlap without external arm");
         const char* count = std::getenv("STRATA_HETERO_MTP_PROBE_WINDOWS");
         const auto n = count ? std::string(count) : std::string();
-        if (n.size()!=1 || n[0]<'1' || n[0]>'8') throw std::runtime_error("invalid MTP probe window count");
+        const unsigned windows=hetero::mtp_probe_parse_windows(n);
         unsigned relay=0;
         if (const char* raw=std::getenv("STRATA_HETERO_MTP_RELAY_ROUNDS")) {
             const std::string value(raw);
             if(value.size()!=1 || value[0]<'0' || value[0]>'8') throw std::runtime_error("invalid MTP relay round count");
             relay=unsigned(value[0]-'0');
         }
+        const bool fresh_replay=hetero::performance_flag("STRATA_HETERO_MTP_FRESH_REPLAY");
+        if (!hetero::mtp_probe_window_count(windows,relay,fresh_replay))
+            throw std::runtime_error("invalid MTP probe window count or fresh replay mode");
         const char* raw_prefix=std::getenv("STRATA_HETERO_MTP_STATE_PREFIX");
         const std::string trace_prefix=raw_prefix?raw_prefix:"";
         const bool reprime=hetero::performance_flag("STRATA_HETERO_MTP_REPRIME_TAIL");
@@ -176,7 +179,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
             (reprime && (trace_prefix.empty() || relay!=1)) || (front_trace && trace_prefix.empty())) throw std::runtime_error("invalid bounded MTP state trace");
         const auto& last=configs.back().fields;
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
-                                                  last.arena_budget_bytes,unsigned(n[0]-'0'),relay,trace_prefix,reprime,front_trace,repeat_round);
+                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay);
     }
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
     if (mtp) final.set_observer(mtp.get());

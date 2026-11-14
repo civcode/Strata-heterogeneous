@@ -96,6 +96,27 @@ class ParityFixtures(unittest.TestCase):
             run = parity.read_run(self.ref, placement=True)
             parity.compare(run, run, .001, placement=True)
 
+    def test_isolated_mtp_fresh_replay_bound(self):
+        plan = "cuda:0:0-12,hip:0:12-30,hip:1:30-48"
+        for count in (9, 12, 13):
+            self.write_run(self.het, plan, count=count)
+            marker = Path(f"{self.het}.complete.json")
+            data = json.loads(marker.read_text())
+            data["mtp_fresh_replay"] = True
+            marker.write_text(json.dumps(data))
+            with self.assertRaises(parity.ParityError):
+                parity.read_run(self.het)
+            if count <= 12:
+                self.assertEqual(len(parity.read_run(self.het, mtp_fresh_replay=True)), count)
+            else:
+                with self.assertRaises(parity.ParityError):
+                    parity.read_run(self.het, mtp_fresh_replay=True)
+            with self.assertRaises(parity.ParityError):
+                parity.read_run(self.het, mtp_fresh_replay=True, allow_partial=True)
+        self.write_run(self.het, plan, count=9)
+        with self.assertRaises(parity.ParityError):
+            parity.read_run(self.het, mtp_fresh_replay=True)
+
     def test_prediction_mismatch_fails_even_when_logits_match(self):
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48",
                        predictions=[2])

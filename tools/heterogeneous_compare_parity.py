@@ -71,19 +71,24 @@ def read_stfr(path: Path) -> dict:
             "predictions": predictions, "logits": logits}
 
 
-def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = False) -> list[tuple[dict, dict]]:
+def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = False,
+             mtp_fresh_replay: bool = False) -> list[tuple[dict, dict]]:
     """Read completed captures; legacy parity callers require full commits.
 
     For explicit partial-prefix callers, STFR contains all evaluated rows;
     only n_keep rows belong to the accepted prefix.
     """
+    require(not (mtp_fresh_replay and (placement or allow_partial)), "conflicting fresh replay comparison mode")
     completed = Path(str(prefix) + ".complete.json")
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
     require(marker.get("schema") == SCHEMA and
             type(marker.get("placement_capture", False)) is bool and
             marker.get("placement_capture", False) == placement and
-            type(marker.get("windows")) is int and 1 <= marker["windows"] <= (128 if placement else 8) and
+            type(marker.get("mtp_fresh_replay", False)) is bool and
+            marker.get("mtp_fresh_replay", False) == mtp_fresh_replay and
+            type(marker.get("windows")) is int and
+            1 <= marker["windows"] <= (128 if placement else 12 if mtp_fresh_replay else 8) and
             type(marker.get("model_fingerprint")) is int and marker["model_fingerprint"] > 0 and
             isinstance(marker.get("plan"), str) and marker["plan"],
             "invalid parity completion marker")
@@ -104,7 +109,8 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
                 type(meta.get("n_keep")) is int and
                 1 <= meta["n_keep"] <= packet["rows"] and
                 (allow_partial or meta["n_keep"] == packet["rows"]) and
-                (not placement or (packet["rows"] == 1 and meta["n_keep"] == 1 and packet["vocab"] <= 248320)) and
+                (not (placement or mtp_fresh_replay) or
+                 (packet["rows"] == 1 and meta["n_keep"] == 1 and packet["vocab"] <= 248320)) and
                 packet["request"] == 1 and
                 type(meta.get("pos0")) is int and meta["pos0"] >= 0 and
                 type(meta.get("token_ids")) is list and

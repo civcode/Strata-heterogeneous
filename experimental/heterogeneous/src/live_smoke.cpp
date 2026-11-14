@@ -6,6 +6,7 @@
 #include "strata_heterogeneous/backend_domains.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/speculation.hpp"
+#include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata/spec/suffix_drafter.hpp"
 #include "strata_heterogeneous/process.hpp"
 
@@ -63,6 +64,7 @@ struct Options {
     bool cuda_mapped_egress = false;
     std::string mtp_probe_rt;
     uint32_t mtp_relay_rounds=0;
+    bool mtp_fresh_replay=false;
     bool mtp_state_trace=false, mtp_reprime_tail=false, mtp_front_trace=false, mtp_repeat_native_round=false;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
@@ -111,6 +113,7 @@ void usage() {
         "  --mtp-front-trace: capture native one-row draft round staged input and front intermediates. Requires state trace.\n"
         "  --mtp-state-trace: bounded exact terminal R and committed draft KV; capture-prefix required.\n"
         "  --mtp-reprime-tail: diagnostic native prefill of offered tail after first draft.\n"
+        "  --mtp-fresh-replay: isolated one-row MTP reference, up to 12 windows, full capture, no relay.\n"
         "  --mtp-relay-rounds N: after fixed prompt windows, relay 1..8 actual native proposals and commit greedy prefixes.\n"
         "  --warmup-windows N: fixed-token timing after N warm windows; 128 evaluated tokens max, no captures.\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
@@ -192,6 +195,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--mtp-front-trace") o.mtp_front_trace=true;
         else if (key == "--mtp-state-trace") o.mtp_state_trace=true;
         else if (key == "--mtp-reprime-tail") o.mtp_reprime_tail=true;
+        else if (key == "--mtp-fresh-replay") o.mtp_fresh_replay=true;
         else if (key == "--mtp-relay-rounds") {
             o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
             if (!o.mtp_relay_rounds || o.mtp_relay_rounds>8) throw std::invalid_argument("MTP relay rounds must be 1..8");
@@ -296,7 +300,7 @@ Options parse(int argc, char** argv) {
         } else throw std::invalid_argument("unknown option: " + key);
     }
     if (o.plan.empty() || !o.fingerprint || o.rows == 0 || o.rows > 8 ||
-        o.windows == 0 || o.windows > ((o.placement_capture || o.warmup_windows) ? 128u : 8u) || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+        o.windows == 0 || o.windows > ((o.placement_capture || o.warmup_windows) ? 128u : (o.mtp_fresh_replay ? hetero::mtp_fresh_replay_max : 8u)) || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
     if (o.placement_capture && (o.generate || o.describe_source || o.resident || o.rows != 1 ||
@@ -329,6 +333,13 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.mtp_fresh_replay && (o.mtp_probe_rt.empty() || o.tokens.empty() ||
+        !hetero::mtp_probe_window_count(o.windows,o.mtp_relay_rounds,true) ||
+        !hetero::mtp_fresh_replay_shape(o.rows,o.keep,!o.capture_prefix.empty(),o.mtp_repeat_native_round) ||
+        o.generate || o.resident || o.describe_source || o.warmup_windows || o.placement_capture ||
+        o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
+        o.micro_probe || o.boundary_capture || o.mtp_reprime_tail))
+        throw std::invalid_argument("MTP fresh replay requires 1..12 explicit one-row full commits, capture, no relay or repeat");
     if (o.mtp_state_trace && (o.mtp_probe_rt.empty() || o.capture_prefix.empty() ||
         o.mtp_relay_rounds>1 || uint64_t(o.windows-1)*o.keep+o.rows+5ull*o.mtp_relay_rounds>16))
         throw std::invalid_argument("MTP state trace requires fresh capture, at most 16 cells and one relay");
@@ -678,7 +689,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (::setenv("STRATA_HETERO_MTP_STATE_PREFIX",o.mtp_state_trace?o.capture_prefix.c_str():"",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_REPRIME_TAIL",o.mtp_reprime_tail?"1":"0",1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_FRONT_TRACE",o.mtp_front_trace?"1":"0",1)!=0 ||
-        ::setenv("STRATA_HETERO_MTP_REPEAT_NATIVE_ROUND",o.mtp_repeat_native_round?"1":"0",1)!=0)
+        ::setenv("STRATA_HETERO_MTP_REPEAT_NATIVE_ROUND",o.mtp_repeat_native_round?"1":"0",1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_FRESH_REPLAY",o.mtp_fresh_replay?"1":"0",1)!=0)
         throw std::runtime_error("cannot configure MTP state trace");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
@@ -1007,6 +1019,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         if (!complete) throw std::runtime_error("cannot create parity completion marker");
         complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"windows\":"
                  << o.windows+o.mtp_relay_rounds << ",\"placement_capture\":" << (o.placement_capture ? "true" : "false")
+                 << ",\"mtp_fresh_replay\":" << (o.mtp_fresh_replay ? "true" : "false")
                  << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
         complete.flush();

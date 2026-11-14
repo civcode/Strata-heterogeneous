@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
+#include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -7,6 +8,20 @@ using strata::heterogeneous::MtpPrefixCursor;
 int main() {
     int n=0;
     auto check=[&](bool ok){++n; if(!ok) throw std::runtime_error("MTP prefix cursor assertion");};
+    using namespace strata::heterogeneous;
+    check(mtp_probe_window_count(8,1,false));
+    check(!mtp_probe_window_count(9,0,false));
+    check(mtp_probe_window_count(9,0,true));
+    check(mtp_probe_window_count(12,0,true));
+    check(!mtp_probe_window_count(13,0,true));
+    check(!mtp_probe_window_count(9,1,true));
+    check(!mtp_probe_window_count(0,0,true));
+    check(mtp_fresh_replay_shape(1,1,true,false));
+    check(!mtp_fresh_replay_shape(2,1,true,false));
+    check(!mtp_fresh_replay_shape(1,1,false,false));
+    check(!mtp_fresh_replay_shape(1,1,true,true));
+    for (auto x : {"", "0", "01", "13", "99", "1x", " 9", "+9", "999"}) check(!mtp_probe_parse_windows(x));
+    for (auto x : {"1", "8", "9", "10", "11", "12"}) check(mtp_probe_parse_windows(x));
     std::string e;
     std::array<float,8> r{11,12,21,22,31,32,41,42};
     using Row=std::tuple<float,int32_t,int64_t>;

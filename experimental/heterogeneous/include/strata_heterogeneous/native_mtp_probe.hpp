@@ -5,6 +5,7 @@
 // Run the read-only asset audit first, against the exact configured target.
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
+#include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_state_trace.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 // Vanilla PinnedRing intentionally discards cleanup/error-clear return values;
@@ -34,10 +35,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false)
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -53,7 +54,8 @@ public:
             error="MTP relay draft-state reuse failed fresh-prefix qualification";
             return false;
         }
-        if (device_>=0 || !windows_ || windows_>8 || relay_rounds_>8 || arena_budget_ ||
+        if (device_>=0 || !mtp_probe_window_count(windows_,relay_rounds_,fresh_replay_) ||
+            (fresh_replay_ && (repeat_round_ || reprime_tail_)) || relay_rounds_>8 || arena_budget_ ||
             b.session.layer_hi!=g.n_layers || b.session.max_cells!=2048 ||
             g.n_layers!=48 || g.n_embd!=2560 || g.hc!=4 || g.n_expert!=512 ||
             g.n_vocab!=248320 || b.max_t<5 || b.max_t>8 ||
@@ -132,7 +134,8 @@ public:
 
     bool begin(const WindowSpec& spec,uint64_t request,uint64_t window,std::string& error) override {
         if (!cursor_ || request!=1 || window!=committed_+1 || window>windows_+relay_rounds_ ||
-            (window>windows_ && !relay_pending_) || !ck(cudaSetDevice(device_),error)) {
+            (window>windows_ && !relay_pending_) ||
+            (fresh_replay_ && spec.token_ids.size()!=1) || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe window identity mismatch";
             return false;
         }
@@ -245,6 +248,7 @@ private:
     bool reprime_tail_=false;
     bool front_trace_=false;
     bool repeat_round_=false;
+    bool fresh_replay_=false;
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;

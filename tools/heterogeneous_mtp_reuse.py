@@ -15,9 +15,10 @@ def require(ok, msg):
         raise ValueError(msg)
 
 
-def read_offer(log, relay_rounds, vocab):
+def read_offer(log, relay_rounds, vocab, *, traced=False):
     modes = MODE.findall(log)
-    require(modes == [('0', '0', '0', str(relay_rounds))], 'not a single trace-free probe of the requested mode')
+    trace = '1' if traced else '0'
+    require(modes == [(trace, trace, '0', str(relay_rounds))], 'not a single probe of the requested trace/relay mode')
     matches = DRAFT.findall(log)
     require(len(matches) == 1, 'missing or ambiguous final diagnostic offer')
     cell, anchor, count = map(int, matches[0][:3])
@@ -41,7 +42,7 @@ def accepted_rows(run):
     return rows
 
 
-def validate(fresh, reused, fresh_log, reused_log):
+def validate(fresh, reused, fresh_log, reused_log, *, traced=False):
     require(bool(fresh) and len(reused) >= 2, 'missing prompt or relay')
     require(all(m['rows'] == m['n_keep'] == 1 for m, _ in fresh), 'fresh run must be one-row full commits')
     m, p = reused[-1]
@@ -56,8 +57,8 @@ def validate(fresh, reused, fresh_log, reused_log):
     require(len(fresh) == len(accepted) and all(a[0]['token_ids'] == b[0]['token_ids']
             for a, b in zip(fresh, accepted)), 'fresh run does not reproduce actual accepted prefix')
     vocab = p['vocab']
-    f = read_offer(fresh_log, 0, vocab)
-    r = read_offer(reused_log, 1, vocab)
+    f = read_offer(fresh_log, 0, vocab, traced=traced)
+    r = read_offer(reused_log, 1, vocab, traced=traced)
     for offer, run in ((f, fresh), (r, accepted)):
         last_m, last_p = run[-1]
         require(offer['cell'] == last_m['pos0'] and offer['anchor'] == last_p['predictions'][0],
