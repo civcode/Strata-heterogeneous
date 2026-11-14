@@ -126,7 +126,15 @@ struct Probe {
             std::cout << "ARMED" << std::endl;
         } else if (op == "pending") {
             require(d.state == Device::armed && d.sequence == seq);
-            require(cudaStreamQuery(d.stream) == cudaErrorNotReady);
+            const cudaError_t status = cudaStreamQuery(d.stream);
+            if (status != cudaErrorNotReady) {
+                const auto* f = reinterpret_cast<volatile uint32_t*>(page + flag_offset);
+                const auto* e = reinterpret_cast<volatile uint32_t*>(page + error_offset);
+                throw std::runtime_error("pending stream query=" + std::string(cudaGetErrorString(status)) +
+                                         " sequence=" + std::to_string(seq) +
+                                         " host_flag=" + std::to_string(*f) +
+                                         " host_error=" + std::to_string(*e));
+            }
             std::cout << "PENDING" << std::endl;
         } else if (op == "publish") {
             require(d.state == Device::prepared && d.sequence == seq);

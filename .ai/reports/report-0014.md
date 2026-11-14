@@ -1,0 +1,30 @@
+# Report 0014 — native HIP-local split overlap
+
+**Status: PARTIAL / cross-runtime probe FAIL.** Starting commit `9c6292000103e13ac577214e3cf35c4f505ee627`. The production direction remains vanilla layer split-overlap, CUDA0 [0,12) → HIP0 [12,30) → HIP1 [30,48), not tensor parallelism. The HIP-local option remains explicit and experimental; the CUDA/HIP edge is still serial. Native bulk prefill remains off by default and unqualified.
+
+## Build and tests
+
+With the existing vanilla CMake caches and checkout `.venv`, CUDA, HIP and host builds and both explicit `strata_heterogeneous_overlap_probe` targets succeeded with `-j28`. Host CTest: **94/94 passed**. Prefill state/parity Python discovery: **18 passed**; resident unit tests: **12 passed**; `pip check` clean with inherited `PYTHONPATH` removed. CLI negative checks rejected both ungrouped HIP overlap and its combination with native bulk prefill. Logs: `/home/chris/tmp/strata-heterogeneous/m7-0014/`.
+
+## Real HIP-local edge
+
+Same Q2_0 full-resident pack, original configs, 2048 context, max_t 8 and fingerprint 2026111301. Physical identities: CUDA ordinal 0 PCI 04:00.0; HIP ordinal 0 PCI 03:00.0 and ordinal 1 PCI 07:00.0. Two worker processes, native HIP pair in one. `run-parity.py` in the scratch directory records exact commands and fixed teacher-forced tokens; each run starts a fresh session and completes worker shutdown. Captures are `one-{serial,overlap}*` and `multi-{serial,overlap}*` there. The existing STFR comparator was invoked with `read_run(..., allow_partial=True)` and same-plan `compare(..., prefill=True)`; the latter selects the existing same-plan comparison, not bulk-prefill execution.
+
+| Case | evaluated / committed | full-logit serial vs HIP overlap |
+|---|---|---|
+| Three one-row windows | 3 / 3 | PASS, exact predictions and top-1, KL 0, max logit difference 0 |
+| Three four-row windows | 12 / 6 (keep 2 each) | PASS for all 12 evaluated rows, exact predictions and top-1, KL 0, max logit difference 0 |
+
+The multi-row comparison includes rejected suffix rows and subsequent windows after accepted-prefix commits. `one-compare.json` and `multi-compare.json` contain row metrics. Logs confirm `HETERO_HIP_SPLIT_OVERLAP enabled=1`, native graph capture, committed windows, zero reported expert host misses and normal completion. Code configures mapped coherent HIP-local flag aliases before verifier init, and the native chain's flag-enabled condition selects its prelaunch/publish/wait path. **UNVERIFIED:** success logs with `STRATA_VERIFY_TRACE=1` did not dump the trace ring, so individual prelaunch and GPU publish/wait events were not independently observed; the parity result alone is not proof of overlap or timing. No native fault injection was used.
+
+A further same-process resident reset check was interrupted by the user after it stalled following `HETERO_PROGRESS 1 1 1`; its long timeout was inappropriate. `/home/chris/tmp/strata-heterogeneous/m7-0014/resident-reset.log` contains the partial record. No matching live-smoke/worker processes or NVIDIA compute processes were visible immediately afterward. This interrupted run is **not** a reset, fail-closed, or orderly cleanup pass. Multiple windows and independent fresh runs passed; repeated request reset in one resident process remains unverified.
+
+## Cross-runtime mapped-ready probe
+
+Both runtimes independently registered the same memfd pages and resolved the requested local aliases; no registration/alias error was reported. Eight real publish/pending/wait/readback/drain rounds each passed CUDA→HIP0 and CUDA→HIP1. On the first HIP0→CUDA round, sequence 17, the CUDA receiver was no longer pending **before producer publication**. A diagnostic rerun after adding query/host-word error reporting to `overlap_probe.cpp` reproduced the failure: `pending stream query=no error sequence=17 host_flag=0 host_error=1`. The bounded GPU wait reported an error before the supervisor could observe pending; whether launch/host scheduling, runtime behavior or another cause accounts for this is not established. No timing or coherence conclusion beyond the observed two passing directions is justified. HIP1→CUDA and HIP0→HIP1 were not reached. `probe.log` and `probe-diagnostic.log` preserve both attempts and receiver PIDs 1028324 and 1037665; neither remains visible. No hung runtime was retried or GPU process forcibly killed by this iteration. On error the supervisor closes pipes and workers attempt drain/cleanup, but the normal `BYE` cleanup handshake was not reached, so explicit cleanup success is unverified.
+
+Do not expose this mapped-ready mechanism as a CUDA/HIP model edge on this evidence. Conservative next seam: retain the current bounded socket/shared-host transport with a local producer fence/drain and explicit receiver acknowledgement, never foreign pointers/events; qualify a separately bounded receiver-arm protocol and local ordering before considering native prelaunch across vendors. No full three-device overlap, throughput or production qualification is claimed.
+
+## Other blockers
+
+Report 0013 found first-token committed CUDA state differences before the cross-vendor handoff; this iteration did not construct a same-runtime prefill-versus-verifier reproducer that separates adapter initialization/adoption from inherited arithmetic. Root cause remains unknown; no arithmetic or tolerance was changed. The specifically mentioned `/home/chris/workspace/Strata-data/mtp/rt` is not established by the available prior records as an approved read-only MTP input, so it was not inspected. Matching draft tensor identities, model compatibility, head/state ownership and native MTP lifecycle are unverified; no assets were substituted or fetched. MTP integration is separate from this HIP-local edge. The operator's 3840 prompt tok/s and prior 160 accepted output tok/s target remain unmatched, workload-dependent and unverified here. No Actions were used. The pre-existing untracked `tools/heterogeneous_pool_probe.cpp` was left untouched.
