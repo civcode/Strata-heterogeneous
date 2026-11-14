@@ -90,6 +90,37 @@ try{
    require(fe::profile_reads==1&&e.filled_slots()==2,"profile filtered to stage");
  }
  require(fake_cuda::allocations==0,"profile test cleanup");
+ // Full explicit stage capacity exceeds the previous 1024-slot cap.
+ reset();{
+   auto o=opts();o.ranked_pairs.clear();o.profile_path="trusted.strp";
+   o.max_cache_slots=4*512;
+   fe::profile_pairs.clear();
+   for(int l=0;l<8;++l)
+     for(int e=0;e<512;++e)fe::profile_pairs.emplace_back(l,e);
+   fe::profile_slots=8*512;
+   CudaFileExperts e;require(e.open(plan(),1,geom(),o,err),"complete stage profile admitted");
+   require(e.filled_slots()==2048&&fc::verifies==2048,"every stage slot verified");
+   auto h=e.hits();require(h.n_slots==2048,"full stage cache length");
+   auto* d=static_cast<const int32_t*>(h.d_res);
+   for(int i=0;i<8*512;++i){
+     const int32_t expected=i<4*512?-1:i-4*512;
+     require(h.h_res[i]==expected&&d[i]==expected,"stage-local host/device map");
+   }
+   float x[2560]{};int32_t ids[10]={0,1,2,3,4,5,6,7,8,511};float y[10]{};
+   e.run(x,ids,1,10,y,7);
+   for(float v:y)require(v==0.0f,"all routes resident in host-served control");
+ }
+ require(fake_cuda::allocations==0,"full residency cleanup");
+ reset();{
+   auto o=opts();o.max_cache_slots=4*512;
+   CudaFileExperts e;require(!e.open(plan(),0,geom(),o,err),"incomplete full-stage profile refused");
+   require(fc::opens==0&&fake_cuda::sets==0,"incomplete profile refused before backend allocation");
+ }
+ reset();{
+   auto o=opts();o.max_cache_slots=4*512+1;
+   CudaFileExperts e;require(!e.open(plan(),0,geom(),o,err),"foreign-stage capacity refused");
+   require(fc::opens==0&&fake_cuda::sets==0,"over-cap request refused before backend allocation");
+ }
  // Invalid input is refused before CUDA initialization.
  for(int kind=0;kind<18;++kind){
    reset();auto p=plan();auto g=geom();auto o=opts();size_t stage=0;

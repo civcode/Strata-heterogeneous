@@ -64,6 +64,16 @@ int main(int,char**){try{
  need(c.version==2&&c.gguf_shards.size()==2&&c.gguf_shards[0]==gguf1&&
       c.ple_gguf_path==gguf2,"native shard order and PLE path");
  need(validate_cuda_worker_config(c,plan(),0,err),"v2 native GGUF files preflight");
+  for (const unsigned slots : {1025u, 6144u, 6145u, 24577u}) {
+    std::string capacity=v2;
+    const std::string original="max_cache_slots=16";
+    capacity.replace(capacity.find(original),original.size(),"max_cache_slots="+std::to_string(slots));
+    f.write(capacity);CudaWorkerConfig parsed;
+    const bool accepted=read_cuda_worker_config(f.config,parsed,err);
+    need(accepted==(slots<=6144),"v2 cache bounded by actual stage expert count");
+    if(accepted)need(parsed.max_cache_slots==slots,"exact cache count preserved");
+  }
+  f.write(v2);
  {std::ofstream out(gguf2,std::ios::binary);out<<"BAD!";}
  need(!validate_cuda_worker_files(c,err),"malformed GGUF magic rejected");
  {std::ofstream out(gguf2,std::ios::binary);out<<"GGUF";}

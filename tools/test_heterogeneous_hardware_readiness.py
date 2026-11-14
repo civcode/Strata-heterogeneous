@@ -111,10 +111,18 @@ class ReadinessTests(unittest.TestCase):
                            memory[0]["known_allocations_floor_bytes"])
         self.assertIn("stage session arena (core::session_bytes)", memory[0]["unaccounted"])
 
-    def test_zero_slots_uncapped(self):
-        self.cfg[0].write_text(self.cfg[0].read_text().replace("max_cache_slots=16", "max_cache_slots=0"))
+    def test_full_stage_slots_and_refusals(self):
+        original = self.cfg[0].read_text()
+        self.cfg[0].write_text(original.replace("max_cache_slots=16", "max_cache_slots=6144"))
         mem = hw.planned_memory(self.plan, self.cfg, 48)
         self.assertEqual(12 * 512, mem[0]["configured_expert_slots"])
+        self.assertEqual(6144 * 1_382_400 + 98304,
+                         mem[0]["canonical_expert_cache_plus_table_bytes"])
+        for slots in (0, 6145):
+            self.cfg[0].write_text(original.replace("max_cache_slots=16",
+                                                   f"max_cache_slots={slots}"))
+            with self.assertRaisesRegex(ValueError, "stage slot count"):
+                hw.planned_memory(self.plan, self.cfg, 48)
 
     def test_cross_stage_index_hash_mismatch(self):
         self.cfg[0].write_text(self.cfg[0].read_text().replace("index_sha256=", "index_sha256=0"))

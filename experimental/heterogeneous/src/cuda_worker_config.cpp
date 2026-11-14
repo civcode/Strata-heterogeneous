@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/cuda_worker_config.hpp"
+#include "strata_heterogeneous/expert_residency.hpp"
 
 #include <array>
 #include <algorithm>
@@ -220,9 +221,12 @@ bool read_cuda_worker_config(const std::string& filename,CudaWorkerConfig& out,s
         if(!c.model_fingerprint||!c.n_layers||!c.hc||!c.n_embd||!c.n_vocab||
            c.first_layer>=c.end_layer||c.end_layer>c.n_layers||
            c.max_cells<2||c.max_cells>1'000'000||c.max_t<2||c.max_t>8||
-           c.cpu_workers<1||c.cpu_workers>28||c.max_cache_slots<1||c.max_cache_slots>1024||
+           c.cpu_workers<1||c.cpu_workers>28||c.max_cache_slots<1||
+           (!native&&c.max_cache_slots>1024)||
            c.io_timeout_ms<100||c.io_timeout_ms>120000||c.free_reserve_bytes<(128ull<<20))
             throw std::invalid_argument("CUDA config geometry or bounded execution options are invalid");
+        if(native&&!valid_native_expert_slots(c.first_layer,c.end_layer,c.max_cache_slots))
+            throw std::invalid_argument("expert cache slots exceed canonical stage capacity");
         out=std::move(c);error.clear();return true;
     }catch(const std::exception& ex){error=ex.what();return false;}
 }

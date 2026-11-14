@@ -195,6 +195,10 @@ def validate(spec: str, layers: int, hc: int, n_embd: int, fingerprint: int,
                               ("n_layers", layers), ("hc", hc), ("n_embd", n_embd),
                               ("n_vocab", 248320), ("model_fingerprint", fingerprint)):
             require(c.get(key) == str(expected), f"stage {i} {backend} {key} does not match plan")
+        slots = c.get("max_cache_slots")
+        require(slots is not None and re.fullmatch(r"[0-9]{1,5}", slots) is not None
+                and 1 <= int(slots) <= (end - first) * 512,
+                f"stage {i} expert cache slots exceed canonical stage bounds")
         if fields:
             for key in ("pack_dir", "profile_path", "index_sha256", "model_fingerprint",
                         "gguf_shards", "n_layers", "hc", "n_embd", "n_vocab"):

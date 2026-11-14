@@ -25,7 +25,8 @@ struct CudaFileExpertOptions {
     std::string profile_path;
     std::vector<std::pair<int32_t, int32_t>> ranked_pairs;
     // 0 = fill all in-stage pairs; otherwise take up to this many in rank
-    // order. Does not invent experts for unrepresented stage layers.
+    // order. A positive count equal to stage capacity requires every stage
+    // expert; an incomplete profile is refused, never silently downgraded.
     int64_t max_cache_slots = 0;
     int cpu_workers = 1; // Explicit, bounded: avoid oversubscribing CPU cores.
     // GPU space left free *after* this cache and the residency table, for
@@ -61,6 +62,8 @@ private:
     int device_ = -1;
     int64_t first_ = 0, end_ = 0, n_expert_ = 0, blob_bytes_ = 0;
     size_t filled_slots_ = 0;
+    bool full_residency_ = false;
+    uint64_t host_callbacks_ = 0, host_routes_ = 0, host_misses_ = 0;
     std::vector<int32_t> host_res_;
     int32_t* device_res_ = nullptr;
     core::FileExpertSource source_;

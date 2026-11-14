@@ -70,9 +70,10 @@ The selected compact pack-weight arena is computed from the exact
 `blk.<layer>.` ownership, matching the `StageWeightPlan` selection
 formula. This is **planning arithmetic**, not a GPU allocation or an
 observed VRAM measurement. For the canonical Q2_0 layout, the resident
-cache estimate is `min(configured_slots, stage_layers*512)*1,382,400`
-bytes plus the 48*512*4-byte device residency table. `max_cache_slots=0`
-means *uncapped*, not zero memory. The config's safety reserve is shown
+cache estimate is `configured_slots*1,382,400` bytes plus the
+48*512*4-byte device residency table. As of M4.7 the v2 native worker
+and this estimator require explicit positive slots no larger than the
+stage's layer count times 512; zero and oversized values are rejected. The config's safety reserve is shown
 separately (not an allocation). The index digest is checked for changes.
 
 **Not included:** `core::session_bytes` (layer-local state/sequence

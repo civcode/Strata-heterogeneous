@@ -200,12 +200,9 @@ def planned_memory(spec: str, cfg_paths: list[Path], layers: int) -> list[dict[s
         max_cells = int(c["max_cells"])
         max_t = int(c["max_t"])
         need(max_cells > 0 and max_t > 0, "invalid stage session/window limits")
-        need(0 <= slots <= layers * 512 and 0 <= reserve < (1 << 64) and 0 <= budget < (1 << 64),
-             "invalid configured slot count/reserve/budget")
-        if slots == 0:
-            slots = (end - first) * 512  # zero config means uncapped residency
-        else:
-            slots = min(slots, (end - first) * 512)
+        need(1 <= slots <= (end - first) * 512 and 0 <= reserve < (1 << 64)
+             and 0 <= budget < (1 << 64),
+             "invalid configured stage slot count/reserve/budget")
         cache = slots * EXPERT_BLOB_BYTES + EXPERT_RESIDENCY_BYTES
         lower_bound = weights[i] + cache
         out.append({

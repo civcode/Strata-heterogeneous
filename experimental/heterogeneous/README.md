@@ -1,7 +1,7 @@
 # Experimental heterogeneous layer handoff
 
 **Active contract:** [CUDA → HIP production-path validation and acceptance](docs/IMPLEMENTATION_CONTRACT.md).
-**M4 implementation and qualification roadmap:** [bounded performance, context and deployment](docs/M4_ROADMAP.md); initial opt-in source changes ready for Oberon validation.
+**M4 implementation and qualification roadmap:** [bounded performance, context and deployment](docs/M4_ROADMAP.md); M4.1–6 bounded Oberon PASS ([report 0003](../../.ai/reports/report-0003.md)); [M4.7 full routed-expert residency](docs/FULL_EXPERT_RESIDENCY_M47.md) pending.
 **Manual Oberon runbook:** [M2.18–M2.22 boundary validation](docs/BOUNDARY_VALIDATION_M218_M222.md).
 **M3 integration:** [M3.1–M3.5 native text generation and Oberon runbook](docs/GENERATION_M31_M35.md). The explicit `strata.py heterogeneous-generate` command passed operator-reported bounded plain, chunked, chat and shared-memory generation on Oberon at `4a976a0`; 38/38 CTests and both native builds passed. M3.5 bounded resident serving also passed on Oberon at `992fc289` (38/38 CPU CTests, separate native builds, socket/shared-memory A/B/A, existing loopback HTTP API, cooperative cancellation and orderly shutdown); see [M3.5 validation](docs/RESIDENT_SERVER_M35.md) and [report 0002](../../.ai/reports/report-0002.md). Long-context, native failure recovery and production readiness remain unqualified. For Python tools and the CLI use the [local pinned runtime venv setup](docs/GENERATION_M31_M35.md#python-environment-on-oberon-one-time-setup-reuse-thereafter).
 The old demo and protocol fixtures remain CPU-only, but separately compiled

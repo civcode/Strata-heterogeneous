@@ -64,6 +64,14 @@ bool HipFileExperts::open(const Plan& plan, size_t stage_index,
             error = "HIP expert provider requires one canonical pack, one profile source and bounded workers";
             return false;
         }
+        const uint64_t stage_slots = uint64_t(stage.end_layer - stage.first_layer) *
+                                     static_cast<uint64_t>(geometry.n_expert);
+        if (static_cast<uint64_t>(options.max_cache_slots) > stage_slots) {
+            error = "expert cache slots exceed stage capacity";
+            return false;
+        }
+        const bool require_full = options.max_cache_slots > 0 &&
+            static_cast<uint64_t>(options.max_cache_slots) == stage_slots;
         std::vector<std::pair<int32_t, int32_t>> ranked;
         if (!options.profile_path.empty()) {
             int64_t profile_slots = 0;
@@ -94,6 +102,11 @@ bool HipFileExperts::open(const Plan& plan, size_t stage_index,
             static_cast<uint64_t>(geometry.n_layers) >
                 std::numeric_limits<size_t>::max() / static_cast<uint64_t>(geometry.n_expert)) {
             error = "expert profile has no bounded resident expert for this HIP stage";
+            return false;
+        }
+
+        if (require_full && selected.size() != stage_slots) {
+            error = "full expert residency requires complete stage profile coverage";
             return false;
         }
 
@@ -190,6 +203,12 @@ bool HipFileExperts::open(const Plan& plan, size_t stage_index,
         dispatch_.plan = nullptr; // no optional PCIe share or adaptive writes
         dispatch_.layers = stage.first_layer;
         core::set_tail_skip_rank(0); // exact expert arithmetic, never drop tail routes
+        full_residency_ = filled_slots_ == stage_slots;
+        std::fprintf(stderr, "HETERO_EXPERT_RESIDENCY backend=HIP ordinal=%d layers=[%lld,%lld) "
+                     "filled=%zu total=%llu bytes=%llu full=%d\n", device_,
+                     static_cast<long long>(first_), static_cast<long long>(end_),
+                     filled_slots_, static_cast<unsigned long long>(stage_slots),
+                     static_cast<unsigned long long>(slot_count * width), full_residency_ ? 1 : 0);
         state_ = State::ready;
         error.clear();
         return true;
@@ -221,9 +240,20 @@ void HipFileExperts::run(const float* x_f, const int32_t* ids,
         n_tok > std::numeric_limits<int64_t>::max() / k ||
         dispatch_.failed)
         fatal_pool("invalid window, stage or poisoned dispatch", layer, -1);
-    for (int64_t i = 0; i < n_tok * k; ++i)
+    uint64_t misses = 0;
+    for (int64_t i = 0; i < n_tok * k; ++i) {
         if (ids[i] < 0 || ids[i] >= n_expert_)
             fatal_pool("routed expert id out of range", layer, ids[i]);
+        if (host_res_[static_cast<size_t>(layer * n_expert_ + ids[i])] < 0)
+            ++misses;
+    }
+    // The native all-resident graph bypasses this callback altogether.
+    // For host-served graphs count routed entries, not distinct CPU jobs.
+    if (full_residency_ && misses != 0)
+        fatal_pool("missing expert in full-residency stage", layer, -1);
+    ++host_callbacks_;
+    host_routes_ += static_cast<uint64_t>(n_tok * k);
+    host_misses_ += misses;
     // The core dispatcher increments 'layers' internally; align it to the
     // verifier's explicit layer argument for every token group/window.
     dispatch_.layers = layer;
@@ -240,6 +270,7 @@ void HipFileExperts::run(const float* x_f, const int32_t* ids,
 
 void HipFileExperts::shutdown() noexcept {
     if (state_ == State::dead) return;
+    const bool was_ready = state_ == State::ready;
     state_ = State::dead;
     // The verifier must be destroyed BEFORE this provider. If the GPU is
     // unreachable or still has uncompleted work, never free its resident
@@ -247,6 +278,14 @@ void HipFileExperts::shutdown() noexcept {
     if (device_ >= 0 &&
         (cudaSetDevice(device_) != cudaSuccess ||
          cudaDeviceSynchronize() != cudaSuccess)) std::_Exit(75);
+    if (was_ready) {
+        std::fprintf(stderr, "HETERO_EXPERT_ROUTE_STATS backend=HIP ordinal=%d layers=[%lld,%lld) "
+                     "host_callbacks=%llu host_routes=%llu host_misses=%llu full=%d\n",
+                     device_, static_cast<long long>(first_), static_cast<long long>(end_),
+                     static_cast<unsigned long long>(host_callbacks_),
+                     static_cast<unsigned long long>(host_routes_),
+                     static_cast<unsigned long long>(host_misses_), full_residency_ ? 1 : 0);
+    }
     pool_.reset();
     dispatch_.src = nullptr;
     dispatch_.pool = nullptr;

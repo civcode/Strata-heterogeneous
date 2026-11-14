@@ -83,7 +83,7 @@ class GateTests(unittest.TestCase):
         self.configs = []
         for i, (first, end, ordinal) in enumerate(((0, 12, 0), (12, 30, 0), (30, 48, 1))):
             c = dict(common, stage_index=str(i), device_ordinal=str(ordinal),
-                     first_layer=str(first), end_layer=str(end))
+                     first_layer=str(first), end_layer=str(end), max_cache_slots="16")
             if i == 0:
                 c["ple_gguf_path"] = str(self.shards[1])
             path = root / f"stage{i}.cfg"
@@ -118,6 +118,15 @@ class GateTests(unittest.TestCase):
 
     def test_valid_model(self):
         self.check()
+
+    def test_expert_stage_limits(self):
+        for i, slots in enumerate(("6144", "9216", "9216")):
+            self.change(i, "max_cache_slots", slots)
+        self.check()
+        for slots in ("0", "6145", "-1"):
+            self.change(0, "max_cache_slots", slots)
+            with self.assertRaisesRegex(ValueError, "expert cache slots"):
+                self.check()
 
     def test_native_preflight_executable_is_optional(self):
         # The cross-stage GGUF/index/profile checks remain active without

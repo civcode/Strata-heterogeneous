@@ -53,6 +53,16 @@ int main() {
         need(c.fields.stage_index==1 && c.fields.gguf_shards.size()==1,"parsed HIP identity");
         Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,6},999);
         need(validate_hip_worker_config(c,p,1,error),"matches HIP plan, valid files");
+        for (const unsigned slots : {1025u, 2048u, 2049u}) {
+            std::string capacity=f.config();
+            const std::string original="max_cache_slots=16";
+            capacity.replace(capacity.find(original),original.size(),"max_cache_slots="+std::to_string(slots));
+            f.write(capacity);HipWorkerConfig parsed;
+            const bool accepted=read_hip_worker_config(f.cfg,parsed,error);
+            need(accepted==(slots<=2048),"HIP v2 cache bounded by stage capacity");
+            if(accepted)need(parsed.fields.max_cache_slots==slots,"exact HIP cache count preserved");
+        }
+        f.write(f.config());
         need(!validate_hip_worker_config(c,p,0,error),"CUDA index denied");
         need(!validate_hip_worker_config(c,p,2,error),"HIP index mismatch denied");
         auto bad=p; bad.model_fingerprint=42;
