@@ -4,6 +4,10 @@ Goal on Oberon: **Median >=160 accepted single-agent decode tok/s on representat
 
 Evidence: report 0005, tested 2d8babd4, M5 partial. Ordinary combined shared warm median 60.373 feedback tok/s; 157.851 only on highly repetitive matched copy task (111/111 drafts accepted, 16 multirow windows). Not general 160. M5 peak samples 87/79/66% are not sustained. Final stage and middle HIP stage dominate remaining serial latency. Trace baseline and combined are separate from throughput runs. See M5_PERFORMANCE.md and report 0005 for exact metrics.
 
+## Active implementation roadmap
+
+See [M6 implementation roadmap](M6_IMPLEMENTATION_ROADMAP.md) for the implemented B1/B2 changes and the remaining B3–B5 hardware-dependent sequence. Handoff 0010 qualifies the actual implementation; do not treat unverified changes as a measured gain.
+
 ## Immediate priority after report 0008
 
 See [GPU starvation and vanilla dual-R9700 bottleneck investigation](M6_GPU_BOTTLENECKS.md). Establish matched prefill and decode baselines, trace critical paths and native GPU timelines, and prioritize evidence-backed bottleneck fixes before further speculative or placement tuning. The operator's approximate vanilla 50/100% decode and 100/100% prefill utilization are comparison points, not matched measured results. Report 0008 replay 58.987 tok/s lookup-off and 58.172 lookup-on; primary agentic qualification remains unverified.
