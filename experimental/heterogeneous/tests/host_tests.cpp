@@ -99,6 +99,25 @@ void test_plan() {
     huge.geometry = {UINT32_MAX, UINT32_MAX};
     throws([&] { (void) encode(huge); }, "frame byte arithmetic overflow rejected");
 }
+void test_wire_golden_data() {
+    Frame f;
+    f.request_id = 1; f.window_id = 2; f.plan_fingerprint = 3;
+    f.rows = 1; f.geometry = {1, 1};
+    const uint32_t bits[] = {0x3fa00000u, 0x80000000u, 0x7fc12345u};
+    f.payload.resize(3);
+    std::memcpy(f.payload.data(), bits, sizeof(bits));
+    // Protocol-v4 golden bytes: header, FNV-1a checksum, raw float32 data.
+    const std::vector<uint8_t> expected = {
+        0x53, 0x54, 0x48, 0x58, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0c, 0x00, 0x00, 0x00, 0x38, 0xc7, 0x21, 0xd5, 0x00, 0x00, 0xa0, 0x3f,
+        0x00, 0x00, 0x00, 0x80, 0x45, 0x23, 0xc1, 0x7f,
+    };
+    check(encode(f) == expected, "exact protocol-v4 data bytes unchanged");
+    check(encode(decode(expected)) == expected, "golden frame roundtrip");
+}
 void test_wire() {
     const Plan p = parse_plan("cuda:0:0-48", 48, {4,8}, 0x12345);
     Frame f = input(p, 42, 900, 2);
@@ -353,7 +372,7 @@ void test_fail_closed() {
 }
 int main() {
     try {
-        test_plan(); test_wire(); test_process_pipeline(); test_fail_closed();
+        test_plan(); test_wire_golden_data(); test_wire(); test_process_pipeline(); test_fail_closed();
         test_handshake_rejection(); test_io_deadlines(); test_mock_stage_lifecycle();
         test_commit_failure_and_worker_exit(); test_window_replay();
         std::cout << "heterogeneous host tests: PASS (" << assertions << " assertions, real worker processes, no GPU)\n";

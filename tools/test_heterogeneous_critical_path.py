@@ -1,5 +1,5 @@
 import unittest
-from tools.heterogeneous_critical_path import summarize, union
+from tools.heterogeneous_critical_path import summarize, union, verify_benchmark
 
 
 def span(component, phase, stage, a, b, window=1, rows=2):
@@ -45,6 +45,20 @@ class CriticalPathTests(unittest.TestCase):
         for data in (trace()+trace()[:1], trace()[:-1]):
             with self.assertRaises(ValueError):
                 summarize(data, 2)
+
+    def test_benchmark_coverage(self):
+        r = summarize(trace()+trace(2, 350, "decode", 1, 2), 2)
+        b = {"status": "complete", "completions": [{"request_id": 1,
+             "finish_reason": "length", "prompt_tokens": 2,
+             "timing": {"decode_feedback_tokens": 1, "phase_monotonic_s": {
+                 "request_start": 0, "prefill_end": 330e-9, "decode_end": 700e-9}}}]}
+        self.assertTrue(verify_benchmark(r, b)["matched"])
+        self.assertEqual(r["summaries"]["prefill"]["stages"][0]["worker_phase_ns"]["enqueue_execute"]["n"], 1)
+        b["completions"][0]["timing"]["decode_feedback_tokens"] = 2
+        self.assertFalse(verify_benchmark(r, b)["matched"])
+        b["completions"][0]["timing"]["decode_feedback_tokens"] = 1
+        b["completions"][0]["timing"]["phase_monotonic_s"]["decode_end"] = 500e-9
+        self.assertFalse(verify_benchmark(r, b)["matched"])
 
     def test_bad_sequence(self):
         with self.assertRaises(ValueError):

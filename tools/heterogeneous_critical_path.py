@@ -47,6 +47,18 @@ def distribution(values):
             "p99_ms": quantile(.99)}
 
 
+def stage_summary(group, index):
+    stages = [w["stages"][index] for w in group]
+    result = dict(stage=index, **{k: distribution([s[k] for s in stages]) for k in
+        ("roundtrip_ns", "worker_covered_ns", "not_covered_by_worker_spans_ns")})
+    for source in ("worker_phase_ns", "coordinator_phase_ns"):
+        names = sorted({name for s in stages for name in s[source]})
+        result[source] = {name: distribution([s[source][name] for s in stages if name in s[source]])
+                          for name in names}
+    result["windows_with_worker_spans"] = sum(bool(s["worker_phase_ns"]) for s in stages)
+    return result
+
+
 def summarize(lines, stage_count):
     if not 1 <= stage_count <= 64:
         raise ValueError("invalid stage count")
@@ -92,7 +104,7 @@ def summarize(lines, stage_count):
             continue
         start, end = ordered[0][0], ordered[-1][1]
         item = dict(request=key[0], window=key[1], phase=phase, rows=rows, keep=keep,
-                    pos0=pos, critical_ns=end-start,
+                    pos0=pos, start_ns=start, end_ns=end, critical_ns=end-start,
                     commit_ns=ordered[-1][1]-ordered[-1][0],
                     dispatch_gap_ns=end-start-union(ordered), inter_window_gap_ns=None,
                     stages=[])
@@ -129,8 +141,7 @@ def summarize(lines, stage_count):
             evaluated_rows=sum(w["rows"] for w in group),
             timing={k: distribution([w[k] for w in group if w[k] is not None]) for k in
                     ("critical_ns", "commit_ns", "dispatch_gap_ns", "inter_window_gap_ns")},
-            stages=[dict(stage=i, **{k: distribution([w["stages"][i][k] for w in group]) for k in
-                ("roundtrip_ns", "worker_covered_ns", "not_covered_by_worker_spans_ns")}) for i in range(stage_count)])
+            stages=[stage_summary(group, i) for i in range(stage_count)])
     uncommitted = sorted(set(spans)-set(commits))
     return dict(schema="strata-heterogeneous-critical-path/v1", stages=stage_count,
         committed_markers=len(commits), complete_windows=len(windows), incomplete=incomplete,
@@ -140,15 +151,58 @@ def summarize(lines, stage_count):
               "Inter-window gaps exclude phase transitions and missing windows. Trace overhead is not clean throughput.")
 
 
+def verify_benchmark(result, benchmark):
+    """Check trace against the matching completed resident run, not another run."""
+    if benchmark.get("status") != "complete":
+        raise ValueError("completed resident benchmark required")
+    completions = {}
+    for r in benchmark["completions"]:
+        request = r["request_id"]
+        if request in completions or r["finish_reason"] not in ("stop", "length"):
+            raise ValueError("duplicate or unsuccessful benchmark request")
+        completions[request] = r
+    by_request = defaultdict(list)
+    for w in result["windows"]:
+        by_request[w["request"]].append(w)
+    mismatches = []
+    for req in sorted(set(completions) | set(by_request)):
+        if req not in completions or req not in by_request:
+            mismatches.append({"request": req, "reason": "missing request on one side"})
+            continue
+        r, group = completions[req], by_request[req]
+        expected = {"prefill": r["prompt_tokens"], "decode": r["timing"]["decode_feedback_tokens"]}
+        observed = {p: sum(w["keep"] for w in group if w["phase"] == p) for p in expected}
+        if observed != expected:
+            mismatches.append({"request": req, "reason": "accepted row counts", "expected": expected, "observed": observed})
+        if group[0]["window"] != 1 or group[0]["pos0"] != 0 or any(
+                b["window"] != a["window"] + 1 or b["pos0"] != a["pos0"] + a["keep"]
+                for a,b in zip(group, group[1:])):
+            mismatches.append({"request": req, "reason": "missing or non-contiguous window sequence"})
+        bounds = r["timing"]["phase_monotonic_s"]
+        for w in group:
+            lo, hi = (("request_start", "prefill_end") if w["phase"] == "prefill"
+                      else ("prefill_end", "decode_end"))
+            if not bounds[lo] <= w["start_ns"] / 1e9 <= w["end_ns"] / 1e9 <= bounds[hi]:
+                mismatches.append({"request": req, "window": w["window"], "reason": "outside benchmark phase; verify clock and run identity"})
+    return {"requests": len(completions), "mismatches": mismatches,
+            "matched": bool(completions) and not mismatches and not result["incomplete"] and not result["uncommitted"]}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trace", required=True)
     parser.add_argument("--stages", required=True, type=int)
+    parser.add_argument("--benchmark", help="matching resident benchmark JSON for coverage/clock validation")
     args = parser.parse_args(argv)
     with open(args.trace, encoding="utf-8") as stream:
         result = summarize(stream, args.stages)
+    result["benchmark_coverage"] = None
+    if args.benchmark:
+        with open(args.benchmark, encoding="utf-8") as stream:
+            result["benchmark_coverage"] = verify_benchmark(result, json.load(stream))
     print(json.dumps(result, indent=2, allow_nan=False))
-    return int(bool(result["incomplete"] or result["uncommitted"]))
+    return int(bool(result["incomplete"] or result["uncommitted"] or
+                    (args.benchmark and not result["benchmark_coverage"]["matched"])))
 
 
 if __name__ == "__main__":

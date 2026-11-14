@@ -155,12 +155,20 @@ bool DeviceStageExecutor::run_window(const Frame& input, Frame& output, std::str
     try {
         // Existing socket transport takes a validated copy, then uses the
         // same DeviceDriver synchronization sequence as shared memory.
-        (void) encode(input);
+        validate_wire_frame(input);
+        if (input.kind != Kind::data)
+            throw std::invalid_argument("socket stage requires data frame");
         output = input;
         ActivationView view(reinterpret_cast<uint8_t*>(output.payload.data()),
                             output.payload.size() * sizeof(float), output.geometry, output.rows);
-        Frame metadata = input;
-        metadata.payload.clear();
+        // Data frames have no additional control metadata after validation.
+        Frame metadata;
+        metadata.stage_index = input.stage_index;
+        metadata.request_id = input.request_id;
+        metadata.window_id = input.window_id;
+        metadata.plan_fingerprint = input.plan_fingerprint;
+        metadata.rows = input.rows;
+        metadata.geometry = input.geometry;
         if (!run_staged_window(metadata, view, error)) {
             output = Frame{};
             return false;

@@ -321,8 +321,16 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                     reply = *request;
                     reply.shared_checksum = shared.checksum(bytes);
                 } else {
-                    Frame output = *request;
-                    output.payload.clear();
+                    // The validated socket data frame has only identity and payload.
+                    // Leave output storage to the executor rather than copying input
+                    // just to clear that copy.
+                    Frame output;
+                    output.stage_index = request->stage_index;
+                    output.request_id = request->request_id;
+                    output.window_id = request->window_id;
+                    output.plan_fingerprint = request->plan_fingerprint;
+                    output.rows = request->rows;
+                    output.geometry = request->geometry;
                     if (!executor.run_window(*request, output, error))
                         throw std::runtime_error(error.empty() ? "worker execution failed" : error);
                     require_match(output, *request, Kind::data);

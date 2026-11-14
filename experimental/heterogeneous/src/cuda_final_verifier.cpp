@@ -193,7 +193,10 @@ bool CudaFinalVerifierExecutor::run_final_window(const Frame& metadata,
     if (plan_.stages[index_].first_layer != 0) {
         PerformanceSpan perf("worker", "final_upload", index_, request_, window_, spec_.token_ids.size());
         const size_t bytes = input.bytes();
-        std::memcpy(staging_, input.data(), bytes); // raw memfd bytes, not float[]
+        {
+            PerformanceSpan copy("worker", "upload_host_copy", index_, request_, window_, spec_.token_ids.size());
+            std::memcpy(staging_, input.data(), bytes); // raw memfd bytes, not float[]
+        }
         if (!check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice,
                                    verifier_->stream()), error) ||
             !fence(error) || !wait_fence(error) ||

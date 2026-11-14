@@ -144,7 +144,10 @@ bool CudaVerifierDriver::enqueue_upload(const uint8_t* host, size_t bytes, std::
         // record a stream fence so wait_upload keeps its normal contract.
         return record(error);
     }
-    std::memcpy(staging_, host, bytes);
+    {
+        PerformanceSpan copy("worker", "upload_host_copy", index_, request_, window_, spec_.token_ids.size());
+        std::memcpy(staging_, host, bytes);
+    }
     return check(cudaMemcpyAsync(input_, staging_, bytes, cudaMemcpyHostToDevice, verifier_->stream()), error) && record(error);
 }
 bool CudaVerifierDriver::wait_upload(std::string& error) {
@@ -198,7 +201,10 @@ bool CudaVerifierDriver::wait_download(std::string& error) {
                                 window_, "out", verifier_->stream(),
                                 [this](std::string& e) { return record(e) && wait(e); },
                                 error)) return false;
-    std::memcpy(download_host_, staging_, bytes_);
+    {
+        PerformanceSpan copy("worker", "download_host_copy", index_, request_, window_, spec_.token_ids.size());
+        std::memcpy(download_host_, staging_, bytes_);
+    }
     download_host_ = nullptr;
     state_ = State::downloaded; return true;
 }
