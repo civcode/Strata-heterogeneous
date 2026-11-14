@@ -3483,6 +3483,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     // the overlapped split launched this stage's window already: keep the graph variant (#871) chosen for it then,
     // or this thread would serve the window as the other variant
     const bool pre = prelaunched_ == T;
+    if (pre) trace_ev("PRELAUNCH-CONSUMED", -1, lb_, pos0);
     prelaunched_ = 0;
     if (!pre && pre_launch_ && !pre_launch_(cs_, err)) return false;   // (a prelaunched window's was served with the first stage's)
     if (!pre) refresh_ar();

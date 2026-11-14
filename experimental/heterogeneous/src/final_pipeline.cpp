@@ -380,6 +380,8 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             initial.shared_checksum = shared_->checksum(bytes);
         }
         if (receiver_arm_) {
+            PerformanceSpan arm("coordinator", "receiver_arm_ack", endpoints_.back(), initial.request_id,
+                                initial.window_id, initial.rows);
             // No producer launch before a full-identity ACK from the armed consumer.
             Frame context = control(plan_, endpoints_.back(), Kind::window_spec,
                                     initial.request_id, initial.window_id, initial.rows);
