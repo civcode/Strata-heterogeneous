@@ -9,6 +9,7 @@
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata_heterogeneous/mtp_generation.hpp"
+#include "strata_heterogeneous/mtp_resident.hpp"
 #include "strata/spec/suffix_drafter.hpp"
 #include "strata_heterogeneous/process.hpp"
 
@@ -68,6 +69,7 @@ struct Options {
     uint32_t mtp_relay_rounds=0;
     bool mtp_fresh_replay=false, mtp_three_round=false, mtp_three_round_variable=false;
     bool generation_capture=false, mtp_generation=false;
+    uint32_t mtp_resident_prompt_rows=0;
     bool mtp_state_trace=false, mtp_reprime_tail=false, mtp_front_trace=false, mtp_repeat_native_round=false;
     uint32_t warmup_windows = 0;
     bool layer_taps = false;
@@ -114,6 +116,7 @@ void usage() {
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
         "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
+        "  --mtp-resident-prompt-rows N: additionally require --resident; fixed prompt length and --generate budget, max 8 requests.\n"
         "  --mtp-repeat-native-round: one-shot same cell twice, no target step between; requires front trace.\n"
         "  --mtp-front-trace: capture native one-row draft round staged input and front intermediates. Requires state trace.\n"
         "  --mtp-state-trace: bounded exact terminal R and committed draft KV; capture-prefix required.\n"
@@ -206,6 +209,11 @@ Options parse(int argc, char** argv) {
         else if (key == "--mtp-three-round") o.mtp_three_round=true;
         else if (key == "--generation-parity-capture") o.generation_capture=true;
         else if (key == "--mtp-generation-qualification") o.mtp_generation=true;
+        else if (key == "--mtp-resident-prompt-rows") {
+            o.mtp_resident_prompt_rows=u32(required_value(i,argc,argv,"--mtp-resident-prompt-rows"),"mtp-resident-prompt-rows");
+            if (!o.mtp_resident_prompt_rows || o.mtp_resident_prompt_rows>hetero::MtpGenerationPolicy::max_prompt)
+                throw std::invalid_argument("resident MTP prompt rows must be 1..7");
+        }
         else if (key == "--mtp-three-round-variable") o.mtp_three_round_variable=true;
         else if (key == "--mtp-relay-rounds") {
             o.mtp_relay_rounds=u32(required_value(i,argc,argv,"--mtp-relay-rounds"),"mtp-relay-rounds");
@@ -346,8 +354,11 @@ Options parse(int argc, char** argv) {
     }
     if (o.mtp_generation && !o.generation_capture)
         throw std::invalid_argument("native MTP generation requires explicit bounded parity capture");
+    if (o.mtp_resident_prompt_rows && (!o.resident || !o.mtp_generation || !o.generation_capture ||
+        !hetero::MtpGenerationPolicy{o.mtp_resident_prompt_rows,o.generate,o.stop_ids}.valid()))
+        throw std::invalid_argument("resident MTP requires explicit fixed bounded native generation qualification");
     if (o.generation_capture && (!o.generate || o.capture_prefix.empty() || !o.group_hip || !o.hip_split_overlap ||
-        o.resident || o.stream_tokens || o.lookup_draft || o.prompt_chunk!=1 || o.context_limit!=2048 ||
+        (o.resident && !o.mtp_resident_prompt_rows) || o.stream_tokens || o.lookup_draft || o.prompt_chunk!=1 || o.context_limit!=2048 ||
         o.receiver_arm || o.cuda_mapped_egress || o.native_prefill_chunk || o.prefill_parity_at || o.prefill_state_capture ||
         o.placement_capture || o.warmup_windows || o.mtp_fresh_replay || o.mtp_three_round || o.mtp_three_round_variable ||
         o.mtp_relay_rounds || o.mtp_reprime_tail || o.mtp_repeat_native_round ||
@@ -552,7 +563,8 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                 o.capture_prefix.find('\r') != std::string::npos ||
                 !std::filesystem::is_directory(prefix.parent_path(), ec))
                 throw std::invalid_argument("capture prefix must be an absolute path in an existing directory");
-            if (std::filesystem::exists(o.capture_prefix + ".complete.json") ||
+            if (std::filesystem::exists(o.capture_prefix + ".resident.json") ||
+                std::filesystem::exists(o.capture_prefix + ".complete.json") ||
                 std::filesystem::exists(o.capture_prefix + ".prefill.json"))
                 throw std::invalid_argument("capture already completed; use a fresh prefix");
             if (o.prefill_parity_at || o.generation_capture) {
@@ -751,11 +763,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         generation_stops+=std::to_string(id);
     }
     if (::setenv("STRATA_HETERO_MTP_GENERATE_MAX_NEW",std::to_string(o.mtp_generation?o.generate:0u).c_str(),1)!=0 ||
-        ::setenv("STRATA_HETERO_MTP_GENERATE_STOPS",generation_stops.c_str(),1)!=0)
+        ::setenv("STRATA_HETERO_MTP_GENERATE_STOPS",generation_stops.c_str(),1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_RESIDENT_GENERATION",o.mtp_resident_prompt_rows?"1":"0",1)!=0)
         throw std::runtime_error("cannot configure explicit MTP generation mode");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
-            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.mtp_generation?o.tokens.size():o.windows).c_str(),1)!=0 ||
+            ::setenv("STRATA_HETERO_MTP_PROBE_WINDOWS",std::to_string(o.mtp_resident_prompt_rows?o.mtp_resident_prompt_rows:o.mtp_generation?o.tokens.size():o.windows).c_str(),1)!=0 ||
             ::setenv("STRATA_HETERO_MTP_RELAY_ROUNDS",std::to_string(o.mtp_relay_rounds).c_str(),1)!=0)
             throw std::runtime_error("cannot configure one-shot MTP probe");
     } else if (::unsetenv("STRATA_HETERO_MTP_PROBE_RT")!=0 || ::unsetenv("STRATA_HETERO_MTP_PROBE_WINDOWS")!=0 ||
@@ -796,7 +809,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
     } diagnostic_drain{workers,o.mtp_three_round || o.generation_capture,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
-                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation);
+                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation,o.mtp_resident_prompt_rows!=0);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
@@ -885,10 +898,13 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     std::vector<int32_t> generated, final_mtp_offer;
     uint64_t generation_windows=0;
     int32_t generation_next=-1;
+    int64_t generation_fed=0;
     bool stopped = false, cancelled = false, input_closed = false;
     int32_t stop_token = -1;
     auto generate = [&](const std::vector<int32_t>& prompt, uint32_t max_new) {
         generated.clear();
+        final_mtp_offer.clear();
+        generation_windows=0; generation_next=-1; generation_fed=0;
         stopped = cancelled = false;
         stop_token = -1;
         uint64_t window = 0;
@@ -899,8 +915,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         auto capture_generation=[&](const hetero::WindowSpec& spec,const hetero::FinalStageResult& committed,uint32_t keep) {
             if (!o.generation_capture) return;
             auto capture=o; capture.keep=keep;
+            if (o.mtp_resident_prompt_rows) capture.capture_prefix+=".r"+std::to_string(request_id);
             capture_window(capture,plan,spec,committed);
             generation_windows=window;
+            generation_next=committed.predicted_tokens.at(keep-1);
+            generation_fed=spec.pos0+keep;
         };
         // The coordinator only yields control after all stages acknowledged
         // commit. EOF/cancel here cannot leave a provisional GPU window.
@@ -1047,6 +1066,38 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         out << "]}\n";
         std::cout << out.str() << std::flush;
     };
+    // Request captures are complete after ACKs; resident qualification also
+    // requires the separate session marker after clean worker shutdown.
+    auto complete_generation=[&](const std::vector<int32_t>& prompt,uint32_t max_new) {
+        if (!o.generation_capture) return;
+        const auto prefix=o.mtp_resident_prompt_rows?o.capture_prefix+".r"+std::to_string(request_id):o.capture_prefix;
+        std::ofstream complete(prefix+".complete.json",std::ios::binary);
+        if (!complete) throw std::runtime_error("cannot create generation capture completion");
+        auto ids=[&](const std::vector<int32_t>& values) {
+            complete << '[';
+            for (size_t i=0;i<values.size();++i) { if (i) complete << ','; complete << values[i]; }
+            complete << ']';
+        };
+        complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"generation_capture\":true"
+                 << ",\"mtp_generation\":" << (o.mtp_generation?"true":"false")
+                 << ",\"mtp_resident\":" << (o.mtp_resident_prompt_rows?"true":"false")
+                 << ",\"request_id\":" << request_id << ",\"fed_rows\":" << generation_fed
+                 << ",\"windows\":" << generation_windows
+                 << ",\"plan\":" << json_string(hetero::plan_spec(plan))
+                 << ",\"model_fingerprint\":" << o.fingerprint
+                 << ",\"max_new\":" << max_new << ",\"prompt_ids\":";
+        ids(prompt);
+        complete << ",\"stop_ids\":"; ids(o.stop_ids);
+        complete << ",\"token_ids\":"; ids(generated);
+        complete << ",\"finish_reason\":\"" << (cancelled?"cancelled":stopped?"stop":"length")
+                 << "\",\"stop_token\":" << stop_token << ",\"next\":" << generation_next
+                 << ",\"final_offer\":"; ids(final_mtp_offer);
+        complete << "}\n";
+        complete.flush();
+        if (!complete) throw std::runtime_error("generation capture completion write failed");
+    };
+    uint64_t completed_requests=0;
+    bool resident_quit=false;
     std::vector<int64_t> measured_ns;
     if (o.resident) {
         // Negotiate actual reset support before announcing readiness.
@@ -1058,7 +1109,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         bool first = true;
         std::string line;
         while (!input_closed && read_command(line)) {
-            if (line == "quit") break;
+            if (line == "quit") { resident_quit=true; break; }
             std::istringstream in(line);
             std::string count;
             in >> count;
@@ -1071,13 +1122,25 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                     return static_cast<uint32_t>(id) >= limits.vocab;
                 }))
                 throw std::invalid_argument("resident request exceeds validated model limits");
+            if (o.mtp_resident_prompt_rows &&
+                (!hetero::mtp_resident_shape({o.mtp_resident_prompt_rows,o.generate,o.stop_ids},prompt.size(),max_new) ||
+                 !hetero::mtp_resident_next_request(completed_requests,completed_requests+1)))
+                throw std::invalid_argument("resident MTP request exceeds fixed prompt/budget or session request cap");
             if (!first) {
                 if (request_id == UINT64_MAX) throw std::runtime_error("resident request IDs exhausted");
                 session.begin_request(++request_id);
             }
             first = false;
+            if (o.mtp_resident_prompt_rows)
+                std::cout << "HETERO_MTP_RESIDENT_REQUEST request=" << request_id << std::endl;
             generate(prompt, max_new);
-            if (!input_closed) publish(prompt.size());
+            if (!input_closed) {
+                if (o.mtp_resident_prompt_rows) {
+                    complete_generation(prompt,max_new);
+                    ++completed_requests;
+                }
+                publish(prompt.size());
+            }
         }
     } else if (o.generate) {
         generate(o.tokens, o.generate);
@@ -1134,35 +1197,25 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (!((o.mtp_three_round || o.generation_capture) ? workers.finish(error,o.timeout_ms,false) : workers.finish(error)))
         throw std::runtime_error("worker shutdown failed: " + error);
     if (o.resident) {
+        if (o.mtp_resident_prompt_rows) {
+            if (!resident_quit || !completed_requests || input_closed)
+                throw std::runtime_error("resident MTP qualification requires explicit quit after completed requests");
+            std::ofstream marker(o.capture_prefix+".resident.json",std::ios::binary);
+            if (!marker) throw std::runtime_error("cannot create resident MTP session completion");
+            marker << "{\"schema\":\"strata-mtp-resident/v1\",\"requests\":" << completed_requests
+                   << ",\"prompt_rows\":" << o.mtp_resident_prompt_rows << ",\"max_new\":" << o.generate
+                   << ",\"transport\":" << json_string(o.shared?"shared":"socket")
+                   << ",\"traced\":" << (o.mtp_state_trace?"true":"false")
+                   << ",\"plan\":" << json_string(hetero::plan_spec(plan))
+                   << ",\"model_fingerprint\":" << o.fingerprint << "}\n";
+            marker.flush();
+            if (!marker) throw std::runtime_error("resident MTP session completion write failed");
+        }
         std::cout << "HETERO_CLOSED\n" << std::flush;
         return 0;
     }
     if (o.generate) {
-        if (o.generation_capture) {
-            // Publish evidence only after all commits and confirmed worker EOF.
-            std::ofstream complete(o.capture_prefix+".complete.json",std::ios::binary);
-            if (!complete) throw std::runtime_error("cannot create generation capture completion");
-            auto ids=[&](const std::vector<int32_t>& values) {
-                complete << '[';
-                for (size_t i=0;i<values.size();++i) { if (i) complete << ','; complete << values[i]; }
-                complete << ']';
-            };
-            complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"generation_capture\":true"
-                     << ",\"mtp_generation\":" << (o.mtp_generation?"true":"false")
-                     << ",\"windows\":" << generation_windows
-                     << ",\"plan\":" << json_string(hetero::plan_spec(plan))
-                     << ",\"model_fingerprint\":" << o.fingerprint
-                     << ",\"max_new\":" << o.generate << ",\"prompt_ids\":";
-            ids(o.tokens);
-            complete << ",\"stop_ids\":"; ids(o.stop_ids);
-            complete << ",\"token_ids\":"; ids(generated);
-            complete << ",\"finish_reason\":\"" << (stopped?"stop":"length")
-                     << "\",\"stop_token\":" << stop_token << ",\"next\":" << generation_next
-                     << ",\"final_offer\":"; ids(final_mtp_offer);
-            complete << "}\n";
-            complete.flush();
-            if (!complete) throw std::runtime_error("generation capture completion write failed");
-        }
+        complete_generation(o.tokens,o.generate);
         publish(o.tokens.size());
         return 0;
     }

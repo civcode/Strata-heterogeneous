@@ -4,6 +4,7 @@
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 #include "strata_heterogeneous/speculation.hpp"
+#include "strata_heterogeneous/mtp_resident.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -97,15 +98,17 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
         uint64_t active_request = 0;
         SharedActivation shared;
         if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
-        if (executor.mtp_relay_enabled() && (resident || !group_hip || !gate || executor.receiver_arm_enabled()))
-            throw std::runtime_error("MTP relay requires bounded nonresident grouped HIP without external arm");
+        if (executor.mtp_resident_enabled() && (!resident || !executor.mtp_relay_enabled() || !executor.mtp_anchor_only_enabled()))
+            throw std::runtime_error("resident MTP requires explicit resident relay");
+        if (executor.mtp_relay_enabled() && ((resident && !executor.mtp_resident_enabled()) || !group_hip || !gate || executor.receiver_arm_enabled()))
+            throw std::runtime_error("MTP relay requires explicitly admitted grouped HIP without external arm");
         std::optional<Frame> last_mtp_commit;
         bool mtp_requested = false;
         while (auto request = resident ? receive_idle_frame(fd, timeout_ms)
                                        : receive_frame(fd, timeout_ms)) {
             try {
                 if (request->kind == Kind::begin_request) {
-                    if (!resident || request->request_id <= active_request)
+                    if (!resident || request->request_id <= active_request || (executor.mtp_resident_enabled() && !mtp_resident_next_request(active_request,request->request_id)))
                         throw std::runtime_error("unexpected or replayed resident request");
                     const auto expected = control(plan, index, Kind::begin_request,
                                                   request->request_id, 0, 1);
@@ -114,6 +117,8 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                         !executor.reset_request(request->request_id, error))
                         throw std::runtime_error(error.empty() ? "resident reset failed" : error);
                     active_request = request->request_id;
+                    last_mtp_commit.reset();
+                    mtp_requested=false;
                     trace_window(gate.get(), "request_ready");
                     Frame ack = *request;
                     ack.kind = Kind::request_ready;
@@ -123,7 +128,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (resident && (!active_request || request->request_id != active_request))
                     throw std::runtime_error("resident window lacks matching request reset");
                 if (request->kind == Kind::prefill_spec) {
-                    if (executor.receiver_arm_enabled() || !resident || !gate || !prefill ||
+                    if (executor.mtp_relay_enabled() || executor.receiver_arm_enabled() || !resident || !gate || !prefill ||
                         !gate->begin_prefill(*request,error) ||
                         !prefill(*request,fd,error) ||
                         !gate->finished_prefill(error))
@@ -264,10 +269,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
@@ -277,8 +282,10 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
     if (mtp_anchor_only_ && !mtp_relay_) throw std::invalid_argument("anchor-only MTP requires relay");
-    if (mtp_relay_ && (!group_hip || resident_ || receiver_arm_ || require_compact_ || fds_.size()!=2 || !timeout_ms_))
-        throw std::invalid_argument("MTP relay requires bounded nonresident full-logit grouped HIP");
+    if (mtp_resident_ && (!resident_ || !mtp_relay_ || !mtp_anchor_only_))
+        throw std::invalid_argument("resident MTP requires explicit resident and anchor-only relay");
+    if (mtp_relay_ && (!group_hip || (resident_ && !mtp_resident_) || receiver_arm_ || require_compact_ || fds_.size()!=2 || !timeout_ms_))
+        throw std::invalid_argument("MTP relay requires explicitly admitted full-logit grouped HIP");
 }
 FinalPipelineSession::~FinalPipelineSession() = default;
 void FinalPipelineSession::poison() noexcept {
@@ -320,7 +327,7 @@ void FinalPipelineSession::initialize() {
 }
 void FinalPipelineSession::begin_request(uint64_t request) {
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !request ||
-        request <= resident_request_)
+        request <= resident_request_ || (mtp_resident_ && !mtp_resident_next_request(resident_request_,request)))
         throw std::logic_error("resident reset requires an idle pipeline and increasing request ID");
     try {
         PerformanceSpan total("coordinator", "reset_barrier", fds_.size(), request, 0, 1);
@@ -342,11 +349,13 @@ void FinalPipelineSession::begin_request(uint64_t request) {
         resident_request_ = request;
         last_request_ = request;
         last_window_ = 0;
+        mtp_anchor_.reset(); mtp_offer_.reset(); mtp_requested_=false;
+        mtp_pending_inputs_.clear(); mtp_vocab_=0;
     } catch (...) { poison(); throw; }
 }
 
 void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk) {
-    if (receiver_arm_) throw std::logic_error("receiver arm does not support native bulk prefill");
+    if (receiver_arm_ || mtp_relay_) throw std::logic_error("receiver arm/MTP relay does not support native bulk prefill");
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !resident_request_ || last_window_ ||
         endpoints_.size()!=2 || starts_.back()==endpoints_.back() ||
         tokens.empty() || tokens.size()>max_window_tokens || !chunk || chunk>max_native_prefill_chunk)
@@ -536,7 +545,7 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
     } catch (...) { poison(); throw; }
 }
 WindowSpec FinalPipelineSession::request_mtp_proposal() {
-    if (!mtp_relay_ || !initialized_ || poisoned_ || pending_ || resident_ || fds_.size()!=2 ||
+    if (!mtp_relay_ || !initialized_ || poisoned_ || pending_ || (resident_ && (!mtp_resident_ || !resident_request_)) || fds_.size()!=2 ||
         !mtp_anchor_ || mtp_requested_ || mtp_offer_)
         throw std::logic_error("MTP relay requires fresh all-stage committed prefix");
     try {

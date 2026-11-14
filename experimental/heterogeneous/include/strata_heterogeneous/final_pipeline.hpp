@@ -24,6 +24,7 @@ public:
     virtual bool arm_window(std::string& error) { error = "receiver arm unsupported"; return false; }
     virtual bool mtp_relay_enabled() const noexcept { return false; }
     virtual bool mtp_anchor_only_enabled() const noexcept { return false; }
+    virtual bool mtp_resident_enabled() const noexcept { return false; }
     virtual bool propose_mtp(const WindowSpec&, WindowSpec&, std::string& error) {
         error = "native MTP proposal relay unsupported"; return false;
     }
@@ -54,7 +55,7 @@ public:
                          int timeout_ms = default_io_timeout_ms,
                          bool shared_memory = false, bool resident = false,
                          bool fanout_control = false, bool require_compact = false, bool group_hip = false,
-                         bool receiver_arm = false, bool mtp_relay = false, bool mtp_anchor_only = false);
+                         bool receiver_arm = false, bool mtp_relay = false, bool mtp_anchor_only = false, bool mtp_resident = false);
     ~FinalPipelineSession();
     FinalPipelineSession(const FinalPipelineSession&) = delete;
     FinalPipelineSession& operator=(const FinalPipelineSession&) = delete;
@@ -89,6 +90,7 @@ private:
     bool receiver_arm_;
     bool mtp_relay_;
     bool mtp_anchor_only_;
+    bool mtp_resident_;
     uint64_t resident_request_ = 0;
     bool initialized_ = false;
     bool poisoned_ = false;

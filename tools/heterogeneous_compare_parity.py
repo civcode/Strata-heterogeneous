@@ -73,7 +73,7 @@ def read_stfr(path: Path) -> dict:
 
 def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = False,
              mtp_fresh_replay: bool = False, mtp_three_round: bool = False,
-             generation_capture: bool = False) -> list[tuple[dict, dict]]:
+             generation_capture: bool = False, resident_request: int = 0) -> list[tuple[dict, dict]]:
     """Read completed captures; legacy parity callers require full commits.
 
     For explicit partial-prefix callers, STFR contains all evaluated rows;
@@ -81,13 +81,19 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
     """
     require(not (mtp_fresh_replay and (placement or allow_partial)) and
             not (mtp_three_round and (placement or mtp_fresh_replay or not allow_partial)) and
-            not (generation_capture and (placement or mtp_fresh_replay or mtp_three_round)),
+            not (generation_capture and (placement or mtp_fresh_replay or mtp_three_round)) and
+            type(resident_request) is int and 0 <= resident_request <= 8 and
+            (not resident_request or (generation_capture and allow_partial)),
             "conflicting MTP comparison mode")
     completed = Path(str(prefix) + ".complete.json")
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
     captured = marker.get("generation_capture", False)
     mtp_generation = marker.get("mtp_generation", False)
+    mtp_resident = marker.get("mtp_resident", False)
+    require(type(mtp_resident) is bool and mtp_resident == bool(resident_request) and
+            type(marker.get("request_id", 1)) is int and marker.get("request_id", 1) == (resident_request or 1),
+            "invalid resident capture request identity")
     require(type(captured) is bool and captured == generation_capture and
             type(mtp_generation) is bool and (not mtp_generation or captured) and
             (not captured or allow_partial == mtp_generation), "invalid generation capture mode")
@@ -129,7 +135,7 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
                 (allow_partial or meta["n_keep"] == packet["rows"]) and
                 (not (placement or mtp_fresh_replay) or
                  (packet["rows"] == 1 and meta["n_keep"] == 1 and packet["vocab"] <= 248320)) and
-                packet["request"] == 1 and
+                packet["request"] == (resident_request or 1) and
                 type(meta.get("pos0")) is int and meta["pos0"] >= 0 and
                 type(meta.get("token_ids")) is list and
                 len(meta["token_ids"]) == packet["rows"] and

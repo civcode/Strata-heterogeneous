@@ -2,6 +2,7 @@
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata_heterogeneous/mtp_generation.hpp"
+#include "strata_heterogeneous/mtp_resident.hpp"
 #include "strata_heterogeneous/speculation.hpp"
 #include <array>
 #include <iostream>
@@ -76,6 +77,16 @@ int main() {
     }
     check(greedy_accepted_prefix({2724,579,23513,1830,364},{579,5713,1,1,1})==2);
     check(greedy_accepted_prefix({264},{2724})==1);
+    for(uint64_t prev=0;prev<=10;++prev) for(uint64_t next=0;next<=10;++next)
+        check(mtp_resident_next_request(prev,next)==(prev<8 && next==prev+1));
+    check(!mtp_resident_next_request(UINT64_MAX,0));
+    for(unsigned p=0;p<=9;++p) for(unsigned budget=0;budget<=14;++budget)
+        for(unsigned q=0;q<=9;++q) for(unsigned cap=0;cap<=14;++cap) {
+            MtpGenerationPolicy policy{p,budget,{248044,248046}};
+            check(mtp_resident_shape(policy,q,cap)==(p>=1 && p<=7 && budget>=1 && budget<=12 &&
+                   p+budget-1<=12 && p==q && budget==cap));
+        }
+    check(!mtp_resident_shape({6,7,{}},6,7));
     std::string e;
     std::array<float,8> r{11,12,21,22,31,32,41,42};
     using Row=std::tuple<float,int32_t,int64_t>;

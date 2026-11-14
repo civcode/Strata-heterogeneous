@@ -48,7 +48,8 @@ public:
     }
     int mtp_mode = 0;
     bool mtp_relay_enabled() const noexcept override { return mtp_mode != 0; }
-    bool mtp_anchor_only_enabled() const noexcept override { return mtp_mode == 5; }
+    bool mtp_anchor_only_enabled() const noexcept override { return mtp_mode == 5 || mtp_mode == 7; }
+    bool mtp_resident_enabled() const noexcept override { return mtp_mode == 7; }
     bool propose_mtp(const WindowSpec& anchor, WindowSpec& offer, std::string& e) override {
         if (mtp_mode==2) {e="CPU proposal refusal";return false;}
         offer=anchor;
@@ -415,6 +416,51 @@ void mtp_relay_protocol(bool shared) {
     f.rows=6; f.window->token_ids.resize(6);
     fails([&]{(void)encode(f);},"oversized MTP proposal rejected");
 }
+void mtp_resident_protocol(bool shared) {
+    const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true,false,false,0,7);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true,false,true,true,true);
+        pipe.initialize();
+        fails([&]{pipe.begin_request(2);},"resident MTP requires contiguous request IDs");
+        pipe.begin_request(1);
+        fails([&]{(void)pipe.request_mtp_proposal();},"no prior-request proposal at reset");
+        fails([&]{pipe.native_prefill({1,2},1);},"resident MTP excludes bulk prefill");
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        fails([&]{pipe.begin_request(2);},"resident MTP cannot reset provisional target");
+        pipe.commit(2);
+        const auto offer=pipe.request_mtp_proposal();
+        check(offer.token_ids==std::vector<int32_t>({19,36,0}),"resident MTP proposal");
+        (void)pipe.execute(input_frame(p,1,2),offer);
+        check(pipe.commit(2).predicted_tokens[1]==53,"actual partial accepted prefix");
+        // Terminal diagnostic not submitted: reset drops all prior relay identity.
+        (void)pipe.request_mtp_proposal();
+        pipe.begin_request(2);
+        fails([&]{(void)pipe.request_mtp_proposal();},"unsubmitted previous offer cannot survive reset");
+        fails([&]{(void)pipe.execute(input_frame(p,1,3),offer);},"stale request refused");
+        (void)pipe.execute(input_frame(p,2,1),{0,{3,4,5}});
+        pipe.commit(3);
+        check(pipe.request_mtp_proposal().token_ids.front()==22,"request B uses own target anchor");
+        pipe.begin_request(3);
+        (void)pipe.execute(input_frame(p,3,1),{0,{1,2,3}});
+        pipe.commit(2);
+        check(pipe.request_mtp_proposal().token_ids==offer.token_ids,"request A reproduces offer");
+        for(uint64_t r=4;r<=8;++r) pipe.begin_request(r);
+        fails([&]{pipe.begin_request(9);},"bounded resident request cap");
+    }
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,true,false,true,false,false,0,7);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true,false,true,true,true);
+        pipe.initialize();
+        fails([&]{pipe.begin_request(1);},"native reset refusal");
+        check(pipe.poisoned(),"failed reset poisons all peers");
+    }
+    {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true,false,false,0,1);
+        fails([&]{FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true,false,true,true);},
+              "ordinary relay cannot opt into resident without separate flag");
+    }
+}
 void native_prefill_protocol(bool shared) {
     const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     Frame spec;
@@ -621,6 +667,7 @@ int main() {
         native_prefill_protocol(false); native_prefill_protocol(true);
         receiver_arm_protocol(false); receiver_arm_protocol(true);
         mtp_relay_protocol(false); mtp_relay_protocol(true);
+        mtp_resident_protocol(false); mtp_resident_protocol(true);
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

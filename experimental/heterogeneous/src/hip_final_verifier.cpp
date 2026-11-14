@@ -148,7 +148,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     return true;
 }
 bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& error) {
-    if (observer_) { error="one-shot terminal observer cannot reset"; return false; }
+    if (observer_ && (!observer_->resident_relay_enabled() || chain_stages_.empty())) { error="one-shot terminal observer cannot reset"; return false; }
     if (state_ != State::ready || !select_device(error) ||
         !request || request <= request_ || bindings_.initial_position != 0 ||
         !bindings_.zero_session || !verifier_) {
@@ -173,6 +173,9 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
         if (!select_device(error)) return false;
     }
     if (!fence(error) || !wait_fence(error)) return false;
+    if (observer_ && (!check(cudaSetDevice(chain_.last().device()),error) ||
+        !observer_->reset_request(request,error) || !select_device(error))) {abort_once();return false;}
+    observer_predictions_.clear();
     request_ = request;
     window_ = 0;
     next_position_ = 0;

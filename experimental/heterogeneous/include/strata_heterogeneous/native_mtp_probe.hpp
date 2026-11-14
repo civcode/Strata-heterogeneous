@@ -8,6 +8,7 @@
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata_heterogeneous/mtp_generation.hpp"
+#include "strata_heterogeneous/mtp_resident.hpp"
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/mtp_state_trace.hpp"
 #include "strata/artifact/gguf_reader.hpp"
@@ -38,10 +39,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false, MtpGenerationPolicy generation = {})
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false, MtpGenerationPolicy generation = {}, bool resident_generation = false)
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable), generation_(std::move(generation)) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable), generation_(std::move(generation)), resident_generation_(resident_generation), request_(resident_generation?0:1) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -61,6 +62,7 @@ public:
             (trace_prefix_.empty()==front_trace_))) {
             error="invalid MTP three-round diagnostic"; return false;
         }
+        if (resident_generation_ && !generation_.enabled()) {error="resident MTP requires bounded generation";return false;}
         if (generation_.enabled() && (!generation_.valid() || generation_.prompt_rows!=windows_ ||
             relay_rounds_ || three_round_ || three_round_variable_ || fresh_replay_ || repeat_round_ || reprime_tail_ ||
             (trace_prefix_.empty()==front_trace_))) {
@@ -138,9 +140,13 @@ public:
                 !drafter_->set_front_trace(front_device_,core::mtp_front_bytes,error) || !room(0,error))) return false;
             cursor_=std::make_unique<MtpPrefixCursor>(stride_,b.session.max_cells,g.n_vocab,b.max_t);
             n_vocab_=g.n_vocab;
-            if (!trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
+            geometry_=&g;
+            context_=b.session.max_cells;
+            max_t_=b.max_t;
+            if (resident_generation_ && !resident_kv_supported()) {error="resident MTP requires nonelastic dense resident BF16 draft state";return false;}
+            if (!resident_generation_ && !trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
             std::fprintf(stderr,"HETERO_MTP_PROBE_MODE state_trace=%d front_trace=%d repeat_round=%d relay_rounds=%u\n",
-                         trace_?1:0,front_trace_?1:0,repeat_round_?1:0,relay_rounds_);
+                         !trace_prefix_.empty()?1:0,front_trace_?1:0,repeat_round_?1:0,relay_rounds_);
             if (generation_.enabled()) std::fprintf(stderr,"HETERO_MTP_GENERATION_MODE prompt=%u max_new=%u\n",
                          generation_.prompt_rows,generation_.max_new);
             std::fprintf(stderr,"HETERO_MTP_PROBE_LOADED device=%d draft_vram=%llu estimate=%llu\n",
@@ -150,8 +156,38 @@ public:
         } catch (const std::exception& ex) { error=ex.what(); return false; }
     }
 
+    bool resident_relay_enabled() const noexcept override {return resident_generation_;}
+    bool reset_request(uint64_t request,std::string& error) override {
+        if (!resident_generation_ || !mtp_resident_next_request(request_,request) || !geometry_ ||
+            !drafter_ || !cursor_ || !resident_kv_supported() || drafter_->chain_live() ||
+            !ck(cudaSetDevice(device_),error) || !drafter_->idle(error)) {
+            if(error.empty()) error="resident MTP reset identity/state/drain refused";
+            return false;
+        }
+        // Existing native sequence zero, in place on the owning stream.
+        // No graph/weight reallocation, no change to inference operations.
+        // Target sessions are separately reset and fenced by the executor.
+        drafter_->set_source_R(nullptr);
+        drafter_->set_prompt_len(0);
+        drafter_->set_cell_floor(0);
+        core::qsa_state_zero(drafter_->kv_state(),*geometry_,drafter_->stream());
+        if (!ck(cudaGetLastError(),error) || !drafter_->idle(error) || !room(0,error)) return false;
+        // A terminal unsubmitted offer or a cancelled committed tail has
+        // no successor in this request. Drop the borrowed pointer and IDs.
+        cursor_=std::make_unique<MtpPrefixCursor>(stride_,context_,n_vocab_,max_t_);
+        trace_.reset();
+        if (!trace_prefix_.empty())
+            trace_=std::make_unique<MtpStateTrace>(trace_prefix_+".r"+std::to_string(request),*geometry_);
+        committed_=0;
+        verified_next_=-1;
+        relay_pending_=false;
+        request_=request;
+        std::fprintf(stderr,"HETERO_MTP_RESIDENT_RESET request=%llu\n",static_cast<unsigned long long>(request));
+        return true;
+    }
+
     bool begin(const WindowSpec& spec,uint64_t request,uint64_t window,std::string& error) override {
-        if (!cursor_ || request!=1 || window!=committed_+1 || window>window_limit() ||
+        if (!cursor_ || !request_ || request!=request_ || window!=committed_+1 || window>window_limit() ||
             (window>windows_ && !relay_pending_) ||
             (fresh_replay_ && spec.token_ids.size()!=1) || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe window identity mismatch";
@@ -177,7 +213,7 @@ public:
     }
     bool committed(const WindowSpec& spec,uint64_t request,uint64_t window,uint32_t keep,
                    core::Verifier& terminal,const std::vector<int32_t>& predictions,std::string& error) override {
-        if (!cursor_ || request!=1 || window!=committed_+1 || window>window_limit() ||
+        if (!cursor_ || !request_ || request!=request_ || window!=committed_+1 || window>window_limit() ||
             terminal.device()!=device_ || predictions.size()!=spec.token_ids.size() ||
             !keep || keep>predictions.size() || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe commit identity mismatch";
@@ -232,7 +268,7 @@ public:
     bool relay_enabled() const noexcept override { return relay_rounds_!=0 || generation_.enabled(); }
     bool anchor_only_enabled() const noexcept override { return generation_.enabled(); }
     bool propose(const WindowSpec& anchor, WindowSpec& offer, std::string& error) override {
-        if (!relay_enabled() || relay_pending_ || committed_<windows_ ||
+        if (!relay_enabled() || !request_ || relay_pending_ || committed_<windows_ ||
             (!generation_.enabled() && committed_>=windows_+relay_rounds_) ||
             (generation_.enabled() && !generation_.can_draft(anchor.pos0)) ||
             !cursor_ || anchor.pos0!=cursor_->committed_position() ||
@@ -310,6 +346,11 @@ private:
     bool three_round_=false;
     bool three_round_variable_=false;
     MtpGenerationPolicy generation_;
+    bool resident_generation_=false;
+    uint64_t request_=1;
+    const core::ModelGeometry* geometry_=nullptr;
+    int64_t context_=0;
+    size_t max_t_=0;
     unsigned window_limit() const noexcept { return generation_.enabled()?generation_.feed_end():windows_+relay_rounds_; }
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
@@ -321,6 +362,12 @@ private:
     std::unique_ptr<core::NativeEmbed> embed_;
     std::unique_ptr<core::MtpDrafter> drafter_;
     std::unique_ptr<MtpPrefixCursor> cursor_;
+    bool resident_kv_supported() const noexcept {
+        if (!drafter_) return false;
+        const auto& state=drafter_->kv_state();
+        return state.kv_mode==0 && state.kv_elastic<0 && !state.kv_int8 && !state.kv_q4 &&
+               !state.kv_hybrid && state.k_pool && state.v_pool && state.n_slots==state.n_pages;
+    }
     // Use vanilla's stream-ordered source staging. draft_first stages through
     // a default-stream device copy, which is not ordered with the drafter's
     // non-default stream on the observed HIP runtime. The verifier row stays
