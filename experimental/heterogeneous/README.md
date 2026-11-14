@@ -778,3 +778,32 @@ new kernel or readiness proof. See
 Native M2.15 GPU execution remains UNVERIFIED. Prior M2.10–M2.14
 CPU regression fixtures still pass locally (64/64); new M2.15
 fixtures require Oberon build/test validation.
+
+
+### M2.16 — Shared-expert stream/swiglu controls after M2.15
+
+M2.15 native hardware completed two windows on both pipelines,
+matching predictions 198/271, commits and selected layer-5 expert
+IDs. Under matched BF16 HC weights at position 0, router logits
+(relative L2 4.51e-8), route weights (2.16e-7) and expert parts
+(2.86e-7) nearly agree, but **shared expert** diverges (0.002823)
+and accounts for most of the combined MoE difference (0.001073).
+At position 1, layer-6 GDN QKV and z match exactly, while the
+convolved intermediate differs (0.000267), recurrent output y
+(0.000567) and final bo (0.002753). Numerical parity remains
+FAIL at head KL 0.005003/0.037718 > 0.001.
+
+Source-level audit found CUDA's shared-expert stream defaults ON
+and HIP's defaults OFF. The self-commit shortcut has backend
+defaults too, but **both heterogeneous verifiers disable it**
+with set_always_publish(true): do NOT test that inert override.
+The new manual, **documentation-only** M2.16 control runs
+STRATA_SH_STREAM=0 on both to align stream scheduling.
+Only if layer-5 shared output remains materially different,
+a second arm additionally sets STRATA_FUSED_SWIGLU_Q81=0 on
+both. It reuses M2.15 binaries/branch probes without new C++
+kernels or model changes. Layer-6 convolution history remains
+an open next capture if QKV/z still match.
+
+See [docs/SHARED_EXPERT_CONTROL_M216.md](docs/SHARED_EXPERT_CONTROL_M216.md).
+M2.16 hardware results are pending; acceptance thresholds unchanged.
