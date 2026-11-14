@@ -121,6 +121,8 @@ public:
             cursor_=std::make_unique<MtpPrefixCursor>(stride_,b.session.max_cells,g.n_vocab,b.max_t);
             n_vocab_=g.n_vocab;
             if (!trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
+            std::fprintf(stderr,"HETERO_MTP_PROBE_MODE state_trace=%d front_trace=%d repeat_round=%d relay_rounds=%u\n",
+                         trace_?1:0,front_trace_?1:0,repeat_round_?1:0,relay_rounds_);
             std::fprintf(stderr,"HETERO_MTP_PROBE_LOADED device=%d draft_vram=%llu estimate=%llu\n",
                          device_,static_cast<unsigned long long>(drafter_->vram_bytes()),
                          static_cast<unsigned long long>(estimate));
@@ -149,10 +151,10 @@ public:
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
         ++committed_;
         verified_next_=predictions[keep-1];
-        // With a trace, finish the sole live relay with a second native draft
-        // for diagnosis ONLY, never submit another candidate window.
-        if (committed_!=(relay_rounds_ ? windows_+relay_rounds_ : windows_) ||
-            (relay_rounds_ && !trace_)) return true;
+        // Finish the sole live relay with a second native draft for diagnosis
+        // ONLY, even without tracing. Never submit another candidate window.
+        // No front taps or state readbacks are added to the trace-free path.
+        if (committed_!=(relay_rounds_ ? windows_+relay_rounds_ : windows_)) return true;
         return cursor_->finish(predictions[keep-1],
             [this](const float* row,int32_t next,int64_t cell,std::string& e) {
                 // In repeat mode the exact same native pair is evaluated
