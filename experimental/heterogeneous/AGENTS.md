@@ -987,3 +987,35 @@ download huge model files merely to validate the CPU transport.
   history-state capture to distinguish prior state from kernel
   arithmetic if it remains different. STB0 lacks that history.
   Handoff: docs/SHARED_EXPERT_CONTROL_M216.md.
+
+
+### M2.17 — Shared-expert gate/down and GDN convolution history
+
+- M2.16 arms both confirmed position-0 layer5 shared relL2
+  0.002823 unchanged despite STRATA_SH_STREAM=0, then disabling
+  STRATA_FUSED_SWIGLU_Q81. Position1 shared ~2.06e-7.
+  Position1 layer6 QKV/z identical, conv relL2 0.000267,
+  final bo relL2 0.002753.
+- Both M2.16 arms produced 198/271, full accepted commits, and
+  matched GPU PCI functions. Head KL FAILS (Arm A
+  0.005003/0.037718, B 0.010083/0.037814 vs 0.001).
+- New opt-in microtrace in native shared_expert_multi copies exact
+  raw input Q8_1, gate/up pre-SwiGLU, post-SwiGLU Q8_1,
+  down unscaled and scalar gate on the producer stream.
+  Verifier also captures layer5 shared input/final output and
+  layer6 QKV, pre-conv history and conv output on the GDN stream.
+  No changes to actual numerical kernels or normal inference.
+- --micro-probe requires one-row capture-prefix, rejects existing
+  outputs, clears inherited M2.17 env when not enabled.
+  StageMicroRecorder writes exclusive <=4 MiB STM0/v1 with
+  finite checks and FNV checksum. 21 CPU fixtures registered.
+- The CPU STM0 reader requires complete STFR and STB0; shared
+  output, layer6 QKV and conv output MUST agree bitwise with
+  M2.15 STB0 in each run. Then compare full source identities.
+  First nonzero component is not proven causal. New CPU tests
+  and native CUDA/HIP compilation still require Oberon validation.
+- Do not touch Strata-dev or preexisting untracked probes; no
+  GitHub Actions, GPU resets/reboots, driver unload, or auto
+  workflow triggers. Separate local builds <=28 jobs. Preserve
+  original memory/model/accepted-prefix gates and KL<=0.001.
+  Handoff: docs/STAGE_MICRO_LOCALIZATION_M217.md.
