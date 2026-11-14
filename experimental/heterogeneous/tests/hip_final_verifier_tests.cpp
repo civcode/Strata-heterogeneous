@@ -212,6 +212,39 @@ void grouped_native_chain() {
         stage.shutdown();
     }
     check(fake_cuda::allocations==0,"overlap flag cleanup");
+    fv::reset();
+    {
+        HipFinalVerifierExecutor stage(bindings,{true,true,true});
+        check(stage.prepare(f.plan,2,err),"mapped receiver arm preparation");
+        check(fake_cuda::allocations==4,"receiver uses HIP-local payload/flag and HIP-local handoff/flag");
+        check(fv::incoming_flags.size()==2 && fv::incoming_flags[0]!=nullptr &&
+              fv::incoming_flags[0]!=fv::incoming_flags[1],"external flag is distinct from HIP-local flag");
+        check(stage.reset_request(1,err),"arm reset");
+        check(stage.begin_window({0,{5,6}},1,1,err),"arm metadata admission");
+        Buffer input(2,f.plan.geometry); FinalStageResult output;
+        check(!stage.run_final_window(f.frame(),input.view,output,err),"input before arm rejected");
+        check(stage.arm_window(err) && fv::arms==1 && *fv::incoming_flags[0]==0,"arm precedes payload publication");
+        check(!stage.arm_window(err),"duplicate arm rejected");
+        const int copies=fake_cuda::copies;
+        check(stage.run_final_window(f.frame(),input.view,output,err) && *fv::incoming_flags[0]==1,
+              "CPU publishes only admitted mapped payload");
+        check(fake_cuda::copies==copies,"no staging H2D in mapped receiver mode");
+        check(stage.commit_prefix(1,1,1,err),"armed accepted prefix");
+        check(stage.begin_window({1,{7,8}},1,2,err) && stage.arm_window(err) &&
+              *fv::incoming_flags[0]==0,"new window clears old ready word");
+        stage.abandon_window(); stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"armed abandon drains before mapped free");
+    fv::reset();
+    {
+        HipFinalVerifierExecutor stage(bindings,{true,true,true});
+        check(stage.prepare(f.plan,2,err) && stage.reset_request(1,err) &&
+              stage.begin_window({0,{5,6}},1,1,err),"arm refusal fixture");
+        fv::arm_fails=true;
+        check(!stage.arm_window(err),"native arm failure is refused");
+        stage.abandon_window(); stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"failed arm cleanup");
     for (int fail=3; fail<=4; ++fail) {
         HipFinalVerifierExecutor stage(bindings,{true,true});
         fake_cuda::fail_alloc=fake_cuda::alloc_calls+fail;

@@ -1,6 +1,8 @@
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/boundary_capture.hpp"
 #include "strata_heterogeneous/performance.hpp"
+#include "strata_heterogeneous/receiver_publish.hpp"
+#include <atomic>
 #if !defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
 #error "HipFinalVerifierExecutor requires an isolated wave32 HIP-only build"
 #endif
@@ -62,6 +64,10 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
         input_index_ = domain.first_stage;
     }
     const Stage& stage = plan.stages[input_index_];
+    if (options_.receiver_arm && (!options_.native_split_overlap || chain_stages_.size()!=2 ||
+                                  input_index_!=1 || stage.first_layer<=1 || plan.stages[0].backend!=Backend::cuda)) {
+        error = "external receiver arm requires CUDA then native HIP pair"; return false;
+    }
     if (stage.backend != Backend::hip || stage.ordinal > INT_MAX ||
         plan.stages[index].end_layer != plan.total_layers ||
         plan.total_layers != g.n_layers ||
@@ -90,14 +96,25 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     state_ = State::initializing; // cleanup also handles partial initialization
     // An unsplit [0,n_layers) reference embeds tokens inside Verifier and
     // has no prior activation handoff; never upload the dummy input.
-    if (!select_device(error) ||
-        (stage.first_layer != 0 &&
-         (!check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity_), error) ||
-          !check(cudaMallocHost(&staging_, capacity_), error))) ||
-        !check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error))
-        return false;
+    if (!select_device(error)) return false;
+    if (options_.receiver_arm) {
+        // This mapping belongs ONLY to HIP. The existing socket/memfd is
+        // CPU-visible transport, not registered with either runtime.
+        const unsigned flags = cudaHostAllocMapped | cudaHostAllocPortable | hipHostMallocCoherent;
+        if (!check(cudaHostAlloc(&staging_, capacity_, flags), error) ||
+            !check(cudaHostGetDevicePointer(reinterpret_cast<void**>(&input_), staging_, 0), error) ||
+            !check(cudaHostAlloc(reinterpret_cast<void**>(&input_flag_host_), 64, flags), error) ||
+            !check(cudaHostGetDevicePointer(reinterpret_cast<void**>(&input_flag_device_), input_flag_host_, 0), error))
+            return false;
+        std::memset(staging_, 0, capacity_);
+        std::memset(input_flag_host_, 0, 64);
+    } else if (stage.first_layer != 0 &&
+               (!check(cudaMalloc(reinterpret_cast<void**>(&input_), capacity_), error) ||
+                !check(cudaMallocHost(&staging_, capacity_), error))) return false;
+    if (!check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error)) return false;
     if (!chain_stages_.empty()) {
-        if (!chain_.prepare(plan, chain_stages_, input_, nullptr, error, options_.native_split_overlap)) return false;
+        if (!chain_.prepare(plan, chain_stages_, input_, nullptr, error, options_.native_split_overlap,
+                            input_flag_host_, input_flag_device_)) return false;
         verifier_ = &chain_.first();
     } else {
     owned_verifier_ = std::make_unique<core::Verifier>();
@@ -160,7 +177,7 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
 }
 bool HipFinalVerifierExecutor::adopt_native_prefill(uint64_t request,uint32_t rows,std::string& error) {
     // The native prompt engine has fully drained the same stage-local session.
-    if (state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
+    if (options_.receiver_arm || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
         !rows || rows>=bindings_.session.max_cells || chain_stages_.empty()) {
         error="native prefill position adoption refused"; return false;
     }
@@ -204,6 +221,25 @@ bool HipFinalVerifierExecutor::begin_window(const WindowSpec& spec,
     state_ = State::begun;
     return true;
 }
+bool HipFinalVerifierExecutor::arm_window(std::string& error) {
+    if (!options_.receiver_arm || state_ != State::begun || armed_ || !input_flag_host_ ||
+        !select_device(error)) {
+        if (error.empty()) error = "HIP receiver arm not admitted";
+        return false;
+    }
+    // Prior accepted-prefix commit was fully fenced. Do not clear this
+    // word again until that window has drained and the next is admitted.
+    *(volatile uint32_t*)input_flag_host_ = 0;
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    strata_store_fence();
+    if (!verifier_->arm_external_handoff(static_cast<int>(spec_.token_ids.size()),
+                                         spec_.token_ids.data(), spec_.pos0, error)) return false;
+    armed_ = true;
+    if (performance_flag("STRATA_HETERO_OVERLAP_TRACE"))
+        std::fprintf(stderr, "HETERO_RECEIVER_ARMED request=%llu window=%llu\n",
+                     static_cast<unsigned long long>(request_), static_cast<unsigned long long>(window_));
+    return true;
+}
 bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
                                                   ActivationView input,
                                                   FinalStageResult& result,
@@ -228,7 +264,17 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         error = "HIP final verifier stage/activation identity mismatch";
         return false;
     }
-    if (plan_.stages[input_index_].first_layer != 0) {
+    if (options_.receiver_arm) {
+        if (!armed_ || !input_flag_host_ || *(volatile uint32_t*)input_flag_host_ != 0) {
+            error = "HIP receiver not armed for this input"; return false;
+        }
+        // The transport already validated identity, size and shared checksum.
+        // Copy to a HIP-owned coherent allocation and fence BEFORE ready.
+        PerformanceSpan perf("worker", "receiver_publish", index_, request_, window_, metadata.rows);
+        if (!publish_receiver_input(staging_, capacity_, input_flag_host_, input.data(), input.bytes())) {
+            error = "HIP mapped receiver publication refused"; return false;
+        }
+    } else if (plan_.stages[input_index_].first_layer != 0) {
         PerformanceSpan perf("worker", "final_upload", index_, request_, window_, spec_.token_ids.size());
         const size_t bytes = input.bytes();
         {
@@ -252,6 +298,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
                             predictions.data(), error) ||
             !fence(error) || !wait_fence(error)) return false;
     }
+    armed_ = false; // run consumed the prelaunch; all stages have drained
     if (options_.native_split_overlap && !chain_stages_.empty() &&
         performance_flag("STRATA_HETERO_OVERLAP_TRACE")) {
         std::fprintf(stderr, "HETERO_HIP_OVERLAP_TRACE request=%llu window=%llu handoff_flag=%u\n",
@@ -350,7 +397,14 @@ void HipFinalVerifierExecutor::shutdown() noexcept {
     owned_verifier_.reset(); // captured graphs/streams released before input buffer
     verifier_ = nullptr;
     if (fence_) { if (cudaEventDestroy(fence_) != cudaSuccess) std::_Exit(70); fence_ = nullptr; }
-    if (input_) { if (cudaFree(input_) != cudaSuccess) std::_Exit(70); input_ = nullptr; }
+    if (input_) {
+        if (!options_.receiver_arm && cudaFree(input_) != cudaSuccess) std::_Exit(70);
+        input_ = nullptr; // mapped alias is released with staging_, not cudaFree
+    }
+    if (input_flag_host_) {
+        if (cudaFreeHost(input_flag_host_) != cudaSuccess) std::_Exit(70);
+        input_flag_host_ = input_flag_device_ = nullptr;
+    }
     if (staging_) { if (cudaFreeHost(staging_) != cudaSuccess) std::_Exit(70); staging_ = nullptr; }
     device_ = -1;
     state_ = State::dead;

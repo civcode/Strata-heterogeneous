@@ -21,7 +21,8 @@ public:
     HipNativeVerifierChain& operator=(const HipNativeVerifierChain&) = delete;
     bool prepare(const Plan& plan, const std::vector<HipNativeChainStage>& stages,
                  const float* input, const core::NativeHead* head, std::string& error,
-                 bool split_overlap = false) {
+                 bool split_overlap = false, uint32_t* input_flag_host = nullptr,
+                 uint32_t* input_flag_device = nullptr) {
         if (attempted_) { error = "HIP chain already attempted"; return false; }
         attempted_ = true;
         try {
@@ -31,6 +32,10 @@ public:
                 (plan.stages[domain.first_stage].first_layer != 0) != (input != nullptr)) {
                 error = "HIP chain requires complete terminal native domain and matching input";
                 return false;
+            }
+            if ((input_flag_host != nullptr) != (input_flag_device != nullptr) ||
+                (input_flag_host && (!split_overlap || !input))) {
+                error = "external receiver flag requires mapped input and native overlap"; return false;
             }
             if (split_overlap && (stages.size() != 2 || plan.stages[domain.first_stage+1].first_layer <= 1)) {
                 error = "native HIP split overlap requires two stages and no downstream PLE"; return false;
@@ -112,8 +117,8 @@ public:
                             j < hands_.size() ? hands_[j].writer : nullptr);
                 v.set_handoff_rows(b.max_t);
                 if (split_overlap)
-                    v.set_handoff_flags(j ? hands_[j-1].flag_host : nullptr,
-                                        j ? hands_[j-1].flag_reader : nullptr,
+                    v.set_handoff_flags(j ? hands_[j-1].flag_host : input_flag_host,
+                                        j ? hands_[j-1].flag_reader : input_flag_device,
                                         j+1 < stages.size() ? hands_[j].flag_host : nullptr,
                                         j+1 < stages.size() ? hands_[j].flag_writer : nullptr);
                 // Preserve transactional accepted-prefix commit in both modes.

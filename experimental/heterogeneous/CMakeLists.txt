@@ -330,7 +330,7 @@ if(STRATA_HETERO_HOST_TESTS)
   add_executable(strata_heterogeneous_hip_final_verifier_contract_tests
     tests/hip_final_verifier_tests.cpp src/hip_final_verifier.cpp)
   target_include_directories(strata_heterogeneous_hip_final_verifier_contract_tests BEFORE
-    PRIVATE tests/cuda_final_stubs tests/cuda_stubs)
+    PRIVATE tests/cuda_final_stubs tests/cuda_stubs ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
   target_link_libraries(strata_heterogeneous_hip_final_verifier_contract_tests PRIVATE
     strata_heterogeneous_host)
   target_compile_definitions(strata_heterogeneous_hip_final_verifier_contract_tests PRIVATE STRATA_USE_HIP=1)
@@ -341,6 +341,10 @@ if(STRATA_HETERO_HOST_TESTS)
   add_test(NAME strata_heterogeneous_hip_final_verifier_contract_tests
     COMMAND strata_heterogeneous_hip_final_verifier_contract_tests)
   set_tests_properties(strata_heterogeneous_hip_final_verifier_contract_tests PROPERTIES TIMEOUT 20)
+  add_executable(strata_heterogeneous_receiver_publish_tests tests/receiver_publish_test.cpp)
+  target_link_libraries(strata_heterogeneous_receiver_publish_tests PRIVATE strata_heterogeneous_host)
+  target_include_directories(strata_heterogeneous_receiver_publish_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+  add_test(NAME strata_heterogeneous_receiver_publish_tests COMMAND strata_heterogeneous_receiver_publish_tests)
   # M2.2: actual HIP adapter source with CPU CUDA-shaped API doubles.
   add_executable(strata_heterogeneous_hip_verifier_contract_tests
     tests/hip_verifier_tests.cpp src/hip_verifier.cpp)

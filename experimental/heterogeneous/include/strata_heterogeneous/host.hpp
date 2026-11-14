@@ -57,7 +57,8 @@ enum class Kind : uint16_t {
     window_spec = 9, commit_prefix = 10, committed_prefix = 11,
     hello_final = 12, hello_shared_final = 13,
     ready_resident = 14, begin_request = 15, request_ready = 16,
-    prefill_spec = 17, prefill_rows = 18, prefill_done = 19
+    prefill_spec = 17, prefill_rows = 18, prefill_done = 19,
+    window_armed = 20 // opt-in receiver prelaunch ACK, full window identity, no payload
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.

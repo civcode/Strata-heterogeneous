@@ -124,6 +124,11 @@ void validate_frame(const Frame& f) {
                 throw std::invalid_argument("invalid window specification frame");
             f.window->validate(f.rows);
             break;
+        case Kind::window_armed:
+            if (!f.window_id || !zero_identity || f.shared_checksum || !f.payload.empty() || !f.error.empty())
+                throw std::invalid_argument("invalid receiver-arm acknowledgement");
+            (void) expected_bytes(f);
+            break;
         case Kind::commit_prefix:
         case Kind::committed_prefix:
             if (!zero_identity || f.shared_checksum || !f.payload.empty() ||
@@ -366,7 +371,7 @@ Frame decode(const std::vector<uint8_t>& bytes) {
     }
     // Empty-control kinds must not smuggle unrecognized payload bytes.
     if ((f.kind == Kind::ready_resident || f.kind == Kind::begin_request ||
-         f.kind == Kind::request_ready || f.kind == Kind::prefill_done) && n != 0)
+         f.kind == Kind::request_ready || f.kind == Kind::prefill_done || f.kind == Kind::window_armed) && n != 0)
         throw std::invalid_argument("resident control payload must be empty");
     validate_frame(f);
     return f;

@@ -36,6 +36,8 @@ inline bool init_fails=false, run_fails=false, commit_fails=false;
 inline bool copy_fails=false, wait_fails=false, nonfinite=false, nan_logit=false;
 inline bool guard_on=false;
 inline bool publish=false, sampling=false;
+inline int arms=0;
+inline bool arm_fails=false;
 inline int runs=0, commits=0, aborts=0, keep=0, logits_copies=0;
 inline std::vector<int> run_devices, commit_devices, logit_devices;
 inline std::vector<uint32_t*> incoming_flags, outgoing_flags;
@@ -48,6 +50,7 @@ inline std::vector<int32_t> tokens;
 inline void reset() {
     init_fails=run_fails=commit_fails=copy_fails=wait_fails=nonfinite=nan_logit=guard_on=false;
     publish=sampling=false;
+    arms=0; arm_fails=false;
     runs=commits=aborts=keep=logits_copies=0;
     run_devices.clear(); commit_devices.clear(); logit_devices.clear(); fail_commit_device=-1;
     input=nullptr;output=nullptr;pos=begin=end=rows=0;tokens.clear();
@@ -111,6 +114,11 @@ public:
             uint32_t bits=0x7fc12345u;
             std::memcpy(host,&bits,4);
         }
+        return true;
+    }
+    bool arm_external_handoff(int, const int32_t*, int64_t, std::string& e) {
+        ++fake_final::arms;
+        if (fake_final::arm_fails) { e="synthetic arm refusal"; return false; }
         return true;
     }
     bool run(int n,const int32_t* t,int64_t pos,PoolMultiFn pool,void* user,

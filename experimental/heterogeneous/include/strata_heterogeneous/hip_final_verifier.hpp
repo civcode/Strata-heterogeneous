@@ -21,6 +21,7 @@ struct HipFinalVerifierOptions {
     // 16 MiB cap; otherwise the window fails closed before running a kernel.
     bool include_logits = true; // fail-closed default when GPU nonfinite guard is off
     bool native_split_overlap = false; // qualification only; HIP-local edge
+    bool receiver_arm = false; // qualification only; CPU-mediated vendor edge
 };
 
 // Final-stage counterpart to HipVerifierDriver. Deliberately not a
@@ -43,6 +44,8 @@ public:
     bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
     bool begin_window(const WindowSpec&, uint64_t request_id,
                       uint64_t window_id, std::string&) override;
+    bool receiver_arm_enabled() const noexcept override { return options_.receiver_arm; }
+    bool arm_window(std::string&) override;
     bool run_final_window(const Frame&, ActivationView, FinalStageResult&,
                           std::string&) override;
     bool commit_prefix(uint64_t request_id, uint64_t window_id,
@@ -67,6 +70,8 @@ private:
     int device_ = -1;
     float* input_ = nullptr;       // backend-owned, on the last HIP device
     void* staging_ = nullptr;      // backend-owned pinned host memory
+    uint32_t *input_flag_host_ = nullptr, *input_flag_device_ = nullptr;
+    bool armed_ = false;
     cudaEvent_t fence_ = nullptr;
     size_t capacity_ = 0;
     WindowSpec spec_;

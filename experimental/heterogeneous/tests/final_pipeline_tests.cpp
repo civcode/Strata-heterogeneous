@@ -39,6 +39,13 @@ class MockFinal final : public FinalStageExecutor {
 public:
     bool bad_identity = false;
     bool grouped = false;
+    int arm_mode = 0;
+    bool armed = false;
+    bool receiver_arm_enabled() const noexcept override { return arm_mode != 0; }
+    bool arm_window(std::string& e) override {
+        if (arm_mode != 1 || armed || tokens_.empty()) { e = "synthetic arm refusal"; return false; }
+        armed = true; return true;
+    }
     bool nonfinite = false;
     bool fail_commit = false;
     bool fail_reset = false;
@@ -55,6 +62,7 @@ public:
     }
     bool begin_window(const WindowSpec& spec, uint64_t r, uint64_t w, std::string& e) override {
         tokens_ = spec.token_ids;
+        armed = false;
         return mock_.begin_window(spec, r, w, e);
     }
     bool run_staged_window(const Frame&, ActivationView, std::string& e) override {
@@ -67,6 +75,7 @@ public:
     }
     bool run_final_window(const Frame& m, ActivationView input,
                           FinalStageResult& result, std::string& e) override {
+        if (arm_mode && !armed) { e = "mock receiver was not armed"; return false; }
         // Verify that real intermediate protocol workers handed off every layer,
         // not just that token metadata reached the final mock.
         float expected = 0.25f;
@@ -141,7 +150,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
-                   bool bad_prefill = false) {
+                   bool bad_prefill = false, int arm_mode = 0) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -186,6 +195,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     MockFinal final;
                     final.bad_identity = bad;
                     final.grouped = grouped;
+                    final.arm_mode = arm_mode;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
@@ -297,6 +307,34 @@ void grouped_domain(bool shared, bool fanout) {
         FinalPipelineSession pipe(p,w.sockets,1200,shared,true,fanout,false,true);
         fails([&]{pipe.initialize();},"terminal-only hello must not pass grouped readiness");
     }
+}
+void receiver_arm_protocol(bool shared) {
+    const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    for (int mode : {1,2,0}) {
+        auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true,false,false,mode);
+        FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true,true);
+        pipe.initialize(); pipe.begin_request(1);
+        fails([&]{pipe.native_prefill({1,2},1);},"receiver-arm rejects bulk prefill");
+        if (mode!=1) {
+            fails([&]{(void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});},
+                  "refused or missing arm ACK cannot produce a head result");
+            check(pipe.poisoned(),"failed arm poisons pipeline");
+            continue;
+        }
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        check(pipe.commit(1).predicted_tokens.front()==18,"armed window retains accepted-prefix gate");
+        (void)pipe.execute(input_frame(p,1,2),{1,{2,3,4}});
+        check(pipe.commit(2).window_id==2,"rearm after accepted-prefix commit");
+        pipe.begin_request(2);
+        (void)pipe.execute(input_frame(p,2,1),{0,{3,2,1}});
+        check(pipe.commit(3).request_id==2,"armed pipeline reset");
+    }
+    // A receiver-arm ACK is an empty, bounded, nonzero-window control.
+    Frame ack=input_frame(p,1,1);
+    ack.kind=Kind::window_armed; ack.stage_index=2; ack.payload.clear();
+    check(decode(encode(ack)).kind==Kind::window_armed,"receiver arm ACK roundtrip");
+    ack.window_id=0;
+    fails([&]{(void)encode(ack);},"zero window arm ACK rejected");
 }
 void native_prefill_protocol(bool shared) {
     const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
@@ -499,6 +537,7 @@ int main() {
         startup_barrier(false); startup_barrier(true);
         startup_frame_failures();
         native_prefill_protocol(false); native_prefill_protocol(true);
+        receiver_arm_protocol(false); receiver_arm_protocol(true);
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

@@ -58,6 +58,7 @@ struct Options {
     bool shared = false;
     bool group_hip = false;
     bool hip_split_overlap = false;
+    bool receiver_arm = false;
     bool layer_taps = false;
     bool layer_zero_probe = false;
     bool stage0_phases = false;
@@ -98,7 +99,7 @@ void usage() {
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
-        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--run]\n"
+        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--run]\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
         "  --native-prefill-chunk N (grouped HIP resident native prefill, 1..2048)\n"
@@ -172,6 +173,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--shared") o.shared = true;
         else if (key == "--group-native-hip") o.group_hip = true;
         else if (key == "--hip-split-overlap") o.hip_split_overlap = true;
+        else if (key == "--receiver-arm") o.receiver_arm = true;
         else if (key == "--prefill-state-capture") o.prefill_state_capture = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
@@ -296,6 +298,8 @@ Options parse(int argc, char** argv) {
             o.micro_probe || o.boundary_capture)
             throw std::invalid_argument("generation/source modes cannot use smoke diagnostic options");
     }
+    if (o.receiver_arm && (!o.hip_split_overlap || !o.group_hip || o.native_prefill_chunk || o.describe_source))
+        throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
     if (o.prefill_state_capture && (!o.prefill_parity_at || o.prefill_parity_at > 16))
@@ -615,11 +619,13 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     }
     if (::setenv("STRATA_HETERO_HIP_SPLIT_OVERLAP", o.hip_split_overlap ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit HIP split overlap mode");
+    if (::setenv("STRATA_HETERO_RECEIVER_ARM", o.receiver_arm ? "1" : "0", 1) != 0)
+        throw std::runtime_error("cannot configure explicit receiver arm mode");
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
     (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
-    if (compact && (!o.generate || o.prefill_parity_at))
+    if (compact && (!o.generate || o.prefill_parity_at || o.receiver_arm))
         throw std::invalid_argument("compact head results are not supported in diagnostic modes");
     // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
@@ -627,11 +633,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
-                                         fanout, compact, o.group_hip);
+                                         fanout, compact, o.group_hip, o.receiver_arm);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
-              << " hip_split_overlap=" << o.hip_split_overlap << '\n';
+              << " hip_split_overlap=" << o.hip_split_overlap << " receiver_arm=" << o.receiver_arm << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
     auto initial_frame = [&](const hetero::WindowSpec& spec, uint64_t id) {

@@ -18,6 +18,10 @@ struct WindowLimits;
 // an activation response as logits. The input view is a borrowed host mapping.
 class FinalStageExecutor : public StageExecutor {
 public:
+    // Only an explicitly configured native receiver may acknowledge an armed
+    // window. No GPU execution is implied by the ordinary begin_window.
+    virtual bool receiver_arm_enabled() const noexcept { return false; }
+    virtual bool arm_window(std::string& error) { error = "receiver arm unsupported"; return false; }
     virtual bool run_final_window(const Frame& metadata, ActivationView input,
                                   FinalStageResult& output, std::string& error) = 0;
 };
@@ -44,7 +48,8 @@ public:
     FinalPipelineSession(Plan plan, std::vector<int> worker_fds,
                          int timeout_ms = default_io_timeout_ms,
                          bool shared_memory = false, bool resident = false,
-                         bool fanout_control = false, bool require_compact = false, bool group_hip = false);
+                         bool fanout_control = false, bool require_compact = false, bool group_hip = false,
+                         bool receiver_arm = false);
     ~FinalPipelineSession();
     FinalPipelineSession(const FinalPipelineSession&) = delete;
     FinalPipelineSession& operator=(const FinalPipelineSession&) = delete;
@@ -73,6 +78,7 @@ private:
     bool resident_;
     bool fanout_control_;
     bool require_compact_;
+    bool receiver_arm_;
     uint64_t resident_request_ = 0;
     bool initialized_ = false;
     bool poisoned_ = false;

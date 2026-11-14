@@ -118,7 +118,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (resident && (!active_request || request->request_id != active_request))
                     throw std::runtime_error("resident window lacks matching request reset");
                 if (request->kind == Kind::prefill_spec) {
-                    if (!resident || !gate || !prefill ||
+                    if (executor.receiver_arm_enabled() || !resident || !gate || !prefill ||
                         !gate->begin_prefill(*request,error) ||
                         !prefill(*request,fd,error) ||
                         !gate->finished_prefill(error))
@@ -145,6 +145,13 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (!executor.begin_window(*request->window,
                                            request->request_id, request->window_id, error))
                     throw std::runtime_error(error.empty() ? "final window admission failed" : error);
+                if (executor.receiver_arm_enabled()) {
+                    if (!group_hip || !gate || !executor.arm_window(error))
+                        throw std::runtime_error(error.empty() ? "receiver arm admission failed" : error);
+                    trace_window(gate.get(), "receiver_armed");
+                    send_frame(fd, control(plan, index, Kind::window_armed,
+                                           request->request_id, request->window_id, request->rows), timeout_ms);
+                }
                 auto data = receive_frame(fd, timeout_ms);
                 if (!data) throw std::runtime_error("final worker closed after window metadata");
                 match(*data, *request, shared_memory ? Kind::shared_data : Kind::data);
@@ -224,16 +231,18 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
     }
     if (fds_.size() != endpoints_.size() || timeout_ms_ < 0)
         throw std::invalid_argument("final pipeline needs one worker per domain and valid timeout");
+    if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
+        throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
 }
 FinalPipelineSession::~FinalPipelineSession() = default;
 void FinalPipelineSession::poison() noexcept {
@@ -301,6 +310,7 @@ void FinalPipelineSession::begin_request(uint64_t request) {
 }
 
 void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk) {
+    if (receiver_arm_) throw std::logic_error("receiver arm does not support native bulk prefill");
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !resident_request_ || last_window_ ||
         endpoints_.size()!=2 || starts_.back()==endpoints_.back() ||
         tokens.empty() || tokens.size()>max_window_tokens || !chunk || chunk>max_native_prefill_chunk)
@@ -369,6 +379,17 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             initial.kind = Kind::shared_data;
             initial.shared_checksum = shared_->checksum(bytes);
         }
+        if (receiver_arm_) {
+            // No producer launch before a full-identity ACK from the armed consumer.
+            Frame context = control(plan_, endpoints_.back(), Kind::window_spec,
+                                    initial.request_id, initial.window_id, initial.rows);
+            context.window = spec;
+            send_frame(fds_.back(), context, timeout_ms_);
+            const auto ack = receive_frame(fds_.back(), timeout_ms_);
+            if (!ack) throw std::runtime_error("receiver closed before arm acknowledgement");
+            if (ack->kind == Kind::failure) throw std::runtime_error("receiver arm failed: " + ack->error);
+            match(*ack, context, Kind::window_armed);
+        }
         for (size_t i = 0; i < fds_.size(); ++i) {
             PerformanceSpan stage("coordinator", "stage_roundtrip", endpoints_[i], initial.request_id,
                                   initial.window_id, initial.rows);
@@ -378,7 +399,8 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             {
                 PerformanceSpan send("coordinator", "stage_send_spec", endpoints_[i], initial.request_id,
                                      initial.window_id, initial.rows);
-                send_frame(fds_[i], context, timeout_ms_);
+                if (!receiver_arm_ || i + 1 != fds_.size())
+                    send_frame(fds_[i], context, timeout_ms_);
             }
             initial.stage_index = static_cast<uint32_t>(endpoints_[i]);
             {

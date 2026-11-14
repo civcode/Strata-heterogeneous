@@ -151,7 +151,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     const auto& c = configs.front().fields;
     const hetero::WindowLimits limits{0,static_cast<int64_t>(c.max_cells),static_cast<int64_t>(c.n_vocab),c.max_t};
     const bool overlap = hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP");
-    hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap});
+    const bool arm = hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM");
+    if (arm && (!overlap || compact)) throw std::runtime_error("receiver arm requires native HIP overlap and full logits");
+    hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
+    std::cerr << "HETERO_RECEIVER_ARM enabled=" << arm << '\n';
     std::cerr << "HETERO_HIP_SPLIT_OVERLAP enabled=" << overlap << '\n';
     // Same native final-result handler; one external commit ACK covers the entire HIP chain.
     hetero::serve_final_stage_worker(3,plan,invocation.stage_index,final,static_cast<int>(c.io_timeout_ms),
@@ -195,7 +198,8 @@ int main(int argc,char** argv) {
                 serve_native_hip_domain(invocation,compact,startup_wait_ms);
                 return 0;
             }
-            if (hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP"))
+            if (hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP") ||
+                hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM"))
                 throw std::runtime_error("HIP split overlap requires the grouped worker");
             hetero::HipWorkerConfig config;
             if(!hetero::read_hip_worker_config(invocation.config_path,config,error)||

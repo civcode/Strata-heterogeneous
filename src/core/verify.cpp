@@ -3364,6 +3364,52 @@ bool Verifier::chain_overlap() const {
            next_->hflag_in_h_ == hflag_out_h_ && next_->device_ != device_ && !next_->ple_stage();
 }
 
+bool Verifier::arm_external_handoff(int T, const int32_t* tokens, int64_t pos0, std::string& err) {
+#if defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
+    const OnDevice on_device(device_);
+    // No new graph or scheduler. This adapter uses the exact native variant
+    // that run() would choose, then lets run() consume the prelaunched window.
+    if (!ss_ || !g_ || !tokens || T < 1 || T > max_t_ || T > strata::kernels::kVerifyMaxT ||
+        pos0 < 0 || pos0 > ss_->qsa_states[ss_->qsa_primary()].max_cells - T ||
+        released_.load() || prelaunched_ || commit_pending_ || pre_launch_ ||
+        adapt_gate_ || ple_stage() || lb_ <= 1 || !hand_in_ || !hflag_in_h_ ||
+        !hflag_in_d_ || *(volatile uint32_t*) hflag_in_h_ != 0 ||
+        !g_split_wait_ns || g_split_wait_ns > 120000000000ull || !chain_overlap()) {
+        err = "verify: external arm needs idle bounded native full-resident HIP handoff";
+        return false;
+    }
+    refresh_ar();
+    if (!ar_on()) { err = "verify: external arm needs resident graph"; return false; }
+    sel_long_ = select_long_on() && pos0 + T >= select_long_at() ? 1 : 0;
+    if (!capture(T, err) || !capture_commit(err)) return false;
+    // Capture the next stage before launching any live wait. run() later
+    // reuses these captures and its ordinary same-runtime prelaunch.
+    {
+        const OnDevice on_next(next_->device_);
+        next_->refresh_ar();
+        if (!next_->ar_on() || next_->prelaunched_ || next_->commit_pending_ ||
+            next_->pre_launch_ || next_->adapt_gate_ || next_->released_.load()) {
+            err = "verify: external arm needs idle resident successor"; return false;
+        }
+        next_->sel_long_ = sel_long_;
+        if (!next_->capture(T, err) || !next_->capture_commit(err)) return false;
+    }
+    if (!prelaunch(T, tokens, pos0, err)) return false;
+    // An expired/finished graph cannot be acknowledged as armed.
+    const auto status = cudaStreamQuery(cs_);
+    if (status != cudaErrorNotReady) {
+        err = std::string("verify: external receiver not pending: ") + cudaGetErrorString(status);
+        return false;
+    }
+    trace_ev("EXTERNAL-ARMED", -1, lb_, pos0);
+    return true;
+#else
+    (void) T; (void) tokens; (void) pos0;
+    err = "verify: external arm is experimental wave32 HIP only";
+    return false;
+#endif
+}
+
 bool Verifier::prelaunch(int T, const int32_t* tokens, int64_t pos0, std::string& err) {
     const OnDevice on_device(device_);
     prelaunched_ = 0;

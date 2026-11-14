@@ -155,6 +155,11 @@ public:
     /// One window: `tokens[0..T)` at positions pos0.., the pool served per layer; `out[t]` = argmax after token t.
     /// The PLE rows are gathered here from `ss.ple_prev` and the tokens.  Captures the T-token graph on first use.
     bool run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool, void* user, int32_t* out, std::string& err);
+    /// Explicit external layer-handoff adapter only: capture and use the native
+    /// prelaunch path on a full-resident HIP chain whose mapped input flag is
+    /// still zero. Caller owns identity, payload/flag publication and fail-stop
+    /// drain; run() must consume this exact window before any further arm.
+    bool arm_external_handoff(int T, const int32_t* tokens, int64_t pos0, std::string& err);
     /// --lookup-max-t: capture the T-token window graph now instead of on first use.  false with `no_vram` set: the
     /// graph found no VRAM - nothing else changed, and a smaller window can run instead.  A layer split's stages
     /// keep the capture on first use (true, nothing done).
