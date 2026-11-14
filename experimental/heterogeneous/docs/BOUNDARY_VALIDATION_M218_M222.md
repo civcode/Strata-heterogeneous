@@ -137,10 +137,10 @@ for arm in a b c; do
 done
 ~~~
 
-Check all workers' admitted/provisional/committed traces and positions 0 → 1 → 2, keep=1, rows=2, and matching ACKs. Use the existing STFR parser (no new reference arithmetic):
+Check all workers' admitted/provisional/committed traces and positions 0 → 1 → 2, keep=1, rows=2, and matching ACKs. Prepare the [local pinned runtime venv](GENERATION_M31_M35.md#python-environment-on-oberon-one-time-setup-reuse-thereafter) once, then use its interpreter with the existing STFR parser (no new reference arithmetic):
 
 ~~~bash
-python3 - "$OUT" <<'PY'
+"$PWD/.venv/bin/python" - "$OUT" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, "tools")

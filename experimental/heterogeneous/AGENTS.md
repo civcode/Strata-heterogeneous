@@ -30,6 +30,17 @@ Stage project patches and logs in `/home/chris/tmp/strata-heterogeneous`.
 test, or use their files for this project. Do not run parent-directory-wide
 searches. These are the heterogeneous project boundaries.
 
+## Python environment
+
+Use the checkout's ignored `.venv/`, Python 3.10+, and its existing pinned
+root `requirements.txt`. Follow the [one-time venv setup](docs/GENERATION_M31_M35.md#python-environment-on-oberon-one-time-setup-reuse-thereafter).
+Reuse `.venv/bin/python` explicitly for Python tools, tests and the CLI;
+verify CMake's discovered Python test interpreter. Do not use system pip,
+other worktrees' environments, unpinned installs or full model setup for
+Python dependencies. Build/monitor/FP4 requirement files are optional for
+their respective tasks, not baseline inference requirements. Keep the venv
+out of Git and refresh pinned dependencies only when needed.
+
 ## Mission and current state
 
 Implement **one model with contiguous layer ranges executed by independent
