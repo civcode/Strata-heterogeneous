@@ -36,10 +36,10 @@ bool sync(std::string& error) {
     return false;
 }
 
-bool copy(void* dst, const void* src, size_t bytes, std::string& error, bool queued = false) {
+bool copy(void* dst, const void* src, size_t bytes, std::string& error, bool queued = false, bool host_readback = false) {
     if (!bytes) return true;
     if (!dst || !src) return fail(error, "missing running-state buffer");
-    const auto status = conversation_detail::copy_nonblocking(dst, src, bytes, queued);
+    const auto status = conversation_detail::copy_nonblocking(dst, src, bytes, queued, host_readback);
     if (status == cudaSuccess) return true;
     error = std::string("conversation snapshot running-state copy: ") + cudaGetErrorString(status);
     return false;
@@ -273,8 +273,7 @@ void conversation_checkpoint_join(const void* only) {
     CkptAsync& a = ckpt_async();
     std::lock_guard<std::mutex> lk(a.mu);
     if (a.pending.valid() && (only == nullptr || only == a.dst)) {
-        const cudaError_t e = a.pending.get();
-        if (e != cudaSuccess) std::fprintf(stderr, "strata: STRATA_CKPT_ASYNC: a checkpoint copy failed (%s)\n", cudaGetErrorString(e));
+        conversation_detail::join_copy_or_exit(a.pending, "STRATA_CKPT_ASYNC image");
     }
 }
 
@@ -343,7 +342,8 @@ bool checkpoint_save(ConversationCheckpoint& c, const SessionState& ss, const Mo
             a.dst = dst;
             a.pending = std::async(std::launch::async, [dst, host, stage, n, st, dev] {
                 conversation_detail::background_thread_placement();
-                (void) cudaSetDevice(dev);
+                if (const auto selected = cudaSetDevice(dev); selected != cudaSuccess)
+                    core::transfer_terminal("STRATA_CKPT_ASYNC device", cudaGetErrorString(selected));
                 cudaEvent_t done = nullptr;
                 cudaError_t e = cudaEventCreateWithFlags(&done, cudaEventDisableTiming | cudaEventBlockingSync);
                 constexpr size_t PIECE = (size_t) 4 << 20;
@@ -354,13 +354,14 @@ bool checkpoint_save(ConversationCheckpoint& c, const SessionState& ss, const Mo
                     if (e == cudaSuccess) e = cudaEventSynchronize(done);
                     if (e == cudaSuccess) std::memcpy(dst + o, (const uint8_t*) host + o, k);
                 }
+                if (e != cudaSuccess) conversation_detail::drain_copy_or_exit(st);
                 if (done) (void) cudaEventDestroy(done);
                 return e;
             });
             staged = true;
         }
     }
-    if (!staged && !copy(c.gdn.data(), ss.gdn_state, c.gdn.size(), error)) return false;
+    if (!staged && !copy(c.gdn.data(), ss.gdn_state, c.gdn.size(), error, false, true)) return false;
     const auto s0 = std::chrono::steady_clock::now();
     const bool ok = [&] {
         // STRATA_CKPT_GATHER=1: the small vectors through one device gather and one copy (else one copy each)
@@ -368,12 +369,12 @@ bool checkpoint_save(ConversationCheckpoint& c, const SessionState& ss, const Mo
             const int r = ckpt_gather_small(c, ss, z, layers, error);
             if (r != 0) return r > 0;
         }
-        if (!copy(c.ple.data(), ss.ple_hist, c.ple.size(), error)) return false;
+        if (!copy(c.ple.data(), ss.ple_hist, c.ple.size(), error, false, true)) return false;
         for (size_t j = 0; j < layers; ++j) {
             const auto& st = owned(ss, j);
-            if (!copy(c.tails.data() + j * z.tail, st.idx_tail, z.tail, error) ||
-                !copy(c.dead.data() + j * z.dead, st.idx_dead, z.dead, error) ||
-                !copy(c.block_pos.data() + j * z.block_pos, st.idx_block_pos, z.block_pos, error)) return false;
+            if (!copy(c.tails.data() + j * z.tail, st.idx_tail, z.tail, error, false, true) ||
+                !copy(c.dead.data() + j * z.dead, st.idx_dead, z.dead, error, false, true) ||
+                !copy(c.block_pos.data() + j * z.block_pos, st.idx_block_pos, z.block_pos, error, false, true)) return false;
         }
         return true;
     }();
@@ -621,7 +622,7 @@ bool conversation_snapshot_save(SavedConversation& image, const ConversationView
 
 bool conversation_snapshot_sources(SavedConversation& meta, std::vector<SessionKvSource>& sources,
                                    const ConversationView& view, const SessionState& ss, const ModelGeometry& g,
-                                   const QsaState& draft, std::string& error) {
+                                   const QsaState* draft, std::string& error) {
     if (!view_validate(view, ss, g, error) || !sync(error)) return false;
     SavedConversation captured;
     captured.geometry = geometry_key(g);
@@ -633,17 +634,23 @@ bool conversation_snapshot_sources(SavedConversation& meta, std::vector<SessionK
     conversation_checkpoint_join(captured.live.gdn.data());
     const int64_t upto = (int64_t) view.ids.size();
     const size_t layers = owned_qsa(ss);
-    std::vector<SessionKvSource> out(layers + 1);
+    std::vector<SessionKvSource> out(layers + (draft ? 1 : 0));
     for (size_t j = 0; j < layers; ++j)
         if (!conversation_kv_source(out[j], owned(ss, j), g, upto, true, error)) return false;
-    if (!conversation_kv_source(out.back(), draft, g, upto, false, error)) return false;
+    if (draft && !conversation_kv_source(out.back(), *draft, g, upto, false, error)) return false;
     meta = std::move(captured);
     sources = std::move(out);
     return true;
 }
 
+bool conversation_snapshot_sources(SavedConversation& meta, std::vector<SessionKvSource>& sources,
+                                   const ConversationView& view, const SessionState& ss, const ModelGeometry& g,
+                                   const QsaState& draft, std::string& error) {
+    return conversation_snapshot_sources(meta, sources, view, ss, g, &draft, error);
+}
+
 bool conversation_session_read_limits(SessionReadLimits& limits, const SessionState& ss, const ModelGeometry& g,
-                                      const QsaState& draft, uint64_t max_tokens, uint64_t max_checkpoints,
+                                      const QsaState* draft, uint64_t max_tokens, uint64_t max_checkpoints,
                                       std::string& error) {
     ConversationStateSizes z;
     if (!conversation_session_sizes(g, ss, z, error)) return false;
@@ -657,20 +664,28 @@ bool conversation_session_read_limits(SessionReadLimits& limits, const SessionSt
     SessionReadLimits l = limits;   // keeps the caller's admit / progress / max_file_bytes
     l.max_tokens = tokens;
     l.max_checkpoints = max_checkpoints;
-    l.max_kv_layers = layers + 1;
+    l.max_kv_layers = layers + (draft ? 1 : 0);
     l.geometry = geometry_key(g);
     l.layer_range = std::make_pair(ss.layer_lo, ss.layer_hi);
     l.max_state_bytes = {z.gdn, ss.ple_hist ? z.ple : 0, tails, dead, block_pos};
-    l.max_kv_bytes.assign(layers + 1, {});
+    l.max_kv_bytes.assign(layers + (draft ? 1 : 0), {});
     for (size_t j = 0; j < layers; ++j) {
         const auto& st = owned(ss, j);
         const int64_t upto = (int64_t) std::min<uint64_t>(tokens, (uint64_t) std::max<int64_t>(st.max_cells, 0));
         if (!conversation_kv_part_sizes(st, g, upto, true, l.max_kv_bytes[j], error)) return false;
     }
-    const int64_t dupto = (int64_t) std::min<uint64_t>(tokens, (uint64_t) std::max<int64_t>(draft.max_cells, 0));
-    if (!conversation_kv_part_sizes(draft, g, dupto, false, l.max_kv_bytes.back(), error)) return false;
+    if (draft) {
+        const int64_t dupto = (int64_t) std::min<uint64_t>(tokens, (uint64_t) std::max<int64_t>(draft->max_cells, 0));
+        if (!conversation_kv_part_sizes(*draft, g, dupto, false, l.max_kv_bytes.back(), error)) return false;
+    }
     limits = std::move(l);
     return true;
+}
+
+bool conversation_session_read_limits(SessionReadLimits& limits, const SessionState& ss, const ModelGeometry& g,
+                                      const QsaState& draft, uint64_t max_tokens, uint64_t max_checkpoints,
+                                      std::string& error) {
+    return conversation_session_read_limits(limits, ss, g, &draft, max_tokens, max_checkpoints, error);
 }
 
 bool conversation_snapshot_validate(const SavedConversation& image, const SessionState& ss,
@@ -692,6 +707,10 @@ bool conversation_snapshot_validate(const SavedConversation& image, const Sessio
 }
 
 bool conversation_copy_stream_ready(int device) { return conversation_detail::copy_stream_ready(device); }
+
+ConversationCopyPreparation conversation_copy_prepare(const int* devices, size_t count, std::string& error) {
+    return conversation_detail::prepare_copy_resources(devices, count, error);
+}
 
 ConversationRestore conversation_snapshot_restore(const SavedConversation& image, SessionState& ss,
                                                    const ModelGeometry& g, const QsaState* draft, std::string& error) {

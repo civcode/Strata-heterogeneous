@@ -82,26 +82,35 @@ def summarize(benchmark, samples, devices):
         elapsed = sum(p["end"] - p["start"] for p in ps)
         rows = {d: [] for d in devices}
         complete = []
+        complete_power = []
         for group in groups.values():
             for d, row in group.items():
                 if any(belongs(row, p) for p in ps):
                     rows[d].append(row)
-            if (len(group) == len(devices) and all(valid_util(row) for row in group.values())
-                    and any(all(belongs(row, p) for row in group.values()) for p in ps)
-                    and max(row["monotonic_s"] for row in group.values())
-                    - min(row["read_start_s"] for row in group.values()) <= interval / 2):
+            aligned = (len(group) == len(devices)
+                       and any(all(belongs(row, p) for row in group.values()) for p in ps)
+                       and max(row["monotonic_s"] for row in group.values())
+                       - min(row["read_start_s"] for row in group.values()) <= interval / 2)
+            if aligned and all(valid_util(row) for row in group.values()):
                 complete.append(group)
+            if aligned and all(number(row.get("power_w")) and row["power_w"] >= 0
+                               for row in group.values()):
+                complete_power.append(sum(row["power_w"] for row in group.values()))
         gpu = {}
         for d, records in rows.items():
             utilization = [row["util_percent"] for row in records if valid_util(row)]
             vram = [row["vram_used_bytes"] for row in records if number(row.get("vram_used_bytes"))
                     and row["vram_used_bytes"] >= 0]
             power = [row["power_w"] for row in records if number(row.get("power_w")) and row["power_w"] >= 0]
+            limits = [row["power_limit_w"] for row in records
+                      if number(row.get("power_limit_w")) and row["power_limit_w"] > 0]
+            temp = [row["temperature_c"] for row in records if number(row.get("temperature_c"))]
             gpu[d] = {"observed_samples": len(records), "utilization_percent": stats(utilization),
                       "samples_at_least_90_percent": fraction(utilization, lambda x: x >= 90),
                       "samples_at_least_95_percent": fraction(utilization, lambda x: x >= 95),
                       "samples_below_10_percent": fraction(utilization, lambda x: x < 10),
                       "vram_used_bytes": stats(vram), "power_w": stats(power),
+                      "power_limit_w": stats(limits), "temperature_c": stats(temp),
                       "vram_total_bytes": max((row["vram_total_bytes"] for row in records
                                                if number(row.get("vram_total_bytes")) and row["vram_total_bytes"] > 0),
                                               default=None)}
@@ -111,6 +120,8 @@ def summarize(benchmark, samples, devices):
         return {"duration_s": elapsed, "expected_cycles_approx": expected,
                 "feedback_tokens": feedback, "feedback_tok_s": feedback / elapsed if feedback and elapsed else None,
                 "gpu": gpu, "aligned_complete_cycles": len(complete),
+                "total_gpu_power_w": stats(complete_power),
+                "power_low_sample_warning": len(complete_power) < 10 or len(complete_power) < expected * 0.8,
                 "all_gpus_at_least_10_percent": fraction(mins, lambda x: x >= 10),
                 "all_gpus_at_least_90_percent": fraction(mins, lambda x: x >= 90),
                 "all_gpus_at_least_95_percent": fraction(mins, lambda x: x >= 95),
@@ -125,7 +136,8 @@ def summarize(benchmark, samples, devices):
             "notes": "Same Linux host/boot only. Unweighted sensor samples, not exact time fractions or kernel occupancy. "
                      "Driver averaging windows differ; aligned cycles are not proof of instantaneous overlap. "
                      "Decode excludes startup, prefill/reset and final completion tail; includes IPC/consumer pacing. "
-                     "First request excluded from warm decode. Missing readings are not zero."}
+                     "First request excluded from warm decode. Missing readings are not zero. "
+                     "Total GPU power sums only complete aligned power cycles; sampled board/sensor readings, not wall power."}
 
 
 def main(argv=None):

@@ -40,6 +40,31 @@ class UtilizationTests(unittest.TestCase):
         self.assertEqual(s["all_gpus_at_least_90_percent"], 50)
         self.assertTrue(s["low_sample_warning"])
 
+    def test_power_is_independent_of_util_and_aligned(self):
+        data = self.data()
+        # One cycle has a missing busy sensor but all power sensors valid.
+        # Another cycle has a missing power sensor; do not treat it as zero.
+        for row in data:
+            if row["cycle"] == 2 and row["backend"] == "cuda":
+                row["power_w"] = None
+            if row["cycle"] == 3 and row["backend"] == "cuda":
+                row["power_w"] = 80
+                row["power_limit_w"] = 150
+                row["temperature_c"] = 56
+        s = summarize(benchmark(), data, self.devices)["warm_decode"]
+        self.assertEqual(s["total_gpu_power_w"], {"samples": 2, "mean": 165, "median": 165, "peak": 180})
+        self.assertEqual(s["gpu"]["cuda:0"]["power_w"]["samples"], 2)
+        self.assertEqual(s["gpu"]["cuda:0"]["power_limit_w"]["mean"], 150)
+        self.assertEqual(s["gpu"]["cuda:0"]["temperature_c"]["peak"], 56)
+        self.assertTrue(s["power_low_sample_warning"])
+
+    def test_power_skew_and_missing_cycle(self):
+        data = [sample(1, "cuda:0", 7.4, 100), sample(1, "hip:0", 7.42, 100),
+                sample(1, "hip:1", 7.6, 100), sample(2, "cuda:0", 8.0, 100)]
+        s = summarize(benchmark(), data, self.devices)["warm_decode"]
+        self.assertEqual(s["total_gpu_power_w"], {"samples": 0, "mean": None, "median": None, "peak": None})
+        self.assertTrue(s["power_low_sample_warning"])
+
     def test_duplicate_refused(self):
         data = self.data()
         with self.assertRaises(ValueError):

@@ -71,7 +71,7 @@ def read_stfr(path: Path) -> dict:
             "predictions": predictions, "logits": logits}
 
 
-def read_run(prefix: Path, *, allow_partial: bool = False) -> list[tuple[dict, dict]]:
+def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = False) -> list[tuple[dict, dict]]:
     """Read completed captures; legacy parity callers require full commits.
 
     For explicit partial-prefix callers, STFR contains all evaluated rows;
@@ -81,7 +81,9 @@ def read_run(prefix: Path, *, allow_partial: bool = False) -> list[tuple[dict, d
     require(completed.is_file(), f"missing completion marker: {completed}")
     marker = json.loads(completed.read_text(encoding="utf-8"))
     require(marker.get("schema") == SCHEMA and
-            type(marker.get("windows")) is int and 1 <= marker["windows"] <= 8 and
+            type(marker.get("placement_capture", False)) is bool and
+            marker.get("placement_capture", False) == placement and
+            type(marker.get("windows")) is int and 1 <= marker["windows"] <= (128 if placement else 8) and
             type(marker.get("model_fingerprint")) is int and marker["model_fingerprint"] > 0 and
             isinstance(marker.get("plan"), str) and marker["plan"],
             "invalid parity completion marker")
@@ -102,6 +104,7 @@ def read_run(prefix: Path, *, allow_partial: bool = False) -> list[tuple[dict, d
                 type(meta.get("n_keep")) is int and
                 1 <= meta["n_keep"] <= packet["rows"] and
                 (allow_partial or meta["n_keep"] == packet["rows"]) and
+                (not placement or (packet["rows"] == 1 and meta["n_keep"] == 1 and packet["vocab"] <= 248320)) and
                 packet["request"] == 1 and
                 type(meta.get("pos0")) is int and meta["pos0"] >= 0 and
                 type(meta.get("token_ids")) is list and
@@ -125,16 +128,33 @@ def read_run(prefix: Path, *, allow_partial: bool = False) -> list[tuple[dict, d
 
 
 def compare(reference: list[tuple[dict, dict]],
-            heterogeneous: list[tuple[dict, dict]], max_kl: float) -> dict:
+            heterogeneous: list[tuple[dict, dict]], max_kl: float, *, placement: bool = False) -> dict:
     require(len(reference) == len(heterogeneous) and bool(reference),
             "different or empty window counts")
     ref_plan = reference[0][0]["plan"].split(",")
     het_plan = heterogeneous[0][0]["plan"].split(",")
-    require(len(ref_plan) == 1 and ref_plan[0].split(":")[0] in ("cuda", "hip") and
-            ref_plan[0].endswith(":0-48") and
-            len(het_plan) >= 2 and
-            {stage.split(":")[0] for stage in het_plan} == {"cuda", "hip"},
-            "parity requires one unsplit 48-layer reference and a mixed CUDA/HIP pipeline")
+    if placement:
+        def placement_identity(plan):
+            devices = []
+            end = 0
+            for stage in plan:
+                backend, ordinal, layers = stage.split(":")
+                lo, hi = map(int, layers.split("-"))
+                require(backend in ("cuda", "hip") and ordinal.isdecimal() and lo == end < hi <= 48,
+                        "invalid placement plan")
+                devices.append((backend, int(ordinal)))
+                end = hi
+            require(end == 48 and len(set(devices)) == len(devices) and
+                    {backend for backend, _ in devices} == {"cuda", "hip"}, "invalid mixed placement plan")
+            return devices
+        require(ref_plan != het_plan and placement_identity(ref_plan) == placement_identity(het_plan),
+                "placement comparison requires distinct layer splits on identical ordered devices")
+    else:
+        require(len(ref_plan) == 1 and ref_plan[0].split(":")[0] in ("cuda", "hip") and
+                ref_plan[0].endswith(":0-48") and
+                len(het_plan) >= 2 and
+                {stage.split(":")[0] for stage in het_plan} == {"cuda", "hip"},
+                "parity requires one unsplit 48-layer reference and a mixed CUDA/HIP pipeline")
     require(math.isfinite(max_kl) and max_kl >= 0, "invalid KL threshold")
     rows = 0
     prediction_disagreements = 0
@@ -192,7 +212,7 @@ def compare(reference: list[tuple[dict, dict]],
             "prediction_disagreements": prediction_disagreements,
             "top1_disagreements": top1_disagreements, "max_kl_ref_to_hetero": worst_kl,
             "max_abs_logit_difference": worst_max_abs, "max_rmse_logits": worst_rmse,
-            "kl_threshold": max_kl, "row_metrics": diagnostics}
+            "kl_threshold": max_kl, "comparison": "placement" if placement else "unsplit", "row_metrics": diagnostics}
 
 
 def main() -> int:
@@ -202,10 +222,12 @@ def main() -> int:
     parser.add_argument("--max-kl", default=0.001, type=float,
                         help="maximum KL(reference || hetero) per row (default 0.001)")
     parser.add_argument("--report", type=Path, help="optional machine-readable JSON report")
+    parser.add_argument("--placement", action="store_true", help="compare explicit one-row placement captures")
     args = parser.parse_args()
     try:
-        result = compare(read_run(args.reference_prefix),
-                         read_run(args.heterogeneous_prefix), args.max_kl)
+        result = compare(read_run(args.reference_prefix, placement=args.placement),
+                         read_run(args.heterogeneous_prefix, placement=args.placement), args.max_kl,
+                         placement=args.placement)
         print(json.dumps({k: v for k, v in result.items() if k != "row_metrics"},
                          indent=2, sort_keys=True))
         for row in result["row_metrics"]:

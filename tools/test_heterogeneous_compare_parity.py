@@ -41,9 +41,9 @@ class ParityFixtures(unittest.TestCase):
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48")
 
     def write_run(self, prefix, plan, *, count=1, predictions=None, logits=None,
-                  indices=None, include_logits=True):
+                  indices=None, include_logits=True, placement=False):
         Path(f"{prefix}.complete.json").write_text(json.dumps({
-            "schema": parity.SCHEMA, "windows": count, "plan": plan,
+            "schema": parity.SCHEMA, "windows": count, "plan": plan, "placement_capture": placement,
             "model_fingerprint": 2026111301}))
         for i in range(1, count + 1):
             token = 1 if i == 1 else 2
@@ -78,6 +78,23 @@ class ParityFixtures(unittest.TestCase):
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48", count=2)
         self.assertEqual(parity.compare(parity.read_run(self.ref),
                         parity.read_run(self.het), 0.001)["rows"], 2)
+
+    def test_extended_placement_capture(self):
+        a = "cuda:0:0-12,hip:0:12-30,hip:1:30-48"
+        b = "cuda:0:0-14,hip:0:14-33,hip:1:33-48"
+        self.write_run(self.ref, a, count=82, placement=True)
+        self.write_run(self.het, b, count=82, placement=True, predictions=[3]*81+[2])
+        with self.assertRaises(parity.ParityError):
+            parity.read_run(self.ref)
+        result = parity.compare(parity.read_run(self.ref, placement=True),
+                                parity.read_run(self.het, placement=True), .001, placement=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["rows"], 82)
+        self.assertEqual(result["row_metrics"][-1]["position"], 81)
+        self.assertEqual(result["comparison"], "placement")
+        with self.assertRaises(parity.ParityError):
+            run = parity.read_run(self.ref, placement=True)
+            parity.compare(run, run, .001, placement=True)
 
     def test_prediction_mismatch_fails_even_when_logits_match(self):
         self.write_run(self.het, "cuda:0:0-12,hip:0:12-30,hip:1:30-48",

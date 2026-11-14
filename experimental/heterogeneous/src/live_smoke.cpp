@@ -61,6 +61,7 @@ struct Options {
     bool branch_probe = false;
     bool micro_probe = false;
     bool boundary_capture = false;
+    bool placement_capture = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -91,6 +92,7 @@ void usage() {
         "  --keep: positive accepted prefix per window (default: all rows)\n"
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
+        "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
         "  [--timeout-ms 120000] [--shared] [--run]\n"
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
@@ -156,6 +158,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--branch-probe") o.branch_probe = true;
         else if (key == "--micro-probe") o.micro_probe = true;
         else if (key == "--boundary-capture") o.boundary_capture = true;
+        else if (key == "--placement-capture") o.placement_capture = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
@@ -209,7 +212,7 @@ Options parse(int argc, char** argv) {
             std::string item;
             while (std::getline(input, item, ',')) {
                 const uint32_t token = u32(item, "tokens");
-                if (token > static_cast<uint32_t>(INT32_MAX) || o.tokens.size() >= 64)
+                if (token > static_cast<uint32_t>(INT32_MAX) || o.tokens.size() >= 128)
                     throw std::invalid_argument("bounded token sequence invalid");
                 o.tokens.push_back(static_cast<int32_t>(token));
             }
@@ -238,9 +241,15 @@ Options parse(int argc, char** argv) {
         } else throw std::invalid_argument("unknown option: " + key);
     }
     if (o.plan.empty() || !o.fingerprint || o.rows == 0 || o.rows > 8 ||
-        o.windows == 0 || o.windows > 8 || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+        o.windows == 0 || o.windows > (o.placement_capture ? 128u : 8u) || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
         throw std::invalid_argument("missing plan/fingerprint or invalid bounded smoke-test options");
+    if (o.placement_capture && (o.generate || o.describe_source || o.resident || o.rows != 1 ||
+        o.tokens.empty() || o.capture_prefix.empty() || o.layer_taps || o.layer_zero_probe ||
+        o.stage0_phases || o.branch_probe || o.micro_probe || o.boundary_capture))
+        throw std::invalid_argument("placement capture requires explicit one-row tokens, full STFR and no other probes");
+    if (!o.placement_capture && !o.generate && o.tokens.size() > 64)
+        throw std::invalid_argument("ordinary smoke token sequence exceeds 64");
     if (!o.keep) o.keep = o.rows;
     if (o.keep > o.rows) throw std::invalid_argument("--keep cannot exceed --rows");
     if (o.layer_taps && o.capture_prefix.empty())
@@ -751,7 +760,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         std::ofstream complete(o.capture_prefix + ".complete.json", std::ios::binary);
         if (!complete) throw std::runtime_error("cannot create parity completion marker");
         complete << "{\"schema\":\"strata-heterogeneous-parity/v1\",\"windows\":"
-                 << o.windows << ",\"model_fingerprint\":" << o.fingerprint
+                 << o.windows << ",\"placement_capture\":" << (o.placement_capture ? "true" : "false")
+                 << ",\"model_fingerprint\":" << o.fingerprint
                  << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
         complete.flush();
         if (!complete) throw std::runtime_error("parity completion marker write failed");

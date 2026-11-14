@@ -1,0 +1,27 @@
+# M6.1H — Shared-core hardening integration, batch 1
+
+Status: source implementation, pending Oberon qualification. User explicitly authorized transfer of private code to this public fork. Reference private baseline 52a699281b1035630402b969252491046124447a; never merge its history wholesale or import lab configurations, incidents, private data or unrelated diagnostics.
+
+## Accepted M6.0/1 evidence
+
+Report 0006 tested e9476b9a, no production changes. Host 40/40 CTests, 413 Python tests, separate CUDA/HIP builds. Five benign launches ~7.3s and normal cleanup, no repeat startup timeout; true cold page-cache/native fault recovery unverified. Lookup partial acceptance (14/3,37/6), full rejection and no-proposal cases observed with matched outputs. Original 12/18/18 socket combined 59.188 sampled median (59.205 without sampler), shared combined 60.802 median without sampler. Highly repetitive copy pooled 160.623 feedback tok/s, warm median 161.652, range 155.883–162.328, 111/111 draft matches. Not general sustained 160. Warm ordinary sampled mean busy CUDA/HIP0/HIP1 12.91/33.60/45.72%, power 60.41/81.12/96.02 W (sum of means 237.55 W, not a cycle-aligned peak). No samples >=90% on any card. User prioritizes high useful power draw, high clocks and throughput under existing limits, NOT energy efficiency. Keep 12/18/18 reference. 12/20/16 median 59.518 identical on one workload; 14/19/15 59.588 reproducible output divergence at index 40. Numerical cause unknown. Config-named model metadata contains no mtp/nextn tensor names; prepared MTP runtime assets NOT established. No alternate model, no new precision/budget settings, no claim of broad parity.
+
+## Ported code and remaining scope
+
+| Source patch | Batch 1 status |
+| --- | --- |
+| 05134f54 | Core pinned snapshot readback, prepare-copy stream/event API, CPU internal ISA guard and existing allowlist test. Import restore-attempt class and spec harness; actual vanilla generate.cpp restore admission wiring remains pending. Preserve old restore_fits for current caller. |
+| 0ef75af1 | Event query completion guard in Q36 route (adapt error branch to process-terminal _Exit rather than std::exit). Full pinned-ring, prefill, remote helper and MTP caller changes deferred as one coordinated dependency batch. |
+| ffe0ceaf | ExpertCache allocation-device capture, owning-device close and positive copy completion; conversation completion/async joins, optional no-draft core disk snapshot APIs. Full no-MTP serving persistence wiring, peer/remote/pre-fill integration pending. |
+| 228161c8 / affbf7e2 | Existing heterogeneous stage ownership/fences retained; same-process vanilla stage owners still pending. |
+| 41fda0fd / 6c47d719 / b0010efe | Vanilla control/primary allocation ownership pending. |
+| 0f37490b + 52a69928 | Pipeline/refill registry and all-owner pre-release fencing must be ported together when integrating actual pipeline owner lifecycle; not imported as dead code. |
+| b6a853a8 | Existing build supports STRATA_PREFILL_MMQ. Record current cache value; no flag changes in this batch. |
+
+Port exact matching production hunks where compatible; no kernel math changes, no default placement changes. Source conversation tests target the imported API and expected orchestration, not the still-unmodified destination vanilla generate.cpp. No claim that terminal failures or safety fixes explain the 14-layer difference. Preserve backend process boundaries and local native resource ownership.
+
+Additive passive telemetry: power_limit_w and temperature_c when supported, per-device stats and total_gpu_power_w over complete aligned power cycles, power-specific sample coverage warning. Missing power sensor excludes aggregate cycle rather than zero. No power-cap changes or artificial power burn; maximize productive performance. Record clocks where available using existing read-only vendor sensors, no forced clock changes. Sensor averaging differs between backends.
+
+Placement diagnostics: explicit --placement-capture --rows 1 --keep 1 --windows N --tokens CSV --capture-prefix fresh absolute path, 1..128 windows, no other probe or generation mode. Ordinary 8-window/64-token limit unchanged. Full finite STFR logits only. Compare with tools/heterogeneous_compare_parity.py --placement --reference-prefix ... --heterogeneous-prefix ... --report ... . Requires two distinct mixed layer splits with same ordered device IDs, identical source identity and token/position sequence, one-row commits. Default unsplit-vs-mixed control unchanged. Use original prompt IDs plus the first 40 reference output IDs (82 forced inputs) to compare the prediction at position 81. Save actual margins, logits/KL and first disagreement; no threshold relaxation or forced text parity. Verify diagnostic limits/cleanup first; ~82 MB logits per capture for canonical vocabulary. Do not run unsafe or unsupported attempts.
+
+Local exact-blob validation: imported ExpertCache completion header ab2bf5bc, transfer_terminal d674487e, fake runtime 8959ebef and source test 33bd56dc compiled with strict GCC C++17, all 17 CPU cases passed. Analyzer 41e80a8e and test afcd5446 exact hashes; 7/7 Python tests passed. Direct git ls-remote again failed DNS. No full checkout/integrated compile, conversation fixtures, placement capture or native qualification run locally. Other startup/lookup results are historical report 0006 evidence. No Actions.

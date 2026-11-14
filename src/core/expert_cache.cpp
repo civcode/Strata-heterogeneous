@@ -1,5 +1,6 @@
 // src/core/expert_cache.cpp - R4's slot storage and residency table.  Read the header first.
 #include "strata/core/expert_cache.hpp"
+#include "strata/core/expert_cache_completion.hpp"
 
 // #533's segmented cache uses CUDA's virtual memory management (cuMem*): not on HIP, neither the RDNA backend nor
 // the gfx906 compat build (PR #638), which compiles this file as HIP without STRATA_USE_HIP
@@ -580,6 +581,17 @@ bool ExpertCache::open(int64_t n_slots, int64_t n_layers, int64_t n_expert, int6
         return false;
     }
 
+    // Capture the allocation device once. A later GpuStage error may destroy
+    // this cache after its caller's temporary device-selection scope unwinds.
+    // close() must fence/free on THIS device, not whichever is current then.
+    int device = -1;
+    const cudaError_t selected = cudaGetDevice(&device);
+    if (selected != cudaSuccess) {
+        err = std::string("ExpertCache: current allocation device: ") + cudaGetErrorString(selected);
+        return false;
+    }
+    allocation_device_ = device;
+
     const uint64_t want = (uint64_t) n_slots * (uint64_t) blob_bytes;
 
     // ---- **THE ALLOCATION IS CHECKED AGAINST THE CARD, NOT AGAINST THE REQUEST.**
@@ -703,6 +715,16 @@ bool ExpertCache::open_sized(const std::vector<int64_t>& slot_bytes, int64_t n_l
 }
 
 void ExpertCache::close() {
+    // The cache may have been read on nonblocking GPU streams, and failed
+    // startup copies can have accepted work. Do not free either arena or HIP
+    // pinned staging until the device has positively finished using them.
+    const bool has_storage = base_ != nullptr || vmm_ != nullptr || !segs_.empty()
+#if defined(STRATA_USE_HIP)
+        || blocking_staging_ != nullptr
+#endif
+        ;
+    detail::ExpertCacheCloseDevice owner_scope(allocation_device_, has_storage);
+    if (has_storage) detail::expert_cache_close_or_exit();
 #if defined(STRATA_USE_HIP)
     if (blocking_staging_) (void) cudaFreeHost(blocking_staging_);
     blocking_staging_ = nullptr;
@@ -730,6 +752,7 @@ void ExpertCache::close() {
     admitted_ = 0;
     sealed_ = false;
     layer_next_.clear();
+    allocation_device_ = -1;
 }
 
 /// R4.2g.  Layer `l` owns `[l*q, (l+1)*q)` with `q = slots_ / n_layers_`; the LAST layer takes whatever is
@@ -796,10 +819,8 @@ bool ExpertCache::fill_slot(int32_t slot, const uint8_t* host_blob, void* stream
     }
     const cudaError_t e = cudaMemcpyAsync(dst, host_blob, n, cudaMemcpyHostToDevice,
                                           (cudaStream_t) stream);
-    if (e != cudaSuccess) {
-        err = std::string("ExpertCache::fill_slot: ") + cudaGetErrorString(e);
+    if (!detail::expert_cache_status(e, (cudaStream_t) stream, err, "ExpertCache::fill_slot"))
         return false;
-    }
     ++fills_;
     return true;
 }
@@ -828,10 +849,8 @@ bool ExpertCache::fill_slot_blocking(int32_t slot, const uint8_t* host_blob, std
 #else
     const cudaError_t e = cudaMemcpy(dst, host_blob, n, cudaMemcpyHostToDevice);
 #endif
-    if (e != cudaSuccess) {
-        err = std::string("ExpertCache::fill_slot_blocking: ") + cudaGetErrorString(e);
+    if (!detail::expert_cache_status(e, (cudaStream_t) 0, err, "ExpertCache::fill_slot_blocking"))
         return false;
-    }
     ++fills_;
     return true;
 }
@@ -846,10 +865,8 @@ bool ExpertCache::fill_slot_queued(int32_t slot, const uint8_t* host_blob, std::
         return false;
     }
     const cudaError_t e = cudaMemcpyAsync(dst, host_blob, n, cudaMemcpyHostToDevice, (cudaStream_t) 0);
-    if (e != cudaSuccess) {
-        err = std::string("ExpertCache::fill_slot_queued: ") + cudaGetErrorString(e);
+    if (!detail::expert_cache_status(e, (cudaStream_t) 0, err, "ExpertCache::fill_slot_queued"))
         return false;
-    }
     ++fills_;
     return true;
 }
@@ -870,10 +887,8 @@ bool ExpertCache::fill_slot_queued_parts(int32_t slot, const BlobPart* parts, in
     for (int i = 0; i < n; ++i) {
         const cudaError_t e = cudaMemcpyAsync(dst + parts[i].at, parts[i].p, (size_t) parts[i].n, cudaMemcpyHostToDevice,
                                               (cudaStream_t) 0);
-        if (e != cudaSuccess) {
-            err = std::string("ExpertCache::fill_slot_queued_parts: ") + cudaGetErrorString(e);
+        if (!detail::expert_cache_status(e, (cudaStream_t) 0, err, "ExpertCache::fill_slot_queued_parts"))
             return false;
-        }
     }
     ++fills_;
     return true;
@@ -881,10 +896,8 @@ bool ExpertCache::fill_slot_queued_parts(int32_t slot, const BlobPart* parts, in
 
 bool ExpertCache::sync_queued(std::string& err) {
     const cudaError_t e = cudaStreamSynchronize((cudaStream_t) 0);
-    if (e != cudaSuccess) {
-        err = std::string("ExpertCache::sync_queued: ") + cudaGetErrorString(e);
+    if (!detail::expert_cache_status(e, (cudaStream_t) 0, err, "ExpertCache::sync_queued"))
         return false;
-    }
     return true;
 }
 
@@ -895,15 +908,17 @@ bool ExpertCache::verify_slot(int32_t slot, const uint8_t* host_blob, std::strin
         err = "ExpertCache::verify_slot: slot outside the arena";
         return false;
     }
+    if (host_blob == nullptr) {
+        err = "ExpertCache::verify_slot: the host blob is null";
+        return false;
+    }
     // `cudaMemcpy` and not `cudaMemcpyAsync`: this is a startup check, and a check that can be read before it
     // has happened is not a check.  It also synchronises the fills queued before it, which is what makes the
     // comparison meaningful.
     std::vector<uint8_t> got((size_t) nb);
     const cudaError_t e = cudaMemcpy(got.data(), src, (size_t) nb, cudaMemcpyDeviceToHost);
-    if (e != cudaSuccess) {
-        err = std::string("ExpertCache::verify_slot: ") + cudaGetErrorString(e);
+    if (!detail::expert_cache_status(e, (cudaStream_t) 0, err, "ExpertCache::verify_slot"))
         return false;
-    }
     if (std::memcmp(got.data(), host_blob, (size_t) nb) != 0) {
         size_t first = 0;
         while (first < (size_t) nb && got[first] == host_blob[first]) ++first;

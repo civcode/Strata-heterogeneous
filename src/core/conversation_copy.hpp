@@ -3,6 +3,9 @@
 #include "strata/core/conversation_cache.hpp"
 #include "strata/core/progress.hpp"
 #include "strata/platform/aux_cpus.hpp"
+#include "conversation_readback.hpp"
+#include "strata/core/conversation_copy_resources.hpp"
+#include <string>
 
 #include <cuda_runtime.h>
 
@@ -104,7 +107,7 @@ inline cudaError_t private_stream(cudaStream_t& s) {
 }
 
 /// #2409: true when a copy on `dev` from this thread needs no new stream: the thread has one, or a thread that ended left
-/// one in the pool. false: the next copy creates one (a small device allocation, which can fail on a full card).
+/// one in the pool. This is diagnostic only, NOT a reservation; creation can have substantial runtime overhead.
 inline bool copy_stream_ready(int dev) {
     if (dev < 0) dev = 0;
     const std::vector<cudaStream_t>& streams = thread_copy_handles().streams;
@@ -137,7 +140,8 @@ inline void background_thread_placement() {
 
 /// `queued`: the copy is only queued on the private stream, and the caller synchronizes the device (or orders a
 /// later launch after it with order_after_queued) before anything reads the target or writes the source.
-inline cudaError_t copy_nonblocking(void* dst, const void* src, size_t bytes, bool queued = false) {
+// `host_readback`: a completed capture into CPU-readable storage (never queued). On HIP use bounded pinned staging.
+inline cudaError_t copy_nonblocking(void* dst, const void* src, size_t bytes, bool queued = false, bool host_readback = false) {
     if (const long at = test_copy_fail_at(); at > 0) {
         static std::atomic<long> copies{0};
         if (++copies == at) return cudaErrorMemoryAllocation;
@@ -145,10 +149,14 @@ inline cudaError_t copy_nonblocking(void* dst, const void* src, size_t bytes, bo
     cudaStream_t s = nullptr;
     cudaError_t e = private_stream(s);
     if (e != cudaSuccess) return e;
+    if (host_readback && !queued) {
+        e = readback_host(dst, src, bytes, s);
+        core::progress_beat();
+        return e;
+    }
     e = cudaMemcpyAsync(dst, src, bytes, cudaMemcpyDefault, s);
-    if (e != cudaSuccess || queued) return e;
-    e = cudaStreamSynchronize(s);
-    core::progress_beat();   // #2049: a parked conversation is many of these; each one that lands is progress
+    e = finish_copy(e, s, queued);
+    if (!queued) core::progress_beat();   // #2049: a parked conversation is many of these; each one that lands is progress
     return e;
 }
 
@@ -243,14 +251,11 @@ inline std::vector<ConversationCheckpoint> copy_checkpoints_beating(const std::v
     return out;
 }
 
-/// Work queued on the legacy stream after this call starts after every copy this thread queued on the current
-/// device's private stream (an event the legacy stream waits for; no host wait).
-inline cudaError_t order_after_queued() {
-    cudaStream_t s = nullptr;
-    cudaError_t e = private_stream(s);
-    if (e != cudaSuccess) return e;
+// Acquire without recording or establishing any stream dependencies. Preflight and queued ordering use
+// exactly the same thread-owned event, so another thread cannot steal a successfully prepared handle.
+inline cudaError_t private_event(cudaEvent_t& event) {
     int dev = 0;
-    e = cudaGetDevice(&dev);
+    cudaError_t e = cudaGetDevice(&dev);
     if (e != cudaSuccess) return e;
     std::vector<cudaEvent_t>& events = thread_copy_handles().events;
     if (dev < 0) dev = 0;
@@ -267,9 +272,73 @@ inline cudaError_t order_after_queued() {
             ++p.events_created;
         }
     }
-    e = cudaEventRecord(events[(size_t) dev], s);
-    if (e != cudaSuccess) return e;
-    return cudaStreamWaitEvent(nullptr, events[(size_t) dev], 0);
+    event = events[(size_t) dev];
+    return cudaSuccess;
+}
+
+inline ConversationCopyPreparation prepare_copy_resources(const int* devices, size_t count, std::string& error) {
+    int original = 0;
+    cudaError_t e = cudaGetDevice(&original);
+    const char* operation = "get device";
+    int device = original;
+    if (e != cudaSuccess) {
+        error = std::string("conversation copy preparation: get device: ") + cudaGetErrorString(e);
+        return ConversationCopyPreparation::fatal;
+    }
+    int current = original;
+    try {
+    for (size_t i = 0; i < count && e == cudaSuccess; ++i) {
+        device = devices[i] < 0 ? original : devices[i];
+        operation = "select device";
+        if (current != device) {
+            e = cudaSetDevice(device);
+            if (e != cudaSuccess) break;
+            current = device;
+        }
+        cudaStream_t stream = nullptr;
+        operation = "create/acquire stream";
+        e = private_stream(stream);
+        if (e != cudaSuccess) break;
+        cudaEvent_t event = nullptr;
+        operation = "create/acquire event";
+        e = private_event(event);
+    }
+    } catch (const std::bad_alloc&) {
+        operation = "allocate host handle storage";
+        e = cudaErrorMemoryAllocation;
+    }
+    // Do not rely on OnDevice's unchecked destructor: wrong-device fallback would be unsafe.
+    const cudaError_t restored = current != original ? cudaSetDevice(original) : cudaSuccess;
+    if (restored != cudaSuccess) {
+        error = std::string("conversation copy preparation: restore device: ") + cudaGetErrorString(restored);
+        return ConversationCopyPreparation::fatal;
+    }
+    if (e == cudaSuccess) { error.clear(); return ConversationCopyPreparation::ready; }
+    error = "conversation copy preparation: device " + std::to_string(device) + " " + operation + ": " +
+            cudaGetErrorString(e) + " (" + std::to_string((int) e) + ")";
+    // Allocation failure is recoverable before mutation. A poisoned context or other runtime error is not.
+    if (e == cudaErrorMemoryAllocation) {
+        (void) cudaGetLastError(); // consume this recoverable setup error before normal prompt processing
+        return ConversationCopyPreparation::unavailable;
+    }
+    return ConversationCopyPreparation::fatal;
+}
+
+/// Work queued on the legacy stream after this call starts after every copy this thread queued on the current
+/// device's private stream (an event the legacy stream waits for; no host wait). Preparation deliberately does
+/// NOT exercise this: null-stream dependencies may conflict with active graph capture. Check every later error.
+inline cudaError_t order_after_queued() {
+    cudaStream_t stream = nullptr;
+    cudaError_t e = private_stream(stream);
+    if (e != cudaSuccess) core::transfer_terminal("conversation queued ordering stream", cudaGetErrorString(e));
+    cudaEvent_t event = nullptr;
+    e = private_event(event);
+    if (e == cudaSuccess) e = cudaEventRecord(event, stream);
+    if (e == cudaSuccess) e = cudaStreamWaitEvent(nullptr, event, 0);
+    // A failed dependency cannot allow queued copies' operands to unwind. Healthy ordering
+    // remains device-side; only the failure path waits on the host.
+    if (e != cudaSuccess) drain_copy_or_exit(stream);
+    return e;
 }
 
 } // namespace strata::core::conversation_detail

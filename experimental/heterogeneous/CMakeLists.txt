@@ -134,6 +134,46 @@ endif()
 
 if(STRATA_HETERO_HOST_TESTS)
   enable_testing()
+  # Imported private hardening fixtures: fake runtime only, never GPU fault injection.
+  set(_hardening_root ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+  find_package(Threads REQUIRED)
+  add_executable(hetero_expert_cache_completion_test ${_hardening_root}/tests/core/expert_cache_completion_test.cpp)
+  target_include_directories(hetero_expert_cache_completion_test BEFORE PRIVATE
+    ${_hardening_root}/tests/core/expert_cache_fake ${_hardening_root}/include)
+  target_compile_features(hetero_expert_cache_completion_test PRIVATE cxx_std_17)
+  foreach(_case success issue-drain issue-unknown readback-drain readback-unknown
+                sync-drain sync-unknown close-success close-unknown owner-switch
+                owner-already-selected owner-no-storage owner-get-unknown owner-select-unknown
+                owner-sync-unknown owner-restore-unknown owner-missing)
+    add_test(NAME hetero_expert_cache_completion_${_case} COMMAND hetero_expert_cache_completion_test ${_case})
+    set_tests_properties(hetero_expert_cache_completion_${_case} PROPERTIES TIMEOUT 15)
+  endforeach()
+  foreach(_backend IN ITEMS cuda hip)
+    add_executable(hetero_conversation_lifetime_${_backend}_test
+      ${_hardening_root}/tests/core/conversation_lifetime_test.cpp)
+    target_include_directories(hetero_conversation_lifetime_${_backend}_test BEFORE PRIVATE
+      ${_hardening_root}/tests/core/conversation_fake ${_hardening_root}/src/core ${_hardening_root}/include)
+    target_compile_features(hetero_conversation_lifetime_${_backend}_test PRIVATE cxx_std_17)
+    target_link_libraries(hetero_conversation_lifetime_${_backend}_test PRIVATE Threads::Threads)
+    if(_backend STREQUAL "hip")
+      target_compile_definitions(hetero_conversation_lifetime_${_backend}_test PRIVATE STRATA_USE_HIP=1)
+    endif()
+    foreach(_case pre-submit success issue-drain queued-issue-drain issue-unknown wait-unknown
+                  record-drain record-unknown dependency-drain readback readback-issue-drain readback-unknown
+                  async-join-ok async-join-failed async-join-throws async-join-throws-unknown)
+      add_test(NAME hetero_conversation_lifetime_${_backend}_${_case}
+        COMMAND hetero_conversation_lifetime_${_backend}_test ${_case})
+      set_tests_properties(hetero_conversation_lifetime_${_backend}_${_case} PROPERTIES TIMEOUT 30)
+    endforeach()
+  endforeach()
+  add_executable(hetero_conversation_restore_attempt_test
+    ${_hardening_root}/src/program/conversation_restore_orchestration_test.cpp)
+  target_include_directories(hetero_conversation_restore_attempt_test PRIVATE ${_hardening_root}/include)
+  target_compile_features(hetero_conversation_restore_attempt_test PRIVATE cxx_std_17)
+  target_link_libraries(hetero_conversation_restore_attempt_test PRIVATE Threads::Threads)
+  # Imported spec harness: not evidence of destination generate.cpp wiring.
+  add_test(NAME hetero_conversation_restore_attempt_test COMMAND hetero_conversation_restore_attempt_test)
+  set_tests_properties(hetero_conversation_restore_attempt_test PROPERTIES TIMEOUT 60)
   # Only exercises host CLI parsing/help; live GPU mode is never a CTest.
   add_test(NAME strata_heterogeneous_live_smoke_help
     COMMAND strata_heterogeneous_live_smoke --help)

@@ -18,6 +18,8 @@
 // [--force IDS] [--dump-full-logits F] (tools/qwen35/kl.py's reference interface), --bench-pp N / --bench-tg N.
 #include "strata/artifact/gguf_reader.hpp"
 #include "strata/core/family_layout.hpp"
+#include "strata/core/event_completion.hpp"
+#include "strata/core/transfer_terminal.hpp"
 #include "strata/kernels/fused_gdn.hpp"
 #include "strata/kernels/iq_kernels.hpp"
 #include "strata/kernels/native_mmvq.hpp"
@@ -2244,8 +2246,11 @@ struct Engine {
         const int n_ent = T * Kp;
         Hy& H = hy[li];
         const Layer& L = layer_at((int) li);
-        while (cudaEventQuery(ev_route) == cudaErrorNotReady) {
-        }
+        // Only success permits CPU reads. Unknown completion must not unwind
+        // automatic OR static owners (this engine\x27s CK uses std::exit).
+        const auto route_status = strata::core::wait_event_completion(ev_route);
+        if (route_status != cudaSuccess)
+            strata::core::transfer_terminal("q36 route completion", cudaGetErrorString(route_status));
         const auto t0 = Clock::now();
         // the missed entries per expert (up to MAXT tokens per job)
         jobs.clear();

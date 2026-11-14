@@ -44,3 +44,7 @@ Start with order CUDA0 (PCI 04:00.0) -> HIP0 (03:00.0) -> HIP1 (07:00.0), origin
 ## Local verification and boundaries
 
 New utilization analyzer and tests: exact Git blobs 1c0aec1b1adda60957251230c38a22e20f1f78fe and 7880b2f087152ad098723b540f624de81094ddb9; five Python fixture tests PASS locally, no GPU. Exact performance.hpp fc517e7e896c9a161e23a01b2eb89d0d3d13c697 compiled strict GCC C++17; valid/invalid startup values and monotonic trace checks PASS. Direct checkout still fails GitHub DNS; modified worker/coordinator integrated build and new CPU socket tests not run here. M6.0/1 native qualification pending; M6.2–7 not implemented by this commit. No GitHub Actions or upstream writes.
+
+## Report 0006 and hardening gate
+
+See [M6.1H — shared-core hardening](M6_HARDENING.md) for the measured 0006 results and partial private patch integration. Finish hardening and verify native MTP assets before unsafe new pipeline state paths. Mandatory sampled utilization and power (per-device and complete aligned total) accompany throughput; maximize useful work within existing thermal/power limits, not tokens/watt. 12/18/18 remains reference. No M6.2–7 implementation or general 160 claim.

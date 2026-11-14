@@ -1,4 +1,5 @@
 #pragma once
+#include "strata/core/conversation_copy_resources.hpp"
 
 #include "strata/core/conversation_cache.hpp"
 #include "strata/core/conversation_file.hpp"
@@ -52,6 +53,10 @@ bool conversation_kv_part_sizes(const QsaState& state, const ModelGeometry& g, i
 // Disk sessions: the read limits this session can ever restore - its geometry and layer range, at most
 // min(max_tokens, its cells) tokens, `max_checkpoints` checkpoints, the exact running-state sizes and the K/V part
 // sizes at that many tokens - so session_file_read refuses an oversized or foreign file before it allocates.
+bool conversation_session_read_limits(SessionReadLimits& limits, const SessionState& session, const ModelGeometry& g,
+                                      const QsaState* draft, uint64_t max_tokens, uint64_t max_checkpoints,
+                                      std::string& error);
+// Preserve the required-draft overload for existing callers.
 bool conversation_session_read_limits(SessionReadLimits& limits, const SessionState& session, const ModelGeometry& g,
                                       const QsaState& draft, uint64_t max_tokens, uint64_t max_checkpoints,
                                       std::string& error);
@@ -134,16 +139,19 @@ bool conversation_snapshot_save(SavedConversation& image, const ConversationView
                                 const QsaState& draft, std::string& error,
                                 ConversationKvReuse reuse = {}, size_t* reused_bytes = nullptr);
 // Disk save without capturing the K/V on the host: `meta` gets everything but the K/V (running state copied,
-// checkpoints as given by the view), `sources` one streamed source per QSA layer then the draft.  Caller has
-// synchronized and must not run the session until the file is written.
+// checkpoints as given by the view), `sources` one streamed source per QSA layer and an optional draft layer.
+// Caller has synchronized and must not run the session until the file is written.
+bool conversation_snapshot_sources(SavedConversation& meta, std::vector<SessionKvSource>& sources,
+                                   const ConversationView& view, const SessionState& session,
+                                   const ModelGeometry& g, const QsaState* draft, std::string& error);
+// Preserve the required-draft entry point for existing callers.
 bool conversation_snapshot_sources(SavedConversation& meta, std::vector<SessionKvSource>& sources,
                                    const ConversationView& view, const SessionState& session,
                                    const ModelGeometry& g, const QsaState& draft, std::string& error);
 bool conversation_snapshot_validate(const SavedConversation& image, const SessionState& session,
                                     const ModelGeometry& g, const QsaState& draft, std::string& error);
-/// #2409: true when a restore (or a copy) on CUDA device `device` from the calling thread creates no copy stream: this
-/// thread has one for the card or a finished thread left one in the pool. A restore writes into buffers that exist
-/// already; a new stream is the one thing it can allocate (see program/conv_cache.hpp restore_fits).
+/// Diagnostic availability only: true if this thread owns a stream or one is currently pooled. This is NOT a
+/// reservation. Restores use conversation_copy_prepare before mutation instead of relying on this snapshot.
 bool conversation_copy_stream_ready(int device);
 enum class ConversationRestore { restored, invalid, transfer_failed };
 // Invalid images are rejected before any CUDA call/write. Transfer failure may

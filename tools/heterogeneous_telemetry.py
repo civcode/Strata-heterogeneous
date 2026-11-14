@@ -52,6 +52,8 @@ def main(argv=None):
                                   "vram_used_bytes": data.get("mem_used"),
                                   "vram_total_bytes": data.get("mem_total"),
                                   "power_w": data.get("power"),
+                                  "power_limit_w": data.get("power_limit"),
+                                  "temperature_c": data.get("temp"),
                                   "pcie_gen": data.get("pcie_gen"),
                                   "pcie_width": data.get("pcie_width"),
                                   "pcie_rx_mb": data.get("pcie_rx_mb"),
