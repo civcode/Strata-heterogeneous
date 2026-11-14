@@ -24,6 +24,24 @@ For lookup add explicit `--lookup-draft --prompt-chunk 0` to the existing hetero
 
 For a full optimized nonlookup control set the first three flags to 1 and leave trace off. Use the same full-residency stage configs/plan/model/precision/reserve/context as report 0004. Start with no flags, then each flag independently and combined; compare outputs and position/ACKs, record actual startup, warm decode and prefill. Test shared vs socket and both chunk 1 and 8. Then qualify lookup separately with matched buffered controls, repeated prompt copy/code and ordinary chat, >=128 completion tokens when model naturally continues, report actual lengths and optional 256 cap. Do not force EOS suppression or omit quality checks. Warm runs >=3; actual feedback/accepted and completion counts, duration, median/range, prefill and startup separately. Profile kernel and handoff costs only with appropriate existing nonintrusive diagnostics; do not remove checksum/finite guard or device/process isolation.
 
-## Local evidence and limitations
+## Oberon qualification — partial (report 0005)
+
+[Report 0005](../../../.ai/reports/report-0005.md) tested source `2d8babd4ce4f481d2f9e1496b5a2a748b945002d`. 39/39 CTests, 413 Python tests and independent native CUDA/HIP builds passed. The agent made no production changes. Full routed-expert residency and zero host fallback remained verified. All 40 matched 42-prompt/128-output requests had identical token IDs across transports and flags.
+
+| Warm median feedback tok/s | Socket | Shared |
+| --- | ---: | ---: |
+| Baseline | 36.520 | 37.049 |
+| Compact only | 40.649 | 41.360 |
+| Fast fence only | 48.339 | 52.368 |
+| Fanout only | 38.228 | 38.816 |
+| Combined | 59.018 | 60.373 |
+
+Combined nonlookup is ~64% faster than M4.7's ~36.8 tok/s; it is not close to the general 160 target. A favorable repeated-copy lookup test (212 prompt, 128 output, 127 feedback rows) reported warm median 157.851 (range 157.425–157.984) vs matched ordinary control mean 59.015; 111 proposed and 111 accepted drafts across 16 multirow windows. One-shot and resident IDs matched on that workload. Factual chat exercised complete rejection and EOS. Real native intermediate acceptance, diverse code and a specifically verified no-proposal case remain unqualified. Do not claim 160 reached or extrapolate favorable lookup to general workloads.
+
+Combined median coordinator stage roundtrips 2.682/5.795/7.575 ms; commit barrier 0.700 ms (baseline 3.541). Worker enqueue execution stage0/1 2.231/4.942 ms and final execute 6.897 ms. Final result send 1.008 -> 0.001 ms and compact removes the separately timed full logits download. These inclusive spans are not kernel-only times. Baseline cold startup once failed while earlier CUDA waited for slower HIP; identical retry passed, root cause unconfirmed. GPU peak busy sensor values 87/79/66%; no decode-phase average/overlap measured. Existing optimized roundtrip still serial. Native MTP assets unverified; vanilla 120 user-reported and exact mode not established.
+
+Proceed to [M6](M6_PIPELINED_PERFORMANCE.md) for startup robustness, mandatory phase-aligned utilization and measured placement/MTP prerequisites. M5 remains partial; no historical KL or broader numerical parity claim.
+
+## Pre-handoff local evidence and limitations
 
 GitHub direct checkout DNS lookup failed in Chat AI container (remote API connector available). Local strict GCC C++17 tests compiled byte-identical performance.hpp (b5b76cd8...) and speculation.hpp (ebc96aa3...): 255 exhaustive 1–8-row prefix acceptance cases in each poll mode, invalid inputs, boolean parser, default vs 50us poll interval and trace format PASS. All **11** resident Python unit tests passed on byte-identical adapter/contract/test blobs (53037ef3, c5b8f281, 9e82d62f). They are CPU wire doubles; not proof of GPU correctness. Extended final pipeline CPU tests and native builds, actual M5 performance and numerical parity pending Oberon. No GitHub Actions. Target 160 remains unverified.

@@ -138,6 +138,9 @@ std::optional<Frame> receive_frame(int fd, int timeout_ms = default_io_timeout_m
 // Resident worker only: wait for first request byte/EOF while idle, then
 // keep the usual bounded frame deadline. Never use during a pending window.
 std::optional<Frame> receive_idle_frame(int fd, int timeout_ms);
+// Startup barrier: separate bounded wait for the first READY byte; the
+// complete frame still uses the ordinary per-frame I/O deadline.
+std::optional<Frame> receive_startup_frame(int fd, int timeout_ms, int startup_wait_ms);
 
 using Executor = std::function<bool(const Stage&, const Frame&, Frame&, std::string&)>;
 
@@ -200,7 +203,7 @@ private:
 void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
                            StageExecutor& executor, int timeout_ms = default_io_timeout_ms,
                            bool shared_memory = false,
-                           const WindowLimits* limits = nullptr);
+                           const WindowLimits* limits = nullptr, int startup_wait_ms = -1);
 // Backwards-compatible CPU-test convenience; now uses the same transactional
 // handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);

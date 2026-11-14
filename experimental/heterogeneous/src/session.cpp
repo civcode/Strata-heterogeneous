@@ -224,7 +224,7 @@ void MockStageExecutor::shutdown() noexcept { pending_ = false; has_spec_ = fals
 
 void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                            StageExecutor& executor, int timeout_ms, bool shared_memory,
-                           const WindowLimits* limits) {
+                           const WindowLimits* limits, int startup_wait_ms) {
     plan.validate();
     if (index >= plan.stages.size()) throw std::invalid_argument("worker index out of range");
     if (timeout_ms < 0) throw std::invalid_argument("negative worker timeout");
@@ -239,7 +239,7 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
     }
     try {
         send_frame(fd, hello, timeout_ms);
-        auto ready = receive_frame(fd, timeout_ms);
+        auto ready = receive_startup_frame(fd, timeout_ms, startup_wait_ms);
         if (!ready) { executor.shutdown(); return; }
         const bool resident = ready->kind == Kind::ready_resident;
         if (resident && !gate)

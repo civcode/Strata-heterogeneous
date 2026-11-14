@@ -32,7 +32,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t stage_index,
                               FinalStageExecutor& executor,
                               int timeout_ms = default_io_timeout_ms,
                               bool shared_memory = false,
-                              const WindowLimits* limits = nullptr);
+                              const WindowLimits* limits = nullptr, int startup_wait_ms = -1);
 
 // Owns only protocol state and the optional shared activation slot, never
 // child processes or caller-owned file descriptors. The final worker uses

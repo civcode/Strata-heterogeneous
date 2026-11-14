@@ -239,7 +239,7 @@ class ResidentEngine:
             progress = Progress(self._request, len(ids), max_new, self.chunk,
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
                                  self.lookup_draft)
-            start = time.perf_counter()
+            start = time.monotonic()
             prefill_end = last_checkpoint = first_output = None
             emitted = 0
             try:
@@ -253,7 +253,7 @@ class ResidentEngine:
                             token = progress.accept(line)
                         except ValueError as exc:
                             raise self._died("invalid resident progress") from exc
-                        last_checkpoint = time.perf_counter()
+                        last_checkpoint = time.monotonic()
                         if progress.pos >= len(ids) and prefill_end is None:
                             prefill_end = last_checkpoint
                         waiting = True
@@ -262,7 +262,7 @@ class ResidentEngine:
                             # final record before releasing the last capped token.
                             if token is not None and len(progress.tokens) < max_new:
                                 if first_output is None:
-                                    first_output = time.perf_counter()
+                                    first_output = time.monotonic()
                                 emitted += 1
                                 yield token
                             else:
@@ -281,12 +281,16 @@ class ResidentEngine:
                                   progress.terminal != (reason == "stop")))):
                             raise self._died("resident completion disagrees with committed positions or streamed tokens")
                         self.last_completion = record
-                        end = time.perf_counter()
+                        end = time.monotonic()
                         if first_output is None and record["token_ids"]:
                             first_output = end
                         self.last_metrics = timing_record(start, end, prefill_end, last_checkpoint,
                                                           first_output, len(ids), progress.pos,
                                                           len(record["token_ids"]))
+                        self.last_metrics["phase_monotonic_s"] = {
+                            "request_start": start, "prefill_end": prefill_end,
+                            "decode_end": last_checkpoint if prefill_end is not None else None,
+                            "request_end": end}
                         print(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}",
                               file=sys.stderr, flush=True)
                         completed = True

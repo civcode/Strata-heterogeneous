@@ -230,10 +230,11 @@ def run(args):
         if not args.run:
             result = {"status": "preflight", "source": source, "prompt_token_ids": prompts}
         else:
-            start = time.perf_counter()
+            start = time.monotonic()
             engine = ResidentEngine(resident, source, stop_ids, args.max_new_tokens,
                                     args.prompt_chunk, args.timeout_ms, ValueError)
-            startup_ms = (time.perf_counter() - start) * 1000
+            ready = time.monotonic()
+            startup_ms = (ready - start) * 1000
             try:
                 completions = []
                 for ids in prompts:
@@ -247,9 +248,12 @@ def run(args):
                           "source": source, "completions": completions,
                           "startup_ms": startup_ms}
             finally:
-                start_close = time.perf_counter()
+                start_close = time.monotonic()
                 engine.close()
-            result["shutdown_ms"] = (time.perf_counter() - start_close) * 1000
+            closed = time.monotonic()
+            result["shutdown_ms"] = (closed - start_close) * 1000
+            result["phase_monotonic_s"] = {"startup_start": start, "startup_end": ready,
+                                            "shutdown_start": start_close, "shutdown_end": closed}
         if args.output == "json":
             print(json.dumps(result, ensure_ascii=True))
         elif args.run:

@@ -34,16 +34,28 @@ def main(argv=None):
     if missing:
         parser.error("telemetry unavailable for " + ", ".join(missing))
     start = time.monotonic()
+    cycle = 0
     try:
         while time.monotonic() - start < args.duration:
             sample_start = time.monotonic()
+            cycle += 1
             for backend, index, reader in readers:
+                read_start = time.monotonic()
                 data = reader.read()
-                print(json.dumps({"unix_s": time.time(), "elapsed_s": time.monotonic() - start,
+                read_end = time.monotonic()
+                print(json.dumps({"unix_s": time.time(), "elapsed_s": read_end - start,
+                                  "monotonic_s": read_end, "read_start_s": read_start,
+                                  "cycle": cycle, "cycle_start_s": sample_start,
+                                  "interval_s": args.interval,
                                   "backend": backend, "monitor_index": index,
                                   "util_percent": data.get("util"),
                                   "vram_used_bytes": data.get("mem_used"),
-                                  "vram_total_bytes": data.get("mem_total")}), flush=True)
+                                  "vram_total_bytes": data.get("mem_total"),
+                                  "power_w": data.get("power"),
+                                  "pcie_gen": data.get("pcie_gen"),
+                                  "pcie_width": data.get("pcie_width"),
+                                  "pcie_rx_mb": data.get("pcie_rx_mb"),
+                                  "pcie_tx_mb": data.get("pcie_tx_mb")}), flush=True)
             time.sleep(max(0.0, min(args.interval - (time.monotonic() - sample_start),
                                     args.duration - (time.monotonic() - start))))
     except KeyboardInterrupt:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,17 @@ inline bool performance_flag(const char* name) {
     if (!value || std::strcmp(value, "0") == 0) return false;
     if (std::strcmp(value, "1") == 0) return true;
     throw std::invalid_argument(std::string(name) + " must be 0 or 1");
+}
+// Set by the native coordinator; leave ordinary worker frame/GPU timeouts intact.
+inline int worker_startup_wait_ms() {
+    const char* value = std::getenv("STRATA_HETERO_STARTUP_WAIT_MS");
+    if (!value) return -1;
+    int timeout = 0;
+    const char* end = value + std::strlen(value);
+    auto parsed = std::from_chars(value, end, timeout);
+    if (parsed.ec != std::errc{} || parsed.ptr != end || timeout < 100 || timeout > 600000)
+        throw std::invalid_argument("STRATA_HETERO_STARTUP_WAIT_MS must be 100..600000");
+    return timeout;
 }
 inline bool performance_trace() noexcept {
     static const bool enabled = [] {
@@ -53,13 +65,15 @@ public:
     PerformanceSpan& operator=(const PerformanceSpan&) = delete;
     ~PerformanceSpan() noexcept {
         if (!enabled_) return;
-        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-            Clock::now() - start_).count();
+        const auto end = Clock::now();
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(end - start_).count();
+        const auto start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(start_.time_since_epoch()).count();
+        const auto end_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end.time_since_epoch()).count();
         std::fprintf(stderr, "HETERO_PERF component=%s phase=%s stage=%zu request=%llu "
-                     "window=%llu rows=%zu us=%lld\n", component_, phase_, stage_,
+                     "window=%llu rows=%zu us=%lld start_ns=%lld end_ns=%lld\n", component_, phase_, stage_,
                      static_cast<unsigned long long>(request_),
                      static_cast<unsigned long long>(window_), rows_,
-                     static_cast<long long>(us));
+                     static_cast<long long>(us), static_cast<long long>(start_ns), static_cast<long long>(end_ns));
     }
 };
 

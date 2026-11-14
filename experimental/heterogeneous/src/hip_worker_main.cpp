@@ -99,6 +99,7 @@ int main(int argc,char** argv) {
                 throw std::runtime_error("HIP worker needs v2 native GGUF/PLE configuration; v1 is preflight-only");
             // Explicit supervised worker launch is the opt-in for runtime use.
             // There is no second environment-variable approval handshake.
+            const int startup_wait_ms = hetero::worker_startup_wait_ms();
             const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
             (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
             (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
@@ -144,14 +145,14 @@ int main(int argc,char** argv) {
                 hetero::HipFinalVerifierExecutor final(bindings, {!compact});
                 hetero::serve_final_stage_worker(3,plan,index,final,
                     static_cast<int>(c.io_timeout_ms),invocation.shared_memory,
-                    &window_limits);
+                    &window_limits, startup_wait_ms);
                 final.shutdown(); // before owner releases stage weights and experts
             } else {
                 hetero::HipVerifierDriver driver(bindings);
                 hetero::DeviceStageExecutor executor(driver);
                 hetero::serve_worker_stateful(3,plan,index,executor,
                     static_cast<int>(c.io_timeout_ms),invocation.shared_memory,
-                    &window_limits);
+                    &window_limits, startup_wait_ms);
                 executor.shutdown();driver.shutdown();
             }
             native.shutdown(); // after verifier graphs, before stage weights

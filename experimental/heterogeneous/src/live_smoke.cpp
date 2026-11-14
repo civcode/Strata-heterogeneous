@@ -536,6 +536,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
     if (compact && !o.generate)
         throw std::invalid_argument("compact head results are only supported in generation mode");
+    // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
+    if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
+        throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident,

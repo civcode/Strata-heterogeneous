@@ -61,7 +61,7 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
 
 void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                               FinalStageExecutor& executor, int timeout_ms,
-                              bool shared_memory, const WindowLimits* limits) {
+                              bool shared_memory, const WindowLimits* limits, int startup_wait_ms) {
     plan.validate();
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
@@ -77,7 +77,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
     }
     try {
         send_frame(fd, hello, timeout_ms);
-        auto ready = receive_frame(fd, timeout_ms);
+        auto ready = receive_startup_frame(fd, timeout_ms, startup_wait_ms);
         if (!ready) { executor.shutdown(); return; }
         const bool resident = ready->kind == Kind::ready_resident;
         if (resident && !gate)
@@ -212,8 +212,14 @@ void FinalPipelineSession::poison() noexcept {
 void FinalPipelineSession::initialize() {
     if (initialized_ || poisoned_) throw std::logic_error("final pipeline already initialized or poisoned");
     try {
+        // One bounded readiness barrier across all peers, not a fresh load
+        // budget for every worker. Workers wait separately for READY.
+        using Clock = std::chrono::steady_clock;
+        const auto deadline = Clock::now() + std::chrono::milliseconds(timeout_ms_);
         for (size_t i = 0; i < fds_.size(); ++i) {
-            auto hello = receive_frame(fds_[i], timeout_ms_);
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
+            if (remaining < 0) throw std::runtime_error("final pipeline startup deadline expired");
+            auto hello = receive_frame(fds_[i], static_cast<int>(remaining));
             if (!hello) throw std::runtime_error("worker closed before final pipeline hello");
             if (hello->kind == Kind::failure) throw std::runtime_error("worker preparation: " + hello->error);
             const bool last = i + 1 == fds_.size();

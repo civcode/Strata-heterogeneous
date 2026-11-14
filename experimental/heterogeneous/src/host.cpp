@@ -352,6 +352,13 @@ std::optional<Frame> receive_frame(int fd, int timeout_ms) {
     if (n) read_full(fd, bytes.data() + wire_header_bytes, n, deadline);
     return decode(bytes);
 }
+std::optional<Frame> receive_startup_frame(int fd, int timeout_ms, int startup_wait_ms) {
+    if (startup_wait_ms == -1) return receive_frame(fd, timeout_ms);
+    if (timeout_ms < 0 || startup_wait_ms < 0)
+        throw std::invalid_argument("invalid startup or frame deadline");
+    wait_ready(fd, POLLIN, deadline_after(startup_wait_ms));
+    return receive_frame(fd, timeout_ms);
+}
 std::optional<Frame> receive_idle_frame(int fd, int timeout_ms) {
     pollfd p{fd, POLLIN, 0};
     for (;;) {

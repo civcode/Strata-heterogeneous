@@ -146,6 +146,11 @@ if(STRATA_HETERO_HOST_TESTS)
       COMMAND ${Python3_EXECUTABLE} -m unittest serve.test_heterogeneous_resident)
     set_tests_properties(strata_heterogeneous_resident_contract_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../.. TIMEOUT 30)
+    add_test(NAME strata_heterogeneous_utilization_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+        -p test_heterogeneous_utilization.py)
+    set_tests_properties(strata_heterogeneous_utilization_tests PROPERTIES TIMEOUT 30)
     add_test(NAME strata_heterogeneous_model_plan_gate_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s ${CMAKE_CURRENT_SOURCE_DIR}/../../tools

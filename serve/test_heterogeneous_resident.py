@@ -89,6 +89,10 @@ class TestResident(unittest.TestCase):
         e.lookup_draft = True
         self.assertEqual(list(e.generate([1,2], 3, {}, Event())), [None,None,10,11,12])
         self.assertEqual(e.last_metrics["decode_feedback_tokens"], 2)
+        bounds = e.last_metrics["phase_monotonic_s"]
+        self.assertLessEqual(bounds["request_start"], bounds["prefill_end"])
+        self.assertLessEqual(bounds["prefill_end"], bounds["decode_end"])
+        self.assertLessEqual(bounds["decode_end"], bounds["request_end"])
 
     def test_length_last_token_after_validation(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2 10", "HETERO_PROGRESS 1 2 3 11",

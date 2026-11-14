@@ -136,7 +136,8 @@ struct WorkerGroup {
 WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool nonfinite = false, bool fail_commit = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
-                   bool resident = false, bool fail_reset = false) {
+                   bool resident = false, bool fail_reset = false,
+                   bool delayed_startup = false) {
     WorkerGroup group;
     for (size_t i = 0; i < plan.stages.size(); ++i) {
         int fd[2]{};
@@ -149,16 +150,19 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
             try {
                 const WindowLimits limits{0, 64, 1000, 8};
                 if (i + 1 == plan.stages.size() && !wrong_mode) {
+                    if (delayed_startup) ::usleep(1600000);
                     MockFinal final;
                     final.bad_identity = bad;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
                     final.fail_reset = fail_reset;
-                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, resident ? &limits : nullptr);
+                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, resident ? &limits : nullptr,
+                                             delayed_startup ? 4000 : -1);
                 } else {
                     MockStageExecutor intermediate;
-                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, resident ? &limits : nullptr);
+                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, resident ? &limits : nullptr,
+                                          delayed_startup ? 4000 : -1);
                 }
                 ::close(fd[1]);
                 ::_exit(0);
@@ -339,6 +343,28 @@ void negative(bool shared, bool fanout) {
         check(pipe.poisoned(), "wrong final capability poisons coordinator");
     }
 }
+void startup_barrier(bool shared) {
+    const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    auto w=launch(p,shared,false,false,false,false,0.f,true,false,true);
+    FinalPipelineSession pipe(p,w.sockets,4000,shared,true,true);
+    pipe.initialize(); // later final worker's load exceeds early worker I/O budget
+    pipe.begin_request(1);
+    pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});
+    check(pipe.commit(3).predicted_tokens[0]==18,"slow peer readiness does not expire prepared worker frame deadline");
+}
+void startup_frame_failures() {
+    int fd[2]{};
+    check(::socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0,"startup test socketpair");
+    fails([&]{ (void)receive_startup_frame(fd[0],20,30); },"startup idle wait bounded");
+    const unsigned char partial=0;
+    check(::write(fd[1],&partial,1)==1,"write partial startup frame");
+    fails([&]{ (void)receive_startup_frame(fd[0],20,1000); },"partial READY retains frame deadline");
+    ::close(fd[0]); ::close(fd[1]);
+    check(::socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0,"startup EOF socketpair");
+    ::close(fd[1]);
+    check(!receive_startup_frame(fd[0],20,1000),"supervisor EOF releases prepared worker");
+    ::close(fd[0]);
+}
 void compact_and_prefix(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     {
@@ -362,6 +388,8 @@ void compact_and_prefix(bool shared, bool fanout) {
 } // namespace
 int main() {
     try {
+        startup_barrier(false); startup_barrier(true);
+        startup_frame_failures();
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);
