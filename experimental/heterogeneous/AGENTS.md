@@ -1071,3 +1071,9 @@ download huge model files merely to validate the CPU transport.
   faults. No broad production-readiness claim. Follow the active contract
   and runbook for targeted final regression if needed; next practical work
   should reuse Strata generation and serving interfaces.
+
+### M3.5 — Experimental resident serving
+
+- Follow [docs/RESIDENT_SERVER_M35.md](docs/RESIDENT_SERVER_M35.md), including mandatory checkout-local venv and pip check.
+- Reuse existing native session reset and Strata service. Validate fresh A/B vs resident A/B/A, cancellation and graceful shutdown before broader use. One active greedy text request only; no incremental token streaming or automatic poisoned-worker restart.
+- Host regression, native build and real serving qualification pending. Preserve earlier bounded PASS evidence and never claim native failure-path qualification. Build <=28 jobs; no Actions, driver changes or Strata-dev access.

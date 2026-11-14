@@ -1,6 +1,6 @@
 # M3.1–M3.5 — native text completion and CLI integration
 
-**Status:** M3.1–M3.4 bounded validation PASS, as reported by the Oberon operator for the `4a976a0` implementation. M3.5, long-context behavior, and native GPU failure paths remain UNVERIFIED or unimplemented as appropriate. M2's bounded native boundary and state results remain documented in [BOUNDARY_VALIDATION_M218_M222.md](BOUNDARY_VALIDATION_M218_M222.md). The [implementation contract](IMPLEMENTATION_CONTRACT.md) remains authoritative.
+**Status:** M3.1–M3.4 bounded validation PASS, as reported by the Oberon operator for the `4a976a0` implementation. M3.5 resident-worker and existing-server integration is implemented experimentally; hardware qualification, long-context behavior, and native GPU failure paths remain UNVERIFIED. See [M3.5 runbook](RESIDENT_SERVER_M35.md). M2's bounded native boundary and state results remain documented in [BOUNDARY_VALIDATION_M218_M222.md](BOUNDARY_VALIDATION_M218_M222.md). The [implementation contract](IMPLEMENTATION_CONTRACT.md) remains authoritative.
 
 ## Scope and code
 
@@ -10,7 +10,7 @@
 | M3.2 Autoregressive generation | Existing `strata_heterogeneous_live_smoke` coordinator supports a fresh greedy request and feeds each previously predicted token back into its single acknowledged session. Stop IDs come from the loaded model. | PASS, reported bounded real decode and corrected trace checks |
 | M3.3 Prompt processing/context | Sequential ordinary verifier windows, optional prompt chunks up to the already configured limit (1..8); positions and full accepted counts advance after all worker ACKs. | PASS, reported bounded prompt/chunk runs; larger contexts and optimized bulk prefill remain unverified |
 | M3.4 Strata CLI | Explicit `strata.py heterogeneous-generate` command with human or JSON output; CPU preflight by default, GPU use only with `--run`. | PASS, reported bounded checkout CLI; packaging/launcher integration remains pending |
-| M3.5 Strata server | Audited integration seam: existing `serve.server.Engine.generate` protocol, existing frontend and service. | Resident worker/request lifecycle, safe session reset, cancellation, failure/reaping, readiness, existing server integration. **Not enabled or implemented as HTTP serving yet.** |
+| M3.5 Strata server | Audited integration seam: existing `serve.server.Engine.generate` protocol, existing frontend and service. | Resident worker/request lifecycle, safe session reset, cancellation, failure/reaping, readiness, existing server integration. **Experimental opt-in source implementation; host and hardware validation pending.** |
 
 The new native coordinator code reuses `FinalPipelineSession::execute` and `commit` and the already-qualified transfer mechanism. No new GPU kernels, sampler, engine, worker executable, model format or transport protocol. Prompt ingestion commits each real input window using `core::Verifier`. The last prompt row predicts the first completion token; subsequent predictions are fed back one at a time. The last returned token need not itself be evaluated, since this is a fresh one-shot request with no resumable session. EOS/EOT predictions terminate without appearing in the completion. The existing greedy head's default behavior is unchanged.
 
@@ -26,7 +26,7 @@ The modified coordinator translation unit was compiled to an object using GCC C+
 
 The operator reports completion of the bounded M3.1–M3.4 handoff for implementation commit `4a976a010ec40b0482050a83b4061e66992d850c`: all 38 CPU CTests and the separate CUDA/HIP builds passed. Plain, chunked, chat and shared-memory text generation completed. An initial trace-check command failed because the operator misinterpreted a window counter; corrected trace checks passed for all four runs. No source changes were reported. This is not a native inference failure, nor an unqualified claim that every possible test passed.
 
-The full operator handoff is `/home/chris/tmp/strata-heterogeneous/m31-run-cmEMYwfE/HANDOFF.md`. It contains the exact tested revision, output texts/token IDs, environment isolation, logs and limitations. That file and raw logs were not independently retrieved here; do not invent their contents. M3.5 is still unimplemented. Long-context, native failure-path behavior and broad production readiness remain unverified.
+The full operator handoff is `/home/chris/tmp/strata-heterogeneous/m31-run-cmEMYwfE/HANDOFF.md`. It contains the exact tested revision, output texts/token IDs, environment isolation, logs and limitations. That file and raw logs were not independently retrieved here; do not invent their contents. This report predates the M3.5 implementation. Long-context, native failure-path behavior and broad production readiness remain unverified.
 
 ## Python environment on Oberon (one-time setup, reuse thereafter)
 

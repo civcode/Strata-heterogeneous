@@ -1,6 +1,7 @@
 // CPU-only final-worker protocol. Real forked worker processes, no GPU model.
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/shared.hpp"
+#include "strata_heterogeneous/window_admission.hpp"
 #include <iostream>
 #include <cmath>
 #include <limits>
@@ -36,11 +37,17 @@ public:
     bool bad_identity = false;
     bool nonfinite = false;
     bool fail_commit = false;
+    bool fail_reset = false;
     float unmarked_logit = 0.f;
     bool prepare(const Plan& plan, size_t i, std::string& e) override {
         index_ = static_cast<uint32_t>(i);
         plan_ = plan;
         return mock_.prepare(plan, i, e);
+    }
+    bool reset_request(uint64_t request, std::string& e) override {
+        if (fail_reset) { e = "CPU protocol reset refused"; return false; }
+        tokens_.clear();
+        return mock_.reset_request(request, e);
     }
     bool begin_window(const WindowSpec& spec, uint64_t r, uint64_t w, std::string& e) override {
         tokens_ = spec.token_ids;
@@ -127,7 +134,8 @@ struct WorkerGroup {
 };
 WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool nonfinite = false, bool fail_commit = false,
-                   bool wrong_mode = false, float unmarked_logit = 0.f) {
+                   bool wrong_mode = false, float unmarked_logit = 0.f,
+                   bool resident = false, bool fail_reset = false) {
     WorkerGroup group;
     for (size_t i = 0; i < plan.stages.size(); ++i) {
         int fd[2]{};
@@ -138,16 +146,18 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
             for (int previous : group.sockets) ::close(previous);
             ::close(fd[0]);
             try {
+                const WindowLimits limits{0, 64, 1000, 8};
                 if (i + 1 == plan.stages.size() && !wrong_mode) {
                     MockFinal final;
                     final.bad_identity = bad;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
-                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared);
+                    final.fail_reset = fail_reset;
+                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, resident ? &limits : nullptr);
                 } else {
                     MockStageExecutor intermediate;
-                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared);
+                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, resident ? &limits : nullptr);
                 }
                 ::close(fd[1]);
                 ::_exit(0);
@@ -188,6 +198,39 @@ void three_stage(bool shared) {
     check(pipe.execute(input_frame(p,18,1),WindowSpec{24,{2,3,4}}).window_id==1,
           "new request ID can reset window counter");
     check(pipe.commit(3).request_id == 18, "complete prefix commit on new request");
+}
+// Exercise only handshake/admission/replay/fail-stop on existing CPU mocks.
+// No inference or numerical correctness is inferred from these assertions.
+void resident_lifecycle(bool shared) {
+    const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    {
+        auto w = launch(p, shared, false, false, false, false, 0.f, true);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, true);
+        pipe.initialize();
+        fails([&]{ (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}}); }, "reset required");
+        pipe.begin_request(1);
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+        fails([&]{ pipe.begin_request(2); }, "reset cannot overwrite pending window");
+        check(pipe.commit(1).request_id == 1, "positive prefix ACK");
+        fails([&]{ pipe.begin_request(1); }, "replayed reset refused");
+        // Resident workers may sit idle longer than a frame deadline.
+        if (!shared) ::usleep(1400000);
+        pipe.begin_request(2);
+        fails([&]{ (void)pipe.execute(input_frame(p,1,2),{1,{1,2,3}}); }, "old request refused");
+        (void)pipe.execute(input_frame(p,2,1),{0,{3,2,1}});
+        check(pipe.commit(3).request_id == 2, "same workers accept new position zero");
+        pipe.begin_request(3);
+        (void)pipe.execute(input_frame(p,3,1),{0,{1,2,3}});
+        check(pipe.commit(3).request_id == 3 && !pipe.poisoned(), "third resident request");
+    }
+    {
+        auto w = launch(p, shared, false, false, false, false, 0.f, true, true);
+        FinalPipelineSession pipe(p, w.sockets, 1200, shared, true);
+        pipe.initialize();
+        fails([&]{ pipe.begin_request(1); }, "later worker reset refusal");
+        check(pipe.poisoned(), "partial reset poisons all peers");
+        fails([&]{ pipe.begin_request(2); }, "poisoned workers not reusable");
+    }
 }
 void bad_ack() {
     const Plan p = parse_plan("cuda:0:0-3",3,{2,3},3719);
@@ -299,6 +342,7 @@ void negative(bool shared) {
 int main() {
     try {
         three_stage(false); three_stage(true);
+        resident_lifecycle(false); resident_lifecycle(true);
         negative(false); negative(true);
         bad_ack();
         std::cout << "final pipeline tests: PASS (" << assertions

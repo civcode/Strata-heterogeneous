@@ -143,6 +143,15 @@ bool MockStageExecutor::prepare(const Plan& plan, size_t stage_index, std::strin
     prepared_ = true;
     return true;
 }
+bool MockStageExecutor::reset_request(uint64_t request, std::string& error) {
+    if (!prepared_ || pending_ || has_spec_ || !request) {
+        error = "mock reset requires an idle executor"; return false;
+    }
+    pending_request_ = request;
+    pending_window_ = 0;
+    window_spec_ = {};
+    return true;
+}
 bool MockStageExecutor::begin_window(const WindowSpec& spec, uint64_t request,
                                     uint64_t window, std::string& error) {
     if (!prepared_ || pending_ || has_spec_ || !request || !window) {
@@ -232,11 +241,34 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t index,
         send_frame(fd, hello, timeout_ms);
         auto ready = receive_frame(fd, timeout_ms);
         if (!ready) { executor.shutdown(); return; }
-        require_match(*ready, hello, Kind::ready);
+        const bool resident = ready->kind == Kind::ready_resident;
+        if (resident && !gate)
+            throw std::runtime_error("resident worker requires native window limits");
+        require_match(*ready, hello, resident ? Kind::ready_resident : Kind::ready);
+        uint64_t active_request = 0;
         SharedActivation shared;
         if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
-        while (auto request = receive_frame(fd, timeout_ms)) {
+        while (auto request = resident ? receive_idle_frame(fd, timeout_ms)
+                                       : receive_frame(fd, timeout_ms)) {
             try {
+                if (request->kind == Kind::begin_request) {
+                    if (!resident || request->request_id <= active_request)
+                        throw std::runtime_error("unexpected or replayed resident request");
+                    const auto expected = control(plan, index, Kind::begin_request,
+                                                  request->request_id, 0, 1);
+                    require_match(*request, expected, Kind::begin_request);
+                    if (!gate->reset_request(request->request_id, error) ||
+                        !executor.reset_request(request->request_id, error))
+                        throw std::runtime_error(error.empty() ? "resident reset failed" : error);
+                    active_request = request->request_id;
+                    trace_window(gate.get(), "request_ready");
+                    Frame ack = *request;
+                    ack.kind = Kind::request_ready;
+                    send_frame(fd, ack, timeout_ms);
+                    continue;
+                }
+                if (resident && (!active_request || request->request_id != active_request))
+                    throw std::runtime_error("resident window lacks matching request reset");
                 bool has_window_spec = false;
                 if (request->kind == Kind::window_spec) {
                     const Kind expected_data = shared_memory ? Kind::shared_data : Kind::data;

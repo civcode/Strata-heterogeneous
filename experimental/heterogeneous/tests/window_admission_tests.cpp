@@ -23,6 +23,18 @@ void invalid(){const Plan p=plan();for(auto l:{WindowLimits{-1,16,100,8},WindowL
  for(int i=0;i<11;++i){WindowAdmission g(p,0,lim());std::string e;auto w=spec(0);switch(i){case 0:w.pos0=1;break;case 1:w.pos0=-1;break;case 2:w.token_ids.clear();break;case 3:w.token_ids.assign(9,1);break;case 4:w.token_ids[0]=-1;break;case 5:w.token_ids[0]=10000;break;case 6:w.pos0=15;break;default:break;}if(i<7)no([&](std::string& a){return g.begin(w,9,1,a);});else if(i==7)no([&](std::string& a){return g.begin(w,0,1,a);});else if(i==8)no([&](std::string& a){return g.begin(w,9,0,a);});else{ck(g.begin(w,9,1,e),"admit");no([&](std::string& a){return g.begin(w,9,2,a);});}}
  for(int i=0;i<14;++i){WindowAdmission g(p,0,lim());std::string e;ck(g.begin(spec(0),9,1,e),"begin for invalid input");auto f=frame(p);switch(i){case 0:f.stage_index++;break;case 1:f.request_id++;break;case 2:f.window_id++;break;case 3:f.plan_fingerprint++;break;case 4:f.rows++;break;case 5:f.kind=Kind::commit;break;case 6:f.geometry.hc++;break;case 7:f.payload.pop_back();break;case 8:f.identity[1]=7;break;case 9:f.error="bad";break;case 10:f.window=spec(0);break;case 11:f.keep_count++;break;case 12:f.shared_checksum++;break;case 13:f.payload[0]=std::numeric_limits<float>::infinity();break;}no([&](std::string& a){return g.validate_input(f,false,a);});ck(g.next_position()==0,"invalid input no commit");g.poison();no([&](std::string& a){return g.begin(spec(0),9,2,a);});}
  for(int i=0;i<10;++i){WindowAdmission g(p,0,lim());ready(g,p);auto c=commit(p);switch(i){case 0:c.keep_count=0;break;case 1:c.keep_count=3;break;case 2:c.kind=Kind::commit;break;case 3:c.stage_index++;break;case 4:c.request_id++;break;case 5:c.window_id++;break;case 6:c.plan_fingerprint++;break;case 7:c.payload.push_back(1);break;case 8:c.shared_checksum=1;break;case 9:c.window=spec(0);break;}no([&](std::string& a){return g.check_commit(c,a);});ck(g.next_position()==0,"no invalid commit");}}
+void resident_reset() {
+    const Plan p=plan(); WindowAdmission g(p,0,lim()); std::string e;
+    ready(g,p);
+    no([&](std::string& a){return g.reset_request(10,a);});
+    ck(g.committed(1,e),"commit before reset");
+    no([&](std::string& a){return g.reset_request(9,a);});
+    ck(g.reset_request(10,e)&&g.next_position()==0&&g.committed_windows()==0,"new request position/counter reset");
+    no([&](std::string& a){return g.begin(spec(0),9,1,a);});
+    ck(g.begin(spec(0),10,1,e),"new request admitted");
+    g.poison();
+    no([&](std::string& a){return g.reset_request(11,a);});
+}
 void shared(){const Plan p=plan();WindowAdmission g(p,0,lim());std::string e;ck(g.begin(spec(0,1),9,1,e),"begin shared");ck(g.validate_input(frame(p,1,1,true),true,e),"metadata");auto b=bytes(p,1);ck(g.validate_bytes(b.data(),b.size(),e),"shared checked");uint32_t nan=0x7fc00000u;std::memcpy(b.data()+4,&nan,4);no([&](std::string& a){return g.validate_bytes(b.data(),b.size(),a);});no([&](std::string& a){return g.provisional(b.data(),b.size(),a);});uint32_t z=0;std::memcpy(b.data()+4,&z,4);ck(g.provisional_final(e),"validated STFR result");ck(g.check_commit(commit(p,1,1,1),e),"final prefix");ck(g.committed(1,e),"final position");for(uint32_t bits:{0x7f800000u,0xff800000u,0x7fc00000u,0xffc00000u}){std::memcpy(b.data(),&bits,4);ck(!activation_finite(b.data(),b.size()),"nonfinite bits");}ck(!activation_finite(nullptr,4)&&!activation_finite(b.data(),3),"malformed raw byte length");}
 }
-int main(){try{lifecycle();invalid();shared();std::cout<<"M1.18 window admission PASS ("<<checks<<" assertions; no GPU)\n";return 0;}catch(const std::exception& e){std::cerr<<"M1.18 FAIL: "<<e.what()<<'\n';return 1;}}
+int main(){try{lifecycle();invalid();resident_reset();shared();std::cout<<"M1.18 window admission PASS ("<<checks<<" assertions; no GPU)\n";return 0;}catch(const std::exception& e){std::cerr<<"M1.18 FAIL: "<<e.what()<<'\n';return 1;}}

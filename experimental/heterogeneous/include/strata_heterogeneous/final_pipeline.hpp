@@ -42,11 +42,13 @@ class FinalPipelineSession {
 public:
     FinalPipelineSession(Plan plan, std::vector<int> worker_fds,
                          int timeout_ms = default_io_timeout_ms,
-                         bool shared_memory = false);
+                         bool shared_memory = false, bool resident = false);
     ~FinalPipelineSession();
     FinalPipelineSession(const FinalPipelineSession&) = delete;
     FinalPipelineSession& operator=(const FinalPipelineSession&) = delete;
     void initialize();
+    // All workers must reset and ACK before a new resident request can run.
+    void begin_request(uint64_t request);
     // Returns provisional head predictions; DOES NOT commit model state.
     FinalStageResult execute(Frame initial, const WindowSpec& spec);
     // Returns publishable predictions only after matching prefix ACKs from
@@ -61,6 +63,8 @@ private:
     std::vector<int> fds_;
     int timeout_ms_;
     bool shared_memory_;
+    bool resident_;
+    uint64_t resident_request_ = 0;
     bool initialized_ = false;
     bool poisoned_ = false;
     bool pending_ = false;

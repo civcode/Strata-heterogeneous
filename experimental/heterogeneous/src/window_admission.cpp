@@ -37,6 +37,18 @@ WindowAdmission::WindowAdmission(const Plan& plan, size_t stage, WindowLimits li
     plan_fingerprint_ = plan_.fingerprint();
 }
 
+bool WindowAdmission::reset_request(uint64_t request, std::string& error) {
+    if (state_ != State::ready || limits_.initial_position != 0 ||
+        !request || request <= first_request_)
+        return reject(error, "resident reset requires an idle stage and increasing request ID");
+    first_request_ = request_ = request;
+    window_ = last_window_ = committed_windows_ = 0;
+    rows_ = 0;
+    pos0_ = next_position_ = 0;
+    error.clear();
+    return true;
+}
+
 bool WindowAdmission::begin(const WindowSpec& spec, uint64_t request,
                             uint64_t window, std::string& error) {
     if (state_ != State::ready || !request || !window ||

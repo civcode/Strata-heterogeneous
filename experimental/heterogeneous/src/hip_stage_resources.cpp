@@ -164,7 +164,10 @@ HipVerifierBindings HipStageResources::make_bindings() {
     if (!ready()) throw std::logic_error("HIP stage has no live expert provider or resources");
     return HipVerifierBindings{weights_, geometry_, session_,
                                 experts_->hits(), &pool_dispatch, experts_.get(),
-                                model_fingerprint_, max_t_, timeout_ms_, initial_position_};
+                                model_fingerprint_, max_t_, timeout_ms_, initial_position_,
+                                [](core::SessionState& s, const core::ModelGeometry& g, void* stream) {
+                                    core::session_zero(s, g, nullptr, stream);
+                                }};
 }
 
 void HipStageResources::shutdown() noexcept {

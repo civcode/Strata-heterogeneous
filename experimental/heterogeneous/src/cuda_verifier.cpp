@@ -92,6 +92,27 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     state_ = State::ready;
     return true;
 }
+bool CudaVerifierDriver::reset_request(uint64_t request, std::string& error) {
+    if (!expect(State::ready, error) ||
+        !request || request <= request_ || bindings_.initial_position != 0 ||
+        !bindings_.zero_session || !verifier_) {
+        if (error.empty()) error = "resident reset refused by native verifier";
+        return false;
+    }
+    // All prior commits were fenced. Reuse native session_zero, including
+    // stage-local GDN/QSA/PLE state, on the same verifier stream. Weights,
+    // experts, device allocations and graphs remain resident.
+    bindings_.zero_session(bindings_.session, bindings_.geometry, verifier_->stream());
+    if (!record(error) || !wait(error)) return false;
+    request_ = request;
+    window_ = 0;
+    next_position_ = 0;
+    keep_ = 0;
+    spec_ = {};
+    bytes_ = 0;
+    download_host_ = nullptr;
+    return true;
+}
 bool CudaVerifierDriver::begin_window(const WindowSpec& spec, uint64_t request,
                                       uint64_t window, std::string& error) {
     if (!expect(State::ready, error)) return false;

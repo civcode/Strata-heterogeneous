@@ -68,6 +68,18 @@ bool DeviceStageExecutor::prepare(const Plan& plan, size_t index, std::string& e
     }
 }
 
+bool DeviceStageExecutor::reset_request(uint64_t request, std::string& error) {
+    if (!prepared_ || pending_ || has_spec_ || poisoned_ || shutdown_ || !request)
+        return fail("resident reset validation", error);
+    if (!checked_call([&](std::string& e) { return driver_.reset_request(request, e); },
+                      "resident reset", error))
+        return fail("resident reset", error);
+    request_id_ = request;
+    window_id_ = 0;
+    spec_ = {};
+    return true;
+}
+
 bool DeviceStageExecutor::begin_window(const WindowSpec& spec, uint64_t request_id,
                                        uint64_t window_id, std::string& error) {
     if (!prepared_ || pending_ || poisoned_ || shutdown_ || has_spec_ ||

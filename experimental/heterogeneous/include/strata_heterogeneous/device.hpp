@@ -30,6 +30,9 @@ class DeviceDriver {
 public:
     virtual ~DeviceDriver() = default;
     virtual bool prepare(const Plan& plan, size_t stage_index, std::string& error) = 0;
+    virtual bool reset_request(uint64_t, std::string& error) {
+        error = "device driver does not support resident reset"; return false;
+    }
 
     // Called before upload/execute when a real verifier window is requested.
     // The driver must retain a safe copy of tokens/positions for execution.
@@ -86,6 +89,7 @@ public:
     DeviceStageExecutor& operator=(const DeviceStageExecutor&) = delete;
 
     bool prepare(const Plan& plan, size_t stage_index, std::string& error) override;
+    bool reset_request(uint64_t request, std::string& error) override;
     bool run_window(const Frame& input, Frame& output, std::string& error) override;
     bool run_staged_window(const Frame& metadata, ActivationView view,
                            std::string& error) override;

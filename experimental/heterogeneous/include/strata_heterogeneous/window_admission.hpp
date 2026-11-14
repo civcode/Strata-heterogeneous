@@ -26,6 +26,7 @@ public:
     WindowAdmission(const Plan& plan, size_t stage_index, WindowLimits limits);
 
     // Admission is pure host logic; no CUDA work or model pointers involved.
+    bool reset_request(uint64_t request, std::string& error);
     bool begin(const WindowSpec& spec, uint64_t request, uint64_t window,
                std::string& error);
     bool validate_input(const Frame& frame, bool shared_memory, std::string& error);

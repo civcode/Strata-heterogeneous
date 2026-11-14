@@ -26,6 +26,8 @@ struct HipVerifierBindings {
     int max_t = 8;
     int timeout_ms = 30000;
     int64_t initial_position = 0; // position after caller's stage-local prefill/restore
+    // Loader supplies existing native session reset; CPU contract doubles need not.
+    void (*zero_session)(core::SessionState&, const core::ModelGeometry&, void*) = nullptr;
 };
 
 // Non-final stages only: protocol v4 has no head-output channel. Construct in
@@ -39,6 +41,7 @@ public:
     HipVerifierDriver(const HipVerifierDriver&) = delete;
     HipVerifierDriver& operator=(const HipVerifierDriver&) = delete;
     bool prepare(const Plan&, size_t, std::string&) override;
+    bool reset_request(uint64_t, std::string&) override;
     bool begin_window(const WindowSpec&, uint64_t, uint64_t, std::string&) override;
     bool enqueue_upload(const uint8_t*, size_t, std::string&) override;
     bool wait_upload(std::string&) override;

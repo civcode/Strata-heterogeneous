@@ -36,6 +36,7 @@ struct Options {
     std::vector<int32_t> stop_ids;
     uint32_t generate = 0, prompt_chunk = 1;
     bool describe_source = false;
+    bool resident = false;
     uint32_t layers = 48;
     uint32_t hc = 4;
     uint32_t n_embd = 2560;
@@ -87,10 +88,38 @@ void usage() {
         "  --describe-source (CPU-only validated primary GGUF and limits)\n"
         "  --generate N --prompt-chunk N --stop-ids CSV --source-gguf PATH --source-index SHA256\n"
         "  Generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
+        "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
 // Input is local, but bounded before allocation beyond the documented cap.
 // The CLI passes decimal token IDs separated by ASCII whitespace.
+// A bounded line reader for local resident requests and checkpoints.
+// EOF is allowed only between complete commands.
+bool read_command(std::string& line) {
+    line.clear();
+    char c;
+    while (std::cin.get(c)) {
+        if (c == '\n') return true;
+        if (line.size() == 65536)
+            throw std::invalid_argument("resident command exceeds 64 KiB");
+        line.push_back(c);
+    }
+    if (!std::cin.eof() || std::cin.bad() || !line.empty())
+        throw std::runtime_error("incomplete resident command");
+    return false;
+}
+std::vector<int32_t> prompt_ids(std::istream& in) {
+    std::string word;
+    std::vector<int32_t> ids;
+    while (in >> word) {
+        const auto n = u32(word, "prompt token");
+        if (n > INT32_MAX || ids.size() >= 4096)
+            throw std::invalid_argument("prompt exceeds token bounds (4096 IDs)");
+        ids.push_back(static_cast<int32_t>(n));
+    }
+    if (ids.empty()) throw std::invalid_argument("prompt token input is empty");
+    return ids;
+}
 std::vector<int32_t> prompt_from_stdin() {
     std::string input;
     char c;
@@ -102,16 +131,7 @@ std::vector<int32_t> prompt_from_stdin() {
     if (!std::cin.eof() || std::cin.bad())
         throw std::runtime_error("could not read prompt token input");
     std::istringstream in(input);
-    std::string word;
-    std::vector<int32_t> ids;
-    while (in >> word) {
-        const auto n = u32(word, "prompt token");
-        if (n > INT32_MAX || ids.size() >= 4096)
-            throw std::invalid_argument("prompt exceeds token bounds (4096 IDs)");
-        ids.push_back(static_cast<int32_t>(n));
-    }
-    if (ids.empty()) throw std::invalid_argument("prompt token input is empty");
-    return ids;
+    return prompt_ids(in);
 }
 Options parse(int argc, char** argv) {
     Options o;
@@ -129,6 +149,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--boundary-capture") o.boundary_capture = true;
         else if (key == "--shared") o.shared = true;
         else if (key == "--describe-source") o.describe_source = true;
+        else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--generate") {
             generation_arg = true;
             o.generate = u32(required_value(i, argc, argv, "--generate"), "generate");
@@ -230,7 +251,7 @@ Options parse(int argc, char** argv) {
     if (o.generate) {
         if (o.source_gguf.empty() || o.source_index.empty() || o.stop_ids.empty())
             throw std::invalid_argument("generation requires validated source and stop IDs");
-        o.tokens = prompt_from_stdin();
+        if (!o.resident) o.tokens = prompt_from_stdin();
     } else if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows) {
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     }
@@ -244,13 +265,15 @@ void require_executable(const std::string& path, const char* label) {
         throw std::invalid_argument(std::string(label) + " must be an executable absolute file");
 }
 std::string json_string(const std::string& value);
-void preflight(const Options& o, const hetero::Plan& plan) {
+struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
+GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
-    const uint64_t needed = o.generate ? uint64_t(o.tokens.size()) + o.generate
-                                      : uint64_t(o.windows - 1) * o.keep + o.rows;
-    const uint32_t rows = o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) : o.rows;
+    const uint64_t needed = o.resident ? uint64_t(o.generate) + 1
+        : o.generate ? uint64_t(o.tokens.size()) + o.generate : uint64_t(o.windows - 1) * o.keep + o.rows;
+    const uint32_t rows = o.resident ? o.prompt_chunk
+        : o.generate ? std::min(o.prompt_chunk, static_cast<uint32_t>(o.tokens.size())) : o.rows;
     const uint64_t stride = plan.geometry.floats_per_row();
     if (stride > hetero::max_payload_bytes / (sizeof(float) * rows))
         throw std::invalid_argument("requested activation geometry exceeds bounded 16 MiB transport");
@@ -373,6 +396,7 @@ void preflight(const Options& o, const hetero::Plan& plan) {
             }
         }
     }
+    return {common_model->n_vocab, max_cells, max_t};
 }
 // Strict JSON escaping is needed because model paths are recorded as metadata.
 std::string json_string(const std::string& value) {
@@ -433,7 +457,7 @@ void capture_window(const Options& o, const hetero::Plan& plan,
     manifest.flush();
     if (!manifest) throw std::runtime_error("parity window manifest write failed");
 }
-int execute(const Options& o, const hetero::Plan& plan) {
+int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits) {
     // No device calls in coordinator. Child workers alone see this opt-in;
     // no tap allocations/copies occur for ordinary M2.9/M2.10 tests.
     if (o.layer_taps && ::setenv("STRATA_HETERO_LAYER_TAP_PREFIX",
@@ -481,14 +505,15 @@ int execute(const Options& o, const hetero::Plan& plan) {
     }
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs);
-    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared);
+    hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket") << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
+    uint64_t request_id = 1;
     auto run_window = [&](const hetero::WindowSpec& spec, uint64_t id, uint32_t keep) {
         hetero::Frame initial;
         initial.kind = hetero::Kind::data;
-        initial.request_id = 1;
+        initial.request_id = request_id;
         initial.window_id = id;
         initial.plan_fingerprint = plan.fingerprint();
         initial.rows = static_cast<uint32_t>(spec.token_ids.size());
@@ -503,35 +528,95 @@ int execute(const Options& o, const hetero::Plan& plan) {
         return committed;
     };
     std::vector<int32_t> generated;
-    bool stopped = false;
-    if (o.generate) {
+    bool stopped = false, cancelled = false, input_closed = false;
+    int32_t stop_token = -1;
+    auto generate = [&](const std::vector<int32_t>& prompt, uint32_t max_new) {
+        generated.clear();
+        stopped = cancelled = false;
+        stop_token = -1;
         uint64_t window = 0;
         int64_t pos = 0;
         int32_t next = -1;
-        // Prompt ingestion uses ordinary verified windows. Only the last row's
-        // prediction is the first completion token. No draft or new prefill kernel.
-        for (size_t offset = 0; offset < o.tokens.size();) {
-            const size_t count = std::min<size_t>(o.prompt_chunk, o.tokens.size() - offset);
+        // The coordinator only yields control after all stages acknowledged
+        // commit. EOF/cancel here cannot leave a provisional GPU window.
+        auto checkpoint = [&]() {
+            if (!o.resident) return true;
+            std::cout << "HETERO_PROGRESS " << request_id << ' ' << window
+                      << ' ' << pos << std::endl;
+            std::string command;
+            if (!read_command(command)) { input_closed = true; cancelled = true; return false; }
+            if (command == "cancel") { cancelled = true; return false; }
+            if (command != "continue") throw std::invalid_argument("expected continue or cancel");
+            return true;
+        };
+        // Shared one-shot/resident generation: ordinary verifier windows.
+        for (size_t offset = 0; offset < prompt.size();) {
+            const size_t count = std::min<size_t>(o.prompt_chunk, prompt.size() - offset);
             hetero::WindowSpec spec;
             spec.pos0 = pos;
-            spec.token_ids.assign(o.tokens.begin() + offset, o.tokens.begin() + offset + count);
-            const auto result = run_window(spec, ++window, static_cast<uint32_t>(count));
-            next = result.predicted_tokens.back();
+            spec.token_ids.assign(prompt.begin() + offset, prompt.begin() + offset + count);
+            next = run_window(spec, ++window, static_cast<uint32_t>(count)).predicted_tokens.back();
             offset += count;
             pos += static_cast<int64_t>(count);
+            if (!checkpoint()) return;
         }
-        for (uint32_t n = 0; n < o.generate; ++n) {
+        for (uint32_t n = 0; n < max_new; ++n) {
             if (std::find(o.stop_ids.begin(), o.stop_ids.end(), next) != o.stop_ids.end()) {
                 stopped = true;
+                stop_token = next;
                 break;
             }
             generated.push_back(next);
-            if (n + 1 == o.generate) break;
+            if (n + 1 == max_new) break;
             hetero::WindowSpec spec;
             spec.pos0 = pos++;
             spec.token_ids = {next};
             next = run_window(spec, ++window, 1).predicted_tokens.back();
+            if (!checkpoint()) { generated.clear(); return; }
         }
+    };
+    auto publish = [&](size_t prompt_size) {
+        std::ostringstream out;
+        out << "HETERO_GENERATION {\"prompt_tokens\":" << prompt_size;
+        if (o.resident) out << ",\"request_id\":" << request_id << ",\"stop_token\":" << stop_token;
+        out << ",\"finish_reason\":\"" << (cancelled ? "cancelled" : stopped ? "stop" : "length")
+            << "\",\"token_ids\":[";
+        for (size_t i = 0; i < generated.size(); ++i) {
+            if (i) out << ',';
+            out << generated[i];
+        }
+        out << "]}\n";
+        std::cout << out.str() << std::flush;
+    };
+    if (o.resident) {
+        // Negotiate actual reset support before announcing readiness.
+        session.begin_request(request_id);
+        std::cout << "HETERO_READY " << request_id << std::endl;
+        bool first = true;
+        std::string line;
+        while (!input_closed && read_command(line)) {
+            if (line == "quit") break;
+            std::istringstream in(line);
+            std::string count;
+            in >> count;
+            const uint32_t max_new = u32(count, "resident max-new-tokens");
+            const auto prompt = prompt_ids(in);
+            if (!max_new || max_new > o.generate ||
+                uint64_t(prompt.size()) + max_new > limits.max_cells ||
+                std::any_of(prompt.begin(), prompt.end(), [&](int32_t id) {
+                    return static_cast<uint32_t>(id) >= limits.vocab;
+                }))
+                throw std::invalid_argument("resident request exceeds validated model limits");
+            if (!first) {
+                if (request_id == UINT64_MAX) throw std::runtime_error("resident request IDs exhausted");
+                session.begin_request(++request_id);
+            }
+            first = false;
+            generate(prompt, max_new);
+            if (!input_closed) publish(prompt.size());
+        }
+    } else if (o.generate) {
+        generate(o.tokens, o.generate);
     } else {
         for (uint32_t n = 0; n < o.windows; ++n) {
             hetero::WindowSpec spec;
@@ -552,17 +637,12 @@ int execute(const Options& o, const hetero::Plan& plan) {
     std::string error;
     if (!workers.finish(error))
         throw std::runtime_error("worker shutdown failed: " + error);
+    if (o.resident) {
+        std::cout << "HETERO_CLOSED\n" << std::flush;
+        return 0;
+    }
     if (o.generate) {
-        // Publish a completion only after every executed window was acknowledged
-        // and the supervised workers exited successfully.
-        std::cout << "HETERO_GENERATION {\"prompt_tokens\":" << o.tokens.size()
-                  << ",\"finish_reason\":\"" << (stopped ? "stop" : "length")
-                  << "\",\"token_ids\":[";
-        for (size_t i = 0; i < generated.size(); ++i) {
-            if (i) std::cout << ',';
-            std::cout << generated[i];
-        }
-        std::cout << "]}\n";
+        publish(o.tokens.size());
         return 0;
     }
     if (!o.capture_prefix.empty()) {
@@ -589,13 +669,13 @@ int main(int argc, char** argv) {
         const Options opts = parse(argc, argv);
         const hetero::Plan plan = hetero::parse_plan(
             opts.plan, opts.layers, {opts.hc, opts.n_embd}, opts.fingerprint);
-        preflight(opts, plan); // always CPU-only; no runtime in coordinator.
+        const auto limits = preflight(opts, plan); // always CPU-only; no runtime in coordinator.
         if (!opts.run) {
             std::cout << "PASS: CPU-only native stage preflight. "
                          "No workers or GPU runtimes started; add --run for live test.\n";
             return 0;
         }
-        return execute(opts, plan);
+        return execute(opts, plan, limits);
     } catch (const std::exception& ex) {
         std::cerr << "heterogeneous live smoke: " << ex.what() << '\n';
         return 1;

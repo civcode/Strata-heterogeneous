@@ -55,7 +55,8 @@ enum class Kind : uint16_t {
     data = 1, failure = 2, hello = 3, ready = 4,
     commit = 5, committed = 6, shared_data = 7, hello_shared = 8,
     window_spec = 9, commit_prefix = 10, committed_prefix = 11,
-    hello_final = 12, hello_shared_final = 13
+    hello_final = 12, hello_shared_final = 13,
+    ready_resident = 14, begin_request = 15, request_ready = 16
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
@@ -132,6 +133,9 @@ Frame decode(const std::vector<uint8_t>& encoded);
 // timeout_ms must be >= 0. A timeout throws; callers must poison the session.
 void send_frame(int fd, const Frame& frame, int timeout_ms = default_io_timeout_ms);
 std::optional<Frame> receive_frame(int fd, int timeout_ms = default_io_timeout_ms);
+// Resident worker only: wait for first request byte/EOF while idle, then
+// keep the usual bounded frame deadline. Never use during a pending window.
+std::optional<Frame> receive_idle_frame(int fd, int timeout_ms);
 
 using Executor = std::function<bool(const Stage&, const Frame&, Frame&, std::string&)>;
 
@@ -143,6 +147,10 @@ class StageExecutor {
 public:
     virtual ~StageExecutor() = default;
     virtual bool prepare(const Plan& plan, size_t stage_index, std::string& error) = 0;
+    // Explicit resident request boundary; unsupported executors fail closed.
+    virtual bool reset_request(uint64_t, std::string& error) {
+        error = "executor does not support resident requests"; return false;
+    }
     virtual bool run_window(const Frame& input, Frame& output, std::string& error) = 0;
     // Optional in-place shared activation path. Metadata carries IDs/geometry
     // but no float payload; borrowed bytes contain the exact R|bo|inject rows.
@@ -165,6 +173,7 @@ public:
 class MockStageExecutor final : public StageExecutor {
 public:
     bool prepare(const Plan& plan, size_t stage_index, std::string& error) override;
+    bool reset_request(uint64_t, std::string&) override;
     bool run_window(const Frame& input, Frame& output, std::string& error) override;
     bool run_staged_window(const Frame& metadata, ActivationView view, std::string& error) override;
     bool commit_window(uint64_t request_id, uint64_t window_id, std::string& error) override;

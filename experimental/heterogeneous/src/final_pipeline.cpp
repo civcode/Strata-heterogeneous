@@ -78,11 +78,34 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
         send_frame(fd, hello, timeout_ms);
         auto ready = receive_frame(fd, timeout_ms);
         if (!ready) { executor.shutdown(); return; }
-        match(*ready, hello, Kind::ready);
+        const bool resident = ready->kind == Kind::ready_resident;
+        if (resident && !gate)
+            throw std::runtime_error("resident worker requires native window limits");
+        match(*ready, hello, resident ? Kind::ready_resident : Kind::ready);
+        uint64_t active_request = 0;
         SharedActivation shared;
         if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
-        while (auto request = receive_frame(fd, timeout_ms)) {
+        while (auto request = resident ? receive_idle_frame(fd, timeout_ms)
+                                       : receive_frame(fd, timeout_ms)) {
             try {
+                if (request->kind == Kind::begin_request) {
+                    if (!resident || request->request_id <= active_request)
+                        throw std::runtime_error("unexpected or replayed resident request");
+                    const auto expected = control(plan, index, Kind::begin_request,
+                                                  request->request_id, 0, 1);
+                    match(*request, expected, Kind::begin_request);
+                    if (!gate->reset_request(request->request_id, error) ||
+                        !executor.reset_request(request->request_id, error))
+                        throw std::runtime_error(error.empty() ? "resident reset failed" : error);
+                    active_request = request->request_id;
+                    trace_window(gate.get(), "request_ready");
+                    Frame ack = *request;
+                    ack.kind = Kind::request_ready;
+                    send_frame(fd, ack, timeout_ms);
+                    continue;
+                }
+                if (resident && (!active_request || request->request_id != active_request))
+                    throw std::runtime_error("resident window lacks matching request reset");
                 if (request->kind != Kind::window_spec || !request->window)
                     throw std::runtime_error("final worker requires verifier window metadata");
                 if (request->stage_index != index ||
@@ -165,9 +188,9 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 }
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
-                                           int timeout_ms, bool shared_memory)
+                                           int timeout_ms, bool shared_memory, bool resident)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
-      shared_memory_(shared_memory) {
+      shared_memory_(shared_memory), resident_(resident) {
     plan_.validate();
     if (fds_.size() != plan_.stages.size() || timeout_ms_ < 0)
         throw std::invalid_argument("final pipeline needs one worker per stage and valid timeout");
@@ -198,15 +221,37 @@ void FinalPipelineSession::initialize() {
         }
         if (shared_memory_) shared_ = std::make_unique<SharedActivation>(SharedActivation::create());
         for (size_t i = 0; i < fds_.size(); ++i) {
-            send_frame(fds_[i], control(plan_, i, Kind::ready), timeout_ms_);
+            send_frame(fds_[i], control(plan_, i, resident_ ? Kind::ready_resident : Kind::ready), timeout_ms_);
             if (shared_memory_) shared_->send(fds_[i], timeout_ms_);
         }
         initialized_ = true;
     } catch (...) { poison(); throw; }
 }
+void FinalPipelineSession::begin_request(uint64_t request) {
+    if (!initialized_ || poisoned_ || pending_ || !resident_ || !request ||
+        request <= resident_request_)
+        throw std::logic_error("resident reset requires an idle pipeline and increasing request ID");
+    try {
+        for (size_t i = 0; i < fds_.size(); ++i) {
+            const auto reset = control(plan_, i, Kind::begin_request, request, 0, 1);
+            send_frame(fds_[i], reset, timeout_ms_);
+            auto ack = receive_frame(fds_[i], timeout_ms_);
+            if (!ack) throw std::runtime_error("worker closed during resident reset");
+            if (ack->kind == Kind::failure)
+                throw std::runtime_error("worker resident reset failed: " + ack->error);
+            match(*ack, reset, Kind::request_ready);
+        }
+        resident_request_ = request;
+        last_request_ = request;
+        last_window_ = 0;
+    } catch (...) { poison(); throw; }
+}
+
 FinalStageResult FinalPipelineSession::execute(Frame initial, const WindowSpec& spec) {
     if (!initialized_ || poisoned_) throw std::logic_error("final pipeline unavailable");
     if (pending_) throw std::logic_error("final pipeline already has uncommitted result");
+    if (resident_ && (!resident_request_ || initial.request_id != resident_request_))
+        throw std::logic_error("resident request must be acknowledged before execute");
     try {
         if (initial.kind != Kind::data || !initial.request_id || !initial.window_id ||
             initial.plan_fingerprint != plan_.fingerprint() ||

@@ -30,6 +30,8 @@ def add_arguments(parser):
     parser.add_argument("--timeout-ms", type=int, default=120000, help="per worker I/O operation")
     parser.add_argument("--shared", action="store_true", help="use existing memfd transport")
     parser.add_argument("--run", action="store_true", help="explicitly start native GPU workers; default is preflight only")
+    parser.add_argument("--resident", action="store_true", help="reuse one native worker set across independent prompts")
+    parser.add_argument("--additional-prompt", action="append", default=[], help="additional independent prompt in resident mode")
     parser.add_argument("--output", choices=("human", "json"), default="human")
 
 
@@ -63,19 +65,10 @@ def _native(argv, *, text=None, marker=None):
     return None
 
 
-def run(args):
+def prepare_native(args):
+    """CPU-only source/identity and tokenizer loading for the CLI and server."""
     if not 1 <= args.max_new_tokens <= 256 or not 1 <= args.prompt_chunk <= 8:
         raise ValueError("max-new-tokens must be 1..256 and prompt-chunk 1..8")
-    if args.prompt_file is not None:
-        with args.prompt_file.open("rb") as stream:
-            data = stream.read(65537)
-        if len(data) > 65536:
-            raise ValueError("prompt exceeds 64 KiB")
-        prompt = data.decode("utf-8")
-    else:
-        prompt = args.prompt
-        if len(prompt.encode("utf-8")) > 65536:
-            raise ValueError("prompt exceeds 64 KiB")
     argv = [_path(args.coordinator, True), "--plan", args.plan, "--fingerprint", str(args.fingerprint),
             "--layers", str(args.layers), "--hc", str(args.hc), "--n-embd", str(args.n_embd),
             "--cuda-worker", _path(args.cuda_worker, True), "--hip-worker", _path(args.hip_worker, True),
@@ -104,32 +97,6 @@ def run(args):
     tok = Tokenizer.from_gguf(gguf)
     if len(tok.tokens) != vocab or tok.pre != "qwen35":
         raise ValueError("tokenizer vocabulary or family does not match the supported Qwen worker model")
-    if args.chat:
-        # Use the serving frontend and verify the installed template against
-        # the same original primary shard, never a different model fallback.
-        from tools.gguf_reader import GGUFFile
-        try:
-            from serve.frontend import ChatTemplate, literal_tags, mark_think_literals, unmark_think_literals
-        except ImportError as exc:
-            raise ValueError("chat mode requires the existing Strata frontend dependencies") from exc
-        pack = source.get("pack_dir")
-        if not isinstance(pack, str) or not Path(pack).is_absolute():
-            raise ValueError("missing validated pack directory for chat template")
-        template = ChatTemplate(Path(pack) / "tokenizer" / "chat_template.jinja")
-        original = GGUFFile(Path(gguf)).metadata.get("tokenizer.chat_template")
-        if not isinstance(original, str) or template.source != original:
-            raise ValueError("pack chat template does not match the original GGUF")
-        tags = literal_tags(tok.control_tokens)
-        messages, tools, changed = mark_think_literals([{"role": "user", "content": prompt}], None, tags)
-        rendered = template.render(messages, tools=tools, enable_thinking=False)
-        rendered, plain = unmark_think_literals(rendered, tags) if changed else (rendered, ())
-        ids = tok.encode(rendered, parse_special=True, plain=plain)
-    else:
-        ids = tok.encode(prompt, parse_special=False)
-    if not ids or len(ids) > 4096:
-        raise ValueError("prompt must encode to 1..4096 tokens")
-    if len(ids) + args.max_new_tokens > cells or min(len(ids), args.prompt_chunk) > max_t:
-        raise ValueError("prompt/generation budget exceeds validated worker context or max_t")
     stop_ids = {tok.special_tokens[marker] for marker in ("<|im_end|>", "<|endoftext|>")
                 if marker in tok.special_tokens}
     for key in ("tokenizer.ggml.eos_token_id", "tokenizer.ggml.eot_token_id"):
@@ -140,6 +107,92 @@ def run(args):
     native = argv + ["--generate", str(args.max_new_tokens), "--prompt-chunk", str(args.prompt_chunk),
                      "--source-gguf", gguf, "--source-index", index,
                      "--stop-ids", ",".join(str(t) for t in sorted(stop_ids))]
+    return native, source, tok, stop_ids
+
+
+def model_template(source):
+    from tools.gguf_reader import GGUFFile
+    from serve.frontend import ChatTemplate
+    pack = source.get("pack_dir")
+    if not isinstance(pack, str) or not Path(pack).is_absolute():
+        raise ValueError("missing validated pack directory for chat template")
+    template = ChatTemplate(Path(pack) / "tokenizer" / "chat_template.jinja")
+    original = GGUFFile(Path(source["gguf"])).metadata.get("tokenizer.chat_template")
+    if not isinstance(original, str) or template.source != original:
+        raise ValueError("pack chat template does not match the original GGUF")
+    return template
+
+
+def encode_prompt(tok, source, prompt, chat, max_new, chunk):
+    if len(prompt.encode("utf-8")) > 65536:
+        raise ValueError("prompt exceeds 64 KiB")
+    if chat:
+        from serve.frontend import literal_tags, mark_think_literals, unmark_think_literals
+        template = model_template(source)
+        tags = literal_tags(tok.control_tokens)
+        messages, tools, changed = mark_think_literals([{"role": "user", "content": prompt}], None, tags)
+        rendered = template.render(messages, tools=tools, enable_thinking=False)
+        rendered, plain = unmark_think_literals(rendered, tags) if changed else (rendered, ())
+        ids = tok.encode(rendered, parse_special=True, plain=plain)
+    else:
+        ids = tok.encode(prompt, parse_special=False)
+    if not ids or len(ids) > 4096:
+        raise ValueError("prompt must encode to 1..4096 tokens")
+    if len(ids) + max_new > source["max_cells"] or min(len(ids), chunk) > source["max_t"]:
+        raise ValueError("prompt/generation budget exceeds validated worker context or max_t")
+    return ids
+
+
+def run(args):
+    if not 1 <= args.max_new_tokens <= 256 or not 1 <= args.prompt_chunk <= 8:
+        raise ValueError("max-new-tokens must be 1..256 and prompt-chunk 1..8")
+    if args.prompt_file is not None:
+        with args.prompt_file.open("rb") as stream:
+            data = stream.read(65537)
+        if len(data) > 65536:
+            raise ValueError("prompt exceeds 64 KiB")
+        prompt = data.decode("utf-8")
+    else:
+        prompt = args.prompt
+        if len(prompt.encode("utf-8")) > 65536:
+            raise ValueError("prompt exceeds 64 KiB")
+    native, source, tok, stop_ids = prepare_native(args)
+    vocab = source["vocab"]
+    ids = encode_prompt(tok, source, prompt, args.chat, args.max_new_tokens, args.prompt_chunk)
+    if args.additional_prompt and not args.resident:
+        raise ValueError("--additional-prompt requires --resident")
+    if args.resident:
+        from serve.heterogeneous import ResidentEngine
+        from threading import Event
+        prompts = [ids] + [encode_prompt(tok, source, txt, args.chat, args.max_new_tokens, args.prompt_chunk)
+                           for txt in args.additional_prompt]
+        resident = native + ["--resident"]
+        _native(resident)
+        if not args.run:
+            result = {"status": "preflight", "source": source, "prompt_token_ids": prompts}
+        else:
+            engine = ResidentEngine(resident, source, stop_ids, args.max_new_tokens,
+                                    args.prompt_chunk, args.timeout_ms, ValueError)
+            try:
+                completions = []
+                for ids in prompts:
+                    for _ in engine.generate(ids, args.max_new_tokens, {"temperature": 0}, Event()):
+                        pass
+                    record = dict(engine.last_completion)
+                    record.update(text=tok.decode(record["token_ids"]), prompt_token_ids=ids)
+                    completions.append(record)
+                result = {"status": "complete", "coordinator_pid": engine.proc.pid,
+                          "source": source, "completions": completions}
+            finally:
+                engine.close()
+        if args.output == "json":
+            print(json.dumps(result, ensure_ascii=True))
+        elif args.run:
+            for item in result["completions"]:
+                print(item["text"])
+        else:
+            print("PASS: resident prompt preflight; no GPU workers started")
+        return 0
     text = " ".join(str(t) for t in ids) + "\n"
     result = {"prompt_tokens": len(ids), "prompt_token_ids": ids, "max_new_tokens": args.max_new_tokens,
               "prompt_chunk": args.prompt_chunk, "chat": args.chat, "source": source, "stop_ids": sorted(stop_ids)}

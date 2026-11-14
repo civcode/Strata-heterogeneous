@@ -125,9 +125,16 @@ void validate_frame(const Frame& f) {
                 throw std::invalid_argument("invalid worker hello");
             break;
         case Kind::ready:
+        case Kind::ready_resident:
             if (f.shared_checksum || f.rows != 1 || f.request_id != 1 || f.window_id != 1 ||
                 !zero_identity || !f.payload.empty() || !f.error.empty())
                 throw std::invalid_argument("invalid worker ready");
+            break;
+        case Kind::begin_request:
+        case Kind::request_ready:
+            if (f.shared_checksum || !zero_identity || !f.payload.empty() ||
+                !f.error.empty() || f.rows != 1 || f.window_id != 0)
+                throw std::invalid_argument("invalid resident request control");
             break;
         case Kind::commit:
         case Kind::committed:
@@ -321,6 +328,10 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         if (n != 16) throw std::invalid_argument("hello identity has wrong length");
         for (size_t i = 0; i < 4; ++i) f.identity[i] = get_u32(payload + 4 * i);
     }
+    // Empty-control kinds must not smuggle unrecognized payload bytes.
+    if ((f.kind == Kind::ready_resident || f.kind == Kind::begin_request ||
+         f.kind == Kind::request_ready) && n != 0)
+        throw std::invalid_argument("resident control payload must be empty");
     validate_frame(f);
     return f;
 }
@@ -339,6 +350,16 @@ std::optional<Frame> receive_frame(int fd, int timeout_ms) {
     bytes.resize(wire_header_bytes + n);
     if (n) read_full(fd, bytes.data() + wire_header_bytes, n, deadline);
     return decode(bytes);
+}
+std::optional<Frame> receive_idle_frame(int fd, int timeout_ms) {
+    pollfd p{fd, POLLIN, 0};
+    for (;;) {
+        const int rc = ::poll(&p, 1, -1);
+        if (rc < 0 && errno == EINTR) continue;
+        if (rc < 0 || (p.revents & POLLNVAL))
+            throw std::runtime_error("resident worker idle poll failed");
+        if (rc > 0) return receive_frame(fd, timeout_ms);
+    }
 }
 bool mock_execute(const Stage& stage, const Frame& input, Frame& output, std::string&) {
     output = input;
