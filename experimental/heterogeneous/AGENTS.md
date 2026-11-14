@@ -1001,7 +1001,7 @@ download huge model files merely to validate the CPU transport.
   0.005003/0.037718, B 0.010083/0.037814 vs 0.001).
 - New opt-in microtrace in native shared_expert_multi copies exact
   raw input Q8_1, gate/up pre-SwiGLU, post-SwiGLU Q8_1,
-  down unscaled and scalar gate on the producer stream.
+  down unscaled and raw gate logit on the producer stream.
   Verifier also captures layer5 shared input/final output and
   layer6 QKV, pre-conv history and conv output on the GDN stream.
   No changes to actual numerical kernels or normal inference.
