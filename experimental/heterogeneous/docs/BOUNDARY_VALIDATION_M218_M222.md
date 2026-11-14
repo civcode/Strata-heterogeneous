@@ -27,6 +27,7 @@ With request 1 and window 1, the real device files are `PREFIX.stage0.r1.w1.out.
 Use only `/home/chris/workspace/Strata-heterogeneous` and `/home/chris/tmp/strata-heterogeneous`; never touch either Strata-dev tree. Keep separate CUDA/HIP builds, ≤28 jobs, model provenance, PCI checks, VRAM reserves, positive-prefix gates and existing nonfinite guards. No GPU reset/reboot/driver unload.
 
 ~~~bash
+set -euo pipefail
 cd /home/chris/workspace/Strata-heterogeneous
 git switch feature/heterogeneous-cuda-window-admission
 git pull --ff-only
@@ -45,18 +46,23 @@ mixed=(--plan cuda:0:0-12,hip:0:12-30,hip:1:30-48 --cuda-worker "$CUDA" --hip-wo
 
 # CPU-only preflight, followed by real native execution.
 "$SMOKE" "${common[@]}" "${mixed[@]}" --boundary-capture --capture-prefix "$OUT/socket"
-set -o pipefail
-"$SMOKE" "${common[@]}" "${mixed[@]}" --boundary-capture --capture-prefix "$OUT/socket" --run 2>&1 | tee "$OUT/socket.log"
+env STRATA_HETERO_WINDOW_TRACE=1 "$SMOKE" "${common[@]}" "${mixed[@]}" --boundary-capture --capture-prefix "$OUT/socket" --run 2>&1 | tee "$OUT/socket.log"
 cmp "$OUT/socket.stage0.r1.w1.out.f32" "$OUT/socket.stage1.r1.w1.in.f32"
 cmp "$OUT/socket.stage1.r1.w1.out.f32" "$OUT/socket.stage2.r1.w1.in.f32"
 cmp "$OUT/socket.stage0.r1.w2.out.f32" "$OUT/socket.stage1.r1.w2.in.f32"
 cmp "$OUT/socket.stage1.r1.w2.out.f32" "$OUT/socket.stage2.r1.w2.in.f32"
-test "$(wc -c < "$OUT/socket.stage0.r1.w1.out.f32")" -eq 51216
-test "$(wc -c < "$OUT/socket.stage1.r1.w1.in.f32")" -eq 51216
+for w in 1 2; do
+  for name in stage0.r1.w${w}.out stage1.r1.w${w}.in stage1.r1.w${w}.out stage2.r1.w${w}.in; do
+    test "$(wc -c < "$OUT/socket.${name}.f32")" -eq 51216
+  done
+done
 test -s "$OUT/socket.complete.json"
 ~~~
 
-Stop on any failure, and never overwrite a used output prefix. After confirming socket success, repeat the **same native run** with `--shared` and a fresh `$OUT/shared` prefix; compare both producer/consumer pairs for both windows. Retain logs, device PCI identifiers, model/index/GGUF/profile provenance, raw bytes and completion/ACK evidence.
+Stop on any failure, and never overwrite a used output prefix. The existing
+`STRATA_HETERO_WINDOW_TRACE=1` switch logs stage admission, provisional
+execution and committed prefix metadata from the real workers; compare its
+per-stage request/window/position/commit events to the final STFR record. After confirming socket success, repeat the **same native run** with `--shared` and a fresh `$OUT/shared` prefix; compare both producer/consumer pairs for both windows. Retain logs, device PCI identifiers, model/index/GGUF/profile provenance, raw bytes and completion/ACK evidence.
 
 ## M2.20–M2.22: remaining gates
 
