@@ -792,6 +792,7 @@ void capture_window(const Options& o, const hetero::Plan& plan,
     manifest << "{\"schema\":\"strata-heterogeneous-parity/v1\""
              << ",\"plan\":" << json_string(hetero::plan_spec(plan))
              << ",\"model_fingerprint\":" << o.fingerprint
+             << ",\"kv_mode\":" << json_string(hetero::kv_mode_name(o.kv))
              << ",\"plan_fingerprint\":" << committed.plan_fingerprint
              << ",\"pack_index_sha256\":" << json_string(source.index_sha256)
              << ",\"gguf_shards\":" << json_string([&]() {

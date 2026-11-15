@@ -90,6 +90,8 @@ struct LoadedHipStage {
         lo.free_reserve_bytes = c.free_reserve_bytes;
         lo.arena_budget_bytes = c.arena_budget_bytes;
         if (!owner.load(plan,index,lo,error)) throw std::runtime_error("weight/session startup: "+error);
+        std::cerr << "HETERO_ARENA stage=" << index << " backend=HIP session_bytes=" << owner.session_bytes()
+                  << " weight_bytes=" << owner.weight_bytes() << " reserve_bytes=" << c.free_reserve_bytes << '\n';
         hetero::HipNativeStageOptions no;
         no.gguf_shards = c.gguf_shards;
         no.ple_gguf_path = c.ple_gguf_path;

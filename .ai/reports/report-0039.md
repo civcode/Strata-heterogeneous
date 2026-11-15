@@ -8,5 +8,41 @@ Implementation checkpoint `45b95196699716ad43c98626b429771fc5c4dc37`. Ordinary n
 
 Local isolated C++17 format-header test passed with -Wall -Wextra -Wpedantic -Werror: exact blob SHA `330e40229f550e20ef3f7751f95f1647b19b70a8` verified, default INT8, two round trips, seven unsupported names rejected. Added repository CPU bootstrap and Python CLI/server fixtures; those integrated tests and all native builds/hardware remain NOT_RUN here: full checkout failed GitHub DNS resolution. No GitHub Actions. Prior rates are historical FP16; do not infer Q8 gains. No 256K runtime qualification.
 
-## Oberon qualification
-PENDING. Append actual evidence per handoff 0039.
+## Oberon qualification — PARTIAL, quality gate unresolved
+
+Starting commit `33d5be809e0dc5cf036f81ab722df594a0da13ef`. Regenerated existing host/CUDA/HIP CMake caches and built with `-j28`, existing vanilla-aligned toolchain and `.venv`: CUDA nvcc 12.0.140/sm_89, HIP 7.16.26385/gfx1201, CMake 3.28.3. Host CTest **101/101** (`-j28`); targeted CLI, server, model, architecture, pair and parity Python modules **57/57**. Native kernels unchanged. Final coordinator/CUDA/HIP binary SHA-256 `96bd6c0936ec6030c3fac22d17f6552e25b60cf73fc436189a91a58f14976aea`, `63f3df2a8974372ec7077b791cad1d60adb0a4a43e0dca5f8182279b8bf4b790`, `9fe984cfc504cc17d0500369236963623716e06dac00dbf10376e279d467a227`. The matrix and profiler initially used the pre-instrumentation builds; final builds reran 1-row mixed INT8/F16 and HIP INT8 and the resident tests.
+
+Added per-stage `HETERO_ARENA` diagnostics, reporting actual allocated session and pack-weight arenas and configured reserve, not total VRAM or peak. Added explicit `kv_mode` to new fixed-window capture manifests; parity reader rejects invalid/mid-run changes and comparisons of unequal or one-sided missing modes. Legacy captures with both modes absent remain comparable for compatibility but are explicitly labeled `unknown-legacy`, not proof of equal precision. Tests cover these cases. No format-aware native-state capture was implemented.
+
+### Physical KV evidence and bounded fixed windows
+
+Approved existing Q2_0 pack/index `c344c01f59f547ed8a59003857a82eb90499e5299154241dbca787acb54b5b7c`, fingerprint `2026111301`, 2,048 cells, max_t 8, 1 GiB reserve per owner, shared transport and full expert residency. No fresh full asset checksum. Startup identities CUDA RTX 4070 Ti SUPER `0000:04:00.0`, HIP Radeon AI PRO R9700 `0000:03:00.0` and `0000:07:00.0`. For each run every physical stage emitted `HETERO_KV` after checking Q8 code/FP16-scale pointers or FP16 pools, native format bits, page capacity, no host/elastic/ring, and matching cells. Full expert residency and zero host misses were logged on successful runs. This is physical allocation evidence, not a peak-memory measurement.
+
+Mixed 15/18/15 had QSA layer counts 3/5/4; HIP 24/24 had 6/6. Measured 2K session bytes by physical stage:
+
+| Placement / format | stage 0 | stage 1 | stage 2 |
+|---|---:|---:|---:|
+| mixed INT8 | 56,300,032 | 64,429,568 | 55,461,888 |
+| mixed F16 | 62,394,624 | 74,587,392 | 63,588,096 |
+| HIP INT8 | 83,203,072 | 83,203,072 | — |
+
+Mixed stage pack-weight arena bytes 2,357,877,248 / 2,628,297,088 / 2,438,140,544; HIP pair 3,024,275,200 / 3,115,493,120. These arenas exclude separate dense/PLE, experts, verifier/workspaces and runtime allocations. Each reserve was 1,073,741,824 bytes; expert resident slot allocations were mixed 10,616,832,000 / 12,740,198,400 / 10,616,832,000 bytes, HIP 16,986,931,200 each.
+
+Mixed default and explicit INT8 independently ran 1 row; 4 rows, keep 2, three windows; and 8 rows, keep 4, two windows. Captured full evaluated-row STFR packets were byte-identical between default and explicit INT8, including discarded rows; both used independent fresh launches. The corresponding F16 captures were obtained separately. HIP-only grouped mode ran the same shapes for default, explicit INT8 and F16; predictions matched between default/explicit INT8 for each window, but HIP-only capture is guarded, so full logits were not compared. Initial HIP attempt with diagnostic overlap/capture was refused by the existing gate; reran ordinary supported mode without either option.
+
+**Numerical/quality concern:** mixed INT8 versus F16 is deliberately a cross-precision comparison, not an identity requirement or proof of an INT8 implementation defect. Nevertheless the existing KL=0.001 diagnostic threshold is exceeded: T=1 max KL 0.00002214, while 4/2 and 8/4 reach 0.0182775; max absolute logit difference 1.10231. The same position 6 top-1 is `11991` INT8 versus `2724` F16; it is a discarded row in the 4/2 run but accepted in the 8/4 second window. This is evidence of materially different predictions for the tested sequence, not a matched-vanilla INT8 comparison. Do not assert F16-equivalent quality or silently change the user-approved INT8 default. The cross-precision measurement was made with the original untagged captures before adding mode-bound comparison; it was an intentional diagnostic, not same-format parity admission. Full logits include all evaluated rows, not only accepted prefixes.
+
+At 2K, short serial chat controls on both mixed and HIP default INT8 naturally stopped: arithmetic returned `4`, output ID `[19]`; coding returned **`30` instead of `14`**, output IDs `[18,15]`, same known failure as report 0036. No generated code was executed. In separate resident launches on each topology, two identical three-token requests stopped with `[96220]`, a third was cooperatively cancelled at a completed progress checkpoint, and a fourth after reset again stopped with `[96220]`; both worker groups exited normally. These cases do not establish arbitrary in-flight cancellation or native-state equivalence.
+
+### RDNA4 WMMA observation
+
+A separate profiler-instrumented HIP-only INT8 run used 24-row native bulk prompt prefix (chunk 128), 2K context and the arithmetic control. Both HIP stages reported Q8 resident pools and full expert residency. The native selection log reported gfx1201 matrix-core prompt attention on by default; ROCm `rocprofv3 --kernel-trace` recorded **12 `prompt_attn_wmma_kernel` dispatches**, six per GPU agent. This establishes actual kernel dispatch for that workload, not throughput or occupancy. Source implements the INT8-KV path by converting signed codes to FP16 operands and using FP16 WMMA instructions; do not describe this as a native INT8 WMMA instruction. Profiling perturbs execution. No WMMA-off comparison or balanced rate benchmark was run.
+
+### Remaining gates and next steps
+
+- Treat default INT8 as **configured and physically verified, not quality-qualified**. Investigate the cross-format divergence against an authorized matched vanilla INT8 oracle and score broader naturally stopping controls. Existing coding failure remains unresolved and cannot be attributed to either precision. No authorized matched vanilla executable/config was established.
+- Because numerical/quality admission is unresolved, **8K/32K scaling, near-capacity prompt, balanced F16/INT8 or WMMA-off benchmark, and direct-vs-reference performance are NOT_RUN**. The earlier FP16 rates in report 0036 are not Q8 results. No 256K total per-owner sizing was established: KV codes/scales alone omit indexer, RoPE, GDN, fixed/per-cell workspace, dense/PLE, experts and reserve. Do not extrapolate 2K arena totals or raise the existing cap. Derive total bytes from actual native sizing and allocator lifetimes, then stage capacity only after admission.
+- Direct edge state/lifecycle qualification remains as report 0038; no INT8 state comparator, direct Q8 state parity, full cross-vendor GPU prelaunch or native bulk direct path was run. Safe prelaunch still requires independently validated pre-consumption finite protection and request/reset/drain/poison ownership.
+- Trace-off A/B/B/A with at least five warm repeats, same completed work and sampling settings, GPU timelines and separate memory sampling remain necessary before any throughput claim.
+
+Logs, capture files and profiler data remain in private 0039 scratch. GPU process inventory was empty before and after; no GPU workers were forcibly killed. No GitHub Actions, downloads, repack, spill, reserve reductions, hardware setting changes or unrelated service stops. Preserved the unrelated untracked pool probe.

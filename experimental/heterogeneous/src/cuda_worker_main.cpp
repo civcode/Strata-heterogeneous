@@ -129,6 +129,8 @@ int main(int argc,char** argv) {
             lo.free_reserve_bytes=config.free_reserve_bytes;
             lo.arena_budget_bytes=config.arena_budget_bytes;
             if(!owner.load(plan,index,lo,error))throw std::runtime_error("weight/session startup: "+error);
+            std::cerr << "HETERO_ARENA stage=" << index << " backend=CUDA session_bytes=" << owner.session_bytes()
+                      << " weight_bytes=" << owner.weight_bytes() << " reserve_bytes=" << config.free_reserve_bytes << '\n';
             hetero::CudaNativeStage native;
             hetero::CudaNativeStageOptions no;
             no.gguf_shards=config.gguf_shards;

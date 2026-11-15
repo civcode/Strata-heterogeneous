@@ -141,11 +141,15 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
                 len(meta["token_ids"]) == packet["rows"] and
                 all(type(t) is int and 0 <= t < packet["vocab"] for t in meta["token_ids"]),
                 f"window {number} metadata does not match STFR commit")
+        require("kv_mode" not in meta or meta["kv_mode"] in ("f16", "int8"),
+                f"window {number} invalid KV mode")
         for field in ("pack_index_sha256", "gguf_shards", "profile_path"):
             require(isinstance(meta.get(field), str) and meta[field],
                     f"window {number} missing model source identity: {field}")
         if windows:
             previous_meta = windows[-1][0]
+            require(meta.get("kv_mode") == previous_meta.get("kv_mode"),
+                    "KV mode changed mid-run")
             require(meta["pos0"] == previous_meta["pos0"] + previous_meta["n_keep"],
                     "non-contiguous committed positions within run")
             require(all(meta[field] == previous_meta[field] for field in
@@ -206,6 +210,8 @@ def compare(reference: list[tuple[dict, dict]],
     worst_rmse = 0.0
     diagnostics = []
     for window, ((ref_meta, ref), (het_meta, het)) in enumerate(zip(reference, heterogeneous), 1):
+        require(ref_meta.get("kv_mode") == het_meta.get("kv_mode"),
+                "KV mode mismatch or missing KV mode on one capture")
         for key in ("model_fingerprint", "pack_index_sha256", "gguf_shards",
                     "profile_path", "window_id", "pos0", "rows", "n_keep", "token_ids"):
             if prefill and key == "window_id":
@@ -253,6 +259,7 @@ def compare(reference: list[tuple[dict, dict]],
     passed = (prediction_disagreements == 0 and top1_disagreements == 0 and
               worst_kl <= max_kl)
     return {"status": "PASS" if passed else "FAIL", "rows": rows,
+            "kv_mode": reference[0][0].get("kv_mode") or "unknown-legacy",
             "prediction_disagreements": prediction_disagreements,
             "top1_disagreements": top1_disagreements, "max_kl_ref_to_hetero": worst_kl,
             "max_abs_logit_difference": worst_max_abs, "max_rmse_logits": worst_rmse,

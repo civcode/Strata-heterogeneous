@@ -62,7 +62,38 @@ class ParityFixtures(unittest.TestCase):
     def test_identical_logits_and_predictions_pass(self):
         result = parity.compare(parity.read_run(self.ref), parity.read_run(self.het), 0.001)
         self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["kv_mode"], "unknown-legacy")
         self.assertEqual(result["max_kl_ref_to_hetero"], 0.0)
+
+    def test_kv_mode_binding_and_legacy(self):
+        def mode(prefix, value):
+            path = Path(f"{prefix}.w1.json")
+            meta = json.loads(path.read_text())
+            meta["kv_mode"] = value
+            path.write_text(json.dumps(meta))
+        mode(self.ref, "int8")
+        with self.assertRaisesRegex(parity.ParityError, "KV mode mismatch"):
+            parity.compare(parity.read_run(self.ref), parity.read_run(self.het), .001)
+        mode(self.het, "f16")
+        with self.assertRaisesRegex(parity.ParityError, "KV mode mismatch"):
+            parity.compare(parity.read_run(self.ref), parity.read_run(self.het), .001)
+        mode(self.het, "int8")
+        result = parity.compare(parity.read_run(self.ref), parity.read_run(self.het), .001)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["kv_mode"], "int8")
+        mode(self.het, "invalid")
+        with self.assertRaisesRegex(parity.ParityError, "invalid KV mode"):
+            parity.read_run(self.het)
+
+    def test_kv_mode_cannot_change_within_run(self):
+        self.write_run(self.ref, "hip:0:0-48", count=2)
+        for number, mode in ((1, "int8"), (2, "f16")):
+            path = Path(f"{self.ref}.w{number}.json")
+            meta = json.loads(path.read_text())
+            meta["kv_mode"] = mode
+            path.write_text(json.dumps(meta))
+        with self.assertRaisesRegex(parity.ParityError, "KV mode changed"):
+            parity.read_run(self.ref)
 
     def test_trivial_self_comparison_is_rejected(self):
         with self.assertRaisesRegex(parity.ParityError, "unsplit 48-layer"):
