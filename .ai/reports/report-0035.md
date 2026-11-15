@@ -8,3 +8,60 @@ Local isolated C++17 smoke: compiled exact committed backend_domains.hpp blob e4
 
 ## Additional pre-Oberon implementation
 Added `tools/heterogeneous_hip_pair_config.py` and four unit tests for deriving new 24/24 (or explicit split) full-resident HIP configs from ordered approved mixed v2 configs. The helper preserves asset paths/identity, per-HIP reserves and settings, relocates the original PLE shard to HIP0, limits context to 32K and existing source capacity, rejects nonzero arena caps and mismatches, writes exclusive private output and hashes. It does not validate actual assets or memory; run the native preflight and readiness checks. Local isolated Python unittest: 4/4 PASS; py_compile PASS. Git blobs 6de2eed5774f196a3ec454654f18f59b68d55450 and e6b96a193ecca0228102e508a8694242a8b8620a match local tested files. Added process launch/argv regression cases for both HIP-only worker arrangements (socket/shared), missing HIP worker and missing mixed CUDA worker. Full C++ test suite NOT_RUN here: no local checkout (Git DNS blocked). No GPU, no Actions, no default change. Placement report 0034 remains on its separate branch; 0035.4–6 still require matched actual runs and profiling, not fabricated throughput or speculative optimization.
+
+---
+
+## Oberon iteration — PARTIAL, actual results
+
+Tested handoff `3d51a65a3b1c2324daaee780b5ff9bbeeb968ea8`, with CPU-only gate correction `e7a3094c`. HIP-only 24/24 works in the observed controls and provides a useful architecture comparison, **not general or production qualification**. One source-review workload suggests grouped HIP avoids much of the separate-worker cost, and bulk greatly improves prefill; both architectures still fail the coding control and all measured long outputs truncate. No default, precision, numerical threshold, reserve, clock or power change. No Actions, downloads, repacks, host spill or forced worker kills.
+
+| Milestone | Oberon status |
+| --- | --- |
+| 0035.1 separate HIP | PARTIAL: actual independent workers, shared and socket short generation, reset/reuse and zero reported misses. No comprehensive state/finiteness or fresh-vs-reset matrix. |
+| 0035.2 grouped HIP | PARTIAL: single grouped worker, shared and socket; streaming, stop/length, repeated reuse, tool fixture and a cancellation/drain/recovery observation. Not all lifecycle variants or failure paths proven. |
+| 0035.3 grouped native bulk | PARTIAL: chunk 1 and 128 short controls and 128 real-source workloads. Native prefix ACK/continuation observed; no complete protocol trace proving every residual/fence condition or near-capacity qualification. |
+| 0035.4 matrix | PARTIAL: five heterogeneous arms, one launch each, one warmup and five measured repeats per case. Vanilla F/G, speculative MTP, reverse order, long-context and naturally completed sustained decoding NOT_RUN. |
+| 0035.5 bottlenecks | PARTIAL: matched C/D/E and separate trace runs below. Monitoring controls, GPU kernel profiling, and matched investigation of historical 60 tok/s NOT_RUN. |
+| 0035.6 improvement | No safe transferable inference optimization established from these observations. CPU gate correction only; do not describe it as a throughput optimization. |
+
+### Build, source and gate correction
+
+The existing host, CUDA and HIP build caches selected the checkout venv and existing system C++/CUDA and ROCm HIP toolchains. All three `cmake --build ... -j28` passed, host `ctest -j28` 99/99, heterogeneous Python discovery 337/337, server tests 376/376, resident tests 15/15, and `pip check` passed. After the gate correction, affected model/readiness, pair-config and comparison tests passed 52/52. CLI regression suites cover refusal of mixed missing CUDA, HIP missing worker, unsupported grouping and bulk without grouping; they do not replace live negative tests.
+
+The original CPU model/readiness parser refused every HIP-only plan with “include both CUDA and HIP”, despite the new runtime path. `e7a3094c` admits only a full two-stage HIP partition or the existing mixed partition, retaining ordered contiguous ranges and distinct backend-local ordinals. A fake-hardware regression exercises full readiness and invalid plans. Source-bound native no-run preflight, canonical CPU model gate and passive readiness passed for the generated 2K/8K/32K HIP plans. Passive readiness remains **UNVERIFIED** and omits session, native dense/PLE, verifier, prefill and allocator memory; it is not GPU admission or a peak bound.
+
+Coordinator/CUDA worker/HIP worker SHA-256 respectively `6055a0ff2bda1b1c33dd137a47e02add08997d28e7b2c5cbadd54ae7cf711c02`, `08359d79518d0a7057887b7c161efab7b5a4adbc2da49f65c466a2223a09937a`, `07cf106e6d3b98458b3dd33eacbc3dce1b86e479b39c34677751884dd840759b`. 2K HIP configs: `f1be4f42cb82c8b47cb30ea9b644d93e74da8593509d1f12933ecde151ccf7a0` / `54b33eabb9f51035cf2de060476efc76d811e62bdd66cf32ab31d9d1d8d3d398`; 8K `2551afe5ea6679a6a768cf49f772a69434c9704f2875e13db2e989a6dee251a1` / `f7862c68bb48900edff90cddf43198825c083c60bf4259b301f50b3997a329eb`; 32K `e914929373868eb79859e1318b2047d576a80051d3c056cf71554f775f0f9964` / `6cf724b8850a874a3ef380ba30f9fe814b22569cdf065680f1054e410818f200`. Source pack index SHA-256 `c344c01f59f547ed8a59003857a82eb90499e5299154241dbca787acb54b5b7c`; model fingerprint `2026111301`. Not a new full asset hash audit.
+
+### Hardware and lifecycle
+
+HIP0 was confirmed at PCI `0000:03:00.0`, HIP1 at `0000:07:00.0`; each owns 24 layers and 12,288 resident experts, 16,986,931,200 expert payload bytes. At 2K and 8K the original 512 MiB reserves were retained; the 32K source configs used 1 GiB reserves. Max_t 8; no arena cap. Startup free-memory guards remained enabled. Separate shared logged two worker processes, grouped shared one; both short socket variants also succeeded. No CUDA worker was configured or logged in HIP-only runs; coordinator `ldd` had no CUDA/HIP runtime dependency. This is not a process-wide library-load audit. Two consecutive short requests in each of separate, grouped, bulk chunk 1 and bulk chunk 128 returned `4`, with full residency, zero host misses and `HETERO_CLOSED`. Startup observations (not matrix server startup): 5.85 s separate, 9.24 s grouped, 9.17 s bulk1, 9.21 s bulk128.
+
+Short grouped-bulk controls also succeeded with 8K and 32K **configured** capacity, not near-capacity prompts. At 32K the 250-ms maximum sampled HIP used was 21,833 / 21,961 MiB and minimum sampled free 10,791 / 10,663 MiB. At 2K bulk128 maxima were 21,452 / 21,616 MiB; sample minima free 11,172 / 11,008 MiB. Unsampled peaks and other workloads can differ.
+
+Grouped bulk streaming fixed tool fixture returned `shipped` 3/3 after a client-supplied tool result; no generated tool was executed. One smoke disconnect logged native `finish=cancelled`; immediate post-cancel got HTTP error, while after a three-second drain arithmetic, document and multi-turn passed on the same service (coding still failed); clean shutdown followed. This does not establish independent reset ACK or all bulk cancellation paths. Separate traced C/D/E used identical 195-token rendered prompt IDs and produced identical 32-token output IDs, ending at length. E logged prefix committed 194 rows/chunk 128 and its next committed window was window 2. This is evidence of continuation, not complete numerical parity.
+
+### Matched HTTP workload matrix
+
+Frozen manifest SHA-256 `114b6d3efcb214649e75bc1db213acc81456058d306064daa21a550590c9789d`: arithmetic, a Python-output control and a 195-token review of real validation source. Same 2K capacity, original assets/template and FP16 KV default, 512 MiB reserves, shared transport, greedy sampling, one warmup plus five measured repetitions per case, one server at a time; MTP, lookup and prefix reuse disabled. All inherited `STRATA_*`, `HETERO_*`, `HIP_*`, `ROCR_*` and `CUDA_*` overrides were unset, including HC, compact, fast-fence, fanout and MMQ flags; runtime defaults apply. Trace off; 250-ms passive sampler. HIP logs reported default RDNA4 Q8 HC projections. Model count/manifest matching does not prove identical token IDs across all five HTTP arms; separate C/D/E CLI trace IDs were verified as above. No GPU timing is inferred from HTTP or SSE fragments.
+
+Source review produced 256 completion tokens and `length` in all arms; quality UNSCORED, not a pass. All arithmetic measurements passed; Python-output control failed 5/5 in each arm (expected 14, observed 30); benchmark exit status was nonzero for this known quality failure. Table medians below exclude warmup, five samples/arm. Rates are service host-commit-progress proxies (prefill includes reset/IPC, decode includes checkpoint/consumer pacing); TTFT and total are client HTTP wall times. This is a short prompt and one launch order A–E, not a broad representative or balanced study.
+
+| Arm | Placement / mode | Review TTFT s | Review total s | Prefill tok/s | Decode feedback tok/s | Review completion |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| A | mixed 12/18/18 grouped serial | 4.565 | 10.434 | 42.7 | 43.6 | 256, length |
+| B | mixed grouped bulk 128 | 0.611 | 6.390 | 319.6 | 44.3 | 256, length |
+| C | HIP 24/24 separate serial | 5.272 | 12.145 | 37.0 | 37.3 | 256, length |
+| D | HIP 24/24 grouped serial | 4.505 | 10.380 | 43.3 | 43.6 | 256, length |
+| E | HIP 24/24 grouped bulk 128 | 0.672 | 6.474 | 290.8 | 44.1 | 256, length |
+| F/G | authorized matched vanilla serial/bulk | NOT_RUN | NOT_RUN | NOT_RUN | NOT_RUN | no matched authorized binary/config established |
+
+C/D compare same physical hardware and split but also change handoff and chain scheduling: grouped review total was about 14.5% lower, and decode proxy about 16.9% higher. D/E bulk changes scheduling and prefill algorithm: review prefill proxy increased about 6.7x on this short workload, not a general kernel speedup. B/E changes hardware/topology and placement, so is not a pure interoperability comparison. Operator-reported vanilla ~4000 prefill/~120 decode remains an unmatched historical observation. No authorized same-model matched vanilla run or speculative comparison is claimed.
+
+Max sampled memory MiB CUDA/HIP0/HIP1: A 11,319/16,524/16,605; B 11,597/16,869/16,946; C 447/21,145/21,308; D 447/21,145/21,307; E 447/21,484/21,648. CUDA in HIP-only is system/background usage, not proof of an active CUDA child. Sampler runs lasted 110 s; sample instants and maxima are not guaranteed peak coverage. Phase-aligned utilization/power extraction was incomplete due to interleaved server log records and is not reported as a reliable phase comparison. No telemetry-off/1 Hz controls were obtained.
+
+### Trace attribution and next action
+
+Separate trace-on CLI runs of the same review prompt are not throughput results. `heterogeneous_critical_path.py` with physical endpoints C `0,1` and D/E `1` found 226/226 complete C and D windows. Median traced decode critical wall time was C 26.52 ms (commit barrier 3.53 ms), D 21.79 ms (commit 2.07 ms), E 21.81 ms (commit 2.08 ms). D median grouped `final_execute` was 16.90 ms, an inclusive host wall span, not GPU kernel time. These spans overlap/nest; do not sum them or attribute all C/D difference to IPC. E had 32/32 ordinary windows, but the analyzer returned nonzero coverage because the 194-row native prefix has no timed coordinator window; positions matched. No claim of complete E prefill trace coverage.
+
+Next: establish authorized vanilla executable/config and exact prompt IDs/settings, then reproduce F/G and bounded MTP without modifying other work. Repeat reversed independent A–E launches and off/1 Hz/4 Hz telemetry, profile actual GPU kernels/links, investigate 60 vs 43 tok/s with matched settings, and add long natural-stop task quality and near-capacity staged checks. Diagnose the incorrect Python answer before any quality claim. Only after a narrow bottleneck is confirmed should an optimization be implemented and remeasured on both mixed and HIP with correctness/resource controls. Raw private evidence is under `/home/chris/tmp/strata-heterogeneous/m7-0035/`; unrelated untracked probe preserved.
+
