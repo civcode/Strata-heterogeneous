@@ -190,7 +190,8 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
                    bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false,
-                   bool direct_verified = false, bool bad_producer = false, bool guarded_direct = false) {
+                   bool direct_verified = false, bool bad_producer = false, bool guarded_direct = false,
+                   int64_t max_cells = 64) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -202,7 +203,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
             for (int previous : group.sockets) ::close(previous);
             ::close(fd[0]);
             try {
-                const WindowLimits limits{0, 64, 1000, 8};
+                const WindowLimits limits{0, max_cells, 1000, 8};
                 DirectSharedBinder bind;
                 if (direct_verified) bind=[](const SharedActivation& slot,std::string& error) {
                     if (!slot.valid() || slot.descriptor()<0) {
@@ -893,6 +894,31 @@ void mtp_service_protocol(bool hip_only) {
         check(pipe.poisoned(),"wrong prompt poisons service");
     }
 }
+// CPU-only: actual socket transport of the largest admitted MTP metadata,
+ // explicit total deadline, then cancellation checkpoint/reset on the same
+ // grouped endpoint. The mock never allocates GPU state or evaluates tokens.
+void mtp_long_context_protocol() {
+    const Plan p=parse_plan("hip:0:0-5,hip:1:5-10",10,{2,3},3719);
+    auto w=launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,8,
+                  false,false,false,false,262144);
+    FinalPipelineSession pipe(p,w.sockets,5000,true,true,false,false,true,false,true,true,true,false,false,false,true);
+    pipe.initialize(); pipe.begin_request(1);
+    const MtpRequestPolicy long_req{262144,1,4,248320,std::vector<int32_t>(262143,17),{99}};
+    pipe.configure_mtp_request(1,long_req);
+    const std::vector<int32_t> prefix(262142,17);
+    fails([&]{pipe.native_prefill(prefix,32);},"extended MTP requires explicit total deadline");
+    check(!pipe.poisoned(),"missing deadline rejected before worker execution");
+    pipe.native_prefill(prefix,32,false,5000);
+    // No final verifier call for request 1: reset after the bulk checkpoint.
+    pipe.begin_request(2);
+    const MtpRequestPolicy short_req{262144,1,4,248320,{7,8,9},{99}};
+    pipe.configure_mtp_request(2,short_req);
+    pipe.native_prefill({7,8},32,false,5000);
+    auto frame=input_frame(p,2,2);
+    frame.rows=1; frame.payload.resize(p.geometry.floats_per_row());
+    pipe.execute_discard(frame,{2,{9}});
+    check(pipe.commit(1).request_id==2,"long-context MTP reset and short recovery");
+}
 void compact_and_prefix(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     {
@@ -930,6 +956,7 @@ int main() {
         mtp_relay_protocol(false); mtp_relay_protocol(true);
         mtp_resident_protocol(false); mtp_resident_protocol(true);
         mtp_service_protocol(false); mtp_service_protocol(true);
+        mtp_long_context_protocol();
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

@@ -90,7 +90,7 @@ struct WindowSpec {
 };
 constexpr uint32_t max_native_prefill_chunk = 2048; // independent of decode max_t
 constexpr uint32_t max_window_tokens = 8192; // verifier/control ceiling, not Verifier::max_t
-constexpr uint32_t max_native_prefill_tokens = max_long_context; // prefill spec only; R pieces retain 16 MiB cap
+constexpr uint32_t max_native_prefill_tokens = max_long_context; // prefill and MTP prompt metadata; R pieces retain 16 MiB cap
 
 struct Frame {
     Kind kind = Kind::data;

@@ -43,7 +43,7 @@ int main() {
         MtpRequestPolicy edge{cap,4,4,248320,std::vector<int32_t>(cap-4,10),{99}};
         check(edge.valid());
         check(MtpRequestPolicy::requires_long_context(cap)==(cap>8192));
-        auto prefix=edge.prompt; prefix.pop_back();
+        const std::vector<int32_t> prefix(cap-5,10);
         check(edge.bulk_prefix(prefix,64));
         check(!edge.can_offer(cap-5,11)); // before prompt
         check(edge.live(cap-4,11) && !edge.can_offer(cap-4,11));
