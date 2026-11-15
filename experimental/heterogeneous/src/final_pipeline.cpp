@@ -431,7 +431,8 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
         throw std::invalid_argument("invalid extended prefill deadline");
     if (receiver_arm_ || (mtp_relay_ && !mtp_service_) || direct_verified_)
         throw std::logic_error("receiver arm/legacy MTP relay/direct verified mode does not support native bulk prefill");
-    if (mtp_service_ && (isolated_stage_reference || total_timeout_ms || !mtp_service_policy_ ||
+    if (mtp_service_ && (isolated_stage_reference || !mtp_service_policy_ ||
+        (MtpRequestPolicy::requires_long_context(mtp_service_policy_->context) != bool(total_timeout_ms)) ||
         !mtp_service_policy_->bulk_prefix(tokens,chunk)))
         throw std::invalid_argument("MTP bulk prefill requires exact bounded request prefix");
     const bool local = endpoints_.size()==1 && starts_.front()==0 &&

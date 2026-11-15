@@ -133,7 +133,8 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         plan.stages[0].first_layer==0 && plan.stages[0].end_layer==24 &&
         plan.stages[1].backend==hetero::Backend::hip && plan.stages[1].ordinal==1 &&
         plan.stages[1].first_layer==24 && plan.stages[1].end_layer==48;
-    if (mtp_service && (extended || invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
+    if (mtp_service && (invocation.long_context_chunk>hetero::MtpRequestPolicy::bulk_chunk_limit ||
+        invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
         (!mtp_mixed && !mtp_hip_pair)))
         throw std::runtime_error("MTP service candidate requires shared Q8 mixed 15/18/15 or HIP-only 24/24");
     std::vector<hetero::HipWorkerConfig> configs;
@@ -161,9 +162,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
                 c.io_timeout_ms != first.io_timeout_ms)
                 throw std::runtime_error("HIP domain requires identical model, context and window limits");
         }
-        if (mtp_service && (!hetero::MtpRequestPolicy::capacity_valid(c.max_cells) || c.max_t!=8 || c.free_reserve_bytes < (1ull<<30) ||
+        if (mtp_service && (!hetero::MtpRequestPolicy::capacity_valid(c.max_cells) ||
+            extended!=hetero::MtpRequestPolicy::requires_long_context(c.max_cells) || c.max_t!=8 || c.free_reserve_bytes < (1ull<<30) ||
             c.arena_budget_bytes || c.index_sha256!=hetero::mtp_qualification_index))
-            throw std::runtime_error("MTP service requires approved aligned 2K..8K full native capacity and reserve");
+            throw std::runtime_error("MTP service requires approved aligned capacity, matching long-context mode, full residency and reserve");
         configs.push_back(std::move(config));
     }
     std::vector<std::unique_ptr<LoadedHipStage>> owners;

@@ -27,16 +27,34 @@ public:
     template<class Prime>
     bool seed_bulk_prompt_chunk(const std::vector<int32_t>& prompt,int64_t pos,
                                 const float* residuals,size_t rows,Prime&& prime,std::string& error) {
+        if (bulk_prompt_.empty()) {
+            if (!start_bulk_prompt(prompt,error)) return false;
+        } else if (bulk_prompt_!=prompt) {
+            return fail(error,"MTP bulk seed prompt changed");
+        }
+        return seed_bound_bulk_prompt_chunk(pos,residuals,rows,prime,error);
+    }
+
+    // Bind one owned, immutable prompt before target prefill. Validate once,
+    // rather than rescanning a 256K vector for every terminal callback.
+    bool start_bulk_prompt(const std::vector<int32_t>& prompt,std::string& error) {
         if (state_!=State::ready || !stride_ || !max_rows_ || max_rows_>8 || context_<=0 || vocab_<=0 ||
-            tail_ || !offered_.empty() || !residuals || !rows || rows>MtpRequestPolicy::bulk_chunk_limit ||
-            stride_>std::numeric_limits<size_t>::max()/rows ||
-            prompt.size()<2 || prompt.size()>MtpRequestPolicy::bulk_prompt_limit || int64_t(prompt.size())>=context_ ||
-            pos!=next_ || pos<0 || pos>=int64_t(prompt.size()-1) ||
-            rows>prompt.size()-1-size_t(pos) ||
-            (bulk_prompt_.empty() ? next_!=0 : bulk_prompt_!=prompt))
+            next_ || tail_ || !offered_.empty() || !bulk_prompt_.empty() ||
+            prompt.size()<2 || prompt.size()>MtpRequestPolicy::bulk_prompt_limit || int64_t(prompt.size())>=context_)
             return fail(error,"MTP bulk seed identity or extent refused");
         for (auto id:prompt) if (id<0 || id>=vocab_) return fail(error,"MTP bulk seed token outside vocabulary");
-        if (bulk_prompt_.empty()) bulk_prompt_=prompt;
+        bulk_prompt_=prompt;
+        return true;
+    }
+
+    template<class Prime>
+    bool seed_bound_bulk_prompt_chunk(int64_t pos,const float* residuals,size_t rows,Prime&& prime,std::string& error) {
+        if (state_!=State::ready || bulk_prompt_.empty() || tail_ || !offered_.empty() ||
+            !residuals || !rows || rows>MtpRequestPolicy::bulk_chunk_limit ||
+            stride_>std::numeric_limits<size_t>::max()/rows ||
+            pos!=next_ || pos<0 || pos>=int64_t(bulk_prompt_.size()-1) ||
+            rows>bulk_prompt_.size()-1-size_t(pos))
+            return fail(error,"MTP bulk seed identity or extent refused");
         // Target chunks can exceed the drafter's narrow graph width. Consume
         // each subrange synchronously before releasing the target scratch.
         // A partial failure poisons this cursor; never adopt a partial seed.

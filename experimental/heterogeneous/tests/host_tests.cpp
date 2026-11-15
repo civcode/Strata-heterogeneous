@@ -187,12 +187,20 @@ void test_wire() {
         check(decoded.kind==kind && decoded.mtp_max_new==64 && decoded.window &&
               decoded.window->token_ids==meta.window->token_ids, "MTP request policy wire roundtrip");
     }
-    // Expanded MTP metadata retains the existing <=8192 token-window wire.
-    auto large_mtp=meta; large_mtp.rows=8191; large_mtp.mtp_max_new=1;
-    large_mtp.window=WindowSpec{0,std::vector<int32_t>(8191,17)};
-    check(decode(encode(large_mtp)).window->token_ids==large_mtp.window->token_ids,"expanded MTP wire roundtrip");
+    // Full prompt metadata may use the native prefill token ceiling, but
+    // ordinary verifier windows remain bounded by max_window_tokens.
+    auto large_mtp=meta; large_mtp.rows=max_native_prefill_tokens-1; large_mtp.mtp_max_new=1;
+    large_mtp.window=WindowSpec{0,std::vector<int32_t>(large_mtp.rows,17)};
+    for (auto kind : {Kind::mtp_service_request,Kind::mtp_service_ready}) {
+        large_mtp.kind=kind;
+        const auto decoded=decode(encode(large_mtp));
+        check(decoded.kind==kind && decoded.mtp_max_new==1 && decoded.window->token_ids==large_mtp.window->token_ids,
+              "256K MTP metadata wire roundtrip");
+    }
     large_mtp.mtp_max_new=2;
     throws([&]{(void)encode(large_mtp);},"MTP combined wire ceiling");
+    large_mtp.kind=Kind::window_spec; large_mtp.window_id=1; large_mtp.mtp_max_new=0;
+    throws([&]{(void)encode(large_mtp);},"ordinary verifier wire ceiling unchanged");
     auto invalid_mtp=meta; invalid_mtp.mtp_max_new=257;
     throws([&]{(void)encode(invalid_mtp);},"MTP policy budget bounded");
     invalid_mtp=meta; invalid_mtp.window_id=1;

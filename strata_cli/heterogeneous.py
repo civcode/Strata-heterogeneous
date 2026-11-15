@@ -37,7 +37,7 @@ def add_arguments(parser):
     parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 8192 ordinary / 32768 workload / 262144 explicit long-context")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
     parser.add_argument("--pipeline-mode", choices=("baseline", "fast"), help="explicit grouped shared resident pipeline profile (opt-in)")
-    parser.add_argument("--mtp", help="experimental local native MTP runtime directory (Q8, aligned 2K..8K mixed/HIP-only profile)")
+    parser.add_argument("--mtp", help="experimental local native MTP runtime directory (Q8, aligned 2K..256K; above 8K explicit long-context/workload)")
     parser.add_argument("--spec", type=int, default=None, help="MTP candidate currently requires 4")
     parser.add_argument("--spec-min-p", type=float, default=None, help="MTP candidate currently requires 0.5")
     parser.add_argument("--lookup-draft", action="store_true", help="opt-in verified suffix lookup; buffered mode, chunk >= 2")
@@ -118,8 +118,8 @@ def kv_argument(args):
 def prepare_native(args):
     """CPU-only source/identity and tokenizer loading for the CLI and server."""
     from serve.heterogeneous_contract import generation_limits
-    from serve.heterogeneous_contract import (MAX_WORKLOAD_NEW, MAX_MTP_BULK_PROMPT, MAX_MTP_BULK_CHUNK,
-        MTP_CONTEXT_CAPACITY, MAX_MTP_CONTEXT, mtp_context_valid)
+    from serve.heterogeneous_contract import (MAX_WORKLOAD_NEW, MAX_MTP_BULK_CHUNK,
+        MTP_CONTEXT_CAPACITY, MTP_STANDARD_CONTEXT, mtp_context_valid, mtp_context_capable, mtp_bulk_capable)
     workload = getattr(args, "workload_mode", False)
     if not 1 <= args.max_new_tokens <= (MAX_WORKLOAD_NEW if workload else 256) or not 0 <= args.prompt_chunk <= 8:
         raise ValueError("max-new-tokens exceeds selected mode or prompt-chunk exceeds 0..8")
@@ -148,11 +148,12 @@ def prepare_native(args):
                 (spec_min_p is not None and (type(spec_min_p) not in (int, float) or spec_min_p != 0.5))):
             raise ValueError("MTP service candidate requires a runtime path, spec 4 and spec_min_p 0.5")
         if (args.plan not in ("cuda:0:0-15,hip:0:15-33,hip:1:33-48", "hip:0:0-24,hip:1:24-48") or not group or not args.shared or
-                kv != "int8" or not mtp_context_valid(args.max_context) or workload or extended or bulk>MAX_MTP_BULK_CHUNK or
+                kv != "int8" or not mtp_context_valid(args.max_context) or bulk>MAX_MTP_BULK_CHUNK or
+                workload != extended or extended != (args.max_context > MTP_STANDARD_CONTEXT) or args.max_new_tokens > 256 or
                 (args.max_context > MTP_CONTEXT_CAPACITY and not bulk) or
                 getattr(args, "lookup_draft", False) or
                 getattr(args, "pipeline_mode", None) is not None or getattr(args, "restart_clean", False)):
-            raise ValueError("MTP service candidate requires shared grouped Q8 aligned 2K..8K and native bulk chunk 1..64 above 2K")
+            raise ValueError("MTP service candidate requires shared grouped Q8 aligned 2K..256K, bulk 1..64 above 2K, long-context/workload above 8K and completion <=256")
         mtp_path = Path(mtp).expanduser().resolve(strict=True)
         if not mtp_path.is_dir():
             raise ValueError("MTP runtime must be an existing local directory")
@@ -179,10 +180,9 @@ def prepare_native(args):
         raise ValueError("coordinator lacks HIP-only MTP capability; rebuild matching binaries")
     if mtp is not None and getattr(args, "stream_tokens", False) and source.get("mtp_stream_cap") != 1:
         raise ValueError("coordinator lacks MTP streaming capability; rebuild matching binaries")
-    if mtp is not None and args.max_context > MTP_CONTEXT_CAPACITY and source.get("mtp_context_cap") != MAX_MTP_CONTEXT:
+    if mtp is not None and not mtp_context_capable(source,args.max_context):
         raise ValueError("coordinator lacks expanded MTP context capability; rebuild matching binaries")
-    if mtp is not None and bulk and (source.get("mtp_bulk_prompt_cap") not in ((MTP_CONTEXT_CAPACITY-1, MAX_MTP_BULK_PROMPT) if args.max_context == MTP_CONTEXT_CAPACITY else (MAX_MTP_BULK_PROMPT,)) or
-                                     source.get("mtp_bulk_chunk_cap") != MAX_MTP_BULK_CHUNK):
+    if mtp is not None and bulk and not mtp_bulk_capable(source,args.max_context):
         raise ValueError("coordinator lacks expanded MTP bulk prompt capability; rebuild matching binaries")
     if extended and source.get("long_context_cap") != MAX_LONG_CONTEXT:
         raise ValueError("coordinator does not advertise the long-context capability; rebuild matching binaries")

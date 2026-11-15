@@ -16,7 +16,8 @@ import sys
 import threading
 
 from serve.heterogeneous_contract import (validate_request, Progress, timing_record,
-    mtp_context_valid, MTP_CONTEXT_CAPACITY, MAX_MTP_CONTEXT, MAX_MTP_BULK_CHUNK)
+    mtp_context_valid, MTP_CONTEXT_CAPACITY, MTP_STANDARD_CONTEXT, MAX_MTP_BULK_CHUNK,
+    mtp_context_capable, mtp_bulk_capable)
 from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
 
 
@@ -81,11 +82,13 @@ class ResidentEngine:
         self.lookup_draft = source.get("lookup_draft", False)
         if source.get("mtp") and (self.lookup_draft or source.get("spec") != 4 or
                                   source.get("spec_min_p") != 0.5 or not mtp_context_valid(self.max_context) or
-                                  source["max_cells"] != self.max_context or source.get("long_context") or
-                                  source.get("workload_mode") or
+                                  source["max_cells"] != self.max_context or not 1 <= max_new <= 256 or
+                                  bool(source.get("long_context")) != (self.max_context > MTP_STANDARD_CONTEXT) or
+                                  bool(source.get("workload_mode")) != bool(source.get("long_context")) or
+                                  not mtp_context_capable(source,self.max_context) or
                                   (self.max_context > MTP_CONTEXT_CAPACITY and
-                                   (source.get("mtp_context_cap") != MAX_MTP_CONTEXT or
-                                    not 1 <= source.get("native_prefill_chunk", 0) <= MAX_MTP_BULK_CHUNK))):
+                                   not 1 <= source.get("native_prefill_chunk", 0) <= MAX_MTP_BULK_CHUNK) or
+                                  (source.get("native_prefill_chunk") and not mtp_bulk_capable(source,self.max_context))):
             raise ValueError("unsupported resident MTP service mode")
         if self.lookup_draft and (self.stream_tokens or chunk < 2):
             raise ValueError("lookup-draft requires buffered generation and chunk >= 2")

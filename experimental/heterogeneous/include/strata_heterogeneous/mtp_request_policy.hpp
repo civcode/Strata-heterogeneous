@@ -2,6 +2,7 @@
 
 // Request-local policy for native greedy MTP serving. Independent of the
 // fixed-shape qualification policy (which must remain unchanged).
+#include "strata_heterogeneous/long_context.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
@@ -11,11 +12,14 @@ namespace strata::heterogeneous {
 struct MtpRequestPolicy {
     static constexpr uint32_t initial_capacity = 2048;
     static constexpr uint32_t max_candidates = 4;
-    static constexpr uint32_t max_capacity = 8192;
-    static constexpr uint32_t capacity_alignment = 256;
+    static constexpr uint32_t standard_capacity = 8192;
+    static constexpr uint32_t max_capacity = max_long_context;
     static constexpr size_t bulk_prompt_limit = max_capacity-1;
     static constexpr bool capacity_valid(uint64_t cells) noexcept {
-        return cells>=initial_capacity && cells<=max_capacity && cells%capacity_alignment==0;
+        return long_context_cells_valid(cells);
+    }
+    static constexpr bool requires_long_context(uint64_t cells) noexcept {
+        return cells>standard_capacity;
     }
     static constexpr uint32_t bulk_chunk_limit = 64;
     static constexpr uint64_t prime_headroom_bytes = 512ull<<20;

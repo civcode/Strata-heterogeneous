@@ -16,8 +16,9 @@
 #include <utility>
 
 namespace strata::heterogeneous {
-static_assert(MtpRequestPolicy::max_capacity<=max_window_tokens,
-              "MTP request metadata must fit the existing token window ceiling");
+static_assert(MtpRequestPolicy::max_capacity<=max_native_prefill_tokens &&
+              uint64_t(MtpRequestPolicy::bulk_prompt_limit)*sizeof(int32_t)+16<=max_payload_bytes,
+              "MTP request metadata must fit the existing native prefill and wire byte ceilings");
 void WindowSpec::validate(uint32_t rows, bool native_prefill) const {
     if (!rows || rows > (native_prefill ? max_native_prefill_tokens : max_window_tokens) || token_ids.size() != rows || pos0 < 0 ||
         static_cast<uint64_t>(pos0) > static_cast<uint64_t>(INT64_MAX) - (rows - 1))
@@ -137,7 +138,7 @@ void validate_frame(const Frame& f) {
                 !f.error.empty() || !f.window || f.window->pos0 != 0 || !f.mtp_max_new ||
                 f.mtp_max_new > 256 || uint64_t(f.rows) + f.mtp_max_new > MtpRequestPolicy::max_capacity)
                 throw std::invalid_argument("invalid MTP service request shape or budget");
-            f.window->validate(f.rows);
+            f.window->validate(f.rows,true); // full prompt metadata, not a verifier window
             break;
         case Kind::mtp_proposal_request:
         case Kind::mtp_proposal:
@@ -385,7 +386,8 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         const bool mtp_service = f.kind == Kind::mtp_service_request || f.kind == Kind::mtp_service_ready;
         const uint32_t fixed = (f.kind == Kind::prefill_spec || mtp_service) ? 16 : 12;
         if (n < fixed || (n - fixed) % 4 != 0 || get_u32(payload + 8) != (n - fixed) / 4 ||
-            get_u32(payload + 8) > (f.kind == Kind::prefill_spec ? max_native_prefill_tokens : max_window_tokens))
+            get_u32(payload + 8) > (mtp_service ? MtpRequestPolicy::bulk_prompt_limit :
+                                     f.kind == Kind::prefill_spec ? max_native_prefill_tokens : max_window_tokens))
             throw std::invalid_argument("invalid token window wire length");
         WindowSpec w;
         w.pos0 = static_cast<int64_t>(get_u64(payload));

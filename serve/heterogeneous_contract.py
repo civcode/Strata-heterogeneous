@@ -39,7 +39,8 @@ def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk
 
 
 MTP_CONTEXT_CAPACITY = 2048  # legacy/default
-MAX_MTP_CONTEXT = 8192
+MTP_STANDARD_CONTEXT = 8192
+MAX_MTP_CONTEXT = MAX_LONG_CONTEXT
 MTP_CONTEXT_ALIGNMENT = 256
 MAX_MTP_BULK_PROMPT = MAX_MTP_CONTEXT - 1
 MAX_MTP_BULK_CHUNK = 64
@@ -50,13 +51,29 @@ def mtp_context_valid(context):
             and context % MTP_CONTEXT_ALIGNMENT == 0)
 
 
+def mtp_context_capable(source, context):
+    # Legacy 2K has no capacity field. 0052 supports only the standard tier.
+    if context <= MTP_CONTEXT_CAPACITY:
+        return True
+    cap = source.get("mtp_context_cap")
+    return cap == MAX_MTP_CONTEXT or (context <= MTP_STANDARD_CONTEXT and cap == MTP_STANDARD_CONTEXT)
+
+
+def mtp_bulk_capable(source, context):
+    cap = source.get("mtp_bulk_prompt_cap")
+    return (source.get("mtp_bulk_chunk_cap") == MAX_MTP_BULK_CHUNK and
+            cap in (MTP_CONTEXT_CAPACITY-1, MTP_STANDARD_CONTEXT-1, MAX_MTP_BULK_PROMPT) and
+            cap >= context-1)
+
+
 def validate_request(ids, max_new, vocab, context, long_context=False, *, mtp_bulk=False):
     if (not ids or type(max_new) is not int or max_new <= 0 or
             len(ids) + max_new > context or
             any(type(t) is not int or not 0 <= t < vocab for t in ids)):
         raise ValueError("prompt/generation budget exceeds validated context or vocabulary")
-    if mtp_bulk and (not mtp_context_valid(context) or long_context or max_new > 256):
-        raise ValueError("MTP bulk prompt requires aligned 2K..8K service capacity and budget <=256")
+    if mtp_bulk and (not mtp_context_valid(context) or
+                     long_context != (context > MTP_STANDARD_CONTEXT) or max_new > 256):
+        raise ValueError("MTP bulk prompt requires aligned capacity, matching long-context mode and budget <=256")
     # Include the resident request's completion-count prefix. One-shot
     # input is shorter, even with its terminating newline.
     cap = command_cap(context, long_context)

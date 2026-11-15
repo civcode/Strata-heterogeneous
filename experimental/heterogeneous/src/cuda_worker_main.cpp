@@ -106,7 +106,9 @@ int main(int argc,char** argv) {
                 (!extended && config.max_cells > hetero::legacy_workload_context))
                 throw std::runtime_error("invalid CUDA long-context capacity or missing worker capability");
             const bool mtp_service = hetero::performance_flag("STRATA_HETERO_MTP_SERVICE");
-            if (mtp_service && (extended || invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
+            if (mtp_service && (invocation.long_context_chunk>hetero::MtpRequestPolicy::bulk_chunk_limit ||
+                extended!=hetero::MtpRequestPolicy::requires_long_context(config.max_cells) ||
+                invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
                 !hetero::MtpRequestPolicy::capacity_valid(config.max_cells) ||
                 !hetero::long_context_stage_valid(config.max_cells,config.free_reserve_bytes,
                     config.arena_budget_bytes,config.max_t,config.max_cache_slots,config.end_layer-config.first_layer)))

@@ -2,7 +2,7 @@
 import itertools
 import unittest
 
-from serve.heterogeneous_contract import Progress, validate_request
+from serve.heterogeneous_contract import Progress, validate_request, mtp_context_capable, mtp_bulk_capable
 
 
 def compositions(n, largest):
@@ -101,14 +101,34 @@ class MtpStreamContract(unittest.TestCase):
                 Progress(1, capacity-1, 2, 8, 100, {99}, True, native_prefill=True, mtp_spec=4, mtp_context=capacity)
             with self.assertRaises(ValueError):
                 Progress(1, 7, 4, 8, 100, {99}, True, mtp_spec=4, mtp_context=capacity)
+        for capacity in (8448,32768,262144):
+            validate_request([248319]*(capacity-1), 1, 248320, capacity, True, mtp_bulk=True)
+            with self.assertRaises(ValueError):
+                validate_request([1], 1, 100, capacity, False, mtp_bulk=True)
+            with self.assertRaises(ValueError):
+                validate_request([1]*capacity, 1, 100, capacity, True, mtp_bulk=True)
+            p = Progress(1, capacity-1, 1, 8, 248320, {99}, True, native_prefill=True, mtp_spec=4, mtp_context=capacity)
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 1 {capacity-2} BATCH 0 0"), ())
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 2 {capacity-1} BATCH 0 1 10"), (10,))
         with self.assertRaises(ValueError):
-            validate_request([1], 1, 100, 262144, True, mtp_bulk=True)
+            validate_request([1], 257, 100, 262144, True, mtp_bulk=True)
+        with self.assertRaises(ValueError):
+            validate_request([1], 1, 100, 8192, True, mtp_bulk=True)
         with self.assertRaises(ValueError):
             Progress(1, 2047, 4, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
         for prompt in (8, 65, 129, 2047):
             p = Progress(1, prompt, 1, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
             self.assertEqual(p.accept(f"HETERO_PROGRESS 1 1 {prompt-1} BATCH 0 0"), ())
             self.assertEqual(p.accept(f"HETERO_PROGRESS 1 2 {prompt} BATCH 0 1 10"), (10,))
+
+    def test_capacity_capabilities_preserve_legacy_and_reject_stale(self):
+        for advertised in (2048,8192,262144):
+            source = dict(mtp_context_cap=advertised, mtp_bulk_prompt_cap=advertised-1, mtp_bulk_chunk_cap=64)
+            for context in (2048,8192,262144):
+                self.assertEqual(mtp_context_capable(source,context), advertised>=context)
+                self.assertEqual(mtp_bulk_capable(source,context), advertised>=context)
+        self.assertFalse(mtp_bulk_capable({},262144))
+        self.assertFalse(mtp_context_capable({},262144))
 
     def test_ordinary_and_buffered_protocols_unchanged(self):
         for mtp in (0, 4):

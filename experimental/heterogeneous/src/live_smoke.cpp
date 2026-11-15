@@ -134,7 +134,7 @@ void usage() {
         "  [--split-reference-capture --capture-revision SHA --capture-binary-sha256 SHA] (ungrouped, explicit KV, canonical plans)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--guarded-direct-prelaunch] [--kv int8|f16] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
-        "  --mtp-resident-service: experimental variable-request 2K..8K Q8 native MTP, mixed or HIP-only, spec=4, min_p=0.5.\n"
+        "  --mtp-resident-service: experimental variable-request 2K..256K Q8 native MTP (above 8K explicit long-context/workload), mixed or HIP-only, spec=4, min_p=0.5.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
         "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
         "  --mtp-resident-prompt-rows N: additionally require --resident; fixed prompt length and --generate budget, max 8 requests.\n"
@@ -468,16 +468,17 @@ Options parse(int argc, char** argv) {
     if (o.mtp_service && (!o.resident || !o.generate || o.generate>256 || !o.shared || !o.group_hip ||
         !o.hip_split_overlap || !hetero::MtpRequestPolicy::capacity_valid(o.context_limit) ||
         (o.context_limit>hetero::MtpRequestPolicy::initial_capacity && !o.native_prefill_chunk) ||
+        o.workload_mode!=o.long_context || o.long_context!=hetero::MtpRequestPolicy::requires_long_context(o.context_limit) ||
         !o.kv_explicit || o.kv!=hetero::KvMode::int8 ||
         o.mtp_probe_rt.empty() || !std::filesystem::path(o.mtp_probe_rt).is_absolute() ||
         o.mtp_probe_rt.size()>4096 || o.mtp_probe_rt.find_first_of("\r\n")!=std::string::npos ||
         o.mtp_generation || o.mtp_resident_prompt_rows || o.generation_capture || o.mtp_relay_rounds ||
         o.mtp_state_trace || o.mtp_front_trace || o.mtp_repeat_native_round || o.mtp_reprime_tail ||
-        o.mtp_three_round || o.mtp_three_round_variable || o.mtp_fresh_replay || o.workload_mode ||
-        o.long_context || o.lookup_draft || o.native_prefill_chunk>hetero::MtpRequestPolicy::bulk_chunk_limit || o.receiver_arm ||
+        o.mtp_three_round || o.mtp_three_round_variable || o.mtp_fresh_replay ||
+        o.lookup_draft || o.native_prefill_chunk>hetero::MtpRequestPolicy::bulk_chunk_limit || o.receiver_arm ||
         o.cuda_mapped_egress || o.direct_verified || o.guarded_direct || !o.pipeline_mode.empty() ||
         !o.capture_prefix.empty() || o.warmup_windows || o.describe_source))
-        throw std::invalid_argument("MTP service requires exact aligned grouped Q8 2K..8K resident capacity; bulk chunk 1..64 required above 2K");
+        throw std::invalid_argument("MTP service requires aligned grouped Q8 2K..256K; above 2K needs bulk 1..64, above 8K explicit long-context/workload");
     if (!o.mtp_service && !o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || (o.generate && !o.mtp_generation) ||
         o.describe_source || o.warmup_windows || o.native_prefill_chunk || (!o.mtp_generation && o.tokens.empty()) ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
@@ -559,14 +560,14 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("context above 32768 requires --long-context");
     if (o.long_context && (!o.workload_mode || !o.resident || !o.group_hip ||
         !o.native_prefill_chunk || o.lookup_draft || o.direct_verified || o.receiver_arm ||
-        o.cuda_mapped_egress || o.hip_split_overlap || !o.capture_prefix.empty() ||
+        o.cuda_mapped_egress || (o.hip_split_overlap && !o.mtp_service) || !o.capture_prefix.empty() ||
         !hetero::long_context_cells_valid(o.context_limit) || o.kv != hetero::KvMode::int8))
         throw std::invalid_argument("long-context requires aligned grouped native INT8 resident prefill, no lookup or diagnostic overlap");
     if (!o.workload_mode && (o.context_limit > 8192 || o.generate > 256))
         throw std::invalid_argument("extended context or completion requires --workload-mode");
     if (o.workload_mode && (!o.resident || !o.generate || o.prefill_parity_at ||
-        o.generation_capture || !o.mtp_probe_rt.empty() || o.receiver_arm || o.hip_split_overlap))
-        throw std::invalid_argument("workload mode needs resident ordinary text, without MTP or diagnostic overlap");
+        o.generation_capture || (!o.mtp_service && (!o.mtp_probe_rt.empty() || o.hip_split_overlap)) || o.receiver_arm))
+        throw std::invalid_argument("workload mode needs resident text, without legacy MTP diagnostics or diagnostic overlap");
     if (o.generate) {
         if (o.generate >= o.context_limit)
             throw std::invalid_argument("completion budget leaves no prompt context");

@@ -206,6 +206,7 @@ public:
             !resident_kv_supported() || !service_policy_.bulk_prefix(cmd.window->token_ids,cmd.prefill_chunk)) {
             error="MTP bulk prompt metadata or state refused";return false;
         }
+        if (!cursor_->start_bulk_prompt(service_policy_.prompt,error)) return false;
         bulk_active_=true;
         bulk_chunk_=cmd.prefill_chunk;
         return true;
@@ -222,7 +223,7 @@ public:
             if(error.empty()) error="MTP bulk residual owner/state refused";
             return false;
         }
-        return cursor_->seed_bulk_prompt_chunk(service_policy_.prompt,pos,rows,size_t(count),prime(),error);
+        return cursor_->seed_bound_bulk_prompt_chunk(pos,rows,size_t(count),prime(),error);
     }
     bool finish_bulk_prompt(uint64_t request,uint32_t rows,std::string& error) override {
         if (!bulk_active_ || !cursor_ || !drafter_ || request!=request_ || committed_ ||

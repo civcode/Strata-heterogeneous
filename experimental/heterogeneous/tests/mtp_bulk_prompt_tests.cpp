@@ -67,6 +67,49 @@ int main() {
         if(fault==4)check(!cursor.seed_bulk_prompt_chunk(prompt,1,r.data(),2,[](auto...){return false;},err));
         check(!cursor.seed_bulk_prompt_chunk(prompt,1,r.data(),2,prime,err));
     }
+    // Exercise the real one-time binding path at the full metadata ceiling.
+    // This is CPU-only: no long inference request, no quadratic rescanning.
+    {
+        const unsigned capacity=262144, n=capacity-1;
+        std::vector<int32_t> prompt(n);
+        for(unsigned j=0;j<n;++j) prompt[j]=int32_t(10+j%101);
+        MtpPrefixCursor cursor(2,capacity,248320,8);
+        std::string err; std::array<float,128> residual{};
+        check(cursor.start_bulk_prompt(prompt,err));
+        unsigned consumed=0;
+        auto prime=[&](const float* r,const int32_t* next,size_t rows,int64_t cell,std::string&) {
+            check(rows>=1 && rows<=8 && cell==consumed);
+            for(size_t j=0;j<rows;++j) {
+                check(r[j*2]==float(consumed+1) && next[j]==prompt[consumed+1]);
+                ++consumed;
+            }
+            return true;
+        };
+        for(unsigned pos=0;pos<n-1;) {
+            unsigned rows=std::min(64u,n-1-pos);
+            for(unsigned j=0;j<rows;++j) residual[j*2]=float(pos+j+1);
+            check(cursor.seed_bound_bulk_prompt_chunk(pos,residual.data(),rows,prime,err));
+            pos+=rows;
+        }
+        check(consumed==n-1 && cursor.committed_position()==n-1);
+        check(cursor.begin(n-1,{prompt.back()},prime,err));
+        check(cursor.committed(residual.data(),1,prime,err));
+        check(cursor.committed_position()==n);
+        std::vector<int32_t> offer;
+        check(!cursor.offer(91,offer,[](auto...){return true;},err));
+    }
+    // Binding is immutable, and a seed must not proceed without it.
+    {
+        MtpPrefixCursor cursor(2,262144,248320,8); std::string err;
+        std::array<float,2> r{};
+        check(!cursor.seed_bound_bulk_prompt_chunk(0,r.data(),1,[](auto...){return true;},err));
+        check(!cursor.start_bulk_prompt({10,11},err));
+    }
+    {
+        MtpPrefixCursor cursor(2,262144,248320,8); std::string err;
+        check(cursor.start_bulk_prompt({10,11},err));
+        check(!cursor.start_bulk_prompt({10,12},err));
+    }
     // A later subbatch failure may have written draft cells, but must
     // poison the cursor and never permit adoption or retry of that prefix.
     {
