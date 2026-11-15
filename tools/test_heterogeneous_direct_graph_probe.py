@@ -145,7 +145,7 @@ class DirectGraphProbeTests(unittest.TestCase):
     def test_bad_ready_word_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             good = self.make_fake(directory, "good")
-            bad = self.make_fake(directory, "bad", FAKE.replace('m, ready, 1)', 'm, ready, 2)'))
+            bad = self.make_fake(directory, "bad", FAKE.replace('m, ready, 2 if nonfinite else 1)', 'm, ready, 2)'))
             with self.assertRaises(RuntimeError):
                 run(bad, good, 0, [0, 1], rounds=2, warmup=0)
 
