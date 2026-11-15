@@ -27,6 +27,28 @@ class PrefillStateCapture {
 public:
     bool active() const noexcept { return !prefix_.empty(); }
     bool first_token() const noexcept { return first_token_; }
+    bool hc_replay() const noexcept { return hc_replay_; }
+    bool hc_sample(const char* name,const void* ptr,size_t bytes,void* stream,std::string& error) const {
+        int current=-1;
+        const std::string key(name);
+        const std::pair<const char*,size_t> expected[]={
+            {"residual.f32",10240*4},{"norm_weight.f32",10240*4},
+            {"down_weight.bf16",10240*320*2},{"up_weight.bf16",10240*320*2},
+            {"inject_weight.bf16",10240*4*2},{"scale.f32",4*4},
+            {"normalized.bf16",10240*2},{"down.f32",320*4},{"silu.bf16",320*2},
+            {"up.f32",10240*4},{"inject.f32",4*4},{"mixed.f32",2560*4}};
+        bool shape=false;
+        for (const auto& f:expected) if (key==f.first && bytes==f.second) shape=true;
+        if (!hc_replay_ || !shape || !ptr || !stream || cudaGetDevice(&current)!=cudaSuccess ||
+            current!=device_ || cudaStreamSynchronize(static_cast<cudaStream_t>(stream))!=cudaSuccess) {
+            error="HC replay sample owner/extent/fence refused";return false;
+        }
+        std::vector<uint8_t> raw(bytes);
+        if (cudaMemcpy(raw.data(),ptr,bytes,cudaMemcpyDeviceToHost)!=cudaSuccess) {
+            error="HC replay sample download failed";return false;
+        }
+        return write_file(prefix_+".hc."+key,[&](int fd){return write_all(fd,raw.data(),bytes,error);},error);
+    }
 
     // Observe the first GDN layer and PLE history. No inference writes.
     bool entry_state(uint64_t request,const char* phase,const core::SessionState& ss,
@@ -85,6 +107,9 @@ public:
         prefix_ = prefix;
         const char* first=std::getenv("STRATA_HETERO_PREFILL_FIRST_TOKEN");
         first_token_=first && std::strcmp(first,"1")==0;
+        const char* hc=std::getenv("STRATA_HETERO_PREFILL_HC_REPLAY");
+        hc_replay_=hc && std::strcmp(hc,"1")==0;
+        if (hc_replay_ && !first_token_) {error="HC replay requires first-token localization";return false;}
         if (first_token_ && cut_!=1) {error="first-token localization requires cut 1";return false;}
         if (cudaGetDevice(&device_) != cudaSuccess) {
             error = "state capture cannot identify CUDA owner"; return false;
@@ -222,6 +247,7 @@ public:
 private:
     std::string prefix_;
     bool first_token_=false;
+    bool hc_replay_=false;
     bool sample(uint64_t request,const std::string& name,const float* ptr,size_t count,
                 void* stream,std::string& error) const {
         int device=-1;

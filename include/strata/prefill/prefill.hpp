@@ -259,6 +259,10 @@ public:
     // No allocation or reads when unset. Not an inference path.
     using FirstTokenProbe = std::function<bool(const char*, const float*, size_t, void*, std::string&)>;
     FirstTokenProbe on_first_token;
+    // Diagnostic-only readback of actual HC operands and intermediate images.
+    // Byte count (not float count). No kernel changes.
+    using FirstHcProbe = std::function<bool(const char*, const void*, size_t, void*, std::string&)>;
+    FirstHcProbe on_first_hc;
 
     /// Checked before every chunk: true stops the prompt early (`run` returns false with err "cancelled").
     std::function<bool()> should_stop;

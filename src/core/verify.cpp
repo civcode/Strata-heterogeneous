@@ -732,6 +732,7 @@ Verifier::~Verifier() {
     if (qcnt_) cudaFree(qcnt_);
     if (layer_zero_mixed_) cudaFree(layer_zero_mixed_);
     if (layer_zero_q8_) cudaFree(layer_zero_q8_);
+    if (layer_zero_hc_) cudaFree(layer_zero_hc_);
     if (stage0_phase_dev_) cudaFree(stage0_phase_dev_);
     if (branch_probe_dev_) cudaFree(branch_probe_dev_);
     if (branch_ids_dev_) cudaFree(branch_ids_dev_);
@@ -1123,6 +1124,13 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         return false;
     }
     cudaMemset(arena_, 0, count.used);
+    if (layer_zero_hc_probe_on_) {
+        if (!layer_zero_probe_on_ || lb_!=0 || g.n_embd!=2560 || g.hc!=4 || g.hc_lr!=320 ||
+            cudaMalloc(reinterpret_cast<void**>(&layer_zero_hc_),
+                       size_t(T)*size_t(g.hc)*(g.n_embd+2)*sizeof(float))!=cudaSuccess) {
+            err="layer-zero HC replay probe setup failed";return false;
+        }
+    }
     if (layer_zero_probe_on_) {
         // M2.12 probes are only for the canonical GDN first layer.
         if (lb_ != 0 || g.n_embd <= 0 || g.n_embd % 32 != 0 ||
@@ -1719,7 +1727,24 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             return fused_gr_read_multi(fa, n, xn_ + (size_t) tb * HC * N, cs, (prof_on_ && grp == 0) ? prof_ : nullptr,
                                 (int) (l * kProfPer + (half == 0 ? 27 : 30)));
         };
+        if (layer_zero_hc_probe_on_ && l==0) {
+            if (pending) {err="unexpected pending first HC write";return false;}
+            for (int t=tb;t<te;++t)
+                if (cudaMemcpyAsync(layer_zero_hc_+size_t(t)*HC*(N+2),Rt(t),
+                                    HC*N*sizeof(float),cudaMemcpyDeviceToDevice,cs)!=cudaSuccess) {
+                    err="layer-zero HC residual snapshot failed";return false;
+                }
+        }
         const bool q8_attn = gr_read_group(0, pending, inj2_, inj_);   // true: xq_ holds mixed's q8_1 (STRATA_QFUSE)
+        if (layer_zero_hc_probe_on_ && l==0) {
+            for (int t=tb;t<te;++t) {
+                float* dst=layer_zero_hc_+size_t(t)*HC*(N+2)+HC*N;
+                if (cudaMemcpyAsync(dst,rs_+size_t(t)*HC,HC*sizeof(float),cudaMemcpyDeviceToDevice,cs)!=cudaSuccess ||
+                    cudaMemcpyAsync(dst+HC,inj_+size_t(t)*HC,HC*sizeof(float),cudaMemcpyDeviceToDevice,cs)!=cudaSuccess) {
+                    err="layer-zero HC scale/injection snapshot failed";return false;
+                }
+            }
+        }
         if (!stage0_phase_capture(l, tb, n, 0, mixed_, cs, err)) return false;
         if (layer_zero_probe_on_ && l == 0 &&
             cudaMemcpyAsync(layer_zero_mixed_ + (size_t) tb * N, mixed_ + (size_t) tb * N,
@@ -5536,6 +5561,14 @@ bool Verifier::copy_layer_zero_arithmetic(LayerZeroArithmetic& result,
         err = std::string("layer-zero ") + label + ": " + cudaGetErrorString(status);
         return false;
     };
+    if (layer_zero_hc_probe_on_) {
+        if (!layer_zero_hc_) {err="missing layer-zero HC replay snapshot";return false;}
+        const size_t hc=size_t(g_->hc);
+        result.hc_residual.resize(hc*N);result.hc_scale.resize(hc);result.hc_inject.resize(hc);
+        if (!copy(result.hc_residual.data(),layer_zero_hc_,hc*N*sizeof(float),"HC residual") ||
+            !copy(result.hc_scale.data(),layer_zero_hc_+hc*N,hc*sizeof(float),"HC scale") ||
+            !copy(result.hc_inject.data(),layer_zero_hc_+hc*(N+1),hc*sizeof(float),"HC injection")) return false;
+    }
     return copy(result.embedded.data(), emb_, N * sizeof(float), "embedding download") &&
            copy(result.mixed.data(), layer_zero_mixed_, N * sizeof(float), "HC mixed download") &&
            copy(result.q8_bytes.data(), layer_zero_q8_, Q, "Q8 input download") &&

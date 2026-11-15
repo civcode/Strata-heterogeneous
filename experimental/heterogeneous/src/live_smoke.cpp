@@ -82,6 +82,7 @@ struct Options {
     uint32_t prefill_parity_at = 0; // diagnostic: number of known prefix tokens before teacher-forced rows
     bool prefill_state_capture = false;
     bool prefill_first_token = false;
+    bool prefill_hc_replay = false;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -135,6 +136,7 @@ void usage() {
         "    Captures full committed logits on the remaining 1..128 teacher-forced tokens and native bridge bytes.\n"
         "    --prefill-state-capture: also snapshot the entry CUDA committed prefix (cut 1..16 only).\n"
         "    --prefill-first-token: paired native/verifier CUDA first-token observations (cut/chunk 1 only).\n"
+        "    --prefill-hc-replay-capture: capture actual plain BF16 HC weights and intermediate images.\n"
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
@@ -232,6 +234,7 @@ Options parse(int argc, char** argv) {
         }
         else if (key == "--prefill-state-capture") o.prefill_state_capture = true;
         else if (key == "--prefill-first-token") o.prefill_first_token = true;
+        else if (key == "--prefill-hc-replay-capture") o.prefill_hc_replay = true;
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
@@ -414,6 +417,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
+    if (o.prefill_hc_replay && !o.prefill_first_token)
+        throw std::invalid_argument("HC replay capture requires first-token A/B/A");
     if (o.prefill_first_token && (!o.prefill_state_capture || o.prefill_parity_at!=1 || o.native_prefill_chunk!=1))
         throw std::invalid_argument("first-token localization requires A/B/A cut/chunk 1 and state capture");
     if (o.prefill_state_capture && (!o.prefill_parity_at || o.prefill_parity_at > 16))
@@ -462,6 +467,9 @@ void require_executable(const std::string& path, const char* label) {
 std::string json_string(const std::string& value);
 struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
 GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
+    if (o.prefill_hc_replay && (hetero::plan_spec(plan)!="cuda:0:0-12,hip:0:12-30,hip:1:30-48" ||
+        plan.geometry.hc!=4 || plan.geometry.n_embd!=2560 || o.context_limit!=2048))
+        throw std::invalid_argument("HC replay capture requires original physical plan and context");
     if (o.group_hip) {
         (void)hetero::worker_domains(plan, true);
         if (o.layer_taps || o.layer_zero_probe || o.stage0_phases || o.branch_probe ||
@@ -692,6 +700,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
     if (o.generate && ::unsetenv("STRATA_HETERO_LAYER_TAP_PREFIX") != 0)
         throw std::runtime_error("cannot clear inherited native layer-tap capture");
+    if (o.prefill_hc_replay ? ::setenv("STRATA_HETERO_PREFILL_HC_REPLAY","1",1)!=0
+                            : ::unsetenv("STRATA_HETERO_PREFILL_HC_REPLAY")!=0)
+        throw std::runtime_error("cannot configure HC replay capture");
     if (o.prefill_first_token ? ::setenv("STRATA_HETERO_PREFILL_FIRST_TOKEN","1",1)!=0
                               : ::unsetenv("STRATA_HETERO_PREFILL_FIRST_TOKEN")!=0)
         throw std::runtime_error("cannot configure first-token localization");
@@ -887,6 +898,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"prefix_rows\":" << cut << ",\"chunk\":" << o.native_prefill_chunk
                  << ",\"state_capture\":" << (o.prefill_state_capture ? "true" : "false")
                  << ",\"first_token_capture\":" << (o.prefill_first_token ? "true" : "false")
+                 << ",\"hc_replay_capture\":" << (o.prefill_hc_replay ? "true" : "false")
                  << ",\"hc\":" << o.hc << ",\"n_embd\":" << o.n_embd << ",\"token_ids\":[";
         for (size_t pos = 0; pos < o.tokens.size(); ++pos) {
             if (pos) complete << ',';

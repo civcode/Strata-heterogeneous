@@ -28,6 +28,11 @@ public:
         prefix_ = raw;
         const char* first=std::getenv("STRATA_HETERO_PREFILL_FIRST_TOKEN");
         first_token_=first && std::strcmp(first,"1")==0;
+        const char* hc=std::getenv("STRATA_HETERO_PREFILL_HC_REPLAY");
+        hc_replay_=hc && std::strcmp(hc,"1")==0;
+        if (hc_replay_ && (!first_token_ || plan.geometry.n_embd!=2560 || plan.geometry.hc!=4)) {
+            error="HC replay verifier requires canonical first-token capture";return false;
+        }
         const std::filesystem::path path(prefix_);
         if (prefix_.size() > 4096 || !path.is_absolute() ||
             prefix_.find('\n') != std::string::npos ||
@@ -44,6 +49,7 @@ public:
         stage_ = static_cast<uint32_t>(index);
         n_layers_ = plan.total_layers;
         verifier.set_layer_zero_arithmetic_probe(true); // BEFORE init/capture
+        if (hc_replay_) verifier.set_layer_zero_hc_probe(true);
         enabled_ = true;
         return true;
     }
@@ -147,6 +153,33 @@ public:
             error = "failed writing layer-zero arithmetic probe: " + filename;
             return false;
         }
+        if (hc_replay_) {
+            const std::string stem=prefix_+".hc.serial-r"+std::to_string(request)+".";
+            if (snapshot.hc_residual.size()!=size_t(N)*4 || snapshot.hc_scale.size()!=4 ||
+                snapshot.hc_inject.size()!=4) {error="missing HC verifier observations";return false;}
+            auto emit=[&](const std::string& name,const std::vector<float>& vals) {
+                std::vector<uint8_t> raw;raw.reserve(vals.size()*4);
+                for(float v:vals) {
+                    if (!std::isfinite(v)) {error="nonfinite HC verifier observation";return false;}
+                    uint32_t bits;std::memcpy(&bits,&v,4);add32(raw,bits);
+                }
+                const std::string path=stem+name;
+                const int out=::open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
+                if (out<0) {error="cannot create HC verifier observation";return false;}
+                bool ok=true;
+                for (size_t at=0;at<raw.size();) {
+                    const ssize_t n=::write(out,raw.data()+at,raw.size()-at);
+                    if (n>0) at+=size_t(n);
+                    else if (n<0 && errno==EINTR) continue;
+                    else {ok=false;break;}
+                }
+                if (::close(out)!=0) ok=false;
+                if (!ok) {::unlink(path.c_str());error="HC verifier observation write failed";}
+                return ok;
+            };
+            if (!emit("residual.f32",snapshot.hc_residual) || !emit("scale.f32",snapshot.hc_scale) ||
+                !emit("inject.f32",snapshot.hc_inject)) return false;
+        }
         return true;
     }
 
@@ -164,6 +197,7 @@ private:
     uint32_t n_layers_ = 0;
     bool enabled_ = false;
     bool first_token_ = false;
+    bool hc_replay_ = false;
 };
 
 } // namespace strata::heterogeneous

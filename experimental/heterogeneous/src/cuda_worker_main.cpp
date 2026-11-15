@@ -172,6 +172,7 @@ int main(int argc,char** argv) {
                     [&](const hetero::Frame& cmd,int fd,std::string& e) {
                         if (mapped_egress || index!=0) { e="native prefill incompatible with mapped egress or nonentry stage"; return false; }
                         strata::prefill::Prefill::FirstTokenProbe probe;
+                        strata::prefill::Prefill::FirstHcProbe hc_probe;
                         std::function<bool(const char*,std::string&)> state;
                         if (state_capture.first_token()) {
                             probe=[&](const char* name,const float* ptr,size_t count,void* stream,std::string& err) {
@@ -181,10 +182,13 @@ int main(int argc,char** argv) {
                                 return state_capture.entry_state(cmd.request_id,phase,bindings.session,bindings.geometry,err);
                             };
                         }
+                        if (state_capture.hc_replay()) hc_probe=[&](const char* name,const void* ptr,size_t bytes,void* stream,std::string& err) {
+                            return state_capture.hc_sample(name,ptr,bytes,stream,err);
+                        };
                         return hetero::run_native_prefill_domain(cmd,fd,
                             {{bindings.weights,bindings.geometry,bindings.session,pf_resources,
                               config.free_reserve_bytes,config.arena_budget_bytes}},
-                            true,bindings.timeout_ms,e,std::move(probe),state) &&
+                            true,bindings.timeout_ms,e,std::move(probe),state,std::move(hc_probe)) &&
                             (!state || state("after_drain",e)) &&
                             driver.adopt_native_prefill(cmd.request_id,cmd.rows,e);
                     });

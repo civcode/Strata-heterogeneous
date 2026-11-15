@@ -4165,9 +4165,35 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 const int64_t ldx = hc_pad() && T >= std::max<int64_t>(pf_switch_min_t(), 64) && !gr_unfused() &&
                                             !m.xn16_lo ? D + XN_PAD : D;
                 const bool xf16 = m.xn_f16 && !m.xn16_lo && ldx == D;   // xn16 holds FP16 (its writers and readers below)
+                const bool hc_probe=on_first_hc && l==0 && half==0 && p0==0 && T==1;
+                auto hc_sample=[&](const char* name,const void* ptr,size_t bytes) {
+                    return !hc_probe || on_first_hc(name,ptr,bytes,m.cs,err);
+                };
+                if (hc_probe) {
+                    auto plain=[&](const core::WeightRef* w,int64_t cols,int64_t rows) {
+                        return w->data && w->kind==core::WeightKind::Bf16InF32 &&
+                            w->ne0==cols && w->ne1==rows && w->elements==cols*rows &&
+                            w->bytes==uint64_t(cols*rows)*2 && !w->hc_q8 && !w->q8_scale;
+                    };
+                    // No forced settings or reinterpretation of alternate representations.
+                    if (gr_unfused() || normed || xf16 || m.f16_io || m.gemm.bf16_converts_x() ||
+                        m.xn16_lo || m.lo16_lo || m.mixed_bf_lo || ldx!=D ||
+                        !wn->data || wn->kind!=core::WeightKind::F32 || wn->elements!=D ||
+                        wn->bytes!=D*sizeof(float) || !plain(wd,D,LR) || !plain(wu,LR,D) ||
+                        !plain(wi,D,HC)) {
+                        err="HC replay capture requires observed plain BF16 T=1 prompt operands";return false;
+                    }
+                    if (!hc_sample("residual.f32",m.R,D*4) ||
+                        !hc_sample("norm_weight.f32",wn->data,D*4) ||
+                        !hc_sample("down_weight.bf16",wd->data,D*LR*2) ||
+                        !hc_sample("up_weight.bf16",wu->data,D*LR*2) ||
+                        !hc_sample("inject_weight.bf16",wi->data,D*HC*2)) return false;
+                }
                 if (gr_unfused()) gr_norm(m.R, (const float*) wn->data, EPS, m.xn, m.xn16, T, m.cs, m.xn16_lo, xf16);
                 else if (!normed) gr_norm_rs(m.R, (const float*) wn->data, EPS, m.grs, m.xn16, T, m.cs, m.xn16_lo, ldx, xf16);
                 normed = false;
+                if (!hc_sample("scale.f32",m.grs,HC*4) ||
+                    !hc_sample("normalized.bf16",m.xn16,D*2)) return false;
                 pt.mark(kPfHcDown, cs);   // STRATA_PREFILL_TIMING: the hyper-connection read's parts on their own lines (norm stays on "hc read")
                 bool hcd = false;
                 bool hdown = false;
@@ -4185,7 +4211,10 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     hcd = true;
                 }
                 if (!hcd && !hdown && !bf16_proj(m.gemm, wd, m.xn16, m.lo, T, sd, err, 0, m.xn16_lo, ldx != D ? ldx : 0, m.cs, xf16)) return false;
+                if (hc_probe && (hcd || hdown)) {err="unexpected fused down in HC replay";return false;}
+                if (!hc_sample("down.f32",m.lo,LR*4)) return false;
                 gr_silu(m.lo, m.lo16, T, m.cs, m.lo16_lo);
+                if (!hc_sample("silu.bf16",m.lo16,LR*2)) return false;
                 pt.mark(kPfHcUp, cs);
                 bool upmixed = false;
                 if (wu->q8_scale == nullptr && hc_upmix() && T >= std::max(pf_switch_min_t(), hc_upmix_min_t()) && !gr_unfused() && !m.lo16_lo && !m.mixed_bf_lo &&
@@ -4215,8 +4244,11 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     }
                 }
                 if (!upmixed && !bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err, 0, m.lo16_lo, 0, m.cs)) return false;
+                if (hc_probe && upmixed) {err="unexpected fused up in HC replay";return false;}
+                if (!hc_sample("up.f32",m.gated,D*4)) return false;
                 pt.mark(kPfHcInj, cs);
                 if (!hcd && !bf16_proj(m.gemm, wi, m.xn16, m.inj, T, si, err, 0, m.xn16_lo, ldx != D ? ldx : 0, m.cs, xf16)) return false;
+                if (!hc_sample("inject.f32",m.inj,HC*4)) return false;
                 pt.mark(kPfHcMix, cs);
                 if (upmixed) {
                 } else if (gr_unfused()) {
@@ -4226,6 +4258,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                              m.mixed_bf_lo);
                 }
 
+                if (!hc_sample("mixed.f32",m.mixed,N*4)) return false;
                 if (on_first_token && l==0 && half==0 && p0==0 && T==1 &&
                     !on_first_token("hc_mixed",m.mixed,size_t(N),m.cs,err)) return false;
                 if (wd_q8.data) {   // the HC GEMMs that read the scratch are enqueued: the next user waits for them

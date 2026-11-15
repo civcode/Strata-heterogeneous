@@ -26,7 +26,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         const std::vector<NativePrefillStage>& stages, bool sender,
         int timeout_ms, std::string& error,
         prefill::Prefill::FirstTokenProbe first_probe = {},
-        std::function<bool(const char*,std::string&)> entry_state = {}) {
+        std::function<bool(const char*,std::string&)> entry_state = {},
+        prefill::Prefill::FirstHcProbe hc_probe = {}) {
     struct Local {
         int device = -1;
         cudaStream_t stream = nullptr;
@@ -62,7 +63,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             cmd.stage_index < stages.size() - 1) {
             error = "native prefill domain command/topology mismatch"; return false;
         }
-        if ((first_probe || entry_state) && (!sender || !first_probe || !entry_state ||
+        if ((first_probe || entry_state || hc_probe) && (!sender || !first_probe || !entry_state ||
             cmd.rows!=1 || cmd.prefill_chunk!=1 || cmd.request_id!=2)) {
             error="first-token prefill diagnostic requires one CUDA entry token";return false;
         }
@@ -125,6 +126,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         };
         if (sender) {
             first.pf->on_first_token=std::move(first_probe);
+            first.pf->on_first_hc=std::move(hc_probe);
             first.pf->set_external_handoff({},true);
             first.pf->on_chunk=[&](const float* r,int64_t rows,int64_t pos,std::string& err) {
                 try {

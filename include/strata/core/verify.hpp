@@ -54,6 +54,8 @@ struct LayerZeroArithmetic {
     std::vector<float> mixed;
     std::vector<uint8_t> q8_bytes;
     std::vector<float> qkv;
+    // Optional first HC read observations, separate from the STL0 ABI.
+    std::vector<float> hc_residual, hc_scale, hc_inject;
 };
 
 // M2.15: the exact native layer-5 routed-expert and layer-6 GDN
@@ -253,6 +255,7 @@ public:
     // mixed input and quantized Q8_1 input before the first GDN projection.
     // Export only after a completed T=1 window; never during graph execution.
     void set_layer_zero_arithmetic_probe(bool enabled) { layer_zero_probe_on_ = enabled; }
+    void set_layer_zero_hc_probe(bool enabled) { layer_zero_hc_probe_on_ = enabled; }
     bool copy_layer_zero_arithmetic(LayerZeroArithmetic& result, std::string& err) const;
     // M2.14: opt-in snapshots at four internal stage-zero phase boundaries
     // (HC0 mixed, attention/GDN bo, HC1 mixed, MoE bo), layers 0..11.
@@ -698,6 +701,8 @@ private:
     bool layer_zero_probe_on_ = false;
     float* layer_zero_mixed_ = nullptr;   // snapshot before first GDN Q8 quantization
     uint8_t* layer_zero_q8_ = nullptr;    // snapshot of first GDN Q8_1 image
+    bool layer_zero_hc_probe_on_ = false;
+    float* layer_zero_hc_ = nullptr;     // per-row residual, RMS scales, injection
     static constexpr size_t kBranchFields = 12;
     bool branch_probe_on_ = false;
     float* branch_probe_dev_ = nullptr;  // sequential per-field snapshots
