@@ -82,6 +82,20 @@ class StageGate(unittest.TestCase):
             path=Path(tmp)/'nan';path.write_bytes(struct.pack('<f',float('nan')))
             with self.assertRaisesRegex(ValueError,'nonfinite'):gate.signature(path,4,'f32')
 
+    def test_hc_experiment_identity(self):
+        self.assertIsNone(gate.experiment_identity({}))
+        valid={'mode':'fp32','backend':'hip'}
+        self.assertEqual(gate.experiment_identity({'hc_experiment':valid}),valid)
+        for invalid in (None, {}, {'mode':'other','backend':'hip'}, {'mode':'fp32','backend':'other'}):
+            with self.assertRaisesRegex(ValueError,'experiment identity'):
+                gate.experiment_identity({'hc_experiment':invalid})
+        c1,c2=list(gate.CASES)[:2]
+        p={'case':c1,'transport':'shared','interop':'PASS','quality':'PASS',
+           'wire_evidence':{'source':(1,2),'residuals':{},'states':{},'logits':{},'marker':{}}}
+        q=copy.deepcopy(p);q['case']=c2;q['wire_evidence']['marker']['hc_experiment']=valid
+        with self.assertRaisesRegex(ValueError,'cannot mix HC experiment'):
+            gate.matrix([p,q])
+
     def test_matrix_requires_all_cases_and_two_modes(self):
         p={'case':next(iter(gate.CASES)),'transport':'shared','interop':'PASS','quality':'PASS',
            'wire_evidence':{'source':(1,2),'residuals':{},'states':{},'logits':{}}}

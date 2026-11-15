@@ -10,7 +10,7 @@ Unchanged baseline with both variables unset. Opt-in environment STRATA_PREFILL_
 
 ## Build and validate
 
-Read 0027.7–8 handoff for exact vanilla build commands and prior instrumentation. Run host/CUDA/HIP builds -j28, HC replay target, host CTest, designated Python tests from that handoff, resident controls and pip check. New standalone hc_experiment_test may also be run with strict C++17. Verify --help and CPU no-run with canonical cut/chunk, both scopes and modes, and refusal of invalid modes/backend, global BF16X2, MTP, resident, extra prompt shapes, missing stage/state or incompatible first HC probe. Fix diagnostic/build issues, preserve defaults. Source-level config test passed in Chat AI container; integrated build/hardware not yet verified.
+Read 0027.7–8 handoff for exact vanilla build commands and prior instrumentation. Run host/CUDA/HIP builds -j28, HC replay target, host CTest, designated Python tests from that handoff, resident controls and pip check. New standalone hc_experiment_test may also be run with strict C++17; run `PYTHONPATH=tools .venv/bin/python -m unittest test_heterogeneous_hc_experiment test_heterogeneous_prefill_stage_gate` (the three synthetic comparator helper tests passed here, not GPU tests). Verify --help and CPU no-run with canonical cut/chunk, both scopes and modes, and refusal of invalid modes/backend, global BF16X2, MTP, resident, extra prompt shapes, missing stage/state or incompatible first HC probe. Fix diagnostic/build issues, preserve defaults. Source-level config test passed in Chat AI container; integrated build/hardware not yet verified.
 
 ## Experimental design
 
@@ -18,7 +18,15 @@ Use exact 0027.5 approved commands/config/asset identities and actual teacher-fo
 
 Start with shared cut2/chunk1: bf16x2/all and fp32/all. Compare against fresh trace-off baseline. Then each intervention on CUDA only, HIP only. For each arm record KL, max logit delta, prediction/top1, and stage/chunk residual/state differences. If first two arms improve nothing, still retain data and collect the backend-local controls; quality failure alone is not a stop. Extend all meaningful arms to cut2/2, 6/3, 6/6 and cut1/1; replicate on socket. Do not label a quality improvement as causal proof. For each interpreted arm run matching file-fed stage reference with identical env and immutable same-mode wire source, checking pair gate independently. Never mix modes/scopes in a matrix. For all-layer trace add --prefill-numerical-trace only after same-mode trace-off baseline exists; existing numerical trace analyzer must use that same-mode baseline, not the original BF16 capture. Compare stage boundary error vectors, earliest HC mixed differences, routes and committed states across original and experimental reports. Stop on integrity, nonfinite, ownership, instability, unexplained same-mode replay or observer mismatch, or changed serial controls. Diagnose only proven diagnostic defects; do not silently switch kernels or settings.
 
-Use the unchanged stage gate and serial quality gate. Independently compare original vs experimental trace-off native residuals and stage states, and evaluate the same serial reference. For trace-off legacy baseline verify marker has no hc_experiment, candidate marker records mode/backend, and worker logs show all three owning stages effective selected mode (or off for unselected). No mixed-mode observer baseline.
+Use the unchanged stage gate and serial quality gate. Run the cross-arm comparator against original and intervention trace-off wire evidence, retaining its JSON:
+
+```sh
+PYTHONPATH=tools .venv/bin/python tools/heterogeneous_hc_experiment.py --baseline "$BASELINE" --experiment "$ARM" --baseline-log "$BASELINE_LOG" --experiment-log "$ARM_LOG" --reference "$REFERENCE" --reference-log "$REFERENCE_LOG"
+```
+
+Before same-mode reference collection, omit both reference flags; interop is then NOT_RUN. Exit 0 means valid diagnostic evidence (not a quality PASS), 1 replay mismatch, 2 invalid evidence. Changed serial state or untouched CUDA stage in HIP-only mode is invalid, not a quality result.
+
+ Independently compare original vs experimental trace-off native residuals and stage states, and evaluate the same serial reference. For trace-off legacy baseline verify marker has no hc_experiment, candidate marker records mode/backend, and worker logs show all three owning stages effective selected mode (or off for unselected). No mixed-mode observer baseline.
 
 If an original CUDA-only or HIP-only native caller can run within existing approved resident resources with exactly the same assets and settings, compare original/arm against that backend's own serial control. Do not run speculative OOM/repack/streamed substitutions. If not feasible, record blocker; consider owner-stage same-input replay only within approved resources. Do not represent partial stage replay as full single-backend model.
 
