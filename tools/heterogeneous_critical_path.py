@@ -4,6 +4,11 @@ import json
 from collections import defaultdict
 from statistics import median
 
+if __package__:
+    from .heterogeneous_native_prefill_trace import join_native_prefill, native_timing_issue
+else:
+    from heterogeneous_native_prefill_trace import join_native_prefill, native_timing_issue
+
 
 def fields(line, prefix):
     result = {}
@@ -65,7 +70,7 @@ def summarize(lines, stage_count, endpoints=None):
     endpoints = list(range(stage_count)) if endpoints is None else list(endpoints)
     if len(endpoints) != stage_count or any(type(x) is not int or x < 0 for x in endpoints) or sorted(set(endpoints)) != endpoints:
         raise ValueError("endpoints must be distinct ascending nonnegative stage IDs")
-    spans, commits, native_prefill = defaultdict(dict), {}, []
+    spans, commits, native_prefill, native_timings = defaultdict(dict), {}, [], []
     for line in lines:
         line = line.strip()
         if line.startswith("HETERO_PERF "):
@@ -78,6 +83,10 @@ def summarize(lines, stage_count, endpoints=None):
             if not n or b < a or tag in spans[key]:
                 raise ValueError(f"invalid or duplicate span {key} {tag}")
             spans[key][tag] = (a, b, n)
+        elif line.startswith("HETERO_NATIVE_PREFILL_TIMING "):
+            r = fields(line, "HETERO_NATIVE_PREFILL_TIMING ")
+            native_timings.append(dict(request=integer(r, "request", 1), rows=integer(r, "rows", 1),
+                                       start_ns=integer(r, "start_ns"), end_ns=integer(r, "end_ns")))
         elif line.startswith("HETERO_NATIVE_PREFILL_COMMITTED "):
             r = fields(line, "HETERO_NATIVE_PREFILL_COMMITTED ")
             native_prefill.append(dict(request=integer(r, "request", 1), rows=integer(r, "rows", 1),
@@ -149,13 +158,18 @@ def summarize(lines, stage_count, endpoints=None):
             timing={k: distribution([w[k] for w in group if w[k] is not None]) for k in
                     ("critical_ns", "commit_ns", "dispatch_gap_ns", "inter_window_gap_ns")},
             stages=[stage_summary(group, i, endpoint) for i, endpoint in enumerate(endpoints)])
+    native_prefill = join_native_prefill(native_prefill, native_timings)
     uncommitted = sorted(set(spans)-set(commits))
     return dict(schema="strata-heterogeneous-critical-path/v1", stages=stage_count, endpoints=endpoints,
-        native_prefill_markers=native_prefill, committed_markers=len(commits), complete_windows=len(windows), incomplete=incomplete,
+        native_prefill_markers=native_prefill,
+        native_prefill_roundtrip=distribution([m["roundtrip_ns"] for m in native_prefill if "roundtrip_ns" in m]),
+        committed_markers=len(commits), complete_windows=len(windows), incomplete=incomplete,
         uncommitted=[list(k) for k in uncommitted], summaries=summaries, windows=windows,
         notes="Host monotonic spans only; same host/boot. Coverage is a union, not GPU busy time. "
               "Uncovered time is not necessarily IPC. Individual nested phase spans are not additive. "
-              "Inter-window gaps exclude phase transitions and missing windows. Trace overhead is not clean throughput.")
+              "Inter-window gaps exclude phase transitions and missing windows. "
+              "Native prefix timing is a separate inclusive host round trip, not GPU time or an ordinary window. "
+              "Trace overhead is not clean throughput.")
 
 
 def verify_benchmark(result, benchmark):
@@ -173,35 +187,40 @@ def verify_benchmark(result, benchmark):
     for marker in result.get("native_prefill_markers", []):
         if marker["request"] in native:
             raise ValueError("duplicate native prefill marker")
-        native[marker["request"]] = marker["rows"]
+        native[marker["request"]] = marker
     for w in result["windows"]:
         by_request[w["request"]].append(w)
     mismatches = []
-    for req in sorted(set(completions) | set(by_request)):
+    for req in sorted(set(completions) | set(by_request) | set(native)):
         if req not in completions or req not in by_request:
             mismatches.append({"request": req, "reason": "missing request on one side"})
             continue
         r, group = completions[req], by_request[req]
         expected = {"prefill": r["prompt_tokens"], "decode": r["timing"]["decode_feedback_tokens"]}
         observed = {p: sum(w["keep"] for w in group if w["phase"] == p) for p in expected}
-        observed["prefill"] += native.get(req, 0)
+        prefix = native.get(req, {}).get("rows", 0)
+        observed["prefill"] += prefix
         if observed != expected:
             mismatches.append({"request": req, "reason": "accepted row counts", "expected": expected, "observed": observed})
-        prefix = native.get(req, 0)
         if group[0]["window"] != (2 if prefix else 1) or group[0]["pos0"] != prefix or any(
                 b["window"] != a["window"] + 1 or b["pos0"] != a["pos0"] + a["keep"]
                 for a,b in zip(group, group[1:])):
             mismatches.append({"request": req, "reason": "missing or non-contiguous window sequence"})
         bounds = r["timing"]["phase_monotonic_s"]
+        if req in native:
+            issue = native_timing_issue(native[req], bounds, group[0]["start_ns"])
+            if issue:
+                mismatches.append({"request": req, "reason": issue})
         for w in group:
             lo, hi = (("request_start", "prefill_end") if w["phase"] == "prefill"
                       else ("prefill_end", "decode_end"))
             if not bounds[lo] <= w["start_ns"] / 1e9 <= w["end_ns"] / 1e9 <= bounds[hi]:
                 mismatches.append({"request": req, "window": w["window"], "reason": "outside benchmark phase; verify clock and run identity"})
+    untimed = sorted(req for req, marker in native.items() if "roundtrip_ns" not in marker)
     return {"requests": len(completions), "mismatches": mismatches,
-            "untimed_native_prefill_requests": sorted(native),
+            "untimed_native_prefill_requests": untimed,
             "position_counts_match": bool(completions) and not mismatches,
-            "matched": bool(completions) and not mismatches and not native and not result["incomplete"] and not result["uncommitted"]}
+            "matched": bool(completions) and not mismatches and not untimed and not result["incomplete"] and not result["uncommitted"]}
 
 
 def main(argv=None):

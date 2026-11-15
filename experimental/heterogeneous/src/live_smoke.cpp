@@ -1087,7 +1087,18 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         size_t prompt_offset=0;
         if (o.native_prefill_chunk && prompt.size()>1) {
             std::vector<int32_t> prefix(prompt.begin(),prompt.end()-1);
+            const bool trace_prefix=hetero::performance_trace();
+            using PrefixClock=std::chrono::steady_clock;
+            const auto prefix_start=trace_prefix ? PrefixClock::now() : PrefixClock::time_point{};
             session.native_prefill(prefix,o.native_prefill_chunk);
+            if (trace_prefix) {
+                const auto prefix_end=PrefixClock::now();
+                const auto start_ns=std::chrono::duration_cast<std::chrono::nanoseconds>(prefix_start.time_since_epoch()).count();
+                const auto end_ns=std::chrono::duration_cast<std::chrono::nanoseconds>(prefix_end.time_since_epoch()).count();
+                std::fprintf(stderr,"HETERO_NATIVE_PREFILL_TIMING request=%llu rows=%zu start_ns=%lld end_ns=%lld\n",
+                             static_cast<unsigned long long>(request_id),prefix.size(),
+                             static_cast<long long>(start_ns),static_cast<long long>(end_ns));
+            }
             window=1; pos=static_cast<int64_t>(prefix.size()); prompt_offset=prefix.size();
             std::fprintf(stderr,"HETERO_NATIVE_PREFILL_COMMITTED request=%llu rows=%zu chunk=%u\n",
                          static_cast<unsigned long long>(request_id),prefix.size(),o.native_prefill_chunk);

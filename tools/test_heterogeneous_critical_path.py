@@ -76,6 +76,24 @@ class CriticalPathTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarize(data, 2, [2, 0])
 
+    def test_timed_prefix_and_orphan(self):
+        data = trace(2, 400, "prefill", 1, 3)
+        data += ["HETERO_NATIVE_PREFILL_COMMITTED request=1 rows=3 chunk=8",
+                 "HETERO_NATIVE_PREFILL_TIMING request=1 rows=3 start_ns=100 end_ns=350"]
+        b = {"status": "complete", "completions": [{"request_id": 1, "finish_reason": "length",
+             "prompt_tokens": 4, "timing": {"decode_feedback_tokens": 0, "phase_monotonic_s": {
+                 "request_start": 0, "prefill_end": 800e-9, "decode_end": 800e-9}}}]}
+        result = summarize(data, 2)
+        self.assertTrue(verify_benchmark(result, b)["matched"])
+        self.assertEqual(result["native_prefill_roundtrip"]["n"], 1)
+        self.assertEqual(result["native_prefill_markers"][0]["roundtrip_ns"], 250)
+        overlap = data[:-1] + [data[-1].replace("350", "450")]
+        self.assertFalse(verify_benchmark(summarize(overlap, 2), b)["matched"])
+        orphan = data + ["HETERO_NATIVE_PREFILL_COMMITTED request=2 rows=3 chunk=8"]
+        self.assertFalse(verify_benchmark(summarize(orphan, 2), b)["matched"])
+        with self.assertRaises(ValueError):
+            summarize(data[:-2] + [data[-1]], 2)
+
     def test_bad_sequence(self):
         with self.assertRaises(ValueError):
             summarize(trace()+trace(2, 350, "decode", 1, 9), 2)
