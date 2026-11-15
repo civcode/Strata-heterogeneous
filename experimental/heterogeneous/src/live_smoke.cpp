@@ -11,6 +11,7 @@
 #include "strata_heterogeneous/mtp_generation.hpp"
 #include "strata_heterogeneous/mtp_resident.hpp"
 #include "strata/spec/suffix_drafter.hpp"
+#include "strata/prefill/hc_experiment.hpp"
 #include "strata_heterogeneous/process.hpp"
 
 #include <algorithm>
@@ -427,6 +428,16 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
+    const auto hc_exp = strata::prefill::hc_experiment_config();
+    const char* global_bf16x2 = std::getenv("STRATA_PREFILL_BF16X2");
+    if (!hc_exp.valid() || (hc_exp.requested() &&
+        (!o.prefill_stage_capture || !o.prefill_state_capture || o.resident ||
+         !o.mtp_probe_rt.empty() || o.prefill_hc_replay || o.prefill_first_token ||
+         (global_bf16x2 && std::atoi(global_bf16x2) != 0) ||
+         !((o.prefill_parity_at == 1 && o.native_prefill_chunk == 1) ||
+           (o.prefill_parity_at == 2 && (o.native_prefill_chunk == 1 || o.native_prefill_chunk == 2)) ||
+           (o.prefill_parity_at == 6 && (o.native_prefill_chunk == 3 || o.native_prefill_chunk == 6))))))
+        throw std::invalid_argument("HC experiment requires one canonical bounded stage/state A/B/A, no MTP and no global BF16X2");
     if (o.numerical_trace && (!o.prefill_stage_capture || !o.prefill_stage_reference.empty() ||
         !((o.prefill_parity_at==2 && (o.native_prefill_chunk==1 || o.native_prefill_chunk==2)) ||
           (o.prefill_parity_at==6 && (o.native_prefill_chunk==3 || o.native_prefill_chunk==6)))))
@@ -466,11 +477,11 @@ Options parse(int argc, char** argv) {
             }
             if (uint64_t(o.tokens.size()) + o.generate > o.context_limit)
                 throw std::invalid_argument("prompt and completion exceed context limit");
-            if (o.numerical_trace) {
+            if (o.numerical_trace || hc_exp.requested()) {
                 const std::vector<int32_t> expected{248045,846,198,2523,513,32767,264};
                 if(o.tokens.size()!=o.prefill_parity_at+1 ||
                    !std::equal(o.tokens.begin(),o.tokens.end(),expected.begin()))
-                    throw std::invalid_argument("numerical trace requires canonical teacher-forced sequence");
+                    throw std::invalid_argument("numerical trace / HC experiment requires canonical teacher-forced sequence");
             }
             if (o.prefill_first_token && o.tokens.size()!=2)
                 throw std::invalid_argument("first-token localization requires one prefix and one forced token");
@@ -958,6 +969,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"first_token_capture\":" << (o.prefill_first_token ? "true" : "false")
                  << ",\"hc_replay_capture\":" << (o.prefill_hc_replay ? "true" : "false");
         if (o.numerical_trace) complete << ",\"numerical_trace\":true";
+        const auto hc_exp = strata::prefill::hc_experiment_config();
+        if (hc_exp.requested())
+            complete << ",\"hc_experiment\":{\"mode\":"
+                     << json_string(strata::prefill::hc_experiment_name(hc_exp.mode))
+                     << ",\"backend\":"
+                     << json_string(strata::prefill::hc_experiment_name(hc_exp.backend)) << '}';
         if (o.prefill_stage_capture)
             complete << ",\"stage_capture\":true"
                      << ",\"stage_reference\":" << json_string(o.prefill_stage_reference)

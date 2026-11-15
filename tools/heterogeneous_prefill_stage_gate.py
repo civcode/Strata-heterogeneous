@@ -87,8 +87,19 @@ def packet_signatures(run):
             for m,p in run]
 
 
+def experiment_identity(mark):
+    if 'hc_experiment' not in mark:
+        return None
+    exp = mark['hc_experiment']
+    require(type(exp) is dict and set(exp) == {'mode', 'backend'} and
+            exp['mode'] in ('bf16x2', 'fp32') and exp['backend'] in ('all', 'cuda', 'hip'),
+            'invalid HC experiment identity')
+    return exp
+
+
 def read_capture(prefix):
     mark,runs,bridge = load(prefix)
+    experiment_identity(mark)
     cut,chunk=mark['prefix_rows'],mark['chunk']
     require(mark.get('stage_capture') is True and mark.get('state_capture') is True and
             mark.get('first_token_capture') is False and mark.get('hc_replay_capture') is False and
@@ -129,6 +140,7 @@ def pair(wire, reference):
     w,r=read_capture(wire),read_capture(reference)
     a,b=w['marker'],r['marker']
     case=(a['prefix_rows'],a['chunk'],tuple(a['token_ids']))
+    require(experiment_identity(a)==experiment_identity(b), 'wire/reference HC experiment differs')
     require(case==(b['prefix_rows'],b['chunk'],tuple(b['token_ids'])) and w['source']==r['source'] and
             a['transport']==b['transport'] and a['stage_reference']=='' and
             Path(b['stage_reference']).resolve()==wire.resolve() and wire.resolve()!=reference.resolve(),
@@ -155,6 +167,9 @@ def matrix(pairs):
         lookup[key]=p
     source=pairs[0]['wire_evidence']['source']
     require(all(p['wire_evidence']['source']==source for p in pairs),'matrix model source changed')
+    hc_exp=experiment_identity(pairs[0]['wire_evidence'].get('marker', {}))
+    require(all(experiment_identity(p['wire_evidence'].get('marker', {}))==hc_exp for p in pairs),
+            'cannot mix HC experiment modes/backends in one qualification matrix')
     cross={}
     for case in {p['case'] for p in pairs}:
         if all((case,t) in lookup for t in ('shared','socket')):

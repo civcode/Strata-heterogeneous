@@ -189,9 +189,10 @@ def stage_row(prefix, stage, pos, cut, chunk, direction):
 
 
 def analyze(prefix, baseline):
-    from heterogeneous_prefill_stage_gate import read_capture
+    from heterogeneous_prefill_stage_gate import read_capture, experiment_identity
     c,b = read_capture(prefix), read_capture(baseline)
     m,old = c['marker'],b['marker']; cut,chunk=m['prefix_rows'],m['chunk']
+    require(experiment_identity(m)==experiment_identity(old), 'observer baseline must use same HC experiment')
     require(prefix.resolve()!=baseline.resolve() and m.get('numerical_trace') is True and
             not old.get('numerical_trace') and not m['stage_reference'] and not old['stage_reference'] and
             (cut,chunk) in ((2,1),(2,2),(6,3),(6,6)) and tuple(m['token_ids'])==TOKENS[:cut+1], 'invalid trace case')

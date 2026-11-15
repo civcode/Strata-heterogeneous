@@ -1,6 +1,7 @@
 // src/prefill/prefill.cpp - see include/strata/prefill/prefill.hpp.
 #include "strata/kernels/fused_gr.hpp"
 #include "strata/prefill/prefill.hpp"
+#include "strata/prefill/hc_experiment.hpp"
 #include "strata/core/numerical_trace.hpp"
 #include "strata/prefill/copy_events.hpp"
 #include "strata/prefill/timer_marks.hpp"
@@ -574,7 +575,21 @@ inline int64_t hc_upmix_min_t() {
     return 33;
 #endif
 }
-inline bool bf16x2_hc(bool f16_io) { return bf16x2_mode(f16_io) == 1; }
+// An independent HC-only experiment, using the existing low-image allocation
+// and high+low GEMMs. Do not turn on low images for the router or other projections.
+constexpr HcExperimentBackend hc_local_backend() {
+#if defined(STRATA_GPU_METAL)
+    return HcExperimentBackend::invalid;
+#elif defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(__HIPCC__)
+    return HcExperimentBackend::hip;
+#else
+    return HcExperimentBackend::cuda;
+#endif
+}
+inline bool bf16x2_hc(bool f16_io) {
+    return bf16x2_mode(f16_io) == 1 || (!f16_io &&
+        hc_experiment_config().effective(hc_local_backend()) == HcExperimentMode::bf16x2);
+}
 // S23 (opt-in STRATA_CVEC_FUSE=1): a steered layer's FFN write + control vector + the next half's norm in one pass
 // over R (gr_write_cvec_norm_rs; bitwise the gr_write + cvec_apply + gr_norm_rs it replaces)
 // S23 (opt-in STRATA_PF_HCDOWN=1, on chunks of STRATA_PF_SWITCH_MIN_T+ tokens): the hyper-connection read's down and
@@ -1801,6 +1816,12 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
                    core::ExpertSource* src, const core::ExpertCache* cache, const int32_t* host_res, int64_t chunk,
                    void* stream, std::string& err, void* borrow, uint64_t borrow_bytes, bool borrow_spill) {
     Impl& m = *impl_;
+    const auto hc_exp = hc_experiment_config();
+    if (!hc_exp.valid() || (hc_exp.requested() &&
+        (hc_local_backend() == HcExperimentBackend::invalid || bf16x2_mode(false) != 0))) {
+        err = "prefill: invalid HC experiment, unsupported backend or conflicting STRATA_PREFILL_BF16X2";
+        return false;
+    }
     int64_t tr_last = pf_alloc_trace() ? pf_free_mib() : 0;
     pf_mark("init: start (chunk, then the sign tables)", tr_last);
 #if defined(STRATA_GPU_METAL)
@@ -2265,6 +2286,8 @@ bool Prefill::draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t
 #endif
     const core::OnDevice on_device(m.device);   // the stage's own GPU current (a layer split's drafter: the last stage)
     auto decline = [&](const char* reason) { if (why != nullptr) *why = reason; return false; };
+    if (hc_experiment_config().requested() || !hc_experiment_config().valid())
+        return decline("HC experiment does not implement draft KV prefill");
     static const bool off = [] { const char* v = std::getenv("STRATA_MTP_BATCH"); return v != nullptr && v[0] == '0'; }();
     // A ring (KV streaming: the drafter's window, page p in slot p % n_slots over a host copy) takes the same appends
     // with its own page table and host copy, as a streamed main layer does; the cells written are those the window can
@@ -3347,6 +3370,26 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                          (long long) g.n_layers, (long long) g.n_expert);
     }
     const bool kva_run = kva_why_not == nullptr;
+    const auto hc_exp = hc_experiment_config();
+    const auto hc_mode = hc_exp.effective(hc_local_backend());
+    if (!hc_exp.valid()) { err = "prefill: invalid HC experiment"; return false; }
+    if (hc_exp.requested()) {
+        if (pos0 < 0 || n < 1 || pos0 > 16 || n > 16 - pos0 || kva_run ||
+            on_first_hc || bf16x2_mode(false) != 0 || g.n_embd != N || g.hc != HC || g.hc_lr != LR) {
+            err = "prefill: HC experiment requires bounded ordinary chunk-major HC without other precision probes";
+            return false;
+        }
+        if (hc_mode != HcExperimentMode::off &&
+            (gr_unfused() || m.f16_io || m.xn_f16 || m.gemm.bf16_converts_x() || m.mixed_bf_lo ||
+             !m.gated || !m.lo || !m.grs || !m.inj || !m.mixed || !m.mixed_bf || !m.mixed_h ||
+             (hc_mode == HcExperimentMode::bf16x2 && (!m.xn16_lo || !m.lo16_lo)))) {
+            err = "prefill: HC experiment refuses converted, unfused or incompatible scratch/precision path";
+            return false;
+        }
+        std::fprintf(stderr, "STRATA_HC_EXPERIMENT backend=%s layers=%lld-%lld requested=%s scope=%s effective=%s\n",
+                     hc_experiment_name(hc_local_backend()), (long long) LB, (long long) LE,
+                     hc_experiment_name(hc_exp.mode), hc_experiment_name(hc_exp.backend), hc_experiment_name(hc_mode));
+    }
     if(trace_root) {
         if(kva_run || m.gemm.bf16_converts_x()) {err="numerical trace unsupported approximate/converted prompt path";return false;}
         for(int64_t l=LB;l<LE;++l) if(strata::kernels::cvec().covers(l)) {
@@ -4190,6 +4233,19 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 const core::WeightRef *wn = need(v, sn.c_str(), err), *wd = need(v, sd.c_str(), err),
                                       *wu = need(v, su.c_str(), err), *wi = need(v, si.c_str(), err);
                 if (!wn || !wd || !wu || !wi) return false;
+                if (hc_mode != HcExperimentMode::off) {
+                    auto plain_hc_weight = [](const core::WeightRef* w, int64_t cols, int64_t rows) {
+                        return w->data && w->kind == core::WeightKind::Bf16InF32 &&
+                               w->ne0 == cols && w->ne1 == rows && w->elements == cols * rows &&
+                               w->bytes == uint64_t(cols * rows) * 2 && !w->hc_q8 && !w->q8_scale;
+                    };
+                    if (!wn->data || wn->kind != core::WeightKind::F32 || wn->elements != D ||
+                        wn->bytes != D * sizeof(float) || !plain_hc_weight(wd, D, LR) ||
+                        !plain_hc_weight(wu, LR, D) || !plain_hc_weight(wi, D, HC)) {
+                        err = "prefill: HC experiment requires original resident BF16 projections and FP32 norm";
+                        return false;
+                    }
+                }
                 // STRATA_HC_Q8 without a bf16 copy: this path's GEMMs read bf16, so the matrices are dequantized per half
                 core::WeightRef wd_q8, wu_q8;
                 if (!wd->data && wd->hc_q8 && !wu->data && wu->hc_q8) {
@@ -4228,73 +4284,107 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         !hc_sample("up_weight.bf16",wu->data,D*LR*2) ||
                         !hc_sample("inject_weight.bf16",wi->data,D*HC*2)) return false;
                 }
-                if (gr_unfused()) gr_norm(m.R, (const float*) wn->data, EPS, m.xn, m.xn16, T, m.cs, m.xn16_lo, xf16);
-                else if (!normed) gr_norm_rs(m.R, (const float*) wn->data, EPS, m.grs, m.xn16, T, m.cs, m.xn16_lo, ldx, xf16);
-                normed = false;
-                if (!hc_sample("scale.f32",m.grs,HC*4) ||
-                    !hc_sample("normalized.bf16",m.xn16,D*2)) return false;
-                pt.mark(kPfHcDown, cs);   // STRATA_PREFILL_TIMING: the hyper-connection read's parts on their own lines (norm stays on "hc read")
-                bool hcd = false;
-                bool hdown = false;
-                if (wd->q8_scale == nullptr && ldx != D && !pf_hcdown()) {   // not with STRATA_HC_REQ8's int8 rows   // STRATA_HCD_EXACT: the exact-order down kernel when hipBLASLt would take 1176 / 1177
-                    hdown = wd->kind == core::WeightKind::Bf16InF32 && wd->data && wd->ne0 == D && wd->ne1 == LR &&
-                            m.gemm.bf16_hcd_exact(m.xn16, ldx, (const uint16_t*) wd->data, m.lo, T, LR, D);
-                } else if (wd->q8_scale == nullptr && ldx != D) {
-                    if (wd->kind != core::WeightKind::Bf16InF32 || !wd->data || wd->ne0 != D || wd->ne1 != LR ||
-                        wi->kind != core::WeightKind::Bf16InF32 || !wi->data || wi->ne0 != D || wi->ne1 != HC ||
-                        !strata_pf_hcdown_bf16(m.xn16, ldx, (const uint16_t*) wd->data, (const uint16_t*) wi->data, LR,
-                                               HC, m.lo, m.inj, T, D, m.cs)) {
-                        err = "prefill: STRATA_PF_HCDOWN could not run the hyper-connection projections";
-                        return false;
+                if (hc_mode == HcExperimentMode::fp32) {
+#if defined(STRATA_GPU_METAL)
+                    err = "prefill: FP32 HC experiment is CUDA/HIP only"; return false;
+#else
+                    // Reuse the native T=1 verifier read with no pending write: R is
+                    // already materialized here. Keep downstream activation images
+                    // and the rest of prefill's precision contract unchanged.
+                    normed = false;
+                    pt.mark(kPfHcDown, cs);
+                    for (int64_t t = 0; t < T; ++t) {
+                        strata::kernels::FusedGrArgs a;
+                        a.R = m.R + t * D;
+                        a.R_out = m.R + t * D;
+                        a.w_norm = (const float*) wn->data;
+                        a.w_down = (const uint16_t*) wd->data;
+                        a.w_up = (const uint16_t*) wu->data;
+                        a.w_inject = (const uint16_t*) wi->data;
+                        a.eps = EPS;
+                        a.lo = m.lo + t * LR;
+                        a.rs = m.grs + t * HC;
+                        a.inject_out = m.inj + t * HC;
+                        a.mixed = m.mixed + t * N;
+                        // gated is dead on this arm; one row of scratch, reused
+                        // only in stream order. No Q8 image or persistent read.
+                        (void) strata::kernels::fused_gr_read_multi(&a, 1, m.gated, m.cs);
                     }
-                    hcd = true;
-                }
-                if (!hcd && !hdown && !bf16_proj(m.gemm, wd, m.xn16, m.lo, T, sd, err, 0, m.xn16_lo, ldx != D ? ldx : 0, m.cs, xf16)) return false;
-                if (hc_probe && (hcd || hdown)) {err="unexpected fused down in HC replay";return false;}
-                if (!hc_sample("down.f32",m.lo,LR*4)) return false;
-                gr_silu(m.lo, m.lo16, T, m.cs, m.lo16_lo);
-                if (!hc_sample("silu.bf16",m.lo16,LR*2)) return false;
-                pt.mark(kPfHcUp, cs);
-                bool upmixed = false;
-                if (wu->q8_scale == nullptr && hc_upmix() && T >= std::max(pf_switch_min_t(), hc_upmix_min_t()) && !gr_unfused() && !m.lo16_lo && !m.mixed_bf_lo &&
-                    wu->kind == core::WeightKind::Bf16InF32 && wu->data && wu->ne0 == LR && wu->ne1 == D) {
-                    static int checks = [] { const char* e = std::getenv("STRATA_HC_UPMIX_CHECK"); return e ? std::atoi(e) : 0; }();
-                    if (checks > 0) {   // the default pair first, kept for the comparison
-                        --checks;
-                        if (!bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err)) return false;
-                        gr_mix_r(m.R, m.grs, (const float*) wn->data, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h);
-                        std::vector<float> ref((size_t) T * N), got((size_t) T * N);
-                        cudaMemcpyAsync(ref.data(), m.mixed, ref.size() * 4, cudaMemcpyDeviceToHost, m.cs);
-                        upmixed = gr_upmix(m.lo16, (const uint16_t*) wu->data, m.R, m.grs, (const float*) wn->data,
-                                           m.mixed, m.mixed_bf, m.mixed_h, T, m.cs);
-                        cudaMemcpyAsync(got.data(), m.mixed, got.size() * 4, cudaMemcpyDeviceToHost, m.cs);
-                        cudaStreamSynchronize(m.cs);
-                        double e2 = 0, r2 = 0, emax = 0;
-                        for (size_t i = 0; i < ref.size(); ++i) {
-                            const double dd = (double) got[i] - ref[i];
-                            e2 += dd * dd; r2 += (double) ref[i] * ref[i]; emax = std::max(emax, std::fabs(dd));
-                        }
-                        std::fprintf(stderr, "strata: STRATA_HC_UPMIX_CHECK layer %lld half %d T %lld: mixed rel RMS %.3e, "
-                                     "max |diff| %.3e (%s)\n", (long long) l, half, (long long) T,
-                                     std::sqrt(e2 / std::max(r2, 1e-30)), emax, upmixed ? "upmix" : "upmix refused");
-                    } else {
-                        upmixed = gr_upmix(m.lo16, (const uint16_t*) wu->data, m.R, m.grs, (const float*) wn->data,
-                                           m.mixed, m.mixed_bf, m.mixed_h, T, m.cs);
+                    to_bf16(m.mixed, m.mixed_bf, T * N, m.cs);
+                    to_f16(m.mixed, m.mixed_h, T * N, m.cs);
+                    if (cudaGetLastError() != cudaSuccess) {
+                        err = "prefill: FP32 HC experiment launch failed"; return false;
                     }
-                }
-                if (!upmixed && !bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err, 0, m.lo16_lo, 0, m.cs)) return false;
-                if (hc_probe && upmixed) {err="unexpected fused up in HC replay";return false;}
-                if (!hc_sample("up.f32",m.gated,D*4)) return false;
-                pt.mark(kPfHcInj, cs);
-                if (!hcd && !bf16_proj(m.gemm, wi, m.xn16, m.inj, T, si, err, 0, m.xn16_lo, ldx != D ? ldx : 0, m.cs, xf16)) return false;
-                if (!hc_sample("inject.f32",m.inj,HC*4)) return false;
-                pt.mark(kPfHcMix, cs);
-                if (upmixed) {
-                } else if (gr_unfused()) {
-                    gr_mix(m.xn, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h, m.mixed_bf_lo);
+#endif
                 } else {
-                    gr_mix_r(m.R, m.grs, (const float*) wn->data, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h,
-                             m.mixed_bf_lo);
+                    if (gr_unfused()) gr_norm(m.R, (const float*) wn->data, EPS, m.xn, m.xn16, T, m.cs, m.xn16_lo, xf16);
+                    else if (!normed) gr_norm_rs(m.R, (const float*) wn->data, EPS, m.grs, m.xn16, T, m.cs, m.xn16_lo, ldx, xf16);
+                    normed = false;
+                    if (!hc_sample("scale.f32",m.grs,HC*4) ||
+                        !hc_sample("normalized.bf16",m.xn16,D*2)) return false;
+                    pt.mark(kPfHcDown, cs);   // STRATA_PREFILL_TIMING: the hyper-connection read's parts on their own lines (norm stays on "hc read")
+                    bool hcd = false;
+                    bool hdown = false;
+                    if (wd->q8_scale == nullptr && ldx != D && !pf_hcdown()) {   // not with STRATA_HC_REQ8's int8 rows   // STRATA_HCD_EXACT: the exact-order down kernel when hipBLASLt would take 1176 / 1177
+                        hdown = wd->kind == core::WeightKind::Bf16InF32 && wd->data && wd->ne0 == D && wd->ne1 == LR &&
+                                m.gemm.bf16_hcd_exact(m.xn16, ldx, (const uint16_t*) wd->data, m.lo, T, LR, D);
+                    } else if (wd->q8_scale == nullptr && ldx != D) {
+                        if (wd->kind != core::WeightKind::Bf16InF32 || !wd->data || wd->ne0 != D || wd->ne1 != LR ||
+                            wi->kind != core::WeightKind::Bf16InF32 || !wi->data || wi->ne0 != D || wi->ne1 != HC ||
+                            !strata_pf_hcdown_bf16(m.xn16, ldx, (const uint16_t*) wd->data, (const uint16_t*) wi->data, LR,
+                                                   HC, m.lo, m.inj, T, D, m.cs)) {
+                            err = "prefill: STRATA_PF_HCDOWN could not run the hyper-connection projections";
+                            return false;
+                        }
+                        hcd = true;
+                    }
+                    if (!hcd && !hdown && !bf16_proj(m.gemm, wd, m.xn16, m.lo, T, sd, err, 0, m.xn16_lo, ldx != D ? ldx : 0, m.cs, xf16)) return false;
+                    if (hc_probe && (hcd || hdown)) {err="unexpected fused down in HC replay";return false;}
+                    if (!hc_sample("down.f32",m.lo,LR*4)) return false;
+                    gr_silu(m.lo, m.lo16, T, m.cs, m.lo16_lo);
+                    if (!hc_sample("silu.bf16",m.lo16,LR*2)) return false;
+                    pt.mark(kPfHcUp, cs);
+                    bool upmixed = false;
+                    if (wu->q8_scale == nullptr && hc_upmix() && T >= std::max(pf_switch_min_t(), hc_upmix_min_t()) && !gr_unfused() && !m.lo16_lo && !m.mixed_bf_lo &&
+                        wu->kind == core::WeightKind::Bf16InF32 && wu->data && wu->ne0 == LR && wu->ne1 == D) {
+                        static int checks = [] { const char* e = std::getenv("STRATA_HC_UPMIX_CHECK"); return e ? std::atoi(e) : 0; }();
+                        if (checks > 0) {   // the default pair first, kept for the comparison
+                            --checks;
+                            if (!bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err)) return false;
+                            gr_mix_r(m.R, m.grs, (const float*) wn->data, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h);
+                            std::vector<float> ref((size_t) T * N), got((size_t) T * N);
+                            cudaMemcpyAsync(ref.data(), m.mixed, ref.size() * 4, cudaMemcpyDeviceToHost, m.cs);
+                            upmixed = gr_upmix(m.lo16, (const uint16_t*) wu->data, m.R, m.grs, (const float*) wn->data,
+                                               m.mixed, m.mixed_bf, m.mixed_h, T, m.cs);
+                            cudaMemcpyAsync(got.data(), m.mixed, got.size() * 4, cudaMemcpyDeviceToHost, m.cs);
+                            cudaStreamSynchronize(m.cs);
+                            double e2 = 0, r2 = 0, emax = 0;
+                            for (size_t i = 0; i < ref.size(); ++i) {
+                                const double dd = (double) got[i] - ref[i];
+                                e2 += dd * dd; r2 += (double) ref[i] * ref[i]; emax = std::max(emax, std::fabs(dd));
+                            }
+                            std::fprintf(stderr, "strata: STRATA_HC_UPMIX_CHECK layer %lld half %d T %lld: mixed rel RMS %.3e, "
+                                         "max |diff| %.3e (%s)\n", (long long) l, half, (long long) T,
+                                         std::sqrt(e2 / std::max(r2, 1e-30)), emax, upmixed ? "upmix" : "upmix refused");
+                        } else {
+                            upmixed = gr_upmix(m.lo16, (const uint16_t*) wu->data, m.R, m.grs, (const float*) wn->data,
+                                               m.mixed, m.mixed_bf, m.mixed_h, T, m.cs);
+                        }
+                    }
+                    if (!upmixed && !bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err, 0, m.lo16_lo, 0, m.cs)) return false;
+                    if (hc_probe && upmixed) {err="unexpected fused up in HC replay";return false;}
+                    if (!hc_sample("up.f32",m.gated,D*4)) return false;
+                    pt.mark(kPfHcInj, cs);
+                    if (!hcd && !bf16_proj(m.gemm, wi, m.xn16, m.inj, T, si, err, 0, m.xn16_lo, ldx != D ? ldx : 0, m.cs, xf16)) return false;
+                    if (!hc_sample("inject.f32",m.inj,HC*4)) return false;
+                    pt.mark(kPfHcMix, cs);
+                    if (upmixed) {
+                    } else if (gr_unfused()) {
+                        gr_mix(m.xn, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h, m.mixed_bf_lo);
+                    } else {
+                        gr_mix_r(m.R, m.grs, (const float*) wn->data, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h,
+                                 m.mixed_bf_lo);
+                    }
                 }
 
                 if (!nt_sample(l,half==0?nt::r_attn:nt::r_ffn,m.R) ||
@@ -6972,6 +7062,10 @@ bool Prefill::run_multi(const std::vector<Seg>& segs, std::string& err) {
 
 bool Prefill::lm_run(const std::vector<Seg>& segs, int depth, const std::vector<LmSub>* given_super, std::string& err) {
     err.clear();
+    if (hc_experiment_config().requested() || !hc_experiment_config().valid()) {
+        err = "prefill: HC experiment is not implemented for layer-major or multi-request prefill";
+        return false;
+    }
     Impl& m = *impl_;
     const core::OnDevice on_device(m.device);
     const core::ModelGeometry& g = *m.g;

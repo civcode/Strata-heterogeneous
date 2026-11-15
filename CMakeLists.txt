@@ -402,6 +402,9 @@ if(STRATA_BUILD_TESTS)
   add_executable(share_rules_test tests/prefill/share_rules_test.cpp)
   target_include_directories(share_rules_test PRIVATE include)
   add_test(NAME share_rules_test COMMAND share_rules_test)
+  add_executable(hc_experiment_test tests/prefill/hc_experiment_test.cpp)
+  target_include_directories(hc_experiment_test PRIVATE include)
+  add_test(NAME hc_experiment_test COMMAND hc_experiment_test)
 
   # STRATA_SELECT_TWO_PASS: the bound between the single-pass and 3xTF32 QSA block scores and the cut-off rule that
   # keeps the selection (header-only, no GPU)
