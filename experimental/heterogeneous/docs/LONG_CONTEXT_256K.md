@@ -1,7 +1,7 @@
 # Q8 resident context expansion to 256K
 
-Implementation candidate. Oberon capacity runs reached 256K on both topologies,
-but lifecycle qualification remains incomplete; see [results](LONG_CONTEXT_256K_OBERON.md).
+Implementation candidate. Oberon capacity and scoped resident lifecycle runs
+reached 256K on both topologies; see [results and limitations](LONG_CONTEXT_256K_OBERON.md).
 Prior numerical discrepancies are recorded separately; do not require their elimination before
 testing architecture, ownership, memory or context capacity. Preserve all
 existing parity criteria and report their status accurately.
