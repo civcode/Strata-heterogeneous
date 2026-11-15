@@ -7,18 +7,19 @@ using namespace strata::heterogeneous;
 int main() {
     unsigned checks=0;
     auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("bulk prompt assertion");};
-    for (unsigned n : {1u,2u,3u,7u,8u,9u,63u,64u,65u,129u,2040u,2047u,2048u}) {
+    for (unsigned capacity : {2048u,8192u}) {
+    for (unsigned n : {1u,2u,3u,7u,8u,9u,63u,64u,65u,129u,2040u,2047u,2048u,2049u,4097u,8187u,8191u,8192u}) {
         std::vector<int32_t> prompt;
         for(unsigned i=0;i<n;++i) prompt.push_back(static_cast<int32_t>(10+i*3));
-        MtpRequestPolicy policy{2048,1,4,248320,prompt,{99}};
+        MtpRequestPolicy policy{capacity,1,4,248320,prompt,{99}};
         std::vector<int32_t> prefix(prompt.begin(),prompt.end()-1);
         for (unsigned chunk=0;chunk<=65;++chunk)
-            check(policy.bulk_prefix(prefix,chunk)==(n>=2 && n<=2047 && chunk>=1 && chunk<=64));
+            check(policy.bulk_prefix(prefix,chunk)==(n>=2 && n<capacity && chunk>=1 && chunk<=64));
         check(!policy.bulk_prefix(prompt,3));
         if(!prefix.empty()) {auto changed=prefix;changed.back()=5;check(!policy.bulk_prefix(changed,3));}
-        if(n<2 || n>2047) continue;
+        if(n<2 || n>=capacity) continue;
         for(unsigned chunk : {1u,3u,8u,9u,31u,32u,63u,64u}) {
-            MtpPrefixCursor cursor(2,2048,248320,8);
+            MtpPrefixCursor cursor(2,capacity,248320,8);
             std::string err;
             std::vector<std::tuple<float,int32_t,int64_t>> seen;
             auto prime=[&](const float* r,const int32_t* next,size_t rows,int64_t pos,std::string&){
@@ -40,7 +41,7 @@ int main() {
             check(cursor.committed(r.data(),1,prime,err));
             check(seen.size()==n-1 && cursor.committed_position()==n);
             std::vector<int32_t> offer;
-            if(n>2043) {
+            if(n>capacity-5) {
                 // Physical tail guard: never draft beyond capacity.
                 check(!cursor.offer(91,offer,[](auto...){return true;},err));
                 continue;
@@ -50,6 +51,7 @@ int main() {
             },err));
             check(offer==std::vector<int32_t>({91,92}));
         }
+    }
     }
     for(int fault=0;fault<5;++fault) {
         MtpPrefixCursor cursor(2,2048,248320,8);

@@ -134,7 +134,7 @@ void usage() {
         "  [--split-reference-capture --capture-revision SHA --capture-binary-sha256 SHA] (ungrouped, explicit KV, canonical plans)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--guarded-direct-prelaunch] [--kv int8|f16] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
-        "  --mtp-resident-service: experimental variable-request 2K Q8 native MTP, mixed or HIP-only, spec=4, min_p=0.5.\n"
+        "  --mtp-resident-service: experimental variable-request 2K..8K Q8 native MTP, mixed or HIP-only, spec=4, min_p=0.5.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
         "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
         "  --mtp-resident-prompt-rows N: additionally require --resident; fixed prompt length and --generate budget, max 8 requests.\n"
@@ -466,7 +466,9 @@ Options parse(int argc, char** argv) {
     if (o.mtp_relay_rounds && (o.mtp_probe_rt.empty() || o.capture_prefix.empty()))
         throw std::invalid_argument("MTP relay requires explicit MTP probe and full-logit capture prefix");
     if (o.mtp_service && (!o.resident || !o.generate || o.generate>256 || !o.shared || !o.group_hip ||
-        !o.hip_split_overlap || o.context_limit!=2048 || !o.kv_explicit || o.kv!=hetero::KvMode::int8 ||
+        !o.hip_split_overlap || !hetero::MtpRequestPolicy::capacity_valid(o.context_limit) ||
+        (o.context_limit>hetero::MtpRequestPolicy::initial_capacity && !o.native_prefill_chunk) ||
+        !o.kv_explicit || o.kv!=hetero::KvMode::int8 ||
         o.mtp_probe_rt.empty() || !std::filesystem::path(o.mtp_probe_rt).is_absolute() ||
         o.mtp_probe_rt.size()>4096 || o.mtp_probe_rt.find_first_of("\r\n")!=std::string::npos ||
         o.mtp_generation || o.mtp_resident_prompt_rows || o.generation_capture || o.mtp_relay_rounds ||
@@ -475,7 +477,7 @@ Options parse(int argc, char** argv) {
         o.long_context || o.lookup_draft || o.native_prefill_chunk>hetero::MtpRequestPolicy::bulk_chunk_limit || o.receiver_arm ||
         o.cuda_mapped_egress || o.direct_verified || o.guarded_direct || !o.pipeline_mode.empty() ||
         !o.capture_prefix.empty() || o.warmup_windows || o.describe_source))
-        throw std::invalid_argument("MTP service requires explicit grouped Q8 2K resident generation; native bulk chunk <=64 only");
+        throw std::invalid_argument("MTP service requires exact aligned grouped Q8 2K..8K resident capacity; bulk chunk 1..64 required above 2K");
     if (!o.mtp_service && !o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || (o.generate && !o.mtp_generation) ||
         o.describe_source || o.warmup_windows || o.native_prefill_chunk || (!o.mtp_generation && o.tokens.empty()) ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
@@ -723,10 +725,10 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
             config.max_cache_slots!=uint64_t(config.end_layer-config.first_layer)*512 ||
             config.free_reserve_bytes!=536870912ull || config.arena_budget_bytes))
             throw std::invalid_argument("generation qualification requires the previously approved unchanged model and resource config");
-        if (o.mtp_service && (config.max_cells!=2048 || config.max_t!=8 || config.index_sha256!=hetero::mtp_qualification_index ||
+        if (o.mtp_service && (config.max_cells!=o.context_limit || config.max_t!=8 || config.index_sha256!=hetero::mtp_qualification_index ||
             config.n_vocab!=248320 || config.free_reserve_bytes<(1ull<<30) || config.arena_budget_bytes ||
             config.max_cache_slots!=uint64_t(config.end_layer-config.first_layer)*512))
-            throw std::invalid_argument("MTP service requires exact Q2_0 2K capacity, full experts and 1 GiB per-owner reserve");
+            throw std::invalid_argument("MTP service requires exact Q2_0 requested capacity, full experts and 1 GiB per-owner reserve");
         if (o.direct_verified && (config.max_cells != 2048 || config.max_t != 8 ||
             config.max_cache_slots != uint64_t(config.end_layer-config.first_layer)*512))
             throw std::invalid_argument("direct verified qualification requires 2K context, max_t=8 and full residency");
@@ -778,6 +780,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"mtp_service_cap\":1"
                   << ",\"mtp_hip_pair_cap\":1"
                   << ",\"mtp_stream_cap\":1"
+                  << ",\"mtp_context_cap\":" << hetero::MtpRequestPolicy::max_capacity
                   << ",\"mtp_bulk_prompt_cap\":" << hetero::MtpRequestPolicy::bulk_prompt_limit
                   << ",\"mtp_bulk_chunk_cap\":" << hetero::MtpRequestPolicy::bulk_chunk_limit
                   << ",\"long_context_cap\":" << hetero::max_long_context
@@ -1209,7 +1212,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         int32_t next = -1;
         hetero::MtpRequestPolicy service_policy;
         if (o.mtp_service) {
-            service_policy={2048,max_new,4,limits.vocab,prompt,o.stop_ids};
+            service_policy={o.context_limit,max_new,4,limits.vocab,prompt,o.stop_ids};
             session.configure_mtp_request(request_id,service_policy);
         }
         const auto mtp_policy=o.mtp_generation ?
@@ -1446,7 +1449,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             const uint32_t max_new = u32(count, "resident max-new-tokens");
             const auto prompt = prompt_ids(in, o.context_limit);
             if (o.mtp_service && o.native_prefill_chunk && prompt.size()>hetero::MtpRequestPolicy::bulk_prompt_limit)
-                throw std::invalid_argument("MTP bulk prompt exceeds 2K service capacity");
+                throw std::invalid_argument("MTP bulk prompt exceeds service wire capacity");
             if (!max_new || max_new > o.generate ||
                 uint64_t(prompt.size()) + max_new > limits.max_cells ||
                 uint64_t(prompt.size()) + max_new > o.context_limit ||

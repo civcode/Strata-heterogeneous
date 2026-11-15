@@ -161,9 +161,9 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
                 c.io_timeout_ms != first.io_timeout_ms)
                 throw std::runtime_error("HIP domain requires identical model, context and window limits");
         }
-        if (mtp_service && (c.max_cells!=2048 || c.max_t!=8 || c.free_reserve_bytes < (1ull<<30) ||
+        if (mtp_service && (!hetero::MtpRequestPolicy::capacity_valid(c.max_cells) || c.max_t!=8 || c.free_reserve_bytes < (1ull<<30) ||
             c.arena_budget_bytes || c.index_sha256!=hetero::mtp_qualification_index))
-            throw std::runtime_error("MTP service requires approved 2K full native capacity and reserve");
+            throw std::runtime_error("MTP service requires approved aligned 2K..8K full native capacity and reserve");
         configs.push_back(std::move(config));
     }
     std::vector<std::unique_ptr<LoadedHipStage>> owners;
@@ -171,17 +171,17 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     std::vector<hetero::NativePrefillStage> pf_stages;
     for (size_t j = 0; j < domain.size(); ++j) {
         auto owner = std::make_unique<LoadedHipStage>(plan.model_fingerprint);
-        owner->load(plan,domain.first_stage+j,configs[j].fields,extended);
+        owner->load(plan,domain.first_stage+j,configs[j].fields,extended || mtp_service);
         auto b=owner->owner.make_bindings();
         strata_heterogeneous_verify_kv(b.session,invocation.kv,domain.first_stage+j);
-        if (extended) {
+        if (extended || mtp_service) {
             strata_heterogeneous_verify_full_experts(b.geometry,b.session,b.hits);
             const auto stage = domain.first_stage+j;
             const int device = static_cast<int>(configs[j].fields.device_ordinal);
             const auto reserve = configs[j].fields.free_reserve_bytes;
             const auto chunk = invocation.long_context_chunk;
             b.capacity_probe = [stage,device,reserve,chunk,&g=b.geometry,&s=b.session](const char* phase,std::string& e) {
-                if (std::string_view(phase) == "verifier_ready")
+                if (chunk && std::string_view(phase) == "verifier_ready")
                     return hetero::check_native_prefill_capacity(device,stage,phase,g,s,chunk,reserve,e);
                 return hetero::sample_native_capacity(device,stage,phase,reserve,0,e);
             };

@@ -11,7 +11,12 @@ namespace strata::heterogeneous {
 struct MtpRequestPolicy {
     static constexpr uint32_t initial_capacity = 2048;
     static constexpr uint32_t max_candidates = 4;
-    static constexpr size_t bulk_prompt_limit = initial_capacity-1;
+    static constexpr uint32_t max_capacity = 8192;
+    static constexpr uint32_t capacity_alignment = 256;
+    static constexpr size_t bulk_prompt_limit = max_capacity-1;
+    static constexpr bool capacity_valid(uint64_t cells) noexcept {
+        return cells>=initial_capacity && cells<=max_capacity && cells%capacity_alignment==0;
+    }
     static constexpr uint32_t bulk_chunk_limit = 64;
     static constexpr uint64_t prime_headroom_bytes = 512ull<<20;
     uint32_t context = 0, max_new = 0, spec = 0, vocab = 0;
@@ -22,14 +27,14 @@ struct MtpRequestPolicy {
         return std::find(stops.begin(), stops.end(), id) != stops.end();
     }
     bool valid() const noexcept {
-        return context == initial_capacity && vocab == 248320 &&
+        return capacity_valid(context) && vocab == 248320 &&
             max_new > 0 && max_new <= 256 && spec >= 1 && spec <= max_candidates &&
             !prompt.empty() && prompt.size() < context &&
             max_new <= context - prompt.size() && !stops.empty() && stops.size() <= 64 &&
             std::all_of(prompt.begin(), prompt.end(), [this](auto id){return token(id);}) &&
             std::all_of(stops.begin(), stops.end(), [this](auto id){return token(id);});
     }
-    // Bulk remains within the exact 2K service capacity. The final prompt token is always
+    // Bulk remains within the exact admitted service capacity. The final prompt token is always
     // evaluated by the ordinary target verifier/head.
     bool bulk_prefix(const std::vector<int32_t>& ids, uint32_t chunk) const noexcept {
         return valid() && prompt.size() >= 2 && prompt.size() <= bulk_prompt_limit &&

@@ -83,6 +83,7 @@ class TestLimits(unittest.TestCase):
             Progress(1, 3, 8, 2, 100, {99}, False, lookup=True, mtp_spec=4)
         # Bulk prefill remains within the exact 2K resident capacity.
         Progress(1, 2040, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4)
+        Progress(1, 8184, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4, mtp_context=8192)
         with self.assertRaises(ValueError):
             Progress(1, 2041, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4)
 
@@ -206,6 +207,7 @@ class TestResident(unittest.TestCase):
     def test_mtp_buffered_completion(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2", "HETERO_PROGRESS 1 2 4",
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11,12],"finish_reason":"length","stop_token":-1}'], False)
+        e.max_context = 2048
         e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
         self.assertEqual(list(e.generate([1,2],3,{},Event())), [None,None,10,11,12])
         self.assertEqual(e.last_metrics["decode_feedback_tokens"],2)
@@ -214,6 +216,7 @@ class TestResident(unittest.TestCase):
         e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
                          "HETERO_PROGRESS 1 2 4 BATCH 0 2 11 12",
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11,12],"finish_reason":"length","stop_token":-1}'])
+        e.max_context = 2048
         e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
         g = e.generate([1,2],3,{},Event())
         self.assertEqual(next(g),10)
@@ -229,6 +232,7 @@ class TestResident(unittest.TestCase):
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[],"finish_reason":"cancelled","stop_token":-1}',
                          "HETERO_PROGRESS 2 1 1 BATCH 0 1 20",
                          'HETERO_GENERATION {"request_id":2,"prompt_tokens":1,"token_ids":[20],"finish_reason":"length","stop_token":-1}'])
+        e.max_context = 2048
         e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
         e.max_new=4
         g=e.generate([1,2],4,{},Event())

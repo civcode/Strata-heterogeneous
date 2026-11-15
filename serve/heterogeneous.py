@@ -15,7 +15,8 @@ import subprocess
 import sys
 import threading
 
-from serve.heterogeneous_contract import validate_request, Progress, timing_record
+from serve.heterogeneous_contract import (validate_request, Progress, timing_record,
+    mtp_context_valid, MTP_CONTEXT_CAPACITY, MAX_MTP_CONTEXT, MAX_MTP_BULK_CHUNK)
 from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
 
 
@@ -79,7 +80,12 @@ class ResidentEngine:
         self.stream_tokens = source.get("stream_tokens", False)
         self.lookup_draft = source.get("lookup_draft", False)
         if source.get("mtp") and (self.lookup_draft or source.get("spec") != 4 or
-                                  source.get("spec_min_p") != 0.5 or self.max_context != 2048):
+                                  source.get("spec_min_p") != 0.5 or not mtp_context_valid(self.max_context) or
+                                  source["max_cells"] != self.max_context or source.get("long_context") or
+                                  source.get("workload_mode") or
+                                  (self.max_context > MTP_CONTEXT_CAPACITY and
+                                   (source.get("mtp_context_cap") != MAX_MTP_CONTEXT or
+                                    not 1 <= source.get("native_prefill_chunk", 0) <= MAX_MTP_BULK_CHUNK))):
             raise ValueError("unsupported resident MTP service mode")
         if self.lookup_draft and (self.stream_tokens or chunk < 2):
             raise ValueError("lookup-draft requires buffered generation and chunk >= 2")
@@ -270,7 +276,8 @@ class ResidentEngine:
             progress = Progress(self._request, len(ids), max_new, self.chunk,
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
                                  self.lookup_draft, bool(self.source.get("native_prefill_chunk", 0)),
-                                mtp_spec=self.source.get("spec", 0) if self.source.get("mtp") else 0)
+                                mtp_spec=self.source.get("spec", 0) if self.source.get("mtp") else 0,
+                                mtp_context=self.max_context)
             start = time.monotonic()
             prefill_end = last_checkpoint = first_output = last_output_checkpoint = None
             emitted = 0

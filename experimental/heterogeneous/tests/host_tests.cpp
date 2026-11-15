@@ -187,6 +187,12 @@ void test_wire() {
         check(decoded.kind==kind && decoded.mtp_max_new==64 && decoded.window &&
               decoded.window->token_ids==meta.window->token_ids, "MTP request policy wire roundtrip");
     }
+    // Expanded MTP metadata retains the existing <=8192 token-window wire.
+    auto large_mtp=meta; large_mtp.rows=8191; large_mtp.mtp_max_new=1;
+    large_mtp.window=WindowSpec{0,std::vector<int32_t>(8191,17)};
+    check(decode(encode(large_mtp)).window->token_ids==large_mtp.window->token_ids,"expanded MTP wire roundtrip");
+    large_mtp.mtp_max_new=2;
+    throws([&]{(void)encode(large_mtp);},"MTP combined wire ceiling");
     auto invalid_mtp=meta; invalid_mtp.mtp_max_new=257;
     throws([&]{(void)encode(invalid_mtp);},"MTP policy budget bounded");
     invalid_mtp=meta; invalid_mtp.window_id=1;

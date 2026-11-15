@@ -38,9 +38,16 @@ def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk
     return context, chunk or safe
 
 
-MTP_CONTEXT_CAPACITY = 2048
-MAX_MTP_BULK_PROMPT = MTP_CONTEXT_CAPACITY - 1
+MTP_CONTEXT_CAPACITY = 2048  # legacy/default
+MAX_MTP_CONTEXT = 8192
+MTP_CONTEXT_ALIGNMENT = 256
+MAX_MTP_BULK_PROMPT = MAX_MTP_CONTEXT - 1
 MAX_MTP_BULK_CHUNK = 64
+
+
+def mtp_context_valid(context):
+    return (type(context) is int and MTP_CONTEXT_CAPACITY <= context <= MAX_MTP_CONTEXT
+            and context % MTP_CONTEXT_ALIGNMENT == 0)
 
 
 def validate_request(ids, max_new, vocab, context, long_context=False, *, mtp_bulk=False):
@@ -48,8 +55,8 @@ def validate_request(ids, max_new, vocab, context, long_context=False, *, mtp_bu
             len(ids) + max_new > context or
             any(type(t) is not int or not 0 <= t < vocab for t in ids)):
         raise ValueError("prompt/generation budget exceeds validated context or vocabulary")
-    if mtp_bulk and (context != MTP_CONTEXT_CAPACITY or len(ids) > MAX_MTP_BULK_PROMPT):
-        raise ValueError("MTP bulk prompt requires the exact 2K service capacity")
+    if mtp_bulk and (not mtp_context_valid(context) or long_context or max_new > 256):
+        raise ValueError("MTP bulk prompt requires aligned 2K..8K service capacity and budget <=256")
     # Include the resident request's completion-count prefix. One-shot
     # input is shorter, even with its terminating newline.
     cap = command_cap(context, long_context)
@@ -58,14 +65,16 @@ def validate_request(ids, max_new, vocab, context, long_context=False, *, mtp_bu
 
 
 class Progress:
-    def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False, native_prefill=False, *, mtp_spec=0):
+    def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False, native_prefill=False, *, mtp_spec=0, mtp_context=MTP_CONTEXT_CAPACITY):
         if lookup and (stream or chunk < 2):
             raise ValueError("lookup requires buffered mode and chunk >= 2")
         if type(mtp_spec) is not int or not 0 <= mtp_spec <= 4 or (mtp_spec and lookup):
             raise ValueError("MTP service progress requires independent mode and spec 1..4")
-        if mtp_spec and native_prefill and (not 1 <= prompt <= MAX_MTP_BULK_PROMPT or
-                                           not 1 <= max_new <= 256 or prompt + max_new > MTP_CONTEXT_CAPACITY):
-            raise ValueError("MTP bulk prompt and completion exceed 2K service capacity")
+        if mtp_spec and (not mtp_context_valid(mtp_context) or
+                         not 1 <= prompt < mtp_context or not 1 <= max_new <= 256 or
+                         prompt + max_new > mtp_context or
+                         (mtp_context > MTP_CONTEXT_CAPACITY and not native_prefill)):
+            raise ValueError("MTP prompt and completion exceed admitted service capacity/mode")
         self.mtp_spec = mtp_spec
         self.lookup = lookup
         self.native_prefill = native_prefill

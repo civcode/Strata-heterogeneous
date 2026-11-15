@@ -39,7 +39,20 @@ int main() {
     MtpRequestPolicy p{2048,8,4,248320,{1,2,3},{99}};
     check(p.valid() && p.prompt_window(1,{2,3}) && !p.prompt_window(1,{2,4}));
     check(!p.decode_window(3,10,{11,12}) && !p.decode_window(3,10,{10,99}));
-    p.context=262144; check(!p.valid()); // no unqualified capacity promotion
+    for (unsigned cap : {2048u,2304u,4096u,8192u}) {
+        MtpRequestPolicy edge{cap,4,4,248320,std::vector<int32_t>(cap-4,10),{99}};
+        check(edge.valid());
+        auto prefix=edge.prompt; prefix.pop_back();
+        check(edge.bulk_prefix(prefix,64));
+        check(!edge.can_offer(cap-5,11)); // before prompt
+        check(edge.live(cap-4,11) && !edge.can_offer(cap-4,11));
+        check(edge.decode_window(cap-4,11,{11}));
+        check(!edge.decode_window(cap-4,11,{11,12}));
+        edge.max_new=5; check(!edge.valid());
+    }
+    for (unsigned cap : {0u,2047u,2049u,8193u,32768u,262144u}) {
+        p.context=cap; check(!p.valid());
+    }
     p.context=2048; p.spec=5; check(!p.valid());
     std::cout << "PASS " << checks << " request-policy assertions\n";
 }

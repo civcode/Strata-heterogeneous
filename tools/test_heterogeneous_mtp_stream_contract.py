@@ -91,7 +91,18 @@ class MtpStreamContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_request([1]*2047, 2, 100, 2048, mtp_bulk=True)
         with self.assertRaises(ValueError):
-            validate_request([1]*8, 2, 100, 4096, mtp_bulk=True)
+            validate_request([1]*8, 2, 100, 4097, mtp_bulk=True)
+        for capacity in (2304,4096,8192):
+            validate_request([1]*(capacity-1), 1, 100, capacity, mtp_bulk=True)
+            p = Progress(1, capacity-1, 1, 8, 100, {99}, True, native_prefill=True, mtp_spec=4, mtp_context=capacity)
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 1 {capacity-2} BATCH 0 0"), ())
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 2 {capacity-1} BATCH 0 1 10"), (10,))
+            with self.assertRaises(ValueError):
+                Progress(1, capacity-1, 2, 8, 100, {99}, True, native_prefill=True, mtp_spec=4, mtp_context=capacity)
+            with self.assertRaises(ValueError):
+                Progress(1, 7, 4, 8, 100, {99}, True, mtp_spec=4, mtp_context=capacity)
+        with self.assertRaises(ValueError):
+            validate_request([1], 1, 100, 262144, True, mtp_bulk=True)
         with self.assertRaises(ValueError):
             Progress(1, 2047, 4, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
         for prompt in (8, 65, 129, 2047):

@@ -107,6 +107,15 @@ class HipOnlyCLI(unittest.TestCase):
                 native.return_value["mtp_bulk_chunk_cap"]=64
                 with self.assertRaisesRegex(ValueError,"invalid validated model source"):
                     prepare_native(args)
+                args.max_context=8192
+                with self.assertRaisesRegex(ValueError,"lacks expanded MTP context capability"):
+                    prepare_native(args)
+                native.return_value["mtp_context_cap"]=8192
+                with self.assertRaisesRegex(ValueError,"lacks expanded MTP bulk prompt capability"):
+                    prepare_native(args)
+                native.return_value["mtp_bulk_prompt_cap"]=8191
+                with self.assertRaisesRegex(ValueError,"invalid validated model source"):
+                    prepare_native(args)
 
     def test_hip_only_mtp_needs_matching_capability(self):
         from tempfile import TemporaryDirectory

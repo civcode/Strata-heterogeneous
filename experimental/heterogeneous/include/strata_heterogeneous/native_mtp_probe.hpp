@@ -65,7 +65,7 @@ public:
         }
         if (service_enabled() && (!resident_generation_ || generation_.enabled() || relay_rounds_ ||
             three_round_ || three_round_variable_ || fresh_replay_ || repeat_round_ || reprime_tail_ || front_trace_ ||
-            !trace_prefix_.empty() || reserve_ < (1ull<<30) || !MtpRequestPolicy{2048,1,4,248320,{0},service_stops_}.valid())) {
+            !trace_prefix_.empty() || reserve_ < (1ull<<30) || !MtpRequestPolicy{static_cast<uint32_t>(b.session.max_cells),1,4,248320,{0},service_stops_}.valid())) {
             error="invalid experimental resident MTP service configuration";return false;
         }
         if (resident_generation_ && !generation_.enabled() && !service_enabled()) {error="resident MTP requires bounded generation";return false;}
@@ -80,12 +80,13 @@ public:
         }
         if (device_>=0 || !mtp_probe_window_count(windows_,relay_rounds_,fresh_replay_) ||
             (fresh_replay_ && (repeat_round_ || reprime_tail_)) || relay_rounds_>8 || arena_budget_ ||
-            b.session.layer_hi!=g.n_layers || b.session.max_cells!=2048 ||
+            b.session.layer_hi!=g.n_layers ||
+            (service_enabled() ? !MtpRequestPolicy::capacity_valid(b.session.max_cells) : b.session.max_cells!=2048) ||
             g.n_layers!=48 || g.n_embd!=2560 || g.hc!=4 || g.n_expert!=512 ||
             g.n_vocab!=248320 || b.max_t<5 || b.max_t>8 ||
             core::native_embed() || std::getenv("STRATA_HEAD_HOST") ||
             !b.weights.find("token_embd.weight") || !b.weights.find("output.weight")) {
-            error="MTP probe requires existing 2048-cell full-resident Q2_0 terminal geometry and no explicit arena cap or head spill";
+            error="MTP probe requires admitted full-resident Q2_0 terminal geometry/capacity and no explicit arena cap or head spill";
             return false;
         }
         try {

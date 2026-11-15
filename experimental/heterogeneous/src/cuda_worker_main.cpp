@@ -105,6 +105,12 @@ int main(int argc,char** argv) {
                     config.arena_budget_bytes, config.max_t, config.max_cache_slots, config.end_layer-config.first_layer)) ||
                 (!extended && config.max_cells > hetero::legacy_workload_context))
                 throw std::runtime_error("invalid CUDA long-context capacity or missing worker capability");
+            const bool mtp_service = hetero::performance_flag("STRATA_HETERO_MTP_SERVICE");
+            if (mtp_service && (extended || invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
+                !hetero::MtpRequestPolicy::capacity_valid(config.max_cells) ||
+                !hetero::long_context_stage_valid(config.max_cells,config.free_reserve_bytes,
+                    config.arena_budget_bytes,config.max_t,config.max_cache_slots,config.end_layer-config.first_layer)))
+                throw std::runtime_error("MTP service CUDA requires aligned full native Q8 capacity and reserve");
             const int startup_wait_ms = hetero::worker_startup_wait_ms();
             const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
             const bool mapped_egress = hetero::performance_flag("STRATA_HETERO_CUDA_MAPPED_EGRESS");
@@ -129,7 +135,7 @@ int main(int argc,char** argv) {
             const auto& geometry=strata::core::kCompiledGeometry;
             const int device = static_cast<int>(config.device_ordinal);
             auto capacity = [&](const char* phase) {
-                if (extended && !hetero::sample_native_capacity(device,index,phase,config.free_reserve_bytes,0,error))
+                if ((extended || mtp_service) && !hetero::sample_native_capacity(device,index,phase,config.free_reserve_bytes,0,error))
                     throw std::runtime_error(error);
             };
             capacity("before_load");
@@ -172,10 +178,10 @@ int main(int argc,char** argv) {
             capacity("experts_loaded");
             auto bindings=owner.make_bindings();
             strata_heterogeneous_verify_kv(bindings.session,invocation.kv,index);
-            if (extended) {
+            if (extended || mtp_service) {
                 strata_heterogeneous_verify_full_experts(bindings.geometry,bindings.session,bindings.hits);
                 bindings.capacity_probe = [&](const char* phase, std::string& e) {
-                    if (std::string_view(phase) == "verifier_ready")
+                    if (extended && std::string_view(phase) == "verifier_ready")
                         return hetero::check_native_prefill_capacity(device,index,phase,bindings.geometry,
                             bindings.session,invocation.long_context_chunk,config.free_reserve_bytes,e);
                     return hetero::sample_native_capacity(device,index,phase,config.free_reserve_bytes,0,e);

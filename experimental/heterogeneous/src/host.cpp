@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/host.hpp"
+#include "strata_heterogeneous/mtp_request_policy.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -132,7 +133,7 @@ void validate_frame(const Frame& f) {
         case Kind::mtp_service_ready:
             if (f.window_id != 0 || !zero_identity || f.shared_checksum || !f.payload.empty() ||
                 !f.error.empty() || !f.window || f.window->pos0 != 0 || !f.mtp_max_new ||
-                f.mtp_max_new > 256 || uint64_t(f.rows) + f.mtp_max_new > 2048)
+                f.mtp_max_new > 256 || uint64_t(f.rows) + f.mtp_max_new > MtpRequestPolicy::max_capacity)
                 throw std::invalid_argument("invalid MTP service request shape or budget");
             f.window->validate(f.rows);
             break;
