@@ -20,7 +20,10 @@ QUALIFIED = {
 }
 REQUIRED_SETTINGS = dict(fingerprint=2026111301, max_context=262144, kv="int8",
                          shared=True, stream_tokens=True, group_native_hip=True,
-                         native_prefill_chunk=128, workload_mode=True, long_context=True)
+                         workload_mode=True, long_context=True)
+REFERENCE_PREFILL_CHUNK = 128
+MTP_MAX_PREFILL_CHUNK = 64
+MTP_MAX_NEW_TOKENS = 256
 MAX_CONFIG_BYTES = 65536
 
 
@@ -75,8 +78,36 @@ def bind(profile, reference):
              "lookup and automatic restart are not supported by these profiles")
         need(type(values.get("prompt_chunk", 1)) is int and values.get("prompt_chunk", 1) == 1,
              "expected qualified verifier prompt chunk 1")
+    # The recorded 0044 reference qualifies the ordinary target stage layout
+    # and supplies its local file paths, not the MTP request policy. Keep its
+    # original settings gate separate from the opt-in MTP profile.
+    need(type(source.get("native_prefill_chunk")) is int and
+         source["native_prefill_chunk"] == REFERENCE_PREFILL_CHUNK,
+         "reference differs from qualified settings: native_prefill_chunk")
+    need(all(source.get(key) is None for key in ("mtp", "spec", "spec_min_p")),
+         "expected ordinary 0044 target reference, not an MTP reference")
+    bulk = opts.get("native_prefill_chunk")
     budget = opts.get("max_new_tokens")
-    need(type(budget) is int and 1 <= budget <= 4096, "max_new_tokens must be 1..4096")
+    mtp = opts.get("mtp")
+    if mtp is None:
+        need(opts.get("spec") is None and opts.get("spec_min_p") is None,
+             "spec and spec_min_p require explicit mtp runtime")
+        need(type(bulk) is int and bulk == REFERENCE_PREFILL_CHUNK,
+             "profile differs from qualified settings: native_prefill_chunk")
+        need(type(budget) is int and 1 <= budget <= 4096, "max_new_tokens must be 1..4096")
+    else:
+        # prepare_server checks the real runtime, capabilities, source and
+        # exact worker capacity. Do not claim full-context MTP qualification.
+        need(isinstance(mtp, str) and bool(mtp) and Path(mtp).is_absolute(),
+             "MTP runtime must be an absolute local directory path")
+        need(type(opts.get("spec")) is int and opts["spec"] == 4 and
+             type(opts.get("spec_min_p")) in (int, float) and opts["spec_min_p"] == 0.5,
+             "MTP requires spec=4 and spec_min_p=0.5")
+        need(type(bulk) is int and 1 <= bulk <= MTP_MAX_PREFILL_CHUNK,
+             "MTP native_prefill_chunk must be 1..64")
+        need(type(budget) is int and 1 <= budget <= MTP_MAX_NEW_TOKENS,
+             "MTP max_new_tokens must be 1..256")
+        need(opts.get("pipeline_mode") is None, "MTP does not support explicit pipeline_mode")
     keys = ("coordinator", "hip_worker") + (("cuda_worker",) if plan == MIXED else ())
     need(not ({"coordinator", "hip_worker", "cuda_worker", "config"} & opts.keys()),
          "binary and worker config paths are bound from the reference, not the profile")

@@ -19,6 +19,10 @@ class LaunchTests(unittest.TestCase):
         self.profile = read_json(ROOT / "strata-q2_0-heterogeneous.json")
         self.source = copy.deepcopy(self.profile)
         opts = self.source["heterogeneous"]
+        # The original 0044 reference predates MTP; it retains chunk 128.
+        for name in ("mtp", "spec", "spec_min_p"):
+            opts.pop(name, None)
+        opts["native_prefill_chunk"] = 128
         opts["max_new_tokens"] = 4
         for name in ("coordinator", "cuda_worker", "hip_worker"):
             path = self.root / name
@@ -33,7 +37,13 @@ class LaunchTests(unittest.TestCase):
 
     def test_bind_mixed(self):
         cfg = bind(self.profile, self.source)
-        self.assertEqual(cfg["heterogeneous"]["max_new_tokens"], 2048)
+        self.assertEqual(cfg["heterogeneous"]["max_new_tokens"], 256)
+        self.assertEqual(cfg["heterogeneous"]["native_prefill_chunk"], 32)
+        self.assertEqual(cfg["heterogeneous"]["mtp"], self.profile["heterogeneous"]["mtp"])
+        self.assertEqual(cfg["heterogeneous"]["spec"], 4)
+        self.assertEqual(cfg["heterogeneous"]["spec_min_p"], 0.5)
+        self.assertEqual(self.source["heterogeneous"]["native_prefill_chunk"], 128)
+        self.assertNotIn("mtp", self.source["heterogeneous"])
         self.assertEqual(cfg["heterogeneous"]["config"], self.source["heterogeneous"]["config"])
         self.assertNotIn("config", self.profile["heterogeneous"])
         path = write_config(self.root / "runs", cfg)
@@ -48,6 +58,39 @@ class LaunchTests(unittest.TestCase):
         src["config"] = src["config"][1:]
         del src["cuda_worker"]
         self.assertNotIn("cuda_worker", bind(profile, self.source)["heterogeneous"])
+
+    def test_ordinary_mixed_still_binds(self):
+        ordinary = copy.deepcopy(self.profile)
+        opts = ordinary["heterogeneous"]
+        for name in ("mtp", "spec", "spec_min_p"):
+            opts.pop(name)
+        opts.update(native_prefill_chunk=128, max_new_tokens=2048)
+        self.assertEqual(bind(ordinary, self.source)["heterogeneous"]["max_new_tokens"], 2048)
+        opts["native_prefill_chunk"] = 32
+        with self.assertRaisesRegex(ValueError, "native_prefill_chunk"):
+            bind(ordinary, self.source)
+
+    def test_mtp_profile_limits(self):
+        for field, value in (("native_prefill_chunk", 0), ("native_prefill_chunk", 65),
+                             ("native_prefill_chunk", 128), ("max_new_tokens", 257),
+                             ("max_new_tokens", True), ("spec", 3), ("spec", True),
+                             ("spec_min_p", 0.4), ("mtp", ""), ("mtp", "relative/rt"),
+                             ("mtp", None), ("pipeline_mode", "fast"),
+                             ("restart_clean", True), ("long_context", False)):
+            bad = copy.deepcopy(self.profile)
+            bad["heterogeneous"][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                bind(bad, self.source)
+        for chunk in (1, 32, 64):
+            profile = copy.deepcopy(self.profile)
+            profile["heterogeneous"]["native_prefill_chunk"] = chunk
+            self.assertEqual(bind(profile, self.source)["heterogeneous"]["native_prefill_chunk"], chunk)
+
+    def test_mtp_reference_is_not_a_target_reference(self):
+        bad = copy.deepcopy(self.source)
+        bad["heterogeneous"]["mtp"] = self.profile["heterogeneous"]["mtp"]
+        with self.assertRaisesRegex(ValueError, "ordinary 0044 target reference"):
+            bind(self.profile, bad)
 
     def test_wrong_reference(self):
         for field, value in (("kv", "f16"), ("max_context", 32768), ("plan", "wrong"),
