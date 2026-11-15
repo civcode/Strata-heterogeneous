@@ -32,3 +32,7 @@ Freeze real repository agent replay with --freeze-agent-replay <private manifest
 6. Quality: existing statistical tool for teacher-forced captures, representative tasks with actual tests/rubrics (coding, math, reasoning, document, tools). Distinguish manual unscored, truncated, failed and unsupported. No loosening of mandatory transport/state/runtime integrity or forced sampling. No production admission until review.
 
 MTP general resident serving, per-chunk cancellation and arbitrary sampling are remaining native integration work; no bulk+MTP. No production qualification or performance claim from implementation/CPU evidence.
+
+## Placement and memory planning
+
+See [VRAM_PLANNING.md](VRAM_PLANNING.md) and tools/heterogeneous_vram.py for the 15/18/15 candidate and eventual 256K Q8 fully resident target. Memory estimates do not qualify an allocation or change the current runtime cap.
