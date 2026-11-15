@@ -68,6 +68,15 @@ int main() {
         group[11]="relative.cfg";
         need(!parse_hip_worker_invocation(12,group,parsed,error),"unsafe second config refused");
         need(parsed.domain_configs[1]=="/tmp/hip-stage2.cfg","group failure leaves output unchanged");
+        const char* pair[] = {"worker","--worker-hip-domain-shared","hip:0:0-5,hip:1:5-10",
+            "10","2","6","999","1","--config","/tmp/hip0.cfg","--config","/tmp/hip1.cfg"};
+        need(parse_hip_worker_invocation(12,pair,parsed,error),"full HIP domain with no CUDA");
+        need(parsed.stage_index==1 && parsed.plan.stages.size()==2 && parsed.shared_memory &&
+             parsed.domain_configs==std::vector<std::string>{"/tmp/hip0.cfg","/tmp/hip1.cfg"},
+             "full HIP ordered configuration");
+        pair[7]="0"; need(!parse_hip_worker_invocation(12,pair,parsed,error),"full HIP pair requires terminal index");
+        pair[7]="1"; pair[2]="hip:0:0-3,hip:1:3-7,hip:2:7-10";
+        need(!parse_hip_worker_invocation(12,pair,parsed,error),"three-HIP grouping remains unsupported");
         std::cout << "HIP bootstrap: PASS (" << checks << " assertions, no HIP runtime)\n";
         return 0;
     } catch (const std::exception& ex) {

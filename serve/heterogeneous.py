@@ -24,19 +24,22 @@ def prepare_server(cfg):
     opts = cfg.get("heterogeneous")
     if not isinstance(opts, dict):
         raise ValueError("heterogeneous engine needs a heterogeneous config object")
-    required = {"coordinator", "cuda_worker", "hip_worker", "config", "plan", "fingerprint"}
-    optional = {"layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
+    required = {"coordinator", "config", "plan", "fingerprint"}
+    optional = {"cuda_worker", "hip_worker", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
                 "group_native_hip", "native_prefill_chunk", "workload_mode"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
-    for key in ("coordinator", "cuda_worker", "hip_worker", "plan"):
-        if not isinstance(opts[key], str) or not opts[key]:
+    from strata_cli.heterogeneous import planned_backends
+    backends = planned_backends(opts["plan"])
+    worker_keys = tuple(b + "_worker" for b in sorted(set(backends)))
+    for key in ("coordinator", "plan", *worker_keys):
+        if not isinstance(opts.get(key), str) or not opts[key]:
             raise ValueError(f"heterogeneous.{key} must be a nonempty string")
     if not isinstance(opts["config"], list) or not opts["config"] or not all(
             isinstance(x, str) and x for x in opts["config"]):
         raise ValueError("heterogeneous.config must list ordered worker config paths")
-    values = dict(layers=48, hc=4, n_embd=2560, max_new_tokens=32,
+    values = dict(cuda_worker=None, hip_worker=None, layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
                   stream_tokens=False, restart_clean=False, lookup_draft=False,
                   group_native_hip=False, native_prefill_chunk=0, workload_mode=False)

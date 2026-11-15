@@ -178,6 +178,13 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                 const WindowLimits limits{0, 64, 1000, 8};
                 NativePrefillHandler pf;
                 if (grouped) pf=[&,i](const Frame& cmd,int sock,std::string& error) {
+                    if (plan.stages.size()==2 && domain.first_stage==0 && domain.size()==2) {
+                        // A local chain sees one token spec, never receives or emits bridge rows.
+                        if (bad_prefill || !cmd.window || cmd.window->token_ids.size()!=cmd.rows) {
+                            error="mock full HIP prompt refused"; return false;
+                        }
+                        return true;
+                    }
                     if (isolated_prefill) {
                         if (bad_prefill || cmd.request_id!=2 || cmd.rows!=3 || cmd.prefill_chunk!=2 ||
                             !cmd.window || cmd.window->token_ids!=std::vector<int32_t>{1,2,3}) {
@@ -328,6 +335,35 @@ void grouped_domain(bool shared, bool fanout) {
         FinalPipelineSession pipe(p,w.sockets,1200,shared,true,fanout,false,true);
         fails([&]{pipe.initialize();},"terminal-only hello must not pass grouped readiness");
     }
+}
+void hip_only_protocol(bool shared, bool grouped, bool fanout) {
+    const Plan p=parse_plan("hip:0:0-5,hip:1:5-10",10,{2,3},3719);
+    auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,grouped);
+    check(w.pids.size()==(grouped?1u:2u),"HIP-only domain process count");
+    FinalPipelineSession pipe(p,w.sockets,1200,shared,true,fanout,false,grouped);
+    pipe.initialize(); pipe.begin_request(1);
+    if (grouped) {
+        fails([&]{pipe.native_prefill({1,2,3},2,true);},"local chain excludes isolated bridge diagnostics");
+        pipe.native_prefill({1,2,3,4,5},2);
+        fails([&]{pipe.native_prefill({1},1);},"local prefix replay rejected");
+        (void)pipe.execute(input_frame(p,1,2),{5,{6,7,8}});
+    } else {
+        fails([&]{pipe.native_prefill({1,2,3},2);},"separate HIP workers cannot run local bulk");
+        (void)pipe.execute(input_frame(p,1,1),{0,{1,2,3}});
+    }
+    check(pipe.commit(1).stage_index==1,"HIP-only terminal physical identity");
+    pipe.begin_request(2);
+    (void)pipe.execute(input_frame(p,2,1),{0,{3,2,1}});
+    check(pipe.commit(3).request_id==2,"HIP-only resident reset");
+}
+void hip_only_local_failure(bool shared) {
+    const Plan p=parse_plan("hip:0:0-5,hip:1:5-10",10,{2,3},3719);
+    auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,true,false,true);
+    FinalPipelineSession pipe(p,w.sockets,1200,shared,true,true,false,true);
+    pipe.initialize(); pipe.begin_request(1);
+    fails([&]{pipe.native_prefill({1,2,3},2);},"local prefill failure not ACKed");
+    check(pipe.poisoned(),"local prefill failure poisons coordinator");
+    fails([&]{pipe.begin_request(2);},"poisoned local chain is not reusable");
 }
 void receiver_arm_protocol(bool shared) {
     const Plan p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
@@ -690,6 +726,7 @@ int main() {
         startup_barrier(false); startup_barrier(true);
         startup_frame_failures();
         native_prefill_protocol(false); native_prefill_protocol(true);
+        hip_only_local_failure(false); hip_only_local_failure(true);
         receiver_arm_protocol(false); receiver_arm_protocol(true);
         mtp_relay_protocol(false); mtp_relay_protocol(true);
         mtp_resident_protocol(false); mtp_resident_protocol(true);
@@ -699,6 +736,9 @@ int main() {
             negative(false,fanout); negative(true,fanout);
             compact_and_prefix(false,fanout); compact_and_prefix(true,fanout);
             grouped_domain(false,fanout); grouped_domain(true,fanout);
+            for (bool grouped : {false,true}) {
+                hip_only_protocol(false,grouped,fanout); hip_only_protocol(true,grouped,fanout);
+            }
             bad_ack(fanout);
         }
         std::cout << "final pipeline tests: PASS (" << assertions

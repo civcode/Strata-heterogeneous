@@ -148,7 +148,7 @@ void usage() {
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
-        "  --workload-mode: opt-in grouped resident text, context <=32768, max-new <=4096; experimental.\n"
+        "  --workload-mode: opt-in grouped or two-HIP-stage resident text, context <=32768, max-new <=4096; experimental.\n"
         "  --lookup-draft: verified suffix lookup (buffered only, prompt-chunk 2..8).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -595,6 +595,8 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         // All stages must use one canonical pack/profile/original GGUF
         // source. Capture metadata is otherwise insufficient to prove that
         // each worker computed against the same source model.
+        if (hip_pair && config.max_cache_slots != uint64_t(config.end_layer-config.first_layer)*512)
+            throw std::invalid_argument("HIP-only experiment requires explicit full routed expert residency");
         if (common_model) {
             if (config.pack_dir != common_model->pack_dir ||
                 config.profile_path != common_model->profile_path ||

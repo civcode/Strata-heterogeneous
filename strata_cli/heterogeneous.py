@@ -14,8 +14,8 @@ import time
 
 def add_arguments(parser):
     parser.add_argument("--coordinator", required=True, help="built strata_heterogeneous_live_smoke executable")
-    parser.add_argument("--cuda-worker", required=True)
-    parser.add_argument("--hip-worker", required=True)
+    parser.add_argument("--cuda-worker", help="required only when the plan contains CUDA")
+    parser.add_argument("--hip-worker", help="required only when the plan contains HIP")
     parser.add_argument("--config", action="append", required=True, help="one worker config per stage, in plan order")
     parser.add_argument("--plan", required=True)
     parser.add_argument("--fingerprint", type=int, required=True)
@@ -76,6 +76,29 @@ def _native(argv, *, text=None, marker=None):
     return None
 
 
+def planned_backends(plan):
+    """Select only executables used by the plan; native parser validates ranges/identity."""
+    if not isinstance(plan, str):
+        raise ValueError("plan must be a string")
+    backends = [part.partition(":")[0] for part in plan.split(",")]
+    if not backends or any(b not in ("cuda", "hip") for b in backends):
+        raise ValueError("plan must use cuda or hip stages")
+    return backends
+
+
+def worker_arguments(args):
+    result = []
+    backends = planned_backends(args.plan)
+    for backend in ("cuda", "hip"):
+        if backend not in backends:
+            continue
+        value = getattr(args, backend + "_worker", None)
+        if not value:
+            raise ValueError(f"--{backend}-worker is required for the plan")
+        result.extend(("--" + backend + "-worker", _path(value, True)))
+    return result
+
+
 def prepare_native(args):
     """CPU-only source/identity and tokenizer loading for the CLI and server."""
     from serve.heterogeneous_contract import generation_limits
@@ -85,8 +108,7 @@ def prepare_native(args):
         raise ValueError("max-new-tokens exceeds selected mode or prompt-chunk exceeds 0..8")
     argv = [_path(args.coordinator, True), "--plan", args.plan, "--fingerprint", str(args.fingerprint),
             "--layers", str(args.layers), "--hc", str(args.hc), "--n-embd", str(args.n_embd),
-            "--cuda-worker", _path(args.cuda_worker, True), "--hip-worker", _path(args.hip_worker, True),
-            "--timeout-ms", str(args.timeout_ms)]
+            "--timeout-ms", str(args.timeout_ms)] + worker_arguments(args)
     for config in args.config:
         argv.extend(("--config", _path(config)))
     if args.shared:
@@ -95,8 +117,8 @@ def prepare_native(args):
     bulk = getattr(args, "native_prefill_chunk", 0)
     if type(group) is not bool or type(bulk) is not int or not 0 <= bulk <= 2048 or (bulk and not group):
         raise ValueError("native prefill needs grouped HIP and chunk 1..2048")
-    if workload and not group:
-        raise ValueError("workload mode requires grouped native HIP")
+    if workload and not group and planned_backends(args.plan) != ["hip", "hip"]:
+        raise ValueError("ungrouped workload mode requires two HIP stages")
     if group:
         argv.append("--group-native-hip")
     # The native config parser determines the authorized tokenizer source;
@@ -196,8 +218,10 @@ def write_server_config(args):
                ("plan", "fingerprint", "layers", "hc", "n_embd", "max_new_tokens",
                 "prompt_chunk", "max_context", "timeout_ms", "shared", "stream_tokens",
                 "restart_clean", "lookup_draft", "group_native_hip", "native_prefill_chunk", "workload_mode")}}
-    for key in ("coordinator", "cuda_worker", "hip_worker"):
-        cfg["heterogeneous"][key] = _path(getattr(args, key), True)
+    cfg["heterogeneous"]["coordinator"] = _path(args.coordinator, True)
+    workers = worker_arguments(args)
+    for flag, value in zip(workers[::2], workers[1::2]):
+        cfg["heterogeneous"][flag[2:].replace("-", "_")] = value
     cfg["heterogeneous"]["config"] = [_path(p) for p in args.config]
     if not isinstance(args.model_name, str) or not args.model_name.strip():
         raise ValueError("model-name must be nonempty")
