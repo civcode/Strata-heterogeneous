@@ -9,6 +9,20 @@ void pool(void* user, const float*, const int32_t*, int64_t, int64_t, float*, in
 }
 int main() {
     try {
+        // CPU doubles expose the diagnostic API but cannot fabricate GPU evidence.
+        strata::core::Verifier probe;
+        for (bool enabled : {false, true}) {
+            strata::core::LayerZeroArithmetic snapshot;
+            std::string why;
+            probe.set_layer_zero_arithmetic_probe(enabled);
+            probe.set_layer_zero_hc_probe(enabled);
+            REQUIRE(!probe.copy_layer_zero_arithmetic(snapshot, why));
+            REQUIRE(why == "layer-zero probe unsupported in CPU stub");
+            REQUIRE(snapshot.n_embd == 0 && snapshot.qkv_channels == 0);
+            REQUIRE(snapshot.embedded.empty() && snapshot.mixed.empty() && snapshot.qkv.empty());
+            REQUIRE(snapshot.q8_bytes.empty() && snapshot.hc_residual.empty() &&
+                    snapshot.hc_scale.empty() && snapshot.hc_inject.empty());
+        }
         strata::core::WeightTable weights;
         strata::core::ModelGeometry geometry;
         strata::core::SessionState session;

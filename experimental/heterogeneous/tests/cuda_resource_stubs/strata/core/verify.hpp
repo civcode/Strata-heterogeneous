@@ -26,6 +26,7 @@ struct LayerZeroArithmetic {
     uint32_t n_embd = 0, qkv_channels = 0;
     std::vector<float> embedded, mixed, qkv;
     std::vector<uint8_t> q8_bytes;
+    std::vector<float> hc_residual, hc_scale, hc_inject;
 };
 namespace fake_resource {
 inline int pool_calls=0,load_calls=0, session_init_calls=0, zero_calls=0;
@@ -65,6 +66,7 @@ public:
         e = "stage0 phase probe unsupported in CPU test double"; return false;
     }
     void set_layer_zero_arithmetic_probe(bool) {}
+    void set_layer_zero_hc_probe(bool) {} // CPU double: readback remains unsupported.
     bool copy_layer_zero_arithmetic(LayerZeroArithmetic&, std::string& e) const {
         e="layer-zero probe unsupported in CPU stub"; return false;
     }
