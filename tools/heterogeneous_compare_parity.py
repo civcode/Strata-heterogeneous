@@ -158,13 +158,20 @@ def read_run(prefix: Path, *, allow_partial: bool = False, placement: bool = Fal
 
 
 def compare(reference: list[tuple[dict, dict]],
-            heterogeneous: list[tuple[dict, dict]], max_kl: float, *, placement: bool = False, prefill: bool = False) -> dict:
+            heterogeneous: list[tuple[dict, dict]], max_kl: float, *, placement: bool = False, prefill: bool = False, topology: bool = False) -> dict:
     require(len(reference) == len(heterogeneous) and bool(reference),
             "different or empty window counts")
     ref_plan = reference[0][0]["plan"].split(",")
     het_plan = heterogeneous[0][0]["plan"].split(",")
-    require(not (placement and prefill), "conflicting comparison modes")
-    if prefill:
+    require(sum((placement, prefill, topology)) <= 1, "conflicting comparison modes")
+    if topology:
+        forward = ["cuda:0:0-12", "hip:0:12-30", "hip:1:30-48"]
+        reverse = ["hip:0:0-18", "hip:1:18-36", "cuda:0:36-48"]
+        require(ref_plan == forward and het_plan == reverse,
+                "topology comparison requires canonical forward and reverse plans")
+        require(all(m["rows"] == m["n_keep"] == 1 for run in (reference, heterogeneous) for m, _ in run),
+                "topology comparison requires committed one-row controls")
+    elif prefill:
         require(ref_plan == het_plan and len(ref_plan) == 3 and
                 [x.split(":")[0] for x in ref_plan] == ["cuda", "hip", "hip"],
                 "prefill parity requires identical ordered grouped CUDA/HIP plans")
@@ -249,7 +256,7 @@ def compare(reference: list[tuple[dict, dict]],
             "prediction_disagreements": prediction_disagreements,
             "top1_disagreements": top1_disagreements, "max_kl_ref_to_hetero": worst_kl,
             "max_abs_logit_difference": worst_max_abs, "max_rmse_logits": worst_rmse,
-            "kl_threshold": max_kl, "comparison": "prefill" if prefill else "placement" if placement else "unsplit", "row_metrics": diagnostics}
+            "kl_threshold": max_kl, "comparison": "topology" if topology else "prefill" if prefill else "placement" if placement else "unsplit", "row_metrics": diagnostics}
 
 
 def main() -> int:
@@ -260,11 +267,13 @@ def main() -> int:
                         help="maximum KL(reference || hetero) per row (default 0.001)")
     parser.add_argument("--report", type=Path, help="optional machine-readable JSON report")
     parser.add_argument("--placement", action="store_true", help="compare explicit one-row placement captures")
+    parser.add_argument("--topology", action="store_true", help="compare canonical forward/reverse serial placement captures")
     args = parser.parse_args()
     try:
-        result = compare(read_run(args.reference_prefix, placement=args.placement),
-                         read_run(args.heterogeneous_prefix, placement=args.placement), args.max_kl,
-                         placement=args.placement)
+        require(not (args.placement and args.topology), "conflicting comparison modes")
+        result = compare(read_run(args.reference_prefix, placement=args.placement or args.topology),
+                         read_run(args.heterogeneous_prefix, placement=args.placement or args.topology), args.max_kl,
+                         placement=args.placement, topology=args.topology)
         print(json.dumps({k: v for k, v in result.items() if k != "row_metrics"},
                          indent=2, sort_keys=True))
         for row in result["row_metrics"]:

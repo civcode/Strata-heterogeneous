@@ -504,6 +504,13 @@ void require_executable(const std::string& path, const char* label) {
 std::string json_string(const std::string& value);
 struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
 GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
+    const bool reverse = hetero::plan_spec(plan) == "hip:0:0-18,hip:1:18-36,cuda:0:36-48";
+    // Reverse topology first qualifies the existing per-stage serial worker path.
+    // Do not advertise grouped bulk prefill or MTP until their protocols are implemented.
+    if (reverse && (o.group_hip || o.native_prefill_chunk || o.prefill_parity_at ||
+                    o.hip_split_overlap || o.receiver_arm || o.cuda_mapped_egress ||
+                    !o.mtp_probe_rt.empty()))
+        throw std::invalid_argument("reverse topology currently supports ungrouped serial workers only");
     if (o.prefill_stage_capture) {
         if (hetero::plan_spec(plan)!="cuda:0:0-12,hip:0:12-30,hip:1:30-48" ||
             plan.geometry.hc!=4 || plan.geometry.n_embd!=2560 || o.context_limit!=2048)
@@ -568,7 +575,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                 config.model_fingerprint != common_model->model_fingerprint)
                 throw std::invalid_argument("cross-stage Q2_0 model source identity mismatch");
         } else common_model = config;
-        if (o.generation_capture && (config.index_sha256!=hetero::mtp_qualification_index ||
+        if ((o.generation_capture || reverse) && (config.index_sha256!=hetero::mtp_qualification_index ||
             config.max_cells!=2048 || config.max_t!=8 || config.n_vocab!=248320 ||
             config.max_cache_slots!=uint64_t(config.end_layer-config.first_layer)*512 ||
             config.free_reserve_bytes!=536870912ull || config.arena_budget_bytes))
