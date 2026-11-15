@@ -187,6 +187,8 @@ class ResidentEngine:
         if not self._restart_clean or self._closed or self.source.get("mtp"):
             raise self._died("heterogeneous resident engine stopped; restart the server explicitly")
         with self._lock:
+            if self._closed:
+                raise self._died("heterogeneous resident engine closed; restart the server explicitly")
             if self.alive():
                 return
             self._retire()

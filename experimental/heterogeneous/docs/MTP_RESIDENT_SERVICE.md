@@ -7,13 +7,13 @@ reset. This is not a robust speed comparison or production admission.
 The reference and MTP had different native overlap settings. No long
 contexts or HTTP/cancellation qualification in 0048.
 
-## Current candidate (2K bulk/SSE in 0051; 8K configured smoke in 0052)
+## Current candidate (256K configured short-request smoke in 0053)
 
 - Exact Q2_0 pack/runtime identity admitted by the pinned MTP validator;
   target conversion checkpoint provenance remains unresolved.
 - Mixed CUDA0/HIP0/HIP1 15/18/15 or HIP-only 24/24, grouped HIP overlap,
   shared transport, full target and draft experts, max_t=8, 1 GiB reserve
-  per owner, exact aligned 2048..262144-cell worker capacity (above 8K is an unqualified 0053 long-context candidate), Q8 target and native Q8
+  per owner, exact aligned 2048..262144-cell worker capacity (256K configured capacity smoke passed; actual positions above 92 remain unverified), Q8 target and native Q8
   draft cache. Native drafter runs on terminal HIP1.
 - The drafter now borrows its own device-local/mapped native embedding.
   It does not install HIP1's pointer as the process-global target
@@ -60,7 +60,7 @@ status, and the final completion record. The capped final token is
 withheld until completion validation. The existing generator yields tokens
 individually; cancel/close during any batch yield drains a cancellation
 ACK at the same checkpoint before subsequent request admission.
-No guarantee of network-level latency or production cancellation yet.
+Private loopback SSE passed at 2K and 256K configured capacity. No guarantee of network-level latency or production cancellation yet.
 
 ## Native bulk prompt seed (2K qualified; larger capacity candidate)
 
@@ -107,6 +107,10 @@ config). Native opt-in is --mtp-resident-service --mtp-probe-rt ABS_PATH
 
 0052: integrated host/CUDA/HIP builds, CTest 9/9, Python 45/45 and short 8192-cell-configured HIP-only A/cancel/A and mixed smokes passed. Both reached position 92, 30.62 s total GPU process wall time; no near-8K execution or peak-memory proof.
 
-0053: opt-in aligned capacity up to 262144 with the existing long-context mode, extended metadata bound and one-time prompt binding. Local exact-blob standalone C++17 policy/cursor tests passed 85,434 and 699,146 assertions; Python streaming contract passed 5/5. Initial GCC 14 strict build warned on a test-only vector pop_back; changed fixture to construct the known prefix directly and reran. Full checkout remains blocked by DNS; integrated host wire/mock, CLI/server, native builds and GPU qualification outstanding. No production readiness or actual long-prompt performance/position validation. Existing ordinary configs/defaults unchanged.
+0053: 256K-configured HIP-only short A/cancel/A and mixed private HTTP SSE passed after repairing a stale long-context worker-mode gate and a stale test expectation. All three builds, CTest 13/13 and Python 54/54 passed. Successful native process wall time 34.39 s (initial safely refused attempt not independently timed). Actual positions reached 92; no high-position correctness, transient peak, long-prompt performance or production validation.
 
 For an isolated 256K configured-capacity MTP smoke, use private copies of the exact 262144-cell full-resident Q2_0 stage configs, `max_context=262144`, `native_prefill_chunk=32` (or 64), `workload_mode=true`, `long_context=true`, and `max_new_tokens<=256`. Keep the same runtime and per-owner reserve. This is an opt-in candidate, not a change to existing 256K ordinary services. Use short prompts until an actual long-position check is authorized under the test budget.
+
+## Failure retirement (0054 candidate)
+
+MTP failure frames now strip the request-only completion-budget extension so metadata refusals retain their error reason. A failed final MTP domain exits nonzero after executor retirement; EOF during an uncommitted MTP window is a failure. A zero accepted prefix is rejected by the coordinator before any commit is sent. No attempt is made to roll back partial target commits or reuse a failed session. Python validates integer request identity, refuses speculative advances at the physical tail, clears stale request timing on failure, and shares one cooperative retirement check for failed launch, restart and close (coordinator exit, output reader joined and original process group absent). Group existence detection uses signal zero only. MTP automatic restart remains forbidden. Normal MTP quit uses its configured cooperative drain deadline rather than the generic 1.5s grace. An unresolved process group is an operator-inspection error, not proof of GPU failure recovery. New forked CPU mock failures cover metadata, prefix, proposal, reset, post-commit observer and zero-keep/EOF; these integration checks are pending on the local checkout. Chat AI isolated exact-blob Python retirement/stream suite passed 10/10. No GPU fault injection or high-position run performed.

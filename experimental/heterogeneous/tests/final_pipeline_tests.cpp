@@ -952,7 +952,7 @@ void mtp_failure_retirement(bool hip_only) {
         } catch (const std::exception& e) { error=e.what(); }
         const char* cause=fault==1?"CPU service metadata refusal":
             fault==2?"CPU proposal refusal":fault==3?"CPU observer refused after target commit":
-            fault==4?(hip_only?"mock full HIP prompt refused":"mock native residual transport mismatch"):
+            fault==4?(hip_only?"mock full HIP prompt refused":"native prefill residual identity, order or finite gate failed"):
             "CPU protocol reset refused";
         check(error.find(cause)!=std::string::npos,"MTP failure carries source cause");
         check(pipe.poisoned() && !pipe.has_pending(),"failed MTP service retired");
@@ -964,6 +964,33 @@ void mtp_failure_retirement(bool hip_only) {
               "failed MTP terminal process exits nonzero");
         w.pids.pop_back(); // already reaped
     }
+}
+void mtp_zero_tail_commit_retirement() {
+    const Plan p=parse_plan("hip:0:0-5,hip:1:5-10",10,{2,3},3719);
+    auto w=launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,8,
+                  false,false,false,false,2048);
+    FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+    pipe.initialize(); pipe.begin_request(1);
+    const MtpRequestPolicy policy{2048,4,4,248320,std::vector<int32_t>(2044,10),{99}};
+    pipe.configure_mtp_request(1,policy);
+    pipe.native_prefill(std::vector<int32_t>(2043,10),32);
+    auto frame=input_frame(p,1,2);
+    frame.rows=1; frame.payload.resize(p.geometry.floats_per_row());
+    pipe.execute_discard(frame,{2043,{10}});
+    const auto first=pipe.commit(1);
+    frame.window_id=3;
+    pipe.execute_discard(frame,{2044,{first.predicted_tokens.front()}});
+    std::string error;
+    try { (void)pipe.commit(0); } catch(const std::exception& e) {error=e.what();}
+    check(error.find("positive accepted prefix")!=std::string::npos,
+          "zero keep forbidden before sending a tail commit");
+    check(pipe.poisoned() && !pipe.has_pending(),"zero keep retires service");
+    fails([&]{pipe.begin_request(2);},"retired tail cannot reset");
+    int status=0; pid_t result;
+    do { result=::waitpid(w.pids.back(),&status,0); } while(result<0 && errno==EINTR);
+    check(result==w.pids.back() && WIFEXITED(status) && WEXITSTATUS(status)!=0,
+          "EOF with a provisional MTP window is nonzero retirement");
+    w.pids.pop_back();
 }
 void compact_and_prefix(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
@@ -1004,6 +1031,7 @@ int main() {
         mtp_service_protocol(false); mtp_service_protocol(true);
         mtp_long_context_protocol();
         mtp_failure_retirement(false); mtp_failure_retirement(true);
+        mtp_zero_tail_commit_retirement();
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);
