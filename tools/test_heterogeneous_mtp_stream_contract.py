@@ -121,6 +121,16 @@ class MtpStreamContract(unittest.TestCase):
             self.assertEqual(p.accept(f"HETERO_PROGRESS 1 1 {prompt-1} BATCH 0 0"), ())
             self.assertEqual(p.accept(f"HETERO_PROGRESS 1 2 {prompt} BATCH 0 1 10"), (10,))
 
+    def test_physical_tail_requires_anchor_only(self):
+        for cap in (2048,8192,262144):
+            p=Progress(1,cap-4,4,8,100,{99},True,native_prefill=True,mtp_spec=4,mtp_context=cap)
+            p.accept(f"HETERO_PROGRESS 1 1 {cap-5} BATCH 0 0")
+            p.accept(f"HETERO_PROGRESS 1 2 {cap-4} BATCH 0 1 10")
+            with self.assertRaises(ValueError):
+                p.accept(f"HETERO_PROGRESS 1 3 {cap-2} BATCH 0 2 11 12")
+            self.assertEqual((p.pos,p.window,p.tokens),(cap-4,2,[10]))
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 3 {cap-3} BATCH 0 1 11"),(11,))
+
     def test_capacity_capabilities_preserve_legacy_and_reject_stale(self):
         for advertised in (2048,8192,262144):
             source = dict(mtp_context_cap=advertised, mtp_bulk_prompt_cap=advertised-1, mtp_bulk_chunk_cap=64)

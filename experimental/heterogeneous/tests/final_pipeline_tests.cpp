@@ -5,6 +5,7 @@
 #include "strata_heterogeneous/shared.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 #include <algorithm>
+#include <cerrno>
 #include <iostream>
 #include <cmath>
 #include <cstring>
@@ -48,16 +49,18 @@ public:
         armed = true; return true;
     }
     int mtp_mode = 0;
+    int service_fault = 0; // 1 metadata, 2 proposal, 3 post-target commit observer
     bool mtp_relay_enabled() const noexcept override { return mtp_mode != 0; }
     bool mtp_anchor_only_enabled() const noexcept override { return mtp_mode == 5 || mtp_mode == 7 || mtp_mode == 8; }
     bool mtp_resident_enabled() const noexcept override { return mtp_mode == 7 || mtp_mode == 8; }
     bool mtp_service_enabled() const noexcept override { return mtp_mode == 8; }
     bool configure_mtp_request(const Frame& meta,std::string& e) override {
+        if (service_fault==1) {e="CPU service metadata refusal";return false;}
         if (mtp_mode!=8 || !meta.window || !meta.mtp_max_new) {e="mock service metadata refused";return false;}
         return true;
     }
     bool propose_mtp(const WindowSpec& anchor, WindowSpec& offer, std::string& e) override {
-        if (mtp_mode==2) {e="CPU proposal refusal";return false;}
+        if (mtp_mode==2 || service_fault==2) {e="CPU proposal refusal";return false;}
         offer=anchor;
         if (mtp_mode==5 || mtp_mode==6) return true;
         offer.token_ids.push_back((anchor.token_ids.front()+17)%1000);
@@ -134,7 +137,9 @@ public:
     }
     bool commit_prefix(uint64_t r, uint64_t w, uint32_t k, std::string& e) override {
         if (fail_commit) { e = "injected final commit failure"; return false; }
-        return mock_.commit_prefix(r,w,k,e);
+        if (!mock_.commit_prefix(r,w,k,e)) return false;
+        if (service_fault==3) {e="CPU observer refused after target commit";return false;}
+        return true;
     }
     void abandon_window() noexcept override { mock_.abandon_window(); }
     void shutdown() noexcept override { mock_.shutdown(); }
@@ -191,7 +196,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
                    bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false,
                    bool direct_verified = false, bool bad_producer = false, bool guarded_direct = false,
-                   int64_t max_cells = 64) {
+                   int64_t max_cells = 64, int service_fault = 0) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -259,6 +264,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     final.grouped = grouped;
                     final.arm_mode = arm_mode;
                     final.mtp_mode = mtp_mode;
+                    final.service_fault = service_fault;
                     final.nonfinite = nonfinite;
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
@@ -919,6 +925,46 @@ void mtp_long_context_protocol() {
     pipe.execute_discard(frame,{2,{9}});
     check(pipe.commit(1).request_id==2,"long-context MTP reset and short recovery");
 }
+// CPU-only partial failure retirement: failure frames preserve the cause,
+// no failed checkpoint can publish, and the final worker exits nonzero.
+// The mixed case includes another stage which may already have committed.
+void mtp_failure_retirement(bool hip_only) {
+    const Plan p=parse_plan(hip_only ? "hip:0:0-5,hip:1:5-10" :
+        "cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    const MtpRequestPolicy policy{2048,8,4,248320,{1,2,3},{99}};
+    for (int fault=1;fault<=5;++fault) {
+        // 1 metadata, 2 proposal, 3 observer after target commit,
+        // 4 prefill handler, 5 reset.
+        auto w=launch(p,true,false,false,false,false,0.f,true,fault==5,false,true,false,
+                      fault==4,0,8,false,false,false,false,64,fault);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,true,false,true,false,true,true,true,false,false,false,true);
+        pipe.initialize();
+        std::string error;
+        try {
+            pipe.begin_request(1);
+            pipe.configure_mtp_request(1,policy);
+            if (fault==4) pipe.native_prefill({1,2},2);
+            else {
+                pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});
+                (void)pipe.commit(3);
+                if (fault==2) (void)pipe.request_mtp_proposal();
+            }
+        } catch (const std::exception& e) { error=e.what(); }
+        const char* cause=fault==1?"CPU service metadata refusal":
+            fault==2?"CPU proposal refusal":fault==3?"CPU observer refused after target commit":
+            fault==4?(hip_only?"mock full HIP prompt refused":"mock native residual transport mismatch"):
+            "CPU protocol reset refused";
+        check(error.find(cause)!=std::string::npos,"MTP failure carries source cause");
+        check(pipe.poisoned() && !pipe.has_pending(),"failed MTP service retired");
+        fails([&]{pipe.begin_request(2);},"retired MTP service cannot reset");
+        fails([&]{(void)pipe.commit(1);},"retired MTP service cannot publish");
+        int status=0; pid_t result;
+        do { result=::waitpid(w.pids.back(),&status,0); } while(result<0 && errno==EINTR);
+        check(result==w.pids.back() && WIFEXITED(status) && WEXITSTATUS(status)!=0,
+              "failed MTP terminal process exits nonzero");
+        w.pids.pop_back(); // already reaped
+    }
+}
 void compact_and_prefix(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     {
@@ -957,6 +1003,7 @@ int main() {
         mtp_resident_protocol(false); mtp_resident_protocol(true);
         mtp_service_protocol(false); mtp_service_protocol(true);
         mtp_long_context_protocol();
+        mtp_failure_retirement(false); mtp_failure_retirement(true);
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

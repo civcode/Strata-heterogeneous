@@ -56,6 +56,7 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
         f.window.reset();
         f.keep_count = 0;
         f.prefill_chunk = 0;
+        f.mtp_max_new = 0; // request metadata is not valid on a failure frame
         f.shared_checksum = 0;
         f.error = error.empty() ? "final stage failed" : std::move(error);
         if (f.error.size() > 1024) f.error.resize(1024);
@@ -72,6 +73,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
     if (guarded_direct && !direct_bind) throw std::invalid_argument("guarded consumer needs registered slot");
+    const bool mtp_service = executor.mtp_service_enabled();
     Frame hello = control(plan, index,
         direct_bind ? (guarded_direct ? Kind::hello_guarded_direct_final : Kind::hello_direct_shared_final) :
         executor.mtp_service_enabled() ? Kind::hello_mtp_service_final :
@@ -96,6 +98,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
     if (!executor.prepare(plan, index, error)) {
         failure(fd, hello, error.empty() ? "final stage preparation failed" : error, timeout_ms);
         executor.shutdown();
+        if (mtp_service) throw std::runtime_error(error.empty() ? "MTP service preparation failed" : error);
         return;
     }
     try {
@@ -260,7 +263,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                     send_final_result(fd, result, timeout_ms);
                 }
                 auto commit = receive_frame(fd, timeout_ms);
-                if (!commit) { executor.abandon_window(); break; }
+                if (!commit) {
+                    if (mtp_service) throw std::runtime_error("MTP service peer closed before prefix commit");
+                    executor.abandon_window(); break;
+                }
                 match(*commit, *request, Kind::commit_prefix);
                 if (gate && !gate->check_commit(*commit, error))
                     throw std::runtime_error(error);
@@ -283,6 +289,9 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (gate) gate->poison();
                 executor.abandon_window();
                 failure(fd, *request, ex.what(), timeout_ms);
+                // The outer catch drains the executor; a failed MTP domain
+                // must exit nonzero, not masquerade as a cooperative close.
+                if (mtp_service) throw;
                 executor.shutdown();
                 return;
             }
@@ -631,6 +640,8 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
     try {
         if (gate_.provisional().has_nonfinite())
             throw std::runtime_error("nonfinite head result cannot be committed");
+        if (mtp_service_policy_ && !n_keep)
+            throw std::invalid_argument("MTP service requires a positive accepted prefix");
         if (mtp_service_policy_ && pending_pos_ < int64_t(mtp_service_policy_->prompt.size()) && n_keep!=pending_rows_)
             throw std::invalid_argument("MTP service prompt requires full commit");
         if (!mtp_pending_inputs_.empty() && n_keep!=greedy_accepted_prefix(mtp_pending_inputs_,gate_.provisional().predicted_tokens))

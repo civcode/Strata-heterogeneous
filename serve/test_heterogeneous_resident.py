@@ -277,6 +277,59 @@ class TestResident(unittest.TestCase):
             next(g)
         self.assertFalse(e.alive())
 
+    def test_mtp_failure_retires_and_clears_previous_timing(self):
+        e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
+                         "HETERO_PROGRESS 1 2 3 BATCH 0 1 11",
+                         'HETERO_GENERATION {"request_id":true,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"length","stop_token":-1}'])
+        e.max_context = 2048
+        e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
+        e.last = {"generated": 99}
+        g = e.generate([1,2],2,{},Event())
+        self.assertEqual(next(g),10)
+        self.assertIsNone(e.last)
+        self.assertIsNone(next(g))
+        with self.assertRaisesRegex(RuntimeError, "invalid native resident completion"):
+            next(g)
+        self.assertFalse(e.alive())
+        self.assertIsNone(e.last_completion)
+        self.assertIsNone(e.last_metrics)
+        e.proc.stdin.close.assert_called()
+        sends = e._send.call_count
+        with self.assertRaisesRegex(RuntimeError, "unavailable"):
+            list(e.generate([1],1,{},Event()))
+        self.assertEqual(e._send.call_count, sends)
+
+    def test_mtp_cancel_ack_failure_poison(self):
+        e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
+                         'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10],"finish_reason":"stop","stop_token":99}'])
+        e.max_context=2048
+        e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
+        g=e.generate([1,2],3,{},Event())
+        self.assertEqual(next(g),10)
+        with self.assertRaisesRegex(RuntimeError,"cancellation not acknowledged"):
+            g.close()
+        self.assertFalse(e.alive())
+        self.assertIsNone(e.last_completion)
+
+    def test_close_checks_group_even_after_clean_ack(self):
+        e = self.engine(["HETERO_CLOSED"])
+        e._deadline=1
+        e.proc.pid=123
+        e.proc.wait.return_value=0
+        e._reader=Mock()
+        e._reader.is_alive.return_value=False
+        with patch("serve.heterogeneous_retirement.os.killpg", return_value=None), \
+             patch("serve.heterogeneous.print", create=True) as report:
+            with self.assertRaisesRegex(RuntimeError,"process group still exists"):
+                e.close()
+            report.assert_not_called()
+        self.assertFalse(e.alive())
+        self.assertFalse(e._closed)
+        with patch("serve.heterogeneous_retirement.os.killpg", side_effect=ProcessLookupError):
+            e.close()
+        self.assertTrue(e._closed)
+        e._send.assert_called_once_with("quit")
+
     def test_restart_refuses_live_group(self):
         e = self.engine([])
         e._restart_clean = True
@@ -284,14 +337,14 @@ class TestResident(unittest.TestCase):
         e.proc.pid = 123
         e._reader = Mock()
         e._reader.is_alive.return_value = False
-        e._wait_exit = Mock(return_value=1)
+        e.proc.wait.return_value = 1
         e._deadline = 1
         e._launch = Mock()
-        with patch("serve.heterogeneous.os.killpg", return_value=None):
+        with patch("serve.heterogeneous_retirement.os.killpg", return_value=None):
             with self.assertRaises(RuntimeError):
                 e.restart()
         e._launch.assert_not_called()
-        with patch("serve.heterogeneous.os.killpg", side_effect=ProcessLookupError):
+        with patch("serve.heterogeneous_retirement.os.killpg", side_effect=ProcessLookupError):
             e.restart()
         e._launch.assert_called_once()
 

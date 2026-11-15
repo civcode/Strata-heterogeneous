@@ -1530,7 +1530,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
     }
     std::string error;
-    if (!((o.mtp_three_round || o.generation_capture || o.direct_verified) ? workers.finish(error,o.timeout_ms,false) : workers.finish(error)))
+    if (!((o.mtp_service || o.mtp_three_round || o.generation_capture || o.direct_verified) ? workers.finish(error,o.timeout_ms,false) : workers.finish(error)))
         throw std::runtime_error("worker shutdown failed: " + error);
     if (o.resident) {
         if (o.mtp_resident_prompt_rows) {

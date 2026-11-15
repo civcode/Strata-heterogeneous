@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 import queue
 import subprocess
@@ -19,6 +18,7 @@ from serve.heterogeneous_contract import (validate_request, Progress, timing_rec
     mtp_context_valid, MTP_CONTEXT_CAPACITY, MTP_STANDARD_CONTEXT, MAX_MTP_BULK_CHUNK,
     mtp_context_capable, mtp_bulk_capable)
 from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
+from serve.heterogeneous_retirement import retire_process
 
 
 def prepare_server(cfg):
@@ -132,8 +132,7 @@ class ResidentEngine:
                 raise self._died("native resident readiness not acknowledged")
             print(f"HETERO_READY coordinator_pid={self.proc.pid}", file=sys.stderr, flush=True)
         except BaseException:
-            self._poison()
-            self._wait_exit()
+            self._retire()
             raise
 
     def _read_records(self):
@@ -172,11 +171,12 @@ class ResidentEngine:
         except (OSError, ValueError):
             pass
 
-    def _wait_exit(self):
+    def _retire(self):
+        self._poison()
         try:
-            return self.proc.wait(timeout=self._deadline)
-        except subprocess.TimeoutExpired as exc:
-            raise self._died("native coordinator did not exit; operator inspection required") from exc
+            return retire_process(self.proc, self._reader, self._deadline)
+        except RuntimeError as exc:
+            raise self._died(str(exc)) from exc
 
     def alive(self):
         return not self._closed and not self._failed and self.proc.poll() is None
@@ -184,25 +184,12 @@ class ResidentEngine:
     def restart(self):
         # Opt-in only; never replay a failed request or overlap worker sets.
         # Native children inherit the coordinator's new process group.
-        if not self._restart_clean or self._closed:
+        if not self._restart_clean or self._closed or self.source.get("mtp"):
             raise self._died("heterogeneous resident engine stopped; restart the server explicitly")
         with self._lock:
             if self.alive():
                 return
-            self._poison()
-            self._wait_exit()
-            self._reader.join(timeout=self._deadline)
-            if self._reader.is_alive():
-                raise self._died("old coordinator reader still active; restart refused")
-            try:
-                os.killpg(self.proc.pid, 0)  # existence check only, no signal delivery
-            except ProcessLookupError:
-                pass
-            except OSError as exc:
-                raise self._died("cannot verify old process group exit; restart refused") from exc
-            else:
-                raise self._died("old process group still exists; restart refused")
-            self.proc.stdout.close()
+            self._retire()
             self._launch()
 
     def exit_code(self):
@@ -252,7 +239,8 @@ class ResidentEngine:
             tokens = record["token_ids"]
             reason = record["finish_reason"]
             stop = record["stop_token"]
-            if (record["request_id"] != self._request or record["prompt_tokens"] != len(ids) or
+            if (type(record["request_id"]) is not int or type(record["prompt_tokens"]) is not int or
+                    record["request_id"] != self._request or record["prompt_tokens"] != len(ids) or
                     not isinstance(tokens, list) or len(tokens) > max_new or
                     any(type(t) is not int or not 0 <= t < self.source["vocab"] or t in self.stop_ids
                         for t in tokens) or type(stop) is not int or
@@ -273,14 +261,16 @@ class ResidentEngine:
                 return
             if not self.alive():
                 raise self._died("resident engine unavailable; restart required")
-            self._request += 1
-            self.last_completion = self.last_metrics = None
+            # Build the local progress validator before consuming a request ID.
+            # An invalid local policy cannot desynchronize the next request.
             waiting = completed = cancelled = False
-            progress = Progress(self._request, len(ids), max_new, self.chunk,
+            progress = Progress(self._request + 1, len(ids), max_new, self.chunk,
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
                                  self.lookup_draft, bool(self.source.get("native_prefill_chunk", 0)),
                                 mtp_spec=self.source.get("spec", 0) if self.source.get("mtp") else 0,
                                 mtp_context=self.max_context)
+            self._request += 1
+            self.last_completion = self.last_metrics = self.last = None
             start = time.monotonic()
             prefill_end = last_checkpoint = first_output = last_output_checkpoint = None
             emitted = 0
@@ -391,6 +381,7 @@ class ResidentEngine:
                 raise
             finally:
                 if not completed:
+                    self.last_completion = self.last_metrics = self.last = None
                     self._poison()
             if cancelled or cancel.is_set():
                 return
@@ -407,24 +398,23 @@ class ResidentEngine:
         if not self._lock.acquire(timeout=self._deadline):
             raise self._died("resident request still active; operator inspection required")
         try:
+            if self._closed:
+                return
+            acknowledged = False
             if self.alive():
                 try:
                     self._send("quit")
                     if self._receive() != "HETERO_CLOSED":
                         raise self._died("resident shutdown not acknowledged")
-                    print("HETERO_CLOSED", file=sys.stderr, flush=True)
+                    acknowledged = True
                 except BaseException:
-                    self._poison()
-                    self._wait_exit()
+                    self._retire()
                     raise
-            self._poison()
-            code = self._wait_exit()
-            self._reader.join(timeout=self._deadline)
-            if self._reader.is_alive():
-                raise self._died("native output reader did not exit; operator inspection required")
-            self.proc.stdout.close()
+            code = self._retire()
             self._closed = True
             if code:
                 raise self._died(f"native resident coordinator exited with status {code}")
+            if acknowledged:
+                print("HETERO_CLOSED", file=sys.stderr, flush=True)
         finally:
             self._lock.release()

@@ -93,6 +93,7 @@ class Progress:
                          (mtp_context > MTP_CONTEXT_CAPACITY and not native_prefill)):
             raise ValueError("MTP prompt and completion exceed admitted service capacity/mode")
         self.mtp_spec = mtp_spec
+        self.mtp_context = mtp_context
         self.lookup = lookup
         self.native_prefill = native_prefill
         self.request, self.prompt, self.max_new = request, prompt, max_new
@@ -112,6 +113,8 @@ class Progress:
         else:
             expected = self.pos + (min(self.chunk, self.prompt - self.pos) if self.pos < self.prompt else 1)
         max_advance = (self.mtp_spec + 1 if self.mtp_spec else self.chunk if self.lookup else 1)
+        if self.mtp_spec and self.pos > self.mtp_context - 5:
+            max_advance = 1  # the native draft cannot offer a chain at the physical tail
         valid_position = (expected <= end <= self.pos + max_advance
                           if self.pos >= self.prompt else end == expected)
         if (self.terminal or request != self.request or window != self.window + 1 or
