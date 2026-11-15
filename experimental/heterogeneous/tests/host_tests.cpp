@@ -76,6 +76,27 @@ Frame input(const Plan& p, uint64_t request, uint64_t window, uint32_t rows) {
     for (size_t i = 0; i < count; ++i) f.payload.push_back(float(i % 31) / 31.f);
     return f;
 }
+void test_long_prefill_spec() {
+    auto f = Frame{};
+    f.kind = Kind::prefill_spec; f.stage_index = 0; f.request_id = 1;
+    f.window_id = 1; f.plan_fingerprint = 42; f.geometry = {4,2560};
+    f.rows = max_native_prefill_tokens - 1; f.prefill_chunk = 256;
+    f.window = WindowSpec{0, std::vector<int32_t>(f.rows, 198)};
+    const auto wire = encode(f);
+    const auto decoded = decode(wire);
+    check(decoded.kind == Kind::prefill_spec && decoded.rows == f.rows &&
+          decoded.prefill_chunk == f.prefill_chunk && decoded.window &&
+          decoded.window->token_ids == f.window->token_ids, "long prefill token wire round-trip");
+    auto ordinary = f;
+    ordinary.kind = Kind::window_spec; ordinary.prefill_chunk = 0;
+    throws([&] { (void) encode(ordinary); }, "long verifier window remains forbidden");
+    auto too_many = f;
+    too_many.rows = max_native_prefill_tokens + 1;
+    too_many.window->token_ids.resize(too_many.rows, 198);
+    throws([&] { (void) encode(too_many); }, "prefill token ceiling enforced");
+    f.window->token_ids.back() = -1;
+    throws([&] { (void) encode(f); }, "negative long prefill token rejected");
+}
 void test_plan() {
     Plan p = parse_plan("cuda:0:0-12,hip:0:12-30,hip:1:30-48", 48, {4, 8}, 0xabc12);
     check(p.stages.size() == 3, "3 stage plan");
@@ -372,7 +393,7 @@ void test_fail_closed() {
 }
 int main() {
     try {
-        test_plan(); test_wire_golden_data(); test_wire(); test_process_pipeline(); test_fail_closed();
+        test_long_prefill_spec(); test_plan(); test_wire_golden_data(); test_wire(); test_process_pipeline(); test_fail_closed();
         test_handshake_rejection(); test_io_deadlines(); test_mock_stage_lifecycle();
         test_commit_failure_and_worker_exit(); test_window_replay();
         std::cout << "heterogeneous host tests: PASS (" << assertions << " assertions, real worker processes, no GPU)\n";

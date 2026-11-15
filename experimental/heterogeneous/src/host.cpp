@@ -15,8 +15,8 @@
 #include <utility>
 
 namespace strata::heterogeneous {
-void WindowSpec::validate(uint32_t rows) const {
-    if (!rows || rows > max_window_tokens || token_ids.size() != rows || pos0 < 0 ||
+void WindowSpec::validate(uint32_t rows, bool native_prefill) const {
+    if (!rows || rows > (native_prefill ? max_native_prefill_tokens : max_window_tokens) || token_ids.size() != rows || pos0 < 0 ||
         static_cast<uint64_t>(pos0) > static_cast<uint64_t>(INT64_MAX) - (rows - 1))
         throw std::invalid_argument("invalid token window count or position");
     for (int32_t token : token_ids)
@@ -107,10 +107,10 @@ void validate_frame(const Frame& f) {
                 !f.error.empty() || !f.window || f.window->pos0 != 0 ||
                 !f.prefill_chunk || f.prefill_chunk > max_native_prefill_chunk)
                 throw std::invalid_argument("invalid native prefill specification");
-            f.window->validate(f.rows);
+            f.window->validate(f.rows, true);
             break;
         case Kind::prefill_done:
-            if (f.window_id != 1 || f.rows > max_window_tokens || f.shared_checksum ||
+            if (f.window_id != 1 || f.rows > max_native_prefill_tokens || f.shared_checksum ||
                 !zero_identity || !f.payload.empty() || !f.error.empty())
                 throw std::invalid_argument("invalid native prefill completion");
             break;
@@ -359,7 +359,7 @@ Frame decode(const std::vector<uint8_t>& bytes) {
                f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal) {
         const uint32_t fixed = f.kind == Kind::prefill_spec ? 16 : 12;
         if (n < fixed || (n - fixed) % 4 != 0 || get_u32(payload + 8) != (n - fixed) / 4 ||
-            get_u32(payload + 8) > max_window_tokens)
+            get_u32(payload + 8) > (f.kind == Kind::prefill_spec ? max_native_prefill_tokens : max_window_tokens))
             throw std::invalid_argument("invalid token window wire length");
         WindowSpec w;
         w.pos0 = static_cast<int64_t>(get_u64(payload));

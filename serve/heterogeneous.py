@@ -27,7 +27,7 @@ def prepare_server(cfg):
     required = {"coordinator", "cuda_worker", "hip_worker", "config", "plan", "fingerprint"}
     optional = {"layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
-                "group_native_hip", "native_prefill_chunk"}
+                "group_native_hip", "native_prefill_chunk", "workload_mode"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     for key in ("coordinator", "cuda_worker", "hip_worker", "plan"):
@@ -39,7 +39,7 @@ def prepare_server(cfg):
     values = dict(layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
                   stream_tokens=False, restart_clean=False, lookup_draft=False,
-                  group_native_hip=False, native_prefill_chunk=0)
+                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False)
     values.update(opts)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
@@ -48,7 +48,7 @@ def prepare_server(cfg):
         raise ValueError("heterogeneous.prompt_chunk must be 0..8")
     if type(values["native_prefill_chunk"]) is not int or not 0 <= values["native_prefill_chunk"] <= 2048:
         raise ValueError("heterogeneous.native_prefill_chunk must be 0..2048")
-    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft", "group_native_hip"):
+    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft", "group_native_hip", "workload_mode"):
         if type(values[key]) is not bool:
             raise ValueError(f"heterogeneous.{key} must be boolean")
     args = argparse.Namespace(**values)

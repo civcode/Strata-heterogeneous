@@ -358,7 +358,7 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
     if (receiver_arm_ || mtp_relay_) throw std::logic_error("receiver arm/MTP relay does not support native bulk prefill");
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !resident_request_ || last_window_ ||
         endpoints_.size()!=2 || starts_.back()==endpoints_.back() ||
-        tokens.empty() || tokens.size()>max_window_tokens || !chunk || chunk>max_native_prefill_chunk)
+        tokens.empty() || tokens.size()>max_native_prefill_tokens || !chunk || chunk>max_native_prefill_chunk)
         throw std::logic_error("native prefill requires freshly reset grouped resident pipeline");
     if (isolated_stage_reference && (resident_request_!=2 || tokens.size()>16 || chunk>tokens.size() ||
         plan_.stages.size()!=3 || plan_.total_layers!=48 ||

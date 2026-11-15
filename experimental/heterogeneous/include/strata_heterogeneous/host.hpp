@@ -68,10 +68,11 @@ enum class Kind : uint16_t {
 struct WindowSpec {
     int64_t pos0 = 0;
     std::vector<int32_t> token_ids;
-    void validate(uint32_t rows) const;
+    void validate(uint32_t rows, bool native_prefill = false) const;
 };
 constexpr uint32_t max_native_prefill_chunk = 2048; // independent of decode max_t
-constexpr uint32_t max_window_tokens = 8192; // protocol ceiling, not Verifier::max_t
+constexpr uint32_t max_window_tokens = 8192; // verifier/control ceiling, not Verifier::max_t
+constexpr uint32_t max_native_prefill_tokens = 32768; // prefill spec only; R pieces retain 16 MiB cap
 
 struct Frame {
     Kind kind = Kind::data;

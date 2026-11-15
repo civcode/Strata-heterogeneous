@@ -48,6 +48,7 @@ struct Options {
     uint32_t generate = 0, prompt_chunk = 1, native_prefill_chunk = 0;
     bool describe_source = false;
     bool resident = false;
+    bool workload_mode = false;
     bool stream_tokens = false;
     bool lookup_draft = false;
     uint32_t context_limit = 4096;
@@ -147,6 +148,7 @@ void usage() {
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
+        "  --workload-mode: opt-in grouped resident text, context <=32768, max-new <=4096; experimental.\n"
         "  --lookup-draft: verified suffix lookup (buffered only, prompt-chunk 2..8).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -154,13 +156,13 @@ void usage() {
 // The CLI passes decimal token IDs separated by ASCII whitespace.
 // A bounded line reader for local resident requests and checkpoints.
 // EOF is allowed only between complete commands.
-bool read_command(std::string& line) {
+bool read_command(std::string& line, size_t max_bytes = 65536) {
     line.clear();
     char c;
     while (std::cin.get(c)) {
         if (c == '\n') return true;
-        if (line.size() == 65536)
-            throw std::invalid_argument("resident command exceeds 64 KiB");
+        if (line.size() == max_bytes)
+            throw std::invalid_argument("resident command exceeds configured byte cap");
         line.push_back(c);
     }
     if (!std::cin.eof() || std::cin.bad() || !line.empty())
@@ -248,19 +250,20 @@ Options parse(int argc, char** argv) {
             required_value(i,argc,argv,"--prefill-stage-reference");
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
+        else if (key == "--workload-mode") { o.workload_mode = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
         else if (key == "--lookup-draft") { o.lookup_draft = true; generation_arg = true; }
         else if (key == "--context-limit") {
             generation_arg = true;
             o.context_limit = u32(required_value(i, argc, argv, "--context-limit"), "context-limit");
-            if (o.context_limit < 2 || o.context_limit > 8192)
-                throw std::invalid_argument("--context-limit must be in 2..8192");
+            if (o.context_limit < 2 || o.context_limit > hetero::max_native_prefill_tokens)
+                throw std::invalid_argument("--context-limit must be in 2..32768");
         }
         else if (key == "--generate") {
             generation_arg = true;
             o.generate = u32(required_value(i, argc, argv, "--generate"), "generate");
-            if (!o.generate || o.generate > 256)
-                throw std::invalid_argument("--generate must be in 1..256");
+            if (!o.generate || o.generate > 4096)
+                throw std::invalid_argument("--generate must be in 1..4096");
         } else if (key == "--prompt-chunk") {
             generation_arg = true;
             o.prompt_chunk = u32(required_value(i, argc, argv, "--prompt-chunk"), "prompt-chunk");
@@ -474,6 +477,11 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--stream-tokens requires --resident");
     if (o.lookup_draft && (o.stream_tokens || o.prompt_chunk < 2))
         throw std::invalid_argument("--lookup-draft requires buffered generation and chunk >= 2");
+    if (!o.workload_mode && (o.context_limit > 8192 || o.generate > 256))
+        throw std::invalid_argument("extended context or completion requires --workload-mode");
+    if (o.workload_mode && (!o.resident || !o.generate || !o.group_hip || o.prefill_parity_at ||
+        o.generation_capture || !o.mtp_probe_rt.empty() || o.receiver_arm || o.hip_split_overlap))
+        throw std::invalid_argument("workload mode needs grouped resident ordinary text, without MTP or diagnostic overlap");
     if (o.generate) {
         if (o.generate >= o.context_limit)
             throw std::invalid_argument("completion budget leaves no prompt context");
@@ -548,7 +556,8 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
-    const uint64_t needed = o.resident ? uint64_t(o.generate) + 1
+    const uint64_t needed = o.workload_mode ? uint64_t(o.context_limit)
+        : o.resident ? uint64_t(o.generate) + 1
         : o.generate ? uint64_t(o.tokens.size()) + o.generate
          : o.mtp_three_round ? hetero::mtp_three_provisional_max
          : uint64_t(o.windows - 1) * o.keep + o.rows + 5ull*o.mtp_relay_rounds;
@@ -1231,7 +1240,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         std::cout << std::endl;
         bool first = true;
         std::string line;
-        while (!input_closed && read_command(line)) {
+        const size_t command_cap = o.workload_mode && o.context_limit > 8192 ? 384 * 1024 : 65536;
+        while (!input_closed && read_command(line, command_cap)) {
             if (line == "quit") { resident_quit=true; break; }
             std::istringstream in(line);
             std::string count;

@@ -1,0 +1,139 @@
+{
+  "schema": "strata-heterogeneous-workloads/v1",
+  "description": "Deterministic initial functional controls, not representative task benchmark",
+  "cases": [
+    {
+      "id": "arithmetic",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Compute 37 + 58. Reply only with the integer."
+        }
+      ],
+      "max_tokens": 32,
+      "expected": {
+        "kind": "exact",
+        "value": "95"
+      }
+    },
+    {
+      "id": "coding",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Python: what is the exact output of print(sum(i*i for i in range(4)))? Reply only with the integer."
+        }
+      ],
+      "max_tokens": 64,
+      "expected": {
+        "kind": "exact",
+        "value": "14"
+      }
+    },
+    {
+      "id": "document",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Project note: approval is required from Mira; launch is on Thursday; the backup location is rack B7. Return the backup location only."
+        }
+      ],
+      "max_tokens": 32,
+      "expected": {
+        "kind": "exact",
+        "value": "rack B7"
+      }
+    },
+    {
+      "id": "multi-turn",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Remember the project ID QN-482."
+        },
+        {
+          "role": "assistant",
+          "content": "I have the project ID."
+        },
+        {
+          "role": "user",
+          "content": "Return the project ID only."
+        }
+      ],
+      "max_tokens": 32,
+      "stream": false,
+      "expected": {
+        "kind": "exact",
+        "value": "QN-482"
+      }
+    },
+    {
+      "id": "tool",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Use lookup_order for order 7 and then reply with the status only."
+        }
+      ],
+      "max_tokens": 128,
+      "stream": false,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup_order",
+            "description": "Return the status of an order",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "fixture_tool": {
+        "name": "lookup_order",
+        "arguments": {
+          "id": 7
+        },
+        "result": "shipped"
+      },
+      "expected": {
+        "kind": "exact",
+        "value": "shipped"
+      }
+    },
+    {
+      "id": "cancel",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a detailed tutorial on the history of computing, with many paragraphs."
+        }
+      ],
+      "max_tokens": 256,
+      "cancel": true
+    },
+    {
+      "id": "post-cancel",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Compute 37 + 58. Reply only with the integer."
+        }
+      ],
+      "max_tokens": 32,
+      "expected": {
+        "kind": "exact",
+        "value": "95"
+      }
+    }
+  ]
+}

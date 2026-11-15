@@ -16,6 +16,20 @@ class TestLimits(unittest.TestCase):
             with self.assertRaises(ValueError):
                 generation_limits(8192, 4, 250000, 4, 2560, requested, 16, chunk)
 
+    def test_workload_limits(self):
+        self.assertEqual(generation_limits(32768, 8, 248320, 4, 2560, 32768, 4096, 0, True),
+                         (32768, 8))
+        for cells, context, cap, mode in [(8192, 16384, 256, True),
+                                          (32768, 32769, 256, True),
+                                          (32768, 32768, 4097, True),
+                                          (32768, 8192, 257, False),
+                                          (32768, 16384, 256, False)]:
+            with self.assertRaises(ValueError):
+                generation_limits(cells, 8, 248320, 4, 2560, context, cap, 1, mode)
+        validate_request([248319] * 28672, 4096, 248320, 32768)
+        with self.assertRaises(ValueError):
+            validate_request([248319] * 28673, 4096, 248320, 32768)
+
     def test_request_bounds(self):
         validate_request([249999] * 8191, 1, 250000, 8192)
         for ids, vocab in [([1] * 8192, 250000), ([999999999] * 8191, 1000000000), ([True], 3)]:

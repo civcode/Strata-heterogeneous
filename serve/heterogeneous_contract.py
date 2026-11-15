@@ -2,14 +2,25 @@
 
 MAX_CONTEXT = 8192
 MAX_COMMAND_BYTES = 65536
+MAX_WORKLOAD_CONTEXT = 32768
+MAX_WORKLOAD_NEW = 4096
+MAX_WORKLOAD_COMMAND_BYTES = 384 * 1024
+MAX_WORKLOAD_PROMPT_BYTES = 256 * 1024
 PAYLOAD_FLOATS = 16 * 1024 * 1024 // 4
 
 
-def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk):
+def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk, workload=False):
     if any(type(x) is not int or x <= 0 for x in (cells, max_t, vocab, hc, n_embd, max_new)):
         raise ValueError("invalid model geometry or generation limits")
-    if type(requested) is not int or not 2 <= requested <= MAX_CONTEXT:
-        raise ValueError("max-context must be 2..8192")
+    if type(workload) is not bool:
+        raise ValueError("invalid workload mode")
+    ceiling = MAX_WORKLOAD_CONTEXT if workload else MAX_CONTEXT
+    if type(requested) is not int or not 2 <= requested <= ceiling:
+        raise ValueError(f"max-context must be 2..{ceiling}")
+    if max_new > (MAX_WORKLOAD_NEW if workload else 256):
+        raise ValueError("completion budget exceeds selected mode")
+    if workload and requested > cells:
+        raise ValueError("workload context exceeds actual worker capacity")
     context = min(cells, requested)
     if max_new >= context:
         raise ValueError("completion budget leaves no prompt capacity")
@@ -28,8 +39,9 @@ def validate_request(ids, max_new, vocab, context):
         raise ValueError("prompt/generation budget exceeds validated context or vocabulary")
     # Include the resident request's completion-count prefix. One-shot
     # input is shorter, even with its terminating newline.
-    if len(" ".join(map(str, [max_new, *ids]))) > MAX_COMMAND_BYTES:
-        raise ValueError("serialized token request exceeds 64 KiB")
+    cap = MAX_WORKLOAD_COMMAND_BYTES if context > MAX_CONTEXT else MAX_COMMAND_BYTES
+    if len(" ".join(map(str, [max_new, *ids]))) > cap:
+        raise ValueError("serialized token request exceeds configured byte cap")
 
 
 class Progress:
