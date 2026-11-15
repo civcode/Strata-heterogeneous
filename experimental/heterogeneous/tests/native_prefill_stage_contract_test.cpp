@@ -75,7 +75,7 @@ int main(){
             if(fault==1)refused=!cur.seed_bulk_prompt_chunk(ids,0,r.data(),3,prime,error);
             if(fault==2)refused=!cur.seed_bulk_prompt_chunk({11,248320},0,r.data(),1,prime,error);
             if(fault==3)refused=!cur.seed_bulk_prompt_chunk(ids,0,nullptr,1,prime,error);
-            if(fault==4)refused=!cur.seed_bulk_prompt_chunk({1,2,3,4,5,6,7,8},0,r.data(),1,prime,error);
+            if(fault==4)refused=!cur.seed_bulk_prompt_chunk(std::vector<int32_t>(2048,1),0,r.data(),1,prime,error);
             if(fault==5)refused=!cur.seed_bulk_prompt_chunk(ids,0,r.data(),1,[](auto...){return false;},error);
             if(fault>=6){
                 REQUIRE(cur.seed_bulk_prompt_chunk(ids,0,r.data(),1,prime,error));

@@ -5,6 +5,11 @@ using strata::heterogeneous::MtpRequestPolicy;
 int main() {
     unsigned checks = 0;
     auto check = [&](bool ok) { ++checks; if (!ok) throw std::runtime_error("MTP request policy"); };
+    for (unsigned bits=0;bits<64;++bits) {
+        bool extended=bits&1, service=bits&2, overlap=bits&4, arm=bits&8, direct=bits&16, probe=bits&32;
+        check(MtpRequestPolicy::long_worker_mode_valid(extended,service,overlap,arm,direct,probe)==
+              (!extended || (!arm && !direct && (service || (!overlap && !probe)))));
+    }
     for (unsigned p : {1u, 7u, 32u, 511u, 1792u, 2043u, 2047u}) {
         for (unsigned budget : {1u, 2u, 7u, 64u, 256u}) {
             for (unsigned spec = 1; spec <= 4; ++spec) {

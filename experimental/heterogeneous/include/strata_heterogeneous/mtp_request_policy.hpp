@@ -21,6 +21,12 @@ struct MtpRequestPolicy {
     static constexpr bool requires_long_context(uint64_t cells) noexcept {
         return cells>standard_capacity;
     }
+    // Extended mode admits overlap and the probe runtime only for the
+    // resident service, never for diagnostic MTP or direct/armed paths.
+    static constexpr bool long_worker_mode_valid(bool extended, bool service, bool overlap,
+                                                  bool arm, bool direct, bool probe) noexcept {
+        return !extended || (!arm && !direct && (service || (!overlap && !probe)));
+    }
     static constexpr uint32_t bulk_chunk_limit = 64;
     static constexpr uint64_t prime_headroom_bytes = 512ull<<20;
     uint32_t context = 0, max_new = 0, spec = 0, vocab = 0;

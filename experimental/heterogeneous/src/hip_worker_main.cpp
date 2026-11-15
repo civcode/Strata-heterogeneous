@@ -205,8 +205,9 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     if (direct_verified && (!invocation.shared_memory || !overlap || arm || compact || c.max_t != 8 ||
         !hetero::direct_verified_plan(plan) || std::getenv("STRATA_HETERO_MTP_PROBE_RT")))
         throw std::runtime_error("direct verified HIP requires mixed shared full-logit native overlap with max_t=8");
-    if (extended && (overlap || arm || direct_verified || std::getenv("STRATA_HETERO_MTP_PROBE_RT")))
-        throw std::runtime_error("long-context rejects diagnostic overlap, receiver arm, direct path and MTP");
+    if (!hetero::MtpRequestPolicy::long_worker_mode_valid(extended,mtp_service,overlap,arm,
+        direct_verified,std::getenv("STRATA_HETERO_MTP_PROBE_RT") != nullptr))
+        throw std::runtime_error("long-context rejects diagnostic overlap, receiver arm, direct path and non-service MTP");
     if (arm && (!overlap || compact)) throw std::runtime_error("receiver arm requires native HIP overlap and full logits");
     std::unique_ptr<hetero::NativeMtpProbe> mtp;
     if (const char* path = std::getenv("STRATA_HETERO_MTP_PROBE_RT"); path && *path) {
