@@ -35,7 +35,8 @@ inline bool publish = false, initialized = false, fail_run = false, fail_commit 
 inline const float* input = nullptr;
 inline float* output = nullptr;
 inline uint32_t* output_flag = nullptr;
-inline bool omit_publish = false;
+inline bool omit_publish = false, guarded = false;
+inline uint32_t publication_status = 1;
 inline int rows = 0;
 inline int64_t begin = 0, end = 0, pos = 0;
 inline std::vector<int32_t> tokens;
@@ -73,7 +74,7 @@ public:
     }
     void set_handoff_rows(int n) { fake_verify::rows = n; }
     void set_next(Verifier*, void*) {}
-    void set_guarded_handoff(bool) {}
+    void set_guarded_handoff(bool enabled) { fake_verify::guarded = enabled; }
     void set_handoff_flags(uint32_t*, uint32_t*, uint32_t* host, uint32_t*) { fake_verify::output_flag = host; }
     void set_always_publish(bool b) { fake_verify::publish = b; }
     void set_head_sampling(bool) {}
@@ -88,7 +89,7 @@ public:
         for (int64_t i = 0; i < n * row_floats_; ++i)
             fake_verify::output[i] = fake_verify::input ? fake_verify::input[i] + 1 : 42;
         if (fake_verify::output_flag && !fake_verify::omit_publish && !fake_verify::fail_run)
-            *fake_verify::output_flag = 1;
+            *fake_verify::output_flag = fake_verify::publication_status;
         return !fake_verify::fail_run;
     }
     bool commit(int keep, std::string&) { ++fake_verify::commits; fake_verify::keep = keep; return !fake_verify::fail_commit; }

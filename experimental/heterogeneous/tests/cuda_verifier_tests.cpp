@@ -216,6 +216,20 @@ int main() {
             fv::omit_publish=false;
             executor.shutdown();
             REQUIRE(fake_cuda::allocations==0);
+            {
+                ready=0;
+                direct.guarded=true;
+                CudaVerifierDriver guarded_driver(bindings()); DeviceStageExecutor guarded_executor(guarded_driver);
+                REQUIRE(guarded_driver.bind_direct_output(direct,error));
+                REQUIRE(guarded_executor.prepare(direct_plan,0,error) && fv::guarded);
+                REQUIRE(guarded_executor.begin_window({0,{1,2}},1,1,error));
+                meta.window_id=1;
+                fv::publication_status=2;
+                REQUIRE(!guarded_executor.run_staged_window(meta,view,error) && guarded_executor.poisoned() && ready==2);
+                fv::publication_status=1;
+                guarded_executor.shutdown();
+                REQUIRE(fake_cuda::allocations==0);
+            }
             geometry.n_layers=4; geometry.hc=2; geometry.n_embd=3; session.layer_hi=2;
         }
         geometry.hc = 1000000000; geometry.n_embd = 1000000000;

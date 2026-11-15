@@ -40,10 +40,9 @@ state or permission to commit.
 
 The model-free direct graph probe now supports `--guarded` and separate
 `--exercise-timeout` / `--exercise-nonfinite` terminal cases, with bit-exact
-zero readback on both HIP devices. Neither this primitive nor the probe is
-enabled in live model execution. GPU compiler, publication/coherency, actual
-cross-runtime prelaunch and safe native retirement must be qualified before
-live integration. In particular, do not treat ready 2 or UINT32_MAX as a
+zero readback on both HIP devices. Report 0046 passed the model-free GPU primitive and short baseline/fast
+resident checks. The new bounded real-model diagnostic is described below;
+ordinary live generation remains unchanged. In particular, do not treat ready 2 or UINT32_MAX as a
 successful publication, and never re-use a slot after terminal rejection.
 
 ## Short HTTP checks on an already running server
@@ -63,3 +62,25 @@ records incomplete/skipped cases, transport and answer checks separately.
 A client cancellation is not a native cancellation ACK. Fixture quality
 failures are observations, not proof of new numerical drift. A passing
 smoke is not production admission or proof of a context-capacity bound.
+
+## Bounded real-model guarded prelaunch
+
+For a fixed-token coordinator smoke only, add `--guarded-direct-prelaunch`
+to the existing `--shared --group-native-hip --hip-split-overlap
+--direct-verified-shared` options. Require the approved Q2_0 pack, 2K
+capacity, max_t=8, fully resident experts, native arenas, >=1 GiB reserve
+per owner, and full-logit STFR. No bulk prefill, resident HTTP/generation,
+lookup, MTP, or 256K tests in this candidate. Explicitly select INT8 KV for
+matched tests. New producer and final HELLO kinds 25/26 reject stale workers.
+
+The HIP worker arms its native input graph and acknowledges the exact
+window before the CUDA producer is dispatched. A checked GPU publication
+can start HIP0 without the coordinator/host data-frame round trip. Both
+native HIP receiving edges accept only ready=1 and quarantine rejected
+input to zeros; rejection is terminal, not a fallback. Existing CPU
+finite/checksum/identity gates and all endpoint commit acknowledgments
+remain necessary before result publication. The HIP0-to-HIP1 prelaunch
+continues to use the native chain's existing scheduling. This is not yet
+a production fast-profile feature. The code must be built and qualified
+on Oberon (handoff 0047). Full state parity and real-GPU failure retirement
+remain separate evidence, not proven by output parity.

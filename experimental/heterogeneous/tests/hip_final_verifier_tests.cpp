@@ -234,6 +234,31 @@ void direct_verified_input() {
         stage.shutdown();
     }
     check(fake_cuda::allocations==0,"direct HIP borrowed input not freed, owned resources released");
+    fv::reset();
+    {
+        HipFinalVerifierExecutor stage(bindings,{true,true,false,true});
+        check(!stage.bind_direct_input(binding,err),"legacy slot cannot attest guarded input");
+        binding.guarded=true;
+        check(stage.bind_direct_input(binding,err) && stage.prepare(f.plan,2,err),"guarded HIP chain preparation");
+        check(fv::guarded_edges==std::vector<bool>({true,true}),"both receiving stages use guarded native edges");
+        check(stage.begin_window({0,{5,6}},1,1,err),"guarded HIP metadata");
+        ActivationView view(reinterpret_cast<uint8_t*>(storage.data()),2*f.plan.geometry.floats_per_row()*sizeof(float),f.plan.geometry,2);
+        FinalStageResult output;
+        ready=1;
+        check(!stage.run_final_window(f.frame(),view,output,err),"guarded input without prearm refused");
+        check(stage.arm_window(err) && ready==0 && fv::arms==1,"guarded arm clears prior ready before producer launch");
+        ready=1; // CPU fixture models successful device publication, not coherence.
+        check(stage.run_final_window(f.frame(),view,output,err) && stage.commit_prefix(1,1,1,err),
+              "guarded accepted prefix");
+        check(stage.begin_window({1,{7,8}},1,2,err) && stage.arm_window(err) && ready==0,
+              "guarded slot reused only after commit");
+        Frame bad=f.frame(); bad.window_id=2;
+        ready=2;
+        check(!stage.run_final_window(bad,view,output,err),"guarded rejected publication refuses final result");
+        check(!stage.commit_prefix(1,2,1,err),"guarded rejection cannot commit");
+        stage.abandon_window(); stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"guarded HIP abort drains before borrowed registration release");
 }
 void grouped_native_chain() {
     fv::reset(); Fixture f; std::string err;

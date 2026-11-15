@@ -42,6 +42,7 @@ inline bool arm_fails=false;
 inline int runs=0, commits=0, aborts=0, keep=0, logits_copies=0;
 inline std::vector<int> run_devices, commit_devices, logit_devices;
 inline std::vector<uint32_t*> incoming_flags, outgoing_flags;
+inline std::vector<bool> guarded_edges;
 inline int fail_commit_device = -1;
 inline const float* input=nullptr;
 inline float* output=nullptr;
@@ -55,7 +56,7 @@ inline void reset() {
     runs=commits=aborts=keep=logits_copies=0;
     run_devices.clear(); commit_devices.clear(); logit_devices.clear(); fail_commit_device=-1;
     input=nullptr;output=nullptr;pos=begin=end=rows=0;tokens.clear();
-    incoming_flags.clear(); outgoing_flags.clear();
+    incoming_flags.clear(); outgoing_flags.clear(); guarded_edges.clear();
 }
 }
 class Verifier {
@@ -95,7 +96,7 @@ public:
     }
     void set_handoff_rows(int n){fake_final::rows=n;}
     void set_next(Verifier* next,void* user){next_=next;next_user_=user;}
-    void set_guarded_handoff(bool) {}
+    void set_guarded_handoff(bool enabled) { fake_final::guarded_edges.push_back(enabled); }
     void set_handoff_flags(uint32_t* ih,uint32_t* id,uint32_t* oh,uint32_t* od){
         fake_final::incoming_flags.push_back(ih == id ? ih : nullptr);
         fake_final::outgoing_flags.push_back(oh == od ? oh : nullptr);
