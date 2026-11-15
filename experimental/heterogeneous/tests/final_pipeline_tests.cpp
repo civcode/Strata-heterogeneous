@@ -855,8 +855,8 @@ void startup_frame_failures() {
     check(!receive_startup_frame(fd[0],20,1000),"supervisor EOF releases prepared worker");
     ::close(fd[0]);
 }
-void mtp_service_protocol() {
-    const auto p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+void mtp_service_protocol(bool hip_only) {
+    const auto p=parse_plan(hip_only ? "hip:0:0-5,hip:1:5-10" : "cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     auto start=[&](int mode){return launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,mode);};
     const MtpRequestPolicy a{2048,8,4,248320,{1,2,3},{99}};
     {
@@ -929,7 +929,7 @@ int main() {
         receiver_arm_protocol(false); receiver_arm_protocol(true);
         mtp_relay_protocol(false); mtp_relay_protocol(true);
         mtp_resident_protocol(false); mtp_resident_protocol(true);
-        mtp_service_protocol();
+        mtp_service_protocol(false); mtp_service_protocol(true);
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

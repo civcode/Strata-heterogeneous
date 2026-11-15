@@ -474,7 +474,7 @@ Options parse(int argc, char** argv) {
         o.long_context || o.stream_tokens || o.lookup_draft || o.native_prefill_chunk || o.receiver_arm ||
         o.cuda_mapped_egress || o.direct_verified || o.guarded_direct || !o.pipeline_mode.empty() ||
         !o.capture_prefix.empty() || o.warmup_windows || o.describe_source))
-        throw std::invalid_argument("MTP service requires explicit buffered grouped mixed Q8 2K resident generation; no other diagnostics or bulk");
+        throw std::invalid_argument("MTP service requires explicit buffered grouped Q8 2K resident generation; no other diagnostics or bulk");
     if (!o.mtp_service && !o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || (o.generate && !o.mtp_generation) ||
         o.describe_source || o.warmup_windows || o.native_prefill_chunk || (!o.mtp_generation && o.tokens.empty()) ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
@@ -617,8 +617,9 @@ void require_executable(const std::string& path, const char* label) {
 std::string json_string(const std::string& value);
 struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
 GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
-    if (o.mtp_service && hetero::plan_spec(plan)!="cuda:0:0-15,hip:0:15-33,hip:1:33-48")
-        throw std::invalid_argument("MTP service first candidate is restricted to mixed 15/18/15");
+    if (o.mtp_service && hetero::plan_spec(plan)!="cuda:0:0-15,hip:0:15-33,hip:1:33-48" &&
+        hetero::plan_spec(plan)!="hip:0:0-24,hip:1:24-48")
+        throw std::invalid_argument("MTP service requires canonical mixed 15/18/15 or HIP-only 24/24");
     if (o.direct_verified && !hetero::direct_verified_plan(plan))
         throw std::invalid_argument("direct verified shared supports established mixed placements only");
     const bool reverse = hetero::plan_spec(plan) == "hip:0:0-18,hip:1:18-36,cuda:0:36-48";
@@ -629,11 +630,11 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     if (o.split_reference_capture && hetero::plan_spec(plan) != "hip:0:0-24,hip:1:24-48" &&
         hetero::plan_spec(plan) != "cuda:0:0-15,hip:0:15-33,hip:1:33-48")
         throw std::invalid_argument("split reference capture requires a canonical placement");
-    if (hip_pair && (o.hip_split_overlap || o.receiver_arm || o.cuda_mapped_egress ||
-        !o.mtp_probe_rt.empty() || o.prefill_parity_at || (!o.capture_prefix.empty() && !o.split_reference_capture) ||
+    if (hip_pair && ((!o.mtp_service && (o.hip_split_overlap || !o.mtp_probe_rt.empty())) ||
+        o.receiver_arm || o.cuda_mapped_egress || o.prefill_parity_at || (!o.capture_prefix.empty() && !o.split_reference_capture) ||
         o.generation_capture || (o.placement_capture && !o.split_reference_capture) || o.layer_taps || o.boundary_capture ||
         o.layer_zero_probe || o.stage0_phases || o.branch_probe || o.micro_probe))
-        throw std::invalid_argument("HIP-only pair supports ordinary inference only; diagnostic overlap, captures and MTP remain gated");
+        throw std::invalid_argument("HIP-only pair supports ordinary inference and explicit MTP service; other diagnostic overlap and captures remain gated");
     // Reverse topology first qualifies the existing per-stage serial worker path.
     // Do not advertise grouped bulk prefill or MTP until their protocols are implemented.
     if (reverse && (o.group_hip || o.native_prefill_chunk || o.prefill_parity_at ||
@@ -774,6 +775,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"kv\":\"" << hetero::kv_mode_name(o.kv) << "\""
                   << ",\"pipeline_mode_cap\":1"
                   << ",\"mtp_service_cap\":1"
+                  << ",\"mtp_hip_pair_cap\":1"
                   << ",\"long_context_cap\":" << hetero::max_long_context
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }

@@ -127,9 +127,15 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         throw std::runtime_error("HIP domain invocation mismatch");
     const bool extended = invocation.long_context_chunk != 0;
     const bool mtp_service = hetero::performance_flag("STRATA_HETERO_MTP_SERVICE");
+    const bool mtp_mixed = hetero::direct_verified_plan(plan) && plan.stages.front().end_layer==15;
+    const bool mtp_hip_pair = plan.total_layers==48 && plan.stages.size()==2 &&
+        plan.stages[0].backend==hetero::Backend::hip && plan.stages[0].ordinal==0 &&
+        plan.stages[0].first_layer==0 && plan.stages[0].end_layer==24 &&
+        plan.stages[1].backend==hetero::Backend::hip && plan.stages[1].ordinal==1 &&
+        plan.stages[1].first_layer==24 && plan.stages[1].end_layer==48;
     if (mtp_service && (extended || invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
-        (!hetero::direct_verified_plan(plan) || plan.stages.front().end_layer!=15)))
-        throw std::runtime_error("MTP service candidate requires shared Q8 mixed 15/18/15");
+        (!mtp_mixed && !mtp_hip_pair)))
+        throw std::runtime_error("MTP service candidate requires shared Q8 mixed 15/18/15 or HIP-only 24/24");
     std::vector<hetero::HipWorkerConfig> configs;
     std::string error;
     for (size_t j = 0; j < domain.size(); ++j) {

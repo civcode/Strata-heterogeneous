@@ -37,7 +37,7 @@ def add_arguments(parser):
     parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 8192 ordinary / 32768 workload / 262144 explicit long-context")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
     parser.add_argument("--pipeline-mode", choices=("baseline", "fast"), help="explicit grouped shared resident pipeline profile (opt-in)")
-    parser.add_argument("--mtp", help="experimental local native MTP runtime directory (buffered Q8, 2K mixed profile)")
+    parser.add_argument("--mtp", help="experimental local native MTP runtime directory (buffered Q8, 2K mixed/HIP-only profile)")
     parser.add_argument("--spec", type=int, default=None, help="MTP candidate currently requires 4")
     parser.add_argument("--spec-min-p", type=float, default=None, help="MTP candidate currently requires 0.5")
     parser.add_argument("--lookup-draft", action="store_true", help="opt-in verified suffix lookup; buffered mode, chunk >= 2")
@@ -146,11 +146,11 @@ def prepare_native(args):
         if (not isinstance(mtp, str) or not mtp or (spec is not None and (type(spec) is not int or spec != 4)) or
                 (spec_min_p is not None and (type(spec_min_p) not in (int, float) or spec_min_p != 0.5))):
             raise ValueError("MTP service candidate requires a runtime path, spec 4 and spec_min_p 0.5")
-        if (args.plan != "cuda:0:0-15,hip:0:15-33,hip:1:33-48" or not group or not args.shared or
+        if (args.plan not in ("cuda:0:0-15,hip:0:15-33,hip:1:33-48", "hip:0:0-24,hip:1:24-48") or not group or not args.shared or
                 kv != "int8" or args.max_context != 2048 or workload or extended or bulk or
                 getattr(args, "stream_tokens", False) or getattr(args, "lookup_draft", False) or
                 getattr(args, "pipeline_mode", None) is not None or getattr(args, "restart_clean", False)):
-            raise ValueError("MTP service candidate requires buffered shared grouped mixed Q8 2K and serial prefill")
+            raise ValueError("MTP service candidate requires buffered shared grouped Q8 2K and serial prefill")
         mtp_path = Path(mtp).expanduser().resolve(strict=True)
         if not mtp_path.is_dir():
             raise ValueError("MTP runtime must be an existing local directory")
@@ -173,6 +173,8 @@ def prepare_native(args):
         raise ValueError("coordinator lacks explicit pipeline-mode capability; rebuild matching binaries")
     if mtp is not None and source.get("mtp_service_cap") != 1:
         raise ValueError("coordinator lacks request-local MTP service capability; rebuild matching binaries")
+    if mtp is not None and args.plan == "hip:0:0-24,hip:1:24-48" and source.get("mtp_hip_pair_cap") != 1:
+        raise ValueError("coordinator lacks HIP-only MTP capability; rebuild matching binaries")
     if extended and source.get("long_context_cap") != MAX_LONG_CONTEXT:
         raise ValueError("coordinator does not advertise the long-context capability; rebuild matching binaries")
     gguf = source.get("gguf")

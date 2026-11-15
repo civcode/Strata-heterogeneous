@@ -36,6 +36,7 @@
 namespace strata::core {
 
 class NativeHead;
+class NativeEmbed;
 
 class MtpDrafter {
 public:
@@ -111,6 +112,11 @@ public:
     bool bind(const WeightTable& wt, const NativeHead* head, const float* window_R, std::string& err,
               const MtpDrafter* shared = nullptr);
     void set_window_R(const float* window_R) { window_R_ = window_R; }
+    /// Optional per-drafter native embedding (set before load/bind/graph capture).
+    /// Borrowed, on this drafter's device or mapped for that device; must
+    /// outlive the drafter and all its graphs. Null preserves vanilla lookup.
+    /// Do not change this pointer after graph capture.
+    void set_embedding_override(const NativeEmbed* embedding) { embedding_override_ = embedding; }
     // Diagnostic only: borrowed device buffer, installed before round graph
     // capture and kept alive until this drafter (including graphs) is destroyed.
     bool set_front_trace(void* device_buffer, size_t bytes, std::string& err);
@@ -276,6 +282,7 @@ private:
     SessionState* ple_ss_ = nullptr;
     const WeightTable* wt_ = nullptr;
     const NativeHead* head_ = nullptr;
+    const NativeEmbed* embedding_override_ = nullptr;
     const float* window_R_ = nullptr;
     int max_t_ = 0;
     int device_ = -1;   ///< the device `load` ran on: the public calls switch to it (layer split)

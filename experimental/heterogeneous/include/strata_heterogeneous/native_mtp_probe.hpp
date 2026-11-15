@@ -129,8 +129,15 @@ public:
             }
             embed_=std::make_unique<core::NativeEmbed>();
             if (!embed_->load(shards_,g.n_embd,g.n_vocab,error) || !room(0,error)) return false;
-            core::set_native_embed(embed_.get());
+            // In a full HIP domain the layer-zero verifier is on HIP0 and
+            // may lazily capture graphs after this observer is initialized.
+            // Publishing HIP1's embed globally would change its target math
+            // and could hand it a device address owned by another card.
+            // Historical diagnostics keep their original global binding;
+            // resident service uses the same native table privately.
             drafter_=std::make_unique<core::MtpDrafter>();
+            if (service_enabled()) drafter_->set_embedding_override(embed_.get());
+            else core::set_native_embed(embed_.get());
             drafter_->set_max_drafts(4);
             // Separate state on the terminal device. No cross-runtime device
             // address and no mutation of the verified target's head.
@@ -149,6 +156,9 @@ public:
             geometry_=&g;
             context_=b.session.max_cells;
             max_t_=b.max_t;
+            if (service_enabled() && (core::native_embed()!=nullptr || !drafter_->experts_resident())) {
+                error="MTP service requires isolated draft embedding and resident draft experts";return false;
+            }
             if (resident_generation_ && !resident_kv_supported()) {error="resident MTP draft KV format/residency mismatch";return false;}
             if (!resident_generation_ && !trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
             std::fprintf(stderr,"HETERO_MTP_PROBE_MODE state_trace=%d front_trace=%d repeat_round=%d relay_rounds=%u\n",

@@ -1075,7 +1075,7 @@ bool MtpDrafter::record_front(int T, int row0, cudaStream_t cs, std::string& err
         const WeightRef* we = wt_->find("token_embd.weight");
         if (!we) { err = "mtp: token_embd.weight is missing"; return false; }
         g_mp.stamp(0, cs);
-        if (const NativeEmbed* ne = native_embed()) {   // plan v0.3 P6: the GGUF-form table
+        if (const NativeEmbed* ne = embedding_override_ ? embedding_override_ : native_embed()) {   // private or legacy GGUF-form table
             ne->gather_dev(tok_, T, emb_, cs);
         } else {
             const auto* codes = (const uint8_t*) we->data;
