@@ -6724,6 +6724,9 @@ class Service:
                                 self.status.update(busy=False)
                                 self.status.pop("tail", None)
                                 self.status.pop("tool", None)
+        except GeneratorExit:
+            finish = "disconnect"
+            raise
         except QueueCancelled:
             finish = "cancel"
             yield "done", {"finish": "cancel", "completion_tokens": 0, "reused": 0, "timings": None,
@@ -7168,6 +7171,19 @@ def prompt_progress(svc: Service):
 
 
 def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel, run=None, force=None):
+    # Own and explicitly close the service iterator, including when an SSE
+    # write fails during a yield. Never depend on reference-count destruction.
+    source = run if run is not None else svc.run(ids, thinking, tools, max_new, req, cancel,
+                                                force=force, declared_only=True)
+    try:
+        yield from _openai_chunks(svc, req, ids, thinking, tools, max_new, cancel, source)
+    finally:
+        close = getattr(source, "close", None)
+        if close is not None:
+            close()
+
+
+def _openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel, run):
     """`run`: the events to send instead of Service.run's (run_with_mcp); its ("mcp", {...}) items become chunks with
     an empty delta and a `strata_mcp` field, which only the web app reads.  `force`: see Service.run."""
     cid, created = "chatcmpl-" + uuid.uuid4().hex[:24], int(time.time())
@@ -7193,7 +7209,7 @@ def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel
     finished = set()                               # ... and the ones whose final tool_call came (#211)
     answered_done = False                          # the run's own end (its "done" event) arrived
     born = getattr(svc.engine, "gen", None)        # the engine process this request is on (read again with every event: a start inside the run is its own)
-    for kind, x in run if run is not None else svc.run(ids, thinking, tools, max_new, req, cancel, force=force, declared_only=True):
+    for kind, x in run:
         born = getattr(svc.engine, "gen", born)
         if kind == "ping":
             # a PP line: the prompt is being read and there is nothing to say yet.  It used to be only the SSE comment;
@@ -7411,6 +7427,12 @@ def structured_chunks(chunks, validator):
 
 # ------------------------------------------------------------------------------------------------ Anthropic
 def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, cancel, force=None, deferred=False):
+    with contextlib.closing(svc.run(ids, thinking, tools, max_new, req, cancel, force=force,
+                                    declared_only=True, deferred=deferred)) as source:
+        yield from _anthropic_events(svc, req, ids, source)
+
+
+def _anthropic_events(svc: Service, req: dict, ids, source):
     mid = "msg_" + uuid.uuid4().hex[:24]
     yield "message_start", {"type": "message_start", "message": {
         "id": mid, "type": "message", "role": "assistant", "model": svc.model_for(req), "content": [],
@@ -7421,8 +7443,7 @@ def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, can
         return ("content_block_stop", {"type": "content_block_stop", "index": index})
 
     streamed, finished = set(), set()              # calls sent piece by piece; those whose final tool_call came (#211)
-    for kind, x in svc.run(ids, thinking, tools, max_new, req, cancel, force=force, declared_only=True,
-                           deferred=deferred):
+    for kind, x in source:
         if kind == "ping":
             yield None
             continue
@@ -8698,7 +8719,6 @@ def make_handler(svc: Service):
             except OSError:
                 self._note(outcome="disconnected")
                 svc.note_client_disconnect(cancel)           # client went away: stop the engine
-                chunks.close()
             except EngineDied as e:                          # mid-stream: say so, then end the stream properly
                 err = {"error": {"type": "server_error", "message": died_note(e)}}
                 self._note(error=err["error"])
@@ -8715,6 +8735,8 @@ def make_handler(svc: Service):
                 err = {"error": {"type": "server_error", "message": str(e)}}   # headers are sent, so no 400 now
                 self._note(error=err["error"])
                 self.wfile.write(b"data: " + json.dumps(err).encode() + b"\n\ndata: [DONE]\n\n")
+            finally:
+                chunks.close()
 
         def _responses_ready(self, req, events):
             """Send a finished Responses result that did not run on the engine."""
@@ -8759,13 +8781,14 @@ def make_handler(svc: Service):
             def events():
                 yield from asm.start()
                 done = None
-                for kind, x in svc.run(ids, thinking, tools, max_new, req, cancel):
-                    if kind == "ping":
-                        yield None
-                    elif kind == "event":
-                        yield from asm.feed(x)
-                    elif kind == "done":
-                        done = x
+                with contextlib.closing(svc.run(ids, thinking, tools, max_new, req, cancel)) as source:
+                    for kind, x in source:
+                        if kind == "ping":
+                            yield None
+                        elif kind == "event":
+                            yield from asm.feed(x)
+                        elif kind == "done":
+                            done = x
                 if done is not None and done["finish"] != "cancel" and not cancel.is_set():
                     yield from asm.finish(done, check)
             items = self._capture(events(), "responses")
@@ -8810,7 +8833,6 @@ def make_handler(svc: Service):
             except OSError:
                 self._note(outcome="disconnected")
                 svc.note_client_disconnect(cancel)           # client went away: stop the engine
-                items.close()
             except EngineDied as e:                          # mid-stream: response.failed, then the stream ends
                 self._responses_failed(asm, died_note(e), "server_error", send)
             except QueueWaitExpired as e:
@@ -8819,6 +8841,8 @@ def make_handler(svc: Service):
                 self._responses_failed(asm, str(e), "structured_output_failed", send)
             except ValueError as e:                          # the engine's ERR after the stream started
                 self._responses_failed(asm, str(e), "server_error", send)
+            finally:
+                items.close()
 
         def _responses_failed(self, asm, message, code, send):
             e = asm.failed(message, code)
@@ -8936,7 +8960,6 @@ def make_handler(svc: Service):
             except OSError:
                 self._note(outcome="disconnected")
                 svc.note_client_disconnect(cancel)
-                events.close()
             except EngineDied as e:                          # mid-stream: Anthropic's error event
                 err = {"type": "error", "error": {"type": "api_error", "message": died_note(e)}}
                 self._note(error=err["error"])
@@ -8950,6 +8973,8 @@ def make_handler(svc: Service):
                 err = {"type": "error", "error": {"type": "api_error", "message": str(e)}}
                 self._note(error=err["error"])
                 self.wfile.write(b"event: error\ndata: " + json.dumps(err).encode() + b"\n\n")
+            finally:
+                events.close()
 
     return Handler
 
