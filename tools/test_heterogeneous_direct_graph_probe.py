@@ -12,12 +12,14 @@ from tools.heterogeneous_direct_graph_probe import layout, make_memfd, run, SEAL
 # cleanup. They emulate readiness only; they do NOT emulate a GPU or prove ordering.
 FAKE = '''#!/usr/bin/env python3
 import mmap, struct, sys
-fd, rows, timeout, *devices = map(int, sys.argv[1:])
+guarded = sys.argv[-1] == "--guarded"
+fd, rows, timeout, *devices = map(int, sys.argv[1:-1] if guarded else sys.argv[1:])
+nonfinite = False
 payload = 51216 * rows
 ready = (payload + 4095) // 4096 * 4096
 error, extent = ready + 64, ready + 4096
 m = mmap.mmap(fd, extent)
-print(f"READY {payload} {extent}", flush=True)
+print(f"READY {payload} {extent}" + (" GUARDED" if guarded else ""), flush=True)
 cuda = len(devices) == 1
 state, seq = "idle", 0
 for line in sys.stdin:
@@ -28,11 +30,12 @@ for line in sys.stdin:
         print("BYE", flush=True)
         sys.exit(0)
     op, new = parts[0], int(parts[1])
-    if op in ("prepare", "arm"):
+    if op in ("prepare", "prepare_nonfinite", "arm"):
         assert state == "idle" and new > seq
         seq = new
         if cuda:
-            assert op == "prepare"
+            assert op == "prepare" or (guarded and op == "prepare_nonfinite")
+            nonfinite = op == "prepare_nonfinite"
             struct.pack_into("<I", m, ready, 0)
             struct.pack_into("<I", m, error, 0)
             state, out = "prepared", "PREPARED"
@@ -43,7 +46,7 @@ for line in sys.stdin:
         assert new == seq
         if cuda and op == "publish":
             assert state == "prepared"
-            struct.pack_into("<I", m, ready, 1)
+            struct.pack_into("<I", m, ready, 2 if nonfinite else 1)
             state, out = "launched", "QUEUED"
         elif cuda and op == "drain":
             assert state == "launched"
@@ -54,6 +57,13 @@ for line in sys.stdin:
         elif not cuda and op == "finish":
             assert state == "armed" and struct.unpack_from("<I", m, ready)[0] == 1
             state, out = "idle", "VERIFIED"
+        elif not cuda and op == "reject_nonfinite":
+            assert guarded and state == "armed" and struct.unpack_from("<I", m, ready)[0] == 2
+            struct.pack_into("<I", m, error, 1)
+            state, out = "poisoned", "REJECTED"
+        elif cuda and op == "drain_rejected":
+            assert guarded and state == "launched" and struct.unpack_from("<I", m, error)[0] == 1
+            state, out = "poisoned", "REJECTED"
         elif op == "reject":
             assert state == ("prepared" if cuda else "armed")
             assert struct.unpack_from("<I", m, ready)[0] == 0
@@ -115,6 +125,15 @@ class DirectGraphProbeTests(unittest.TestCase):
         self.assertEqual(len(result["samples_ms"]), 3)
         self.assertIn("BYE", result["cleanup"])
         self.assertIn("model-free", result["scope"])
+
+    def test_guarded_protocol(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = self.make_fake(directory, "worker")
+            for failure in ("exercise_timeout", "exercise_nonfinite"):
+                result = run(fake, fake, 0, [0, 1], rows=1, rounds=2, warmup=1,
+                             guarded=True, **{failure: True})
+                self.assertTrue(result["guarded"])
+                self.assertEqual(result["withheld_publication" if failure == "exercise_timeout" else "nonfinite_publication"], "rejected")
 
     def test_unexpected_response_fails(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -160,8 +160,11 @@ struct NativeGraph {
         std::vector<float> values(layout.words());
         direct_check(cudaMemcpy(values.data(), data, layout.payload_bytes, cudaMemcpyDeviceToHost),
                      "qualification quarantine readback");
-        for (float v : values)
-            require(v == 0.f, "guarded receiver consumed stale or nonfinite payload");
+        for (const float &v : values) {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &v, sizeof(bits));
+            require(bits == 0, "guarded receiver consumed stale or nonfinite payload");
+        }
     }
     bool safe_to_release() const noexcept {
         return device < 0 || (cudaSetDevice(device) == cudaSuccess &&

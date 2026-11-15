@@ -34,7 +34,7 @@ def summary(values):
 
 
 def compare(blocks, axis, warmup=1):
-    need(len(blocks) == 4 and axis in ('kv', 'topology') and warmup == 1, 'expected A/B/B/A and one warmup per block')
+    need(len(blocks) == 4 and axis in ('kv', 'topology', 'pipeline') and warmup == 1, 'expected A/B/B/A and one warmup per block')
     need(all(b.get('status') == 'complete' for b in blocks), 'incomplete resident block')
     sources = [b['source'] for b in blocks]
     first = sources[0]
@@ -45,11 +45,17 @@ def compare(blocks, axis, warmup=1):
              'requires streamed grouped native resident benchmark without lookup or restart')
         need(source['kv'] in ('int8', 'f16') and type(source['plan_fingerprint']) is int,
              'missing KV or plan identity')
-    key = 'kv' if axis == 'kv' else 'plan_fingerprint'
-    fixed = 'plan_fingerprint' if axis == 'kv' else 'kv'
+    modes = [s.get('pipeline_mode', 'legacy') for s in sources]
+    need(all(m in ('legacy', 'baseline', 'fast') for m in modes), 'unknown pipeline mode')
+    key = {'kv': 'kv', 'topology': 'plan_fingerprint', 'pipeline': 'pipeline_mode'}[axis]
+    if axis == 'pipeline':
+        need(set(modes) == {'baseline', 'fast'}, 'explicit baseline/fast modes required')
+    else:
+        need(len(set(modes)) == 1, 'unmatched pipeline modes')
+    fixed = {'kv': ('plan_fingerprint',), 'topology': ('kv',), 'pipeline': ('kv', 'plan_fingerprint')}[axis]
     labels = [s[key] for s in sources]
     need(labels[0] == labels[3] and labels[1] == labels[2] and labels[0] != labels[1] and
-         all(s[fixed] == first[fixed] for s in sources), 'wrong A/B/B/A arm order or changed fixed dimension')
+         all(s[k] == first[k] for s in sources for k in fixed), 'wrong A/B/B/A arm order or changed fixed dimension')
     if axis == 'kv':
         need(first['long_context'] is False, 'long-context mode is INT8-only; use a shared ordinary capacity')
     sizes = [len(b['completions']) for b in blocks]
@@ -100,7 +106,7 @@ def compare(blocks, axis, warmup=1):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--axis', required=True, choices=('kv', 'topology'))
+    p.add_argument('--axis', required=True, choices=('kv', 'topology', 'pipeline'))
     p.add_argument('--blocks', nargs=4, required=True, type=Path, metavar='JSON')
     a = p.parse_args()
     try:

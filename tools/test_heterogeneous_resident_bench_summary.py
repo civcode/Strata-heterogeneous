@@ -59,6 +59,21 @@ class BenchmarkTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'committed'):
             compare(self.blocks,'kv')
 
+    def test_pipeline_modes(self):
+        a, b = block(), block()
+        a['source']['pipeline_mode'] = 'baseline'
+        b['source']['pipeline_mode'] = 'fast'
+        rows = [a, b, copy.deepcopy(b), copy.deepcopy(a)]
+        self.assertEqual([x['arm'] for x in compare(rows, 'pipeline')['arms']], ['baseline', 'fast'])
+        rows[1]['source']['plan_fingerprint'] = 2
+        with self.assertRaisesRegex(ValueError, 'fixed dimension'):
+            compare(rows, 'pipeline')
+        with self.assertRaisesRegex(ValueError, 'explicit baseline/fast'):
+            compare(self.blocks, 'pipeline')
+        self.blocks[1]['source']['pipeline_mode'] = 'fast'
+        with self.assertRaisesRegex(ValueError, 'unmatched pipeline'):
+            compare(self.blocks, 'kv')
+
     def test_reject_nonfinite(self):
         self.blocks[1]['completions'][2]['timing']['prefill_ms'] = float('nan')
         with self.assertRaisesRegex(ValueError, 'timings'):
