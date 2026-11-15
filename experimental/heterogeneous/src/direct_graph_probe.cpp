@@ -1,7 +1,8 @@
 // Explicit model-free qualification. Separate CUDA and HIP native builds.
-// No model, new GPU math, cross-runtime handle, or CPU activation relay.
+// No model, cross-runtime handle, or CPU activation relay. Optional guarded publication.
 #include "strata_heterogeneous/direct_handoff_registration.hpp"
 #include "strata/kernels/verify_kernels.hpp"
+#include "strata/kernels/handoff_guard.hpp"
 #include "strata/kernels/elementwise.hpp"
 #include "strata/platform/cpu_relax.hpp"
 #include <atomic>
@@ -20,6 +21,10 @@ using namespace strata::heterogeneous;
 using strata::kernels::copy_from_mapped;
 using strata::kernels::handoff_publish;
 using strata::kernels::wait_handoff;
+using strata::kernels::handoff_publish_checked;
+using strata::kernels::wait_handoff_checked;
+using strata::kernels::copy_or_zero_from_mapped;
+namespace guard = strata::kernels::handoff_guard;
 
 constexpr uint32_t max_sequence = 65536;
 
@@ -88,22 +93,33 @@ struct NativeGraph {
         require(graph != nullptr, "native graph capture produced no graph");
         direct_check(cudaGraphInstantiate(&exec, graph, 0ull), "instantiate native graph");
     }
-    void publish(DirectHandoffView dst) {
+    void publish(DirectHandoffView dst, bool guarded) {
         const auto& l = dst.layout;
-        handoff_publish(dst.payload(), data, static_cast<int64_t>(l.r_words),
+        if (guarded)
+            handoff_publish_checked(dst.payload(), data, static_cast<int64_t>(l.r_words),
+                        data + l.r_words, static_cast<int64_t>(l.bo_words),
+                        data + l.r_words + l.bo_words, static_cast<int64_t>(l.inj_words),
+                        counter, dst.ready(), stream);
+        else
+            handoff_publish(dst.payload(), data, static_cast<int64_t>(l.r_words),
                         data + l.r_words, static_cast<int64_t>(l.bo_words),
                         data + l.r_words + l.bo_words, static_cast<int64_t>(l.inj_words),
                         counter, dst.ready(), stream, nullptr);
     }
-    void consume(DirectHandoffView src, unsigned long long timeout_ns) {
+    void consume(DirectHandoffView src, unsigned long long timeout_ns, bool guarded) {
         const auto& l = src.layout;
-        // Exactly the vanilla native ready-word wait and segmented R/bo/inj reads.
-        wait_handoff(src.ready(), 1u, src.error(), timeout_ns, stream);
-        copy_from_mapped(data, src.payload(), static_cast<int64_t>(l.r_words), stream);
-        copy_from_mapped(data + l.r_words, src.payload() + l.r_words,
-                         static_cast<int64_t>(l.bo_words), stream);
-        copy_from_mapped(data + l.r_words + l.bo_words, src.payload() + l.r_words + l.bo_words,
-                         static_cast<int64_t>(l.inj_words), stream);
+        if (guarded) wait_handoff_checked(src.ready(), src.error(), timeout_ns, stream);
+        else wait_handoff(src.ready(), 1u, src.error(), timeout_ns, stream);
+        auto segment = [&](size_t offset, size_t words) {
+            if (guarded)
+                copy_or_zero_from_mapped(data + offset, src.payload() + offset,
+                    static_cast<int64_t>(words), src.error(), guard::rejected, stream);
+            else
+                copy_from_mapped(data + offset, src.payload() + offset, static_cast<int64_t>(words), stream);
+        };
+        segment(0,l.r_words);
+        segment(l.r_words,l.bo_words);
+        segment(l.r_words+l.bo_words,l.inj_words);
     }
     void launch() {
         select();
@@ -119,10 +135,14 @@ struct NativeGraph {
         select();
         direct_check(cudaStreamSynchronize(stream), "native graph drain");
     }
-    void fill(const DirectHandoffLayout& layout, uint32_t seq) {
+    void fill(const DirectHandoffLayout& layout, uint32_t seq, bool bad = false) {
         select();
         std::vector<float> values(layout.words());
         for (size_t i = 0; i < values.size(); ++i) values[i] = direct_probe_value(seq, i);
+        if (bad) {
+            values[layout.r_words / 2] = std::numeric_limits<float>::quiet_NaN();
+            values.back() = std::numeric_limits<float>::infinity();
+        }
         direct_check(cudaMemcpy(data, values.data(), layout.payload_bytes, cudaMemcpyHostToDevice), "seed publisher data");
         direct_check(cudaDeviceSynchronize(), "seed publisher drain");
     }
@@ -134,6 +154,14 @@ struct NativeGraph {
         for (size_t i = 0; i < values.size(); ++i)
             if (values[i] != direct_probe_value(seq, i))
                 throw std::runtime_error("stale or incorrect native graph payload at word " + std::to_string(i));
+    }
+    void verify_zero(const DirectHandoffLayout& layout) {
+        select();
+        std::vector<float> values(layout.words());
+        direct_check(cudaMemcpy(values.data(), data, layout.payload_bytes, cudaMemcpyDeviceToHost),
+                     "qualification quarantine readback");
+        for (float v : values)
+            require(v == 0.f, "guarded receiver consumed stale or nonfinite payload");
     }
     bool safe_to_release() const noexcept {
         return device < 0 || (cudaSetDevice(device) == cudaSuccess &&
@@ -165,6 +193,7 @@ public:
     NativeGraph first, second;
     unsigned long long timeout_ns = 0;
     uint32_t sequence = 0;
+    bool guarded = false;
     enum class State { idle, prepared, launched, armed, poisoned } state = State::idle;
 #if defined(STRATA_USE_HIP)
     void* local_page = nullptr;
@@ -202,10 +231,10 @@ public:
         const DirectHandoffView local_out{static_cast<uint8_t*>(a), layout};
         const DirectHandoffView local_in{static_cast<uint8_t*>(b), layout};
         // Capture both downstream graphs before any live waiting kernel starts.
-        first.capture([&] { first.consume(cross_alias, timeout_ns); first.publish(local_out); });
-        second.capture([&] { second.consume(local_in, timeout_ns); });
+        first.capture([&] { first.consume(cross_alias, timeout_ns, guarded); first.publish(local_out, guarded); });
+        second.capture([&] { second.consume(local_in, timeout_ns, guarded); });
 #else
-        first.capture([&] { first.publish(cross_alias); });
+        first.capture([&] { first.publish(cross_alias, guarded); });
 #endif
     }
     bool cleanup() noexcept {
@@ -261,20 +290,24 @@ public:
             first.verify(layout, seq); second.verify(layout, seq);
             state = State::idle;
             std::cout << "VERIFIED" << std::endl;
-        } else if (op == "reject") {
+        } else if (op == "reject" || op == "reject_nonfinite") {
             same(State::armed);
+            require(op == "reject" || guarded, "nonfinite rejection requires guarded mode");
             // Native timeout still allows later graph nodes to drain; the data
             // is NOT used. Fail-stop this entire session, including both HIP GPUs.
             first.drain(); second.drain();
-            require(read_word(host.ready()) == 0 && read_word(host.error()) == 1, "missing publication did not fail closed");
+            require(read_word(host.ready()) == (op == "reject" ? guard::pending : guard::nonfinite) &&
+                    read_word(host.error()) == guard::rejected, "guarded or missing publication did not fail closed");
+            if (guarded) { first.verify_zero(layout); second.verify_zero(layout); }
             state = State::poisoned;
             std::cout << "REJECTED" << std::endl;
         } else throw std::runtime_error("unknown HIP graph probe command");
 #else
-        if (op == "prepare") {
+        if (op == "prepare" || op == "prepare_nonfinite") {
             next(State::prepared);
+            require(op == "prepare" || guarded, "nonfinite input requires guarded mode");
             reset_words(host); // supervisor ordered this only after previous BOTH drains.
-            first.fill(layout, seq);
+            first.fill(layout, seq, op == "prepare_nonfinite");
             std::cout << "PREPARED" << std::endl;
         } else if (op == "publish") {
             same(State::prepared);
@@ -287,6 +320,14 @@ public:
             require(read_word(host.ready()) == 1 && read_word(host.error()) == 0, "CUDA publication gate failed");
             state = State::idle;
             std::cout << "DRAINED" << std::endl;
+        } else if (op == "drain_rejected") {
+            same(State::launched);
+            require(guarded, "guarded rejection required");
+            first.drain();
+            require(read_word(host.ready()) == guard::nonfinite &&
+                    read_word(host.error()) == guard::rejected, "nonfinite producer rejection not acknowledged");
+            state = State::poisoned;
+            std::cout << "REJECTED" << std::endl;
         } else if (op == "reject") {
             same(State::prepared);
             require(read_word(host.ready()) == 0 && read_word(host.error()) == 1, "missing HIP rejection acknowledgment");
@@ -304,16 +345,23 @@ int main(int argc, char** argv) {
     try {
         // fd, rows, timeout_ms, runtime-local ordinal(s)
 #if defined(STRATA_USE_HIP)
-        require(argc == 6, "HIP direct graph probe requires fd rows timeout_ms hip0 hip1");
+        const int base_argc = 6;
+        require(argc == base_argc || argc == base_argc + 1, "HIP direct graph probe requires fd rows timeout_ms hip0 hip1 [--guarded]");
         const int d1 = arg_int(argv[5], 0, std::numeric_limits<int>::max());
 #else
-        require(argc == 5, "CUDA direct graph probe requires fd rows timeout_ms cuda0");
+        const int base_argc = 5;
+        require(argc == base_argc || argc == base_argc + 1, "CUDA direct graph probe requires fd rows timeout_ms cuda0 [--guarded]");
         const int d1 = -1;
 #endif
+        if (argc == base_argc + 1) {
+            require(std::string(argv[base_argc]) == "--guarded", "unknown probe mode");
+            p.guarded = true;
+        }
         p.open(arg_int(argv[1], 0, std::numeric_limits<int>::max()),
                arg_int(argv[4], 0, std::numeric_limits<int>::max()), d1,
                arg_int(argv[2], 1, 8), arg_int(argv[3], 100, 15000));
-        std::cout << "READY " << p.layout.payload_bytes << ' ' << p.layout.extent << std::endl;
+        std::cout << "READY " << p.layout.payload_bytes << ' ' << p.layout.extent
+                  << (p.guarded ? " GUARDED" : "") << std::endl;
         std::string op;
         while (std::cin >> op) {
             if (op == "quit") {

@@ -95,6 +95,16 @@ void handoff_publish(float* dst, const float* a, int64_t na, const float* b, int
 /// The reading stage's hand-off wait, bounded: spin until *flag >= value, or after timeout_ns (0: no bound) set
 /// *err = 1 (mapped) and return, so the window's graph completes and the host fails the window cleanly.
 void wait_handoff(const uint32_t* flag, uint32_t value, uint32_t* err, unsigned long long timeout_ns, void* stream);
+/// Experimental guarded graph publication: same byte-exact payload; only an
+/// all-finite payload publishes ready=1. Nonfinite input publishes 2 after all
+/// stores. Use only with wait_handoff_checked and conditional zero-copy.
+void handoff_publish_checked(float* dst, const float* a, int64_t na, const float* b, int64_t nb,
+                             const float* c, int64_t nc, uint32_t* counter, uint32_t* flag, void* stream);
+/// Bounded exact-ready wait. Timeout, nonfinite or abort records err=1;
+/// the caller must use copy_or_zero_from_mapped(..., err, 1, ...) for ALL
+/// input segments, check the error after drain and poison on any failure.
+/// Never use a rejected window's state, and never reuse its shared slot.
+void wait_handoff_checked(const uint32_t* flag, uint32_t* err, unsigned long long timeout_ns, void* stream);
 /// wait_flag_ge, also writing the GPU's clock (ns, gpu_stamp's) as the kernel starts into *t_in and as it returns
 /// into *t_out (either may be null): the verify window's PCIe-share balance, at no extra launch.
 void wait_flag_ge_stamped(const uint32_t* flag, uint32_t value, unsigned long long* t_in, unsigned long long* t_out,

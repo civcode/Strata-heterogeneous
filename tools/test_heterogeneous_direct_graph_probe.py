@@ -85,6 +85,11 @@ class DirectGraphProbeTests(unittest.TestCase):
             finally:
                 os.close(fd)
 
+    def test_guarded_negative_mode_selection(self):
+        for opts in (dict(exercise_nonfinite=True), dict(guarded=True, exercise_nonfinite=True, exercise_timeout=True)):
+            with self.assertRaisesRegex(ValueError, "nonfinite rejection requires"):
+                run("no", "no", 0, [0, 1], rounds=2, warmup=0, **opts)
+
     def test_invalid_geometry_and_parameters(self):
         for rows in (0, 9, -1, 1.5, True):
             with self.assertRaises(ValueError):

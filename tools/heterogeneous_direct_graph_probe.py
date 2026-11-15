@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify CUDA0 -> HIP0 -> HIP1 via unchanged captured native handoff kernels.
+"""Qualify CUDA0 -> HIP0 -> HIP1 via captured native handoff kernels.
 
 This is a model-free probe. Timings include IPC, graph launch, verification
 readback and drains; they are NOT model throughput or GPU-only timings.
@@ -40,8 +40,10 @@ def make_memfd(extent):
 
 
 class Worker:
-    def __init__(self, executable, fd, rows, wait_ms, devices):
+    def __init__(self, executable, fd, rows, wait_ms, devices, guarded=False):
         args = [str(executable), str(fd), str(rows), str(wait_ms), *map(str, devices)]
+        if guarded:
+            args.append("--guarded")
         self.process = subprocess.Popen(args, pass_fds=(fd,), stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, bufsize=0)
         self.buf = b""
@@ -89,12 +91,14 @@ def require_words(page, ready, error, expected):
 
 
 def run(cuda, hip, cuda_device, hip_devices, rows=8, rounds=128, warmup=8,
-        wait_ms=2000, exercise_timeout=False, worker_factory=Worker):
+        wait_ms=2000, exercise_timeout=False, worker_factory=Worker, *, guarded=False, exercise_nonfinite=False):
     payload, ready, error, extent = layout(rows)
     if (not 1 <= rounds <= MAX_SEQUENCE - 1 or not 0 <= warmup < rounds or
             not 100 <= wait_ms <= 15000 or cuda_device < 0 or len(hip_devices) != 2 or
             min(hip_devices) < 0 or len(set(hip_devices)) != 2):
         raise ValueError("invalid rounds, warmup, timeout or runtime-local ordinals")
+    if exercise_nonfinite and (not guarded or exercise_timeout):
+        raise ValueError("nonfinite rejection requires guarded mode and a separate non-timeout run")
     # Graph launch/driver timeouts are separate. On failure only EOF is sent;
     # a stalled native driver is never forcibly killed by the probe.
     timeout = max(15.0, wait_ms / 1000 + 10.0)
@@ -104,10 +108,11 @@ def run(cuda, hip, cuda_device, hip_devices, rows=8, rounds=128, warmup=8,
     try:
         with mmap.mmap(fd, extent, access=mmap.ACCESS_WRITE) as page:
             for exe, devices in ((cuda, [cuda_device]), (hip, list(hip_devices))):
-                workers.append(worker_factory(exe, fd, rows, wait_ms, devices))
+                kwargs = {"guarded": True} if guarded else {}
+                workers.append(worker_factory(exe, fd, rows, wait_ms, devices, **kwargs))
             c, h = workers
             for worker in workers:
-                worker.expect(f"READY {payload} {extent}", timeout)
+                worker.expect(f"READY {payload} {extent}" + (" GUARDED" if guarded else ""), timeout)
             for sequence in range(1, rounds + 1):
                 # No CPU payload write or read between publication and consumption.
                 c.command(f"prepare {sequence}", "PREPARED", timeout)
@@ -135,6 +140,16 @@ def run(cuda, hip, cuda_device, hip_devices, rows=8, rounds=128, warmup=8,
                 h.command(f"reject {sequence}", "REJECTED", timeout)
                 require_words(page, ready, error, (0, 1))
                 c.command(f"reject {sequence}", "REJECTED", timeout)
+            if exercise_nonfinite:
+                sequence = rounds + 1
+                c.command(f"prepare_nonfinite {sequence}", "PREPARED", timeout)
+                require_words(page, ready, error, (0, 0))
+                h.command(f"arm {sequence}", "ARMED", timeout)
+                h.command(f"pending {sequence}", "PENDING", timeout)
+                c.command(f"publish {sequence}", "QUEUED", timeout)
+                h.command(f"reject_nonfinite {sequence}", "REJECTED", timeout)
+                c.command(f"drain_rejected {sequence}", "REJECTED", timeout)
+                require_words(page, ready, error, (2, 1))
             for worker in workers:
                 worker.command("quit", "BYE", timeout)
                 if worker.process.wait(timeout=timeout) != 0:
@@ -151,7 +166,9 @@ def run(cuda, hip, cuda_device, hip_devices, rows=8, rounds=128, warmup=8,
                 worker.close_output()
         os.close(fd)
     return {"schema": "strata-direct-graph-probe/v1", "status": "complete",
-            "scope": "model-free; unchanged native kernels, captured GPU graphs, no CPU payload relay",
+            "scope": "model-free; captured GPU graphs, no CPU payload relay; " + ("checked publication and zero-on-rejection candidate" if guarded else "unchanged native kernels"),
+            "guarded": guarded,
+            "nonfinite_publication": "rejected" if exercise_nonfinite else "NOT_RUN",
             "rows": rows, "payload_bytes_per_edge": payload, "rounds_verified": rounds,
             "warmup_excluded": warmup, "withheld_publication": "rejected" if exercise_timeout else "NOT_RUN",
             "cleanup": "BYE and exit 0 from both workers",
@@ -170,7 +187,10 @@ def main(argv=None):
     p.add_argument("--rounds", type=int, default=128)
     p.add_argument("--warmup", type=int, default=8)
     p.add_argument("--wait-ms", type=int, default=2000)
-    p.add_argument("--exercise-timeout", action="store_true")
+    p.add_argument("--guarded", action="store_true", help="use exact-ready finite publisher and zero-on-rejection reads")
+    negative = p.add_mutually_exclusive_group()
+    negative.add_argument("--exercise-timeout", action="store_true")
+    negative.add_argument("--exercise-nonfinite", action="store_true")
     p.add_argument("--output", type=Path, help="new private JSON file; existing output is never overwritten")
     a = p.parse_args(argv)
     for executable in (a.cuda_worker, a.hip_worker):
@@ -179,7 +199,8 @@ def main(argv=None):
     if a.output and a.output.exists():
         p.error("output already exists")
     result = run(a.cuda_worker, a.hip_worker, a.cuda_device, a.hip_devices, a.rows,
-                 a.rounds, a.warmup, a.wait_ms, a.exercise_timeout)
+                 a.rounds, a.warmup, a.wait_ms, a.exercise_timeout,
+                 guarded=a.guarded, exercise_nonfinite=a.exercise_nonfinite)
     encoded = json.dumps(result, indent=2, allow_nan=False) + "\n"
     if a.output:
         fd = os.open(a.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

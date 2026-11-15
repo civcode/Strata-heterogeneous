@@ -3,6 +3,7 @@
 // The per-token arithmetic of every kernel here is transcribed from its single-token original (fused_gdn.cu,
 // elementwise.cu) with the same operation order, so a verify window reproduces plain decode bit for bit.
 #include "strata/kernels/verify_kernels.hpp"
+#include "strata/kernels/handoff_guard.hpp"
 #include "strata/core/bw_dense_defaults.hpp"
 #include "strata/core/geometry.hpp"
 #include "strata/core/emulate.hpp"
@@ -1361,22 +1362,49 @@ __global__ void wait_handoff_kernel(const volatile uint32_t* flag, uint32_t valu
     __threadfence_system();
 }
 
+// Only the new experimental graph probe selects these exact status semantics.
+// Any non-pending word other than 1 (including forced release UINT32_MAX)
+// is a rejection. No raw payload may be read after that rejection/timeout.
+__global__ void wait_handoff_checked_kernel(const volatile uint32_t* flag, uint32_t* err,
+                                            unsigned long long timeout_ns) {
+    const auto t0 = strata_now_ns();
+    uint32_t observed = *flag;
+    while (observed == handoff_guard::pending) {
+        strata_spin_pause();
+        if (strata_now_ns() - t0 > timeout_ns) break;
+        observed = *flag;
+    }
+    if (!handoff_guard::accepted(observed))
+        *(volatile uint32_t*) err = handoff_guard::rejected;
+    __threadfence_system();
+}
+
+template<bool Checked>
 __global__ void handoff_publish_kernel(float* dst, const float* __restrict__ a, int64_t na, const float* __restrict__ b,
                                        int64_t nb, const float* __restrict__ c, int64_t nc, uint32_t* counter,
                                        uint32_t* flag, const volatile uint32_t* drop) {
     const int64_t n = na + nb + nc;
     volatile float* const out = dst;
-    for (int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x; i < n; i += (int64_t) gridDim.x * blockDim.x)
-        out[i] = i < na ? a[i] : i < na + nb ? b[i - na] : c[i - na - nb];
+    bool bad = false;
+    for (int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x; i < n; i += (int64_t) gridDim.x * blockDim.x) {
+        const float v = i < na ? a[i] : i < na + nb ? b[i - na] : c[i - na - nb];
+        if constexpr (Checked) bad |= !handoff_guard::finite_f32_bits(__float_as_uint(v));
+        out[i] = v;
+    }
     __threadfence_system();   // this thread's stores reach host memory before the block counts itself done
-    __syncthreads();
+    bool block_bad = false;
+    if constexpr (Checked) block_bad = __syncthreads_or(bad) != 0;
+    else __syncthreads();
     if (threadIdx.x == 0) {
-        const uint32_t prev = atomicAdd(counter, 1u);
-        if (prev == gridDim.x - 1) {   // every block's payload is out: raise the next stage's flag
+        // Each block contributes one low-half count and optionally a high-half
+        // bad count. Both fit with <=64 blocks, so the last block sees all flags.
+        const uint32_t prev = atomicAdd(counter, Checked ? handoff_guard::contribution(block_bad) : 1u);
+        const bool last = Checked ? handoff_guard::last_block(prev,gridDim.x) : prev == gridDim.x - 1;
+        if (last) {
             *(volatile uint32_t*) counter = 0u;
             __threadfence_system();
-            if (drop == nullptr || *drop == 0u) {   // test hook (STRATA_TEST_HANDOFF_DROP): a lost publish
-                *(volatile uint32_t*) flag = 1u;
+            if (drop == nullptr || *drop == 0u) {
+                *(volatile uint32_t*) flag = Checked ? handoff_guard::verdict(prev,block_bad) : 1u;
                 __threadfence_system();
             }
         }
@@ -1407,8 +1435,31 @@ void handoff_publish(float* dst, const float* a, int64_t na, const float* b, int
     }
     const int64_t nb256 = (n + 255) / 256;
     const int blocks = (int) (nb256 < 64 ? nb256 : 64);
-    handoff_publish_kernel<<<blocks, 256, 0, (cudaStream_t) stream>>>(dst, a, na, b, nb, c, nc, counter, flag, drop);
+    handoff_publish_kernel<false><<<blocks, 256, 0, (cudaStream_t) stream>>>(dst, a, na, b, nb, c, nc, counter, flag, drop);
     check("handoff_publish");
+}
+
+void handoff_publish_checked(float* dst, const float* a, int64_t na, const float* b, int64_t nb,
+                             const float* c, int64_t nc, uint32_t* counter, uint32_t* flag, void* stream) {
+    constexpr int64_t max_words = 16 * 1024 * 1024 / sizeof(float);
+    if (!dst || !a || !b || !c || !counter || !flag || na <= 0 || nb <= 0 || nc <= 0 ||
+        na > max_words || nb > max_words-na || nc > max_words-na-nb) {
+        std::fprintf(stderr, "handoff_publish_checked: invalid bounded arguments\n");
+        std::exit(1);
+    }
+    const int64_t nb256 = (na + nb + nc + 255) / 256;
+    const int blocks = (int) (nb256 < handoff_guard::max_blocks ? nb256 : handoff_guard::max_blocks);
+    handoff_publish_kernel<true><<<blocks, 256, 0, (cudaStream_t) stream>>>(dst, a, na, b, nb, c, nc, counter, flag, nullptr);
+    check("handoff_publish_checked");
+}
+
+void wait_handoff_checked(const uint32_t* flag, uint32_t* err, unsigned long long timeout_ns, void* stream) {
+    if (!flag || !err || !timeout_ns || timeout_ns > 120000000000ull) {
+        std::fprintf(stderr, "wait_handoff_checked: invalid bounded wait\n");
+        std::exit(1);
+    }
+    wait_handoff_checked_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(flag, err, timeout_ns);
+    check("wait_handoff_checked");
 }
 
 namespace {
