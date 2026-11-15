@@ -123,6 +123,27 @@ int main() {
                                              {paths[0], "/tmp/hip\n.cfg", paths[2]});
         }, "newline stage config refused");
 
+        // M0035: no CUDA executable is needed; the HIP pair owns both stage
+        // configs, either in separate processes or one grouped child.
+        const Plan hip_pair = parse_plan("hip:0:0-5,hip:1:5-10", 10, {2, 6}, 999);
+        const std::vector<std::string> hip_paths{paths[0], paths[1]};
+        for (bool shared : {false, true}) {
+            for (bool grouped : {false, true}) {
+                auto pair_group = WorkerProcessGroup::launch(
+                    hip_pair, "", probe, shared, {}, hip_paths, grouped);
+                check(pair_group.size() == (grouped ? 1u : 2u),
+                      "HIP-only process count matches grouping");
+                check(pair_group.finish(error, 1000),
+                      "HIP-only children receive correct physical config argv");
+            }
+        }
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(hip_pair, probe, "", false, {}, hip_paths, true);
+        }, "HIP-only missing HIP executable rejected");
+        should_throw([&] {
+            (void)WorkerProcessGroup::launch(plan, "", probe, false, {}, paths, true);
+        }, "mixed plan still requires CUDA executable");
+
         // The intentionally CPU-only HIP preflight executable must never
         // signal ready or produce inference, even in supervised mode.
         const Plan hip_only = parse_plan("hip:0:0-10", 10, {2, 6}, 999);
