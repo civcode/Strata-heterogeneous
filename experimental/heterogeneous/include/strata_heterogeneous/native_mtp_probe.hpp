@@ -5,6 +5,7 @@
 // Run the read-only asset audit first, against the exact configured target.
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
+#include "strata_heterogeneous/mtp_bulk_seed_stats.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata_heterogeneous/mtp_generation.hpp"
@@ -210,6 +211,9 @@ public:
             error="MTP bulk prompt metadata or state refused";return false;
         }
         if (!cursor_->start_bulk_prompt(service_policy_->prompt,error)) return false;
+        bulk_stats_={};
+        const char* detail=std::getenv("STRATA_HETERO_MTP_BULK_TRACE");
+        bulk_detail_=cmd.rows<=128 || (detail && std::strcmp(detail,"1")==0);
         bulk_active_=true;
         bulk_chunk_=cmd.prefill_chunk;
         return true;
@@ -232,7 +236,7 @@ public:
             const char* value=std::getenv("STRATA_HETERO_MTP_BATCH");
             return value && std::strcmp(value,"1")==0;
         }();
-        return cursor_->seed_bound_bulk_prompt_chunk(pos,rows,size_t(count),prime(),
+        return bulk_stats_.seed(*cursor_,pos,rows,size_t(count),prime(bulk_detail_),
             [&](const float* r,const int32_t* next,size_t n,int64_t cell,std::string& e) {
                 if (!batch_enabled || n<32 || trace_ || front_trace_)
                     return MtpBulkSeedResult::declined;
@@ -243,13 +247,16 @@ public:
                 const char* why=nullptr;
                 if (!pf.draft_kv(*drafter_,r,next,int64_t(n),cell,e,&why,embed_.get())) {
                     if (!e.empty()) return MtpBulkSeedResult::failed;
-                    std::fprintf(stderr,"HETERO_MTP_BULK_BATCH_DECLINED cell=%lld rows=%zu reason=%s\n",
-                                 static_cast<long long>(cell),n,why?why:"not applicable");
+                    // Keep the first applicability reason even when quiet.
+                    if (bulk_detail_ || bulk_stats_.narrow_rows==0)
+                        std::fprintf(stderr,"HETERO_MTP_BULK_BATCH_DECLINED cell=%lld rows=%zu reason=%s\n",
+                                     static_cast<long long>(cell),n,why?why:"not applicable");
                     return MtpBulkSeedResult::declined;
                 }
                 if (!room(0,e)) return MtpBulkSeedResult::failed;
-                std::fprintf(stderr,"HETERO_MTP_BULK_BATCH_PRIMED cell=%lld rows=%zu\n",
-                             static_cast<long long>(cell),n);
+                if (bulk_detail_)
+                    std::fprintf(stderr,"HETERO_MTP_BULK_BATCH_PRIMED cell=%lld rows=%zu\n",
+                                 static_cast<long long>(cell),n);
                 return MtpBulkSeedResult::completed;
             },error);
     }
@@ -261,6 +268,17 @@ public:
             if(error.empty()) error="MTP bulk prompt drain/adoption refused";
             return false;
         }
+        const auto& s=bulk_stats_;
+        std::fprintf(stderr,"HETERO_MTP_BULK_SEED_SUMMARY request=%llu rows=%llu chunks=%llu "
+                     "batch_calls=%llu batch_rows=%llu narrow_calls=%llu narrow_rows=%llu declines=%llu "
+                     "callback_ns=%llu batch_ns=%llu narrow_ns=%llu decline_ns=%llu\n",
+                     static_cast<unsigned long long>(request),
+                     static_cast<unsigned long long>(s.rows()),static_cast<unsigned long long>(s.chunks),
+                     static_cast<unsigned long long>(s.batch_calls),static_cast<unsigned long long>(s.batch_rows),
+                     static_cast<unsigned long long>(s.narrow_calls),static_cast<unsigned long long>(s.narrow_rows),
+                     static_cast<unsigned long long>(s.declines),static_cast<unsigned long long>(s.callback_ns),
+                     static_cast<unsigned long long>(s.batch_ns),static_cast<unsigned long long>(s.narrow_ns),
+                     static_cast<unsigned long long>(s.decline_ns));
         bulk_active_=false;
         bulk_chunk_=0;
         committed_=1; // one native prefill protocol window, not one per chunk
@@ -291,6 +309,8 @@ public:
         committed_=0;
         bulk_active_=false;
         bulk_chunk_=0;
+        bulk_stats_={};
+        bulk_detail_=false;
         service_policy_.reset();
         verified_next_=-1;
         relay_pending_=false;
@@ -482,6 +502,8 @@ private:
     std::unique_ptr<const MtpRequestPolicy> service_policy_;
     bool bulk_active_=false;
     uint32_t bulk_chunk_=0;
+    MtpBulkSeedStats bulk_stats_;
+    bool bulk_detail_=false;
     const core::ModelGeometry* geometry_=nullptr;
     int64_t context_=0;
     size_t max_t_=0;
@@ -543,12 +565,13 @@ private:
         return !trace_ || trace_->capture(phase,drafter_->kv_state(),rows,next,n,cell,upto,e,
             std::strcmp(phase,"draft_after")==0?front_device_:nullptr);
     }
-    std::function<bool(const float*,const int32_t*,size_t,int64_t,std::string&)> prime() {
-        return [this](const float* rows,const int32_t* next,size_t n,int64_t cell,std::string& e) {
+    std::function<bool(const float*,const int32_t*,size_t,int64_t,std::string&)> prime(bool detail=true) {
+        return [this,detail](const float* rows,const int32_t* next,size_t n,int64_t cell,std::string& e) {
             if (!capture("prime_before",rows,next,n,cell,cell,e) || !room(MtpRequestPolicy::prime_headroom_bytes,e) ||
                 !drafter_->prefill(rows,next,static_cast<int64_t>(n),cell,e,true) ||
                 !room(0,e) || !capture("prime_after",rows,next,n,cell,cell+int64_t(n),e)) return false;
-            std::fprintf(stderr,"HETERO_MTP_PROBE_PRIMED cell=%lld rows=%zu\n",static_cast<long long>(cell),n);
+            if (detail)
+                std::fprintf(stderr,"HETERO_MTP_PROBE_PRIMED cell=%lld rows=%zu\n",static_cast<long long>(cell),n);
             return true;
         };
     }
