@@ -122,7 +122,8 @@ class TraceTests(unittest.TestCase):
                                 if field=='router_logits.f32':src=changed_logits
                                 if field=='router_ids.i32':src=changed_ids
                             os.link(src,Path(stem+field))
-            marker={'numerical_trace':True,'prefix_rows':cut,'chunk':1,'stage_reference':'','token_ids':list(t.TOKENS[:cut+1]),'transport':'shared'}
+            marker={'numerical_trace':True,'prefix_rows':cut,'chunk':1,'stage_reference':'','token_ids':list(t.TOKENS[:cut+1]),'transport':'shared',
+                    'plan':'cuda:0:0-12,hip:0:12-30,hip:1:30-48'}
             rec={'marker':marker,'source':(1,2),'bridge':{'status':'PASS'},'local_links_exact':True,'serial_controls_exact':True,
                  'residuals':{},'states':states,'logits':{},'quality':{'status':'FAIL'}}
             old=copy.deepcopy(rec);old['marker'].pop('numerical_trace')
