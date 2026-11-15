@@ -11,6 +11,7 @@
 #include "strata_heterogeneous/mtp_generation.hpp"
 #include "strata_heterogeneous/mtp_resident.hpp"
 #include "strata_heterogeneous/mtp_request_policy.hpp"
+#include "strata_heterogeneous/mtp_stream_batch.hpp"
 #include "strata/spec/suffix_drafter.hpp"
 #include "strata/prefill/hc_experiment.hpp"
 #include "strata_heterogeneous/process.hpp"
@@ -133,7 +134,7 @@ void usage() {
         "  [--split-reference-capture --capture-revision SHA --capture-binary-sha256 SHA] (ungrouped, explicit KV, canonical plans)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--guarded-direct-prelaunch] [--kv int8|f16] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
-        "  --mtp-resident-service: experimental variable-request 2K Q8 mixed native MTP, buffered, spec=4, min_p=0.5.\n"
+        "  --mtp-resident-service: experimental variable-request 2K Q8 native MTP, mixed or HIP-only, spec=4, min_p=0.5.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
         "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
         "  --mtp-resident-prompt-rows N: additionally require --resident; fixed prompt length and --generate budget, max 8 requests.\n"
@@ -1220,7 +1221,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             generation_next=committed.predicted_tokens.at(keep-1);
             generation_fed=spec.pos0+keep;
         };
-        size_t stream_published=0; // MTP predictions already announced at committed checkpoints
+        hetero::MtpStreamCursor stream_cursor;
         // The coordinator only yields control after all stages acknowledged
         // commit. EOF/cancel here cannot leave a provisional GPU window.
         auto checkpoint = [&]() {
@@ -1232,21 +1233,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 // After all-domain commit, publish only the newly accepted
                 // drafts and the target's next prediction. A stop is control
                 // metadata, never a visible streamed token.
-                std::vector<int32_t> batch;
-                bool terminal=false;
-                if (pos >= static_cast<int64_t>(prompt.size())) {
-                    if (generated.size()!=static_cast<size_t>(pos-static_cast<int64_t>(prompt.size())) ||
-                        stream_published>generated.size())
-                        throw std::logic_error("MTP streaming commit/output position mismatch");
-                    batch.assign(generated.begin()+stream_published,generated.end());
-                    terminal=std::find(o.stop_ids.begin(),o.stop_ids.end(),next)!=o.stop_ids.end();
-                    if (!terminal) batch.push_back(next);
-                    if (batch.size()>5 || stream_published+batch.size()>max_new)
-                        throw std::logic_error("MTP streaming batch exceeds committed output limit");
-                    stream_published+=batch.size();
-                }
-                std::cout << " BATCH " << (terminal?1:0) << ' ' << batch.size();
-                for (auto token:batch) std::cout << ' ' << token;
+                const auto batch=stream_cursor.advance(prompt.size(),max_new,pos,generated,next,o.stop_ids);
+                std::cout << " BATCH " << (batch.terminal?1:0) << ' ' << batch.tokens.size();
+                for (auto token:batch.tokens) std::cout << ' ' << token;
             } else if (o.stream_tokens) {
                 // Only committed predictions, never intermediate prompt rows or stop IDs.
                 const bool available = pos >= static_cast<int64_t>(prompt.size()) &&
