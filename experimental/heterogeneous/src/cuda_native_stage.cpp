@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
+#include <cstdio>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -110,6 +111,9 @@ bool CudaNativeStage::open(CudaStageResources& owner, const Plan& plan,
         const uint64_t ple_dev = needs_ple_ ?
             (static_cast<uint64_t>(owner.geometry_.n_embd) * sizeof(float) +
              strata::core::ple_run_scratch_bytes()) : 0;
+        if (std::getenv("STRATA_HETERO_SIZE_TRACE"))
+            std::fprintf(stderr, "HETERO_NATIVE_SIZE backend=CUDA stage=%zu dense_estimate_bytes=%llu ple_device_bytes=%llu\n",
+                         index, static_cast<unsigned long long>(native_bytes_), static_cast<unsigned long long>(ple_dev));
         uint64_t extra = 0, total = 0;
         if (!add(native_bytes_, ple_dev, extra) ||
             !add(owner.weight_bytes_, owner.session_bytes_, total) ||

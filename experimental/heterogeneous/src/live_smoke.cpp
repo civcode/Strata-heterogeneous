@@ -85,6 +85,8 @@ struct Options {
     bool micro_probe = false;
     bool boundary_capture = false;
     bool placement_capture = false;
+    bool split_reference_capture = false;
+    std::string capture_revision, capture_binary_sha256;
     uint32_t prefill_parity_at = 0; // diagnostic: number of known prefix tokens before teacher-forced rows
     bool prefill_state_capture = false;
     bool prefill_first_token = false;
@@ -123,6 +125,7 @@ void usage() {
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
+        "  [--split-reference-capture --capture-revision SHA --capture-binary-sha256 SHA] (ungrouped, explicit KV, canonical plans)\n"
         "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--kv int8|f16] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
@@ -213,6 +216,9 @@ Options parse(int argc, char** argv) {
         else if (key == "--micro-probe") o.micro_probe = true;
         else if (key == "--boundary-capture") o.boundary_capture = true;
         else if (key == "--placement-capture") o.placement_capture = true;
+        else if (key == "--split-reference-capture") { o.split_reference_capture = true; o.placement_capture = true; }
+        else if (key == "--capture-revision") o.capture_revision = required_value(i, argc, argv, "--capture-revision");
+        else if (key == "--capture-binary-sha256") o.capture_binary_sha256 = required_value(i, argc, argv, "--capture-binary-sha256");
         else if (key == "--shared") o.shared = true;
         else if (key == "--group-native-hip") o.group_hip = true;
         else if (key == "--hip-split-overlap") o.hip_split_overlap = true;
@@ -356,6 +362,22 @@ Options parse(int argc, char** argv) {
         o.tokens.empty() || o.capture_prefix.empty() || o.layer_taps || o.layer_zero_probe ||
         o.stage0_phases || o.branch_probe || o.micro_probe || o.boundary_capture))
         throw std::invalid_argument("placement capture requires explicit one-row tokens, full STFR and no other probes");
+    auto lower_hex = [](const std::string& s, size_t n) {
+        return s.size() == n && std::all_of(s.begin(), s.end(), [](char c) {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        });
+    };
+    if (o.split_reference_capture) {
+        if (!o.kv_explicit || !lower_hex(o.capture_revision, 40) || !lower_hex(o.capture_binary_sha256, 64) ||
+            o.group_hip || o.keep > 1 || o.direct_verified || o.receiver_arm || o.cuda_mapped_egress ||
+            o.native_prefill_chunk || !o.mtp_probe_rt.empty() || o.warmup_windows || o.prefill_parity_at ||
+            o.prefill_state_capture || o.prefill_stage_capture || o.prefill_hc_replay || o.prefill_first_token ||
+            o.numerical_trace || o.generation_capture || o.workload_mode || o.mtp_relay_rounds ||
+            o.mtp_state_trace || o.mtp_front_trace)
+            throw std::invalid_argument("split reference capture requires explicit KV, build labels and ungrouped one-row execution");
+    } else if (!o.capture_revision.empty() || !o.capture_binary_sha256.empty()) {
+        throw std::invalid_argument("capture build labels require split reference capture");
+    }
     if (!o.placement_capture && !o.warmup_windows && !o.generate && o.tokens.size() > 64)
         throw std::invalid_argument("ordinary smoke token sequence exceeds 64");
     if (!o.keep) o.keep = o.rows;
@@ -534,7 +556,7 @@ Options parse(int argc, char** argv) {
         o.prefill_parity_at || o.prefill_state_capture || o.prefill_stage_capture ||
         o.prefill_hc_replay || o.numerical_trace || o.layer_taps || o.layer_zero_probe ||
         o.stage0_phases || o.branch_probe || o.micro_probe || o.boundary_capture ||
-        o.placement_capture;
+        (o.placement_capture && !o.split_reference_capture);
     if (legacy_f16) {
         if (o.kv_explicit && o.kv != hetero::KvMode::f16)
             throw std::invalid_argument("legacy parity/MTP diagnostics require --kv f16 until separately qualified");
@@ -559,9 +581,12 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         plan.stages[0].backend==hetero::Backend::hip && plan.stages[1].backend==hetero::Backend::hip;
     if (o.workload_mode && !o.group_hip && !hip_pair)
         throw std::invalid_argument("ungrouped workload mode is restricted to two HIP stages");
+    if (o.split_reference_capture && hetero::plan_spec(plan) != "hip:0:0-24,hip:1:24-48" &&
+        hetero::plan_spec(plan) != "cuda:0:0-15,hip:0:15-33,hip:1:33-48")
+        throw std::invalid_argument("split reference capture requires a canonical placement");
     if (hip_pair && (o.hip_split_overlap || o.receiver_arm || o.cuda_mapped_egress ||
-        !o.mtp_probe_rt.empty() || o.prefill_parity_at || !o.capture_prefix.empty() ||
-        o.generation_capture || o.placement_capture || o.layer_taps || o.boundary_capture ||
+        !o.mtp_probe_rt.empty() || o.prefill_parity_at || (!o.capture_prefix.empty() && !o.split_reference_capture) ||
+        o.generation_capture || (o.placement_capture && !o.split_reference_capture) || o.layer_taps || o.boundary_capture ||
         o.layer_zero_probe || o.stage0_phases || o.branch_probe || o.micro_probe))
         throw std::invalid_argument("HIP-only pair supports ordinary inference only; diagnostic overlap, captures and MTP remain gated");
     // Reverse topology first qualifies the existing per-stage serial worker path.
@@ -793,6 +818,7 @@ void capture_window(const Options& o, const hetero::Plan& plan,
              << ",\"plan\":" << json_string(hetero::plan_spec(plan))
              << ",\"model_fingerprint\":" << o.fingerprint
              << ",\"kv_mode\":" << json_string(hetero::kv_mode_name(o.kv))
+             << (o.split_reference_capture ? ",\"capture_producer\":\"heterogeneous\",\"source_revision\":" + json_string(o.capture_revision) + ",\"binary_sha256\":" + json_string(o.capture_binary_sha256) : "")
              << ",\"plan_fingerprint\":" << committed.plan_fingerprint
              << ",\"pack_index_sha256\":" << json_string(source.index_sha256)
              << ",\"gguf_shards\":" << json_string([&]() {

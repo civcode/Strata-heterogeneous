@@ -19,6 +19,10 @@ OWNERS = {
 }
 BASE_CELLS = 2048
 RESERVE = 1 << 30
+# NativeDense::weight_bytes_for, 0042 Q2 metadata and selected device defaults.
+# These preflight estimates do not include all load-time/runtime allocations.
+DENSE_ESTIMATES = {'mixed': (480043520, 596049920, 543535616),
+                   'hip': (766984192, 852644864)}
 
 
 def estimate(placement, cells, mode):
@@ -33,22 +37,34 @@ def estimate(placement, cells, mode):
         kv = 1056 if mode == 'int8' else 2048
         # Q8 pool bookkeeping and final arena alignment make the simple
         # precision delta an overestimate by up to 512 B for these owners.
-        # Mixed F16 was measured directly; HIP F16 remains conservative.
-        f16_measured = (62394624, 74587392, 63588096)
+        # Both F16 baselines are measured separately.
+        f16_measured = (62394624, 74587392, 63588096) if placement == 'mixed' else (95392512, 95392512)
         owner_index = len(result)
         if mode == 'int8':
             baseline = base
-        elif placement == 'mixed':
-            baseline = f16_measured[owner_index]
         else:
-            baseline = base + q * 992 * BASE_CELLS - 512
+            baseline = f16_measured[owner_index]
         increment = (cells - BASE_CELLS) * (q * (kv + 128 + 1) + 256 + 4)
         session = baseline + increment
+        # Entry-stage PLE: emb_dev + ple_run_scratch_bytes (ple.cu/layer.cpp).
+        ple = 274352 if owner_index == 0 else 0
+        # Ungrouped final verifier allocates a device input on non-entry stages.
+        handoff = 0 if owner_index == 0 else (4*2560 + 2560 + 4)*4*8
+        # verify.cpp prints count.used rounded to one decimal MiB (66.1 here).
+        verifier_floor = 66 * (1 << 20)
+        persistent_floor = session + weight + experts + ple + handoff + verifier_floor
         result.append(dict(qsa_layers=q, session_bytes=session, pack_weight_bytes=weight,
                            expert_slot_bytes=experts, reserve_bytes=RESERVE,
-                           subtotal_not_peak_bytes=session + weight + experts + RESERVE))
+                           ple_device_bytes=ple, verifier_device_floor_bytes=verifier_floor,
+                           handoff_device_bytes=handoff, persistent_floor_bytes=persistent_floor,
+                           subtotal_not_peak_bytes=persistent_floor + RESERVE,
+                           native_dense_estimate_bytes=DENSE_ESTIMATES[placement][owner_index],
+                           temporary_peak_bytes=None,
+                           actual_free_vram_bytes=None, admission='UNKNOWN'))
     return dict(status='LOWER_BOUND_NOT_ADMISSION', placement=placement, cells=cells,
-                kv=mode, owners=result)
+                kv=mode, owners=result, assumptions='ungrouped max_t=8; no streaming or elastic KV',
+                unknowns=['native-dense actual allocator overhead and HC copies/scratch', 'prefill workspace and lifetime',
+                          'graph, runtime, library, transport and transient peaks', 'current free VRAM'])
 
 
 def main():

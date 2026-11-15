@@ -1,0 +1,15 @@
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index e41e33d9..dbe7a2b9 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -16627,6 +16627,10 @@ int main(int argc, char** argv) {
+                     if (stop_req.load()) { e = "cancelled"; return false; }
+                     pp_exact = false;   // until this window and the drafter's rows are in
+                     int T = (int) std::min<int64_t>(S, b - q);
++                    // Bounded teacher-forced diagnostic: serial one-row commits.
++                    // The driver must disable caching, drafting, pipelining and
++                    // merged first windows and request a full fresh short read.
++                    if (std::getenv("STRATA_DIAG_SERIAL_ONE_ROW") != nullptr) T = 1;
+                     // --lookup-max-t: the prompt's windows take the allowed sizes too (each size is a graph of its own);
+                     // one whose graph finds no VRAM is dropped as in decode
+                     if (o.lookup_max_t > 0) {
