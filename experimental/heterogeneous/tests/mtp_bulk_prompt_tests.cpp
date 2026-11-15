@@ -121,5 +121,66 @@ int main() {
         check(!cursor.seed_bulk_prompt_chunk(prompt,0,r.data(),16,[](auto...){return true;},err));
         check(!cursor.begin(0,{10},[](auto...){return true;},err));
     }
+    // Exercise partial accepts, stale speculative suffixes and the physical
+    // tail at real numeric 32K/256K positions, with a synthetic draft ledger.
+    // This checks pairing/order only; it does not execute attention kernels.
+    for (unsigned capacity : {32768u,262144u}) {
+        const unsigned n=capacity-9;
+        std::vector<int32_t> actual(n);
+        for(unsigned j=0;j<n;++j) actual[j]=int32_t(1000+j%137);
+        auto policy=admit_mtp_service_request({capacity,9,4,248320,actual,{99}});
+        check(bool(policy));
+        MtpPrefixCursor cursor(2,capacity,248320,8);
+        std::string err;
+        std::array<float,128> r{};
+        std::vector<std::pair<float,int32_t>> cells(capacity,{-1.f,-1});
+        auto prime=[&](const float* rows,const int32_t* next,size_t count,int64_t cell,std::string&) {
+            check(count>=1 && count<=8 && cell>=0 && cell+int64_t(count)<=capacity);
+            for(size_t j=0;j<count;++j) cells[cell+j]={rows[2*j],next[j]};
+            return true;
+        };
+        check(cursor.start_bulk_prompt(actual,err));
+        for(unsigned pos=0;pos<n-1;) {
+            const unsigned count=std::min(32u,n-1-pos);
+            for(unsigned j=0;j<count;++j) r[2*j]=float(pos+j+1);
+            check(cursor.seed_bound_bulk_prompt_chunk(pos,r.data(),count,prime,err));
+            pos+=count;
+        }
+        check(cursor.begin(n-1,{actual.back()},prime,err));
+        r[0]=float(n);
+        check(cursor.committed(r.data(),1,prime,err));
+        unsigned offers=0,anchors=0;
+        while (int64_t(actual.size())<policy->feed_end()) {
+            const auto pos=int64_t(actual.size());
+            const auto anchor=int32_t(20000+10*(pos-n));
+            std::vector<int32_t> ids{anchor};
+            const bool speculate=policy->can_offer(pos,anchor);
+            if(speculate) {
+                ++offers;
+                check(cursor.offer(anchor,ids,[&](const float* row,int32_t token,int64_t cell,
+                                                     std::vector<int32_t>& out,std::string&) {
+                    check(cell==pos-1 && row[0]==float(pos) && token==anchor && cell+4<capacity);
+                    cells[cell]={row[0],token};
+                    for(int j=1;j<=4;++j) cells[cell+j]={-999.f,anchor+j};
+                    const auto clipped=policy->clip_offer(pos,anchor,{anchor+1,anchor+2,anchor+3,anchor+4});
+                    out.assign(clipped.begin()+1,clipped.end());
+                    return true;
+                },err));
+            } else ++anchors;
+            check(policy->decode_window(pos,anchor,ids));
+            check(cursor.begin(pos,ids,prime,err)); // deferred tail still owns its old row here
+            for(size_t j=0;j<ids.size();++j) r[2*j]=float(pos+j+1);
+            const size_t keep=speculate?2:1;
+            check(ids.size()>=keep);
+            check(cursor.committed(r.data(),keep,prime,err));
+            actual.insert(actual.end(),ids.begin(),ids.begin()+keep);
+            check(cursor.committed_position()==int64_t(actual.size()));
+            for(size_t j=size_t(pos-1);j+1<actual.size();++j)
+                check(cells[j]==std::make_pair(float(j+1),actual[j+1]));
+        }
+        check(offers==3 && anchors==2 && actual.size()==capacity-1);
+        for(size_t j=0;j+1<actual.size();++j)
+            check(cells[j]==std::make_pair(float(j+1),actual[j+1]));
+    }
     std::cout<<"PASS "<<checks<<" bulk prompt policy/pairing assertions\n";
 }
