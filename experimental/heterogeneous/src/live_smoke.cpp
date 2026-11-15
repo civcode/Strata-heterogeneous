@@ -471,10 +471,10 @@ Options parse(int argc, char** argv) {
         o.mtp_generation || o.mtp_resident_prompt_rows || o.generation_capture || o.mtp_relay_rounds ||
         o.mtp_state_trace || o.mtp_front_trace || o.mtp_repeat_native_round || o.mtp_reprime_tail ||
         o.mtp_three_round || o.mtp_three_round_variable || o.mtp_fresh_replay || o.workload_mode ||
-        o.long_context || o.stream_tokens || o.lookup_draft || o.native_prefill_chunk || o.receiver_arm ||
+        o.long_context || o.lookup_draft || o.native_prefill_chunk || o.receiver_arm ||
         o.cuda_mapped_egress || o.direct_verified || o.guarded_direct || !o.pipeline_mode.empty() ||
         !o.capture_prefix.empty() || o.warmup_windows || o.describe_source))
-        throw std::invalid_argument("MTP service requires explicit buffered grouped Q8 2K resident generation; no other diagnostics or bulk");
+        throw std::invalid_argument("MTP service requires explicit grouped Q8 2K resident generation; no other diagnostics or bulk");
     if (!o.mtp_service && !o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || (o.generate && !o.mtp_generation) ||
         o.describe_source || o.warmup_windows || o.native_prefill_chunk || (!o.mtp_generation && o.tokens.empty()) ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
@@ -776,6 +776,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"pipeline_mode_cap\":1"
                   << ",\"mtp_service_cap\":1"
                   << ",\"mtp_hip_pair_cap\":1"
+                  << ",\"mtp_stream_cap\":1"
                   << ",\"long_context_cap\":" << hetero::max_long_context
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
@@ -1219,13 +1220,34 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             generation_next=committed.predicted_tokens.at(keep-1);
             generation_fed=spec.pos0+keep;
         };
+        size_t stream_published=0; // MTP predictions already announced at committed checkpoints
         // The coordinator only yields control after all stages acknowledged
         // commit. EOF/cancel here cannot leave a provisional GPU window.
         auto checkpoint = [&]() {
             if (!o.resident) return true;
             std::cout << "HETERO_PROGRESS " << request_id << ' ' << window
                       << ' ' << pos;
-            if (o.stream_tokens) {
+            if (o.stream_tokens && o.mtp_service) {
+                // Earlier checkpoints already announced the current anchor.
+                // After all-domain commit, publish only the newly accepted
+                // drafts and the target's next prediction. A stop is control
+                // metadata, never a visible streamed token.
+                std::vector<int32_t> batch;
+                bool terminal=false;
+                if (pos >= static_cast<int64_t>(prompt.size())) {
+                    if (generated.size()!=static_cast<size_t>(pos-static_cast<int64_t>(prompt.size())) ||
+                        stream_published>generated.size())
+                        throw std::logic_error("MTP streaming commit/output position mismatch");
+                    batch.assign(generated.begin()+stream_published,generated.end());
+                    terminal=std::find(o.stop_ids.begin(),o.stop_ids.end(),next)!=o.stop_ids.end();
+                    if (!terminal) batch.push_back(next);
+                    if (batch.size()>5 || stream_published+batch.size()>max_new)
+                        throw std::logic_error("MTP streaming batch exceeds committed output limit");
+                    stream_published+=batch.size();
+                }
+                std::cout << " BATCH " << (terminal?1:0) << ' ' << batch.size();
+                for (auto token:batch) std::cout << ' ' << token;
+            } else if (o.stream_tokens) {
                 // Only committed predictions, never intermediate prompt rows or stop IDs.
                 const bool available = pos >= static_cast<int64_t>(prompt.size()) &&
                     std::find(o.stop_ids.begin(), o.stop_ids.end(), next) == o.stop_ids.end();
@@ -1418,9 +1440,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         // Negotiate actual reset support before announcing readiness.
         session.begin_request(request_id);
         std::cout << "HETERO_READY " << request_id;
-        if (o.stream_tokens) std::cout << " STREAM";
+        if (o.mtp_service) std::cout << (o.stream_tokens ? " MTP_STREAM" : " MTP");
+        else if (o.stream_tokens) std::cout << " STREAM";
         if (o.lookup_draft) std::cout << " LOOKUP";
-        if (o.mtp_service) std::cout << " MTP";
         std::cout << std::endl;
         bool first = true;
         std::string line;

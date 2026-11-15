@@ -54,8 +54,8 @@ class Progress:
     def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False, native_prefill=False, *, mtp_spec=0):
         if lookup and (stream or chunk < 2):
             raise ValueError("lookup requires buffered mode and chunk >= 2")
-        if type(mtp_spec) is not int or not 0 <= mtp_spec <= 4 or (mtp_spec and (lookup or stream or native_prefill)):
-            raise ValueError("MTP service progress requires independent buffered mode and spec 1..4")
+        if type(mtp_spec) is not int or not 0 <= mtp_spec <= 4 or (mtp_spec and (lookup or native_prefill)):
+            raise ValueError("MTP service progress requires independent mode and spec 1..4")
         self.mtp_spec = mtp_spec
         self.lookup = lookup
         self.native_prefill = native_prefill
@@ -67,7 +67,8 @@ class Progress:
 
     def accept(self, line):
         fields = line.split()
-        if fields[0:1] != ["HETERO_PROGRESS"] or len(fields) != (5 if self.stream else 4):
+        batched = bool(self.stream and self.mtp_spec)
+        if fields[0:1] != ["HETERO_PROGRESS"] or (len(fields) < 7 if batched else len(fields) != (5 if self.stream else 4)):
             raise ValueError("wrong progress record shape")
         request, window, end = map(int, fields[1:4])
         if self.native_prefill and self.window == 0 and self.prompt > 1:
@@ -81,7 +82,25 @@ class Progress:
                 not valid_position or end > self.prompt + self.max_new - 1):
             raise ValueError("resident progress identity or position mismatch")
         token = None
-        if self.stream:
+        if batched:
+            if fields[4] != "BATCH" or fields[5] not in ("0", "1"):
+                raise ValueError("invalid MTP streaming batch marker")
+            terminal = fields[5] == "1"
+            count = int(fields[6])
+            if not 0 <= count <= self.mtp_spec + 1 or len(fields) != 7 + count:
+                raise ValueError("invalid MTP streaming batch extent")
+            tokens = tuple(map(int, fields[7:]))
+            # One target prediction after final prompt commit, then one
+            # new prediction per accepted feedback row, minus terminal stop.
+            expected_tokens = 0 if end < self.prompt else end - self.prompt + (not terminal)
+            if ((end < self.prompt and terminal) or len(self.tokens) + count != expected_tokens or
+                    expected_tokens > self.max_new or
+                    any(not 0 <= t < self.vocab or t in self.stops for t in tokens)):
+                raise ValueError("MTP streamed predictions disagree with committed positions")
+            self.tokens.extend(tokens)
+            self.terminal = terminal
+            token = tokens
+        elif self.stream:
             prediction = int(fields[4])
             if end < self.prompt:
                 if prediction != -1:

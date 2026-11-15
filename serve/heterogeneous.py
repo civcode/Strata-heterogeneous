@@ -78,7 +78,7 @@ class ResidentEngine:
         self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
         self.stream_tokens = source.get("stream_tokens", False)
         self.lookup_draft = source.get("lookup_draft", False)
-        if source.get("mtp") and (self.lookup_draft or self.stream_tokens or source.get("spec") != 4 or
+        if source.get("mtp") and (self.lookup_draft or source.get("spec") != 4 or
                                   source.get("spec_min_p") != 0.5 or self.max_context != 2048):
             raise ValueError("unsupported resident MTP service mode")
         if self.lookup_draft and (self.stream_tokens or chunk < 2):
@@ -116,7 +116,7 @@ class ResidentEngine:
                                         name="heterogeneous-native-output")
         self._reader.start()
         try:
-            expected = ("HETERO_READY 1 MTP" if self.source.get("mtp") else
+            expected = (("HETERO_READY 1 MTP_STREAM" if self.stream_tokens else "HETERO_READY 1 MTP") if self.source.get("mtp") else
                         "HETERO_READY 1 STREAM" if self.stream_tokens else
                         "HETERO_READY 1 LOOKUP" if self.lookup_draft else "HETERO_READY 1")
             if self._receive() != expected:
@@ -288,7 +288,8 @@ class ResidentEngine:
                         except ValueError as exc:
                             raise self._died("invalid resident progress") from exc
                         last_checkpoint = time.monotonic()
-                        if token is not None:
+                        batch = token if isinstance(token, tuple) else () if token is None else (token,)
+                        if batch:
                             last_output_checkpoint = last_checkpoint
                         if progress.pos >= len(ids) and prefill_end is None:
                             prefill_end = last_checkpoint
@@ -296,11 +297,19 @@ class ResidentEngine:
                         if not cancel.is_set():
                             # Service may close at the output cap: validate the
                             # final record before releasing the last capped token.
-                            if token is not None and len(progress.tokens) < max_new:
-                                if first_output is None:
-                                    first_output = time.monotonic()
-                                emitted += 1
-                                yield token
+                            # The final capped token stays buffered until the
+                            # completion record agrees with all checkpoints.
+                            # Keep waiting=True throughout the batch: close()
+                            # at ANY yield must cancel and drain the same ACK.
+                            available = batch[:max(0, max_new - 1 - emitted)]
+                            if available:
+                                for prediction in available:
+                                    if cancel.is_set():
+                                        break
+                                    if first_output is None:
+                                        first_output = time.monotonic()
+                                    emitted += 1
+                                    yield prediction
                             else:
                                 yield None
                         cancelled = cancel.is_set()

@@ -86,7 +86,7 @@ class HipOnlyCLI(unittest.TestCase):
             with patch("strata_cli.heterogeneous._native",return_value={"kv":"int8"}) as native:
                 with self.assertRaisesRegex(ValueError,"lacks request-local MTP service"):
                     prepare_native(args)
-                for key,value in (("stream_tokens",True),("max_context",262144),("native_prefill_chunk",128),("spec",3),("spec_min_p",0.1)):
+                for key,value in (("max_context",262144),("native_prefill_chunk",128),("spec",3),("spec_min_p",0.1)):
                     old=getattr(args,key,None)
                     setattr(args,key,value)
                     with self.assertRaisesRegex(ValueError,"MTP service candidate"):
@@ -94,6 +94,10 @@ class HipOnlyCLI(unittest.TestCase):
                     if old is None: delattr(args,key)
                     else: setattr(args,key,old)
                 self.assertEqual(native.call_count,1)
+                args.stream_tokens=True
+                native.return_value["mtp_service_cap"]=1
+                with self.assertRaisesRegex(ValueError,"lacks MTP streaming capability"):
+                    prepare_native(args)
 
     def test_hip_only_mtp_needs_matching_capability(self):
         from tempfile import TemporaryDirectory

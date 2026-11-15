@@ -79,11 +79,29 @@ class TestLimits(unittest.TestCase):
         self.assertIsNone(p.accept("HETERO_PROGRESS 1 4 10"))
         with self.assertRaises(ValueError):
             p.accept("HETERO_PROGRESS 1 5 11")
-        for disallowed in (dict(stream=True), dict(lookup=True), dict(native_prefill=True)):
+        for disallowed in (dict(lookup=True), dict(native_prefill=True)):
             opts = dict(stream=False, mtp_spec=4)
             opts.update(disallowed)
             with self.assertRaises(ValueError):
                 Progress(1, 3, 8, 2, 100, {99}, **opts)
+
+    def test_mtp_stream_progress(self):
+        p = Progress(1, 3, 8, 2, 100, {99}, True, mtp_spec=4)
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 1 2 BATCH 0 0"), ())
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 2 3 BATCH 0 1 10"), (10,))
+        for bad in ("HETERO_PROGRESS 1 3 9 BATCH 0 5 11 12 13 14 15",
+                    "HETERO_PROGRESS 1 3 7 BATCH 0 3 11 12 13",
+                    "HETERO_PROGRESS 1 3 7 BATCH 0 4 11 12 13 99",
+                    "HETERO_PROGRESS 1 3 7 BATCH 0 4 11 12 13 100",
+                    "HETERO_PROGRESS 1 3 7 11"):
+            with self.assertRaises(ValueError):
+                p.accept(bad)
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 3 7 BATCH 0 4 11 12 13 14"), (11,12,13,14))
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 4 9 BATCH 1 1 15"), (15,))
+        self.assertTrue(p.terminal)
+        self.assertEqual(p.tokens, [10,11,12,13,14,15])
+        with self.assertRaises(ValueError):
+            p.accept("HETERO_PROGRESS 1 5 10 BATCH 0 2 16 17")
 
     def test_native_prefill_progress_exact_prefix(self):
         p = Progress(1, 17, 3, 8, 100, {99}, True, native_prefill=True)
@@ -190,6 +208,42 @@ class TestResident(unittest.TestCase):
         e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
         self.assertEqual(list(e.generate([1,2],3,{},Event())), [None,None,10,11,12])
         self.assertEqual(e.last_metrics["decode_feedback_tokens"],2)
+
+    def test_mtp_streamed_batch_and_cap(self):
+        e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
+                         "HETERO_PROGRESS 1 2 4 BATCH 0 2 11 12",
+                         'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11,12],"finish_reason":"length","stop_token":-1}'])
+        e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
+        g = e.generate([1,2],3,{},Event())
+        self.assertEqual(next(g),10)
+        self.assertEqual(next(g),11)
+        self.assertEqual(e._receive.call_count,2)
+        self.assertEqual(next(g),12)
+        self.assertEqual(e._receive.call_count,3)
+        self.assertEqual(list(g),[])
+
+    def test_mtp_stream_mid_batch_close(self):
+        e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
+                         "HETERO_PROGRESS 1 2 4 BATCH 0 2 11 12",
+                         'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[],"finish_reason":"cancelled","stop_token":-1}',
+                         "HETERO_PROGRESS 2 1 1 BATCH 0 1 20",
+                         'HETERO_GENERATION {"request_id":2,"prompt_tokens":1,"token_ids":[20],"finish_reason":"length","stop_token":-1}'])
+        e.source.update(mtp="/local/rt", spec=4, spec_min_p=0.5)
+        e.max_new=4
+        g=e.generate([1,2],4,{},Event())
+        self.assertEqual(next(g),10)
+        self.assertEqual(next(g),11)
+        g.close()
+        self.assertEqual(e.last_completion["finish_reason"],"cancelled")
+        e._send.assert_called_with("cancel")
+        self.assertEqual(list(e.generate([1],1,{},Event())),[None,20])
+
+    def test_mtp_stream_stop(self):
+        e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
+                         "HETERO_PROGRESS 1 2 4 BATCH 1 1 11",
+                         'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"stop","stop_token":99}'])
+        e.source.update(mtp="/local/rt",spec=4,spec_min_p=0.5)
+        self.assertEqual(list(e.generate([1,2],3,{},Event())),[10,11,99])
 
     def test_length_last_token_after_validation(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2 10", "HETERO_PROGRESS 1 2 3 11",
