@@ -182,5 +182,56 @@ int main() {
         for(size_t j=0;j+1<actual.size();++j)
             check(cells[j]==std::make_pair(float(j+1),actual[j+1]));
     }
+    // Whole-chunk fast seed, safe pre-execution decline, and hard failure.
+    // Both mechanisms receive exactly the actual successor slice.
+    for (unsigned mode=0;mode<4;++mode) {
+        MtpPrefixCursor cursor(2,2048,248320,8); std::string err;
+        std::vector<int32_t> prompt(77);
+        for(size_t i=0;i<prompt.size();++i) prompt[i]=int32_t(10+i*13);
+        std::array<float,128> r{};
+        check(cursor.start_bulk_prompt(prompt,err));
+        size_t cells=0, batches=0, narrow=0;
+        auto record=[&](const float* rows,const int32_t* next,size_t count,int64_t pos) {
+            check(pos==int64_t(cells));
+            for(size_t i=0;i<count;++i) {
+                check(rows[2*i]==float(cells+1) && next[i]==prompt[cells+1]); ++cells;
+            }
+        };
+        auto prime=[&](const float* rows,const int32_t* next,size_t count,int64_t pos,std::string&) {
+            ++narrow; check(count<=8); record(rows,next,count,pos); return true;
+        };
+        auto batch=[&](const float* rows,const int32_t* next,size_t count,int64_t pos,std::string& e) {
+            ++batches;
+            check(pos==int64_t(cells));
+            if(mode==1 && count==32) return MtpBulkSeedResult::declined;
+            if(mode>=2) {
+                record(rows,next,1,pos); // possible partial native mutation
+                e="injected batch failure";
+                return mode==2?MtpBulkSeedResult::failed:MtpBulkSeedResult::declined;
+            }
+            if(count<32) return MtpBulkSeedResult::declined;
+            record(rows,next,count,pos);
+            return MtpBulkSeedResult::completed;
+        };
+        for(size_t pos=0;pos<prompt.size()-1;) {
+            const size_t count=std::min<size_t>(32,prompt.size()-1-pos);
+            for(size_t j=0;j<count;++j) r[2*j]=float(pos+j+1);
+            const bool ok=cursor.seed_bound_bulk_prompt_chunk(pos,r.data(),count,prime,batch,err);
+            if(mode>=2) {
+                check(!ok && cells==1 && narrow==0 && batches==1 && cursor.committed_position()==0);
+                err.clear();
+                check(!cursor.seed_bound_bulk_prompt_chunk(pos,r.data(),count,prime,batch,err));
+                check(batches==1 && narrow==0);
+                break;
+            }
+            check(ok); pos+=count;
+        }
+        if(mode<2) {
+            check(cells==76 && batches==3 && narrow==(mode==0?2u:10u));
+            check(cursor.committed_position()==76 && cursor.begin(76,{prompt.back()},prime,err));
+            check(cursor.committed(r.data(),1,prime,err));
+            check(cells==76 && cursor.committed_position()==77);
+        }
+    }
     std::cout<<"PASS "<<checks<<" bulk prompt policy/pairing assertions\n";
 }

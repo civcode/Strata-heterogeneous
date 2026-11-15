@@ -2277,7 +2277,7 @@ bool Prefill::idle(std::string& err) {
 }
 
 bool Prefill::draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t* next_tokens, int64_t n, int64_t cell0,
-                       std::string& err, const char** why) {
+                       std::string& err, const char** why, const core::NativeEmbed* local_embedding) {
     Impl& m = *impl_;
 #if defined(STRATA_GPU_METAL)
     (void) m; (void) mtp; (void) R_rows; (void) next_tokens; (void) n; (void) cell0; (void) err;
@@ -2301,6 +2301,12 @@ bool Prefill::draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t
         return decline(st.kv_mode == 2 ? "the drafter's K/V is a ring and STRATA_MTP_BATCH_RING=0" : "the drafter's K/V mode is not paged/ring");
     if (st.kv_hybrid) return decline("the drafter's K/V is hybrid (kv_hybrid)");
     if (mtp.device() != m.device) return decline("the drafter is on another device than this prefill path");
+    if (local_embedding && (st.kv_mode != 0 || st.kv_elastic != -1 || !st.kv_int8 || st.kv_q4 ||
+        st.kv_hybrid || st.kv_rot || st.n_pages <= 0 || st.n_slots != st.n_pages || st.host.present() ||
+        !st.k_q || !st.v_q || !st.k_scale || !st.v_scale || !st.page_table ||
+        mtp.window() != 0 || mtp.first_needed() != 0 || cell0 < 0 ||
+        cell0 > st.max_cells || n > st.max_cells - cell0 || n > 64))
+        return decline("local draft batching requires bounded fully resident plain INT8 KV");
     const auto t0 = Clock::now();
     const core::ModelGeometry& g = *m.g;
     const int64_t Nn = g.n_embd, HCN = g.hc * g.n_embd, KV = g.n_head_kv * g.head_dim;
@@ -2317,7 +2323,7 @@ bool Prefill::draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t
     const float* w_kn = mtp.tensor_f32("self_attn.k_norm.weight");
     if (!w_ne || !w_fe || !w_nh || !w_fh || !w_hn || !w_dn || !w_up || !w_k || !w_v || !w_kn)
         return decline("a drafter tensor is missing (Q8_0 projections / norms)");
-    const core::NativeEmbed* nemb = core::native_embed();
+    const core::NativeEmbed* nemb = local_embedding ? local_embedding : core::native_embed();
     const core::WeightRef* wemb = nemb ? nullptr : m.wt->find("token_embd.weight");
     if (!nemb && (wemb == nullptr || wemb->codebook_iq4nl || wemb->ne0 != g.n_embd || wemb->group_elems <= 0 ||
                   (wemb->code_bits != 2 && wemb->code_bits != 4 && wemb->code_bits != 8)))
@@ -2333,10 +2339,12 @@ bool Prefill::draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t
     const bool q8 = !f16_only && mmq::built() && mmq::fits(kQ8_0, Nn) && mmq::fits(kQ8_0, KV);   // #420
     const uint64_t per_row = 4 * (2 * Nn + 4 * HCN + LR + HC + Nn + 2 * KV + 1) + 2 * (Nn + 2 * HCN + LR + Nn) + 64 +
                              (q8 ? (uint64_t) mmq::q8_bytes(g.hc, Nn) + 4 * g.hc : 0);
-    int64_t B = std::min<int64_t>(n - r0, (int64_t) (m.region_bytes / per_row) & ~(int64_t) 63);
+    const int64_t minimum_batch = local_embedding ? 32 : 64;
+    int64_t B = std::min<int64_t>(n - r0, (int64_t) (m.region_bytes / per_row) & ~(minimum_batch - 1));
     if (st.kv_mode == 2)   // a ring: one batch's cells must not share a slot (a batch can straddle one page more)
         B = std::min<int64_t>(B, ((st.n_slots - 1) * strata::kernels::qsa_real_shapes().page_size) & ~(int64_t) 63);
-    if (B < 64) return decline("too little scratch for a 64-row batch");
+    if (B < minimum_batch) return decline(local_embedding ? "too little scratch/rows for a 32-row local batch"
+                                                           : "too little scratch for a 64-row batch");
     uint8_t* q = m.region;
     auto carve = [&](size_t bytes) { void* p = q; q += (bytes + 255) & ~(size_t) 255; return p; };
     float* emb = (float*) carve((size_t) B * Nn * 4);
@@ -2412,7 +2420,11 @@ bool Prefill::draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t
         rms_rows(emb, w_ne, nb, Nn, Nn, EPS, m.cs);
         if (!q8) to_f16(emb, en16, nb * Nn, m.cs);
         proj(emb, en16, w_fe, e2, nb, Nn, Nn, 0);
-        cudaMemcpyAsync(hn, R_rows + (size_t) b0 * HCN, (size_t) nb * HCN * 4, cudaMemcpyDeviceToDevice, m.cs);
+        if (cudaMemcpyAsync(hn, R_rows + (size_t) b0 * HCN, (size_t) nb * HCN * 4,
+                            cudaMemcpyDeviceToDevice, m.cs) != cudaSuccess) {
+            err = "prefill: the draft residual copy failed";
+            return false;
+        }
         if (mtp.hnorm_per_stream())   // --mtp-hnorm stream: as the drafter's own pass (mtp.cpp)
             strata::kernels::native_qsa_rms_norm_grouped(hn, w_nh, hn, (int) Nn, (int) g.hc, (int) (nb * g.hc), EPS, m.cs);
         else

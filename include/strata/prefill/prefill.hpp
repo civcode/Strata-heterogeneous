@@ -44,7 +44,7 @@ struct PrefillStats {
 };
 
 }  // namespace strata::prefill
-namespace strata::core { class MtpDrafter; }
+namespace strata::core { class MtpDrafter; class NativeEmbed; }
 namespace strata::prefill {
 
 /// HIP: one tiny BF16 and one tiny FP16 product on a private handle, so the first prompt does not pay hipBLAS's one-time
@@ -61,8 +61,11 @@ public:
     /// device, too little scratch; STRATA_MTP_BATCH=0), the caller runs the drafter's own pass.  Not bit-identical to
     /// that pass (FP16 GEMMs instead of Q8_1 activations): the drafts may differ, never the target's tokens' logits.
     /// `why` (optional): on a decline (false, `err` empty) the reason, a static string.
+    /// A non-null local_embedding opts a fully resident heterogeneous drafter
+    /// into bounded batches of >=32 rows and uses its device-local embedding
+    /// instead of the process-global target embedding. The caller owns it.
     bool draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t* next_tokens, int64_t n, int64_t cell0,
-                  std::string& err, const char** why = nullptr);
+                  std::string& err, const char** why = nullptr, const core::NativeEmbed* local_embedding = nullptr);
     Prefill();
     ~Prefill();
     Prefill(const Prefill&) = delete;

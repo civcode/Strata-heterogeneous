@@ -274,8 +274,8 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
                 if (!mtp || !mtp->begin_bulk_prompt(cmd,e)) return false;
                 return hetero::run_native_prefill_domain(cmd,fd,pf_stages,false,
                     static_cast<int>(c.io_timeout_ms),e,{},{},{},
-                    [&](const float* r,int64_t rows,int64_t pos,std::string& err) {
-                        return mtp->seed_bulk_prompt(r,rows,pos,err);
+                    [&](strata::prefill::Prefill& pf,const float* r,int64_t rows,int64_t pos,std::string& err) {
+                        return mtp->seed_bulk_prompt(pf,r,rows,pos,err);
                     }) && final.adopt_native_prefill(cmd.request_id,cmd.rows,e);
             }
             return hetero::run_native_prefill_domain(cmd,fd,pf_stages,false,

@@ -13,6 +13,10 @@
 #include <vector>
 
 namespace strata::heterogeneous {
+// A decline promises no draft mutation; a failed batch may have written
+// cells and must poison the cursor. Only successful work advances position.
+enum class MtpBulkSeedResult { declined, completed, failed };
+
 class MtpPrefixCursor {
 public:
     MtpPrefixCursor(size_t stride, int64_t context, int64_t vocab, size_t max_rows)
@@ -49,19 +53,36 @@ public:
 
     template<class Prime>
     bool seed_bound_bulk_prompt_chunk(int64_t pos,const float* residuals,size_t rows,Prime&& prime,std::string& error) {
+        return seed_bound_bulk_prompt_chunk(pos,residuals,rows,prime,
+            [](const float*,const int32_t*,size_t,int64_t,std::string&) { return MtpBulkSeedResult::declined; },error);
+    }
+
+    template<class Prime,class Batch>
+    bool seed_bound_bulk_prompt_chunk(int64_t pos,const float* residuals,size_t rows,Prime&& prime,Batch&& batch,
+                                      std::string& error) {
         if (state_!=State::ready || bulk_prompt_.empty() || tail_ || !offered_.empty() ||
             !residuals || !rows || rows>MtpRequestPolicy::bulk_chunk_limit ||
             stride_>std::numeric_limits<size_t>::max()/rows ||
             pos!=next_ || pos<0 || pos>=int64_t(bulk_prompt_.size()-1) ||
             rows>bulk_prompt_.size()-1-size_t(pos))
             return fail(error,"MTP bulk seed identity or extent refused");
+        // A batch uses the same actual successor slice as the narrow path.
+        // Both callbacks must drain before returning. Never retry a failed
+        // batch as narrow graphs; its native K/V may already be changed.
+        const auto* successors=bulk_prompt_.data()+size_t(pos)+1;
+        const auto result=batch(residuals,successors,rows,pos,error);
+        if (result==MtpBulkSeedResult::failed || !error.empty())
+            return fail(error,"MTP bulk batch seed failed");
+        if (result==MtpBulkSeedResult::completed) {
+            next_+=int64_t(rows);
+            return true;
+        }
         // Target chunks can exceed the drafter's narrow graph width. Consume
         // each subrange synchronously before releasing the target scratch.
         // A partial failure poisons this cursor; never adopt a partial seed.
         for (size_t off=0;off<rows;) {
             const size_t count=std::min(max_rows_,rows-off);
-            if (!prime(residuals+off*stride_,bulk_prompt_.data()+size_t(pos)+off+1,
-                       count,pos+int64_t(off),error))
+            if (!prime(residuals+off*stride_,successors+off,count,pos+int64_t(off),error))
                 return fail(error,"MTP bulk seed prime failed");
             off+=count;
         }

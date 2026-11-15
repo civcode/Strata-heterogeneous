@@ -24,6 +24,7 @@
 #pragma GCC diagnostic pop
 #endif
 #include "strata/core/native_head.hpp"
+#include "strata/prefill/prefill.hpp"
 #include "strata/core/weights.hpp"
 #include "strata/kernels/cpu/expert.hpp"
 #include <array>
@@ -216,7 +217,7 @@ public:
     // Native Prefill::on_chunk runs on the terminal owner's thread with its
     // producer stream already fenced. Synchronous prime consumes R before
     // the native prefill scratch is reused; no residual pointer is retained.
-    bool seed_bulk_prompt(const float* rows,int64_t count,int64_t pos,std::string& error) {
+    bool seed_bulk_prompt(prefill::Prefill& pf,const float* rows,int64_t count,int64_t pos,std::string& error) {
         int current=-1;
         if (!bulk_active_ || !cursor_ || !drafter_ || !service_policy_ || !rows || !bulk_chunk_ ||
             pos!=cursor_->committed_position() || pos<0 || pos>=int64_t(service_policy_->prompt.size())-1 ||
@@ -225,7 +226,32 @@ public:
             if(error.empty()) error="MTP bulk residual owner/state refused";
             return false;
         }
-        return cursor_->seed_bound_bulk_prompt_chunk(pos,rows,size_t(count),prime(),error);
+        // Explicitly opt in until native execution and acceptance have been
+        // characterized. Keep the proven per-group path as the default.
+        static const bool batch_enabled=[] {
+            const char* value=std::getenv("STRATA_HETERO_MTP_BATCH");
+            return value && std::strcmp(value,"1")==0;
+        }();
+        return cursor_->seed_bound_bulk_prompt_chunk(pos,rows,size_t(count),prime(),
+            [&](const float* r,const int32_t* next,size_t n,int64_t cell,std::string& e) {
+                if (!batch_enabled || n<32 || trace_ || front_trace_)
+                    return MtpBulkSeedResult::declined;
+                if (!embed_ || !resident_kv_supported() || !room(MtpRequestPolicy::prime_headroom_bytes,e)) {
+                    if(e.empty()) e="local MTP batch lacks admitted embedding or resident cache";
+                    return MtpBulkSeedResult::failed;
+                }
+                const char* why=nullptr;
+                if (!pf.draft_kv(*drafter_,r,next,int64_t(n),cell,e,&why,embed_.get())) {
+                    if (!e.empty()) return MtpBulkSeedResult::failed;
+                    std::fprintf(stderr,"HETERO_MTP_BULK_BATCH_DECLINED cell=%lld rows=%zu reason=%s\n",
+                                 static_cast<long long>(cell),n,why?why:"not applicable");
+                    return MtpBulkSeedResult::declined;
+                }
+                if (!room(0,e)) return MtpBulkSeedResult::failed;
+                std::fprintf(stderr,"HETERO_MTP_BULK_BATCH_PRIMED cell=%lld rows=%zu\n",
+                             static_cast<long long>(cell),n);
+                return MtpBulkSeedResult::completed;
+            },error);
     }
     bool finish_bulk_prompt(uint64_t request,uint32_t rows,std::string& error) override {
         if (!bulk_active_ || !cursor_ || !drafter_ || request!=request_ || committed_ ||
