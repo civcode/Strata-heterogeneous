@@ -4,8 +4,11 @@
 // Every residual R[p] pairs with the ACTUAL token at p+1, not a rejected
 // candidate or an argmax from a teacher-forced prompt. The last accepted
 // residual is borrowed only until the next verifier run (or final draft).
+#include "strata_heterogeneous/mtp_request_policy.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -25,16 +28,25 @@ public:
     bool seed_bulk_prompt_chunk(const std::vector<int32_t>& prompt,int64_t pos,
                                 const float* residuals,size_t rows,Prime&& prime,std::string& error) {
         if (state_!=State::ready || !stride_ || !max_rows_ || max_rows_>8 || context_<=0 || vocab_<=0 ||
-            tail_ || !offered_.empty() || !residuals || !rows || rows>max_rows_ ||
-            prompt.size()<2 || prompt.size()>7 || int64_t(prompt.size())>=context_ ||
+            tail_ || !offered_.empty() || !residuals || !rows || rows>MtpRequestPolicy::bulk_chunk_limit ||
+            stride_>std::numeric_limits<size_t>::max()/rows ||
+            prompt.size()<2 || prompt.size()>MtpRequestPolicy::bulk_prompt_limit || int64_t(prompt.size())>=context_ ||
             pos!=next_ || pos<0 || pos>=int64_t(prompt.size()-1) ||
             rows>prompt.size()-1-size_t(pos) ||
             (bulk_prompt_.empty() ? next_!=0 : bulk_prompt_!=prompt))
             return fail(error,"MTP bulk seed identity or extent refused");
         for (auto id:prompt) if (id<0 || id>=vocab_) return fail(error,"MTP bulk seed token outside vocabulary");
         if (bulk_prompt_.empty()) bulk_prompt_=prompt;
-        if (!prime(residuals,bulk_prompt_.data()+size_t(pos)+1,rows,pos,error))
-            return fail(error,"MTP bulk seed prime failed");
+        // Target chunks can exceed the drafter's narrow graph width. Consume
+        // each subrange synchronously before releasing the target scratch.
+        // A partial failure poisons this cursor; never adopt a partial seed.
+        for (size_t off=0;off<rows;) {
+            const size_t count=std::min(max_rows_,rows-off);
+            if (!prime(residuals+off*stride_,bulk_prompt_.data()+size_t(pos)+off+1,
+                       count,pos+int64_t(off),error))
+                return fail(error,"MTP bulk seed prime failed");
+            off+=count;
+        }
         next_+=int64_t(rows);
         return true;
     }

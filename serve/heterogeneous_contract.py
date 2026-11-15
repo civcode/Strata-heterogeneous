@@ -38,7 +38,9 @@ def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk
     return context, chunk or safe
 
 
-MAX_MTP_BULK_PROMPT = 7
+MTP_CONTEXT_CAPACITY = 2048
+MAX_MTP_BULK_PROMPT = MTP_CONTEXT_CAPACITY - 1
+MAX_MTP_BULK_CHUNK = 64
 
 
 def validate_request(ids, max_new, vocab, context, long_context=False, *, mtp_bulk=False):
@@ -46,8 +48,8 @@ def validate_request(ids, max_new, vocab, context, long_context=False, *, mtp_bu
             len(ids) + max_new > context or
             any(type(t) is not int or not 0 <= t < vocab for t in ids)):
         raise ValueError("prompt/generation budget exceeds validated context or vocabulary")
-    if mtp_bulk and len(ids) > MAX_MTP_BULK_PROMPT:
-        raise ValueError("bounded MTP bulk prompt accepts at most seven tokens")
+    if mtp_bulk and (context != MTP_CONTEXT_CAPACITY or len(ids) > MAX_MTP_BULK_PROMPT):
+        raise ValueError("MTP bulk prompt requires the exact 2K service capacity")
     # Include the resident request's completion-count prefix. One-shot
     # input is shorter, even with its terminating newline.
     cap = command_cap(context, long_context)
@@ -61,8 +63,9 @@ class Progress:
             raise ValueError("lookup requires buffered mode and chunk >= 2")
         if type(mtp_spec) is not int or not 0 <= mtp_spec <= 4 or (mtp_spec and lookup):
             raise ValueError("MTP service progress requires independent mode and spec 1..4")
-        if mtp_spec and native_prefill and not 1 <= prompt <= MAX_MTP_BULK_PROMPT:
-            raise ValueError("bounded MTP bulk prompt accepts at most seven tokens")
+        if mtp_spec and native_prefill and (not 1 <= prompt <= MAX_MTP_BULK_PROMPT or
+                                           not 1 <= max_new <= 256 or prompt + max_new > MTP_CONTEXT_CAPACITY):
+            raise ValueError("MTP bulk prompt and completion exceed 2K service capacity")
         self.mtp_spec = mtp_spec
         self.lookup = lookup
         self.native_prefill = native_prefill

@@ -86,12 +86,18 @@ class MtpStreamContract(unittest.TestCase):
                 self.assertEqual(p.tokens, [11, 12, 13, 14])
         p = Progress(2, 1, 1, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
         self.assertEqual(p.accept("HETERO_PROGRESS 2 1 1 BATCH 0 1 10"), (10,))
-        validate_request([1]*7, 2, 100, 2048, mtp_bulk=True)
-        validate_request([1]*8, 2, 100, 2048)
+        validate_request([1]*2047, 1, 100, 2048, mtp_bulk=True)
+        validate_request([1]*2046, 2, 100, 2048, mtp_bulk=True)
         with self.assertRaises(ValueError):
-            validate_request([1]*8, 2, 100, 2048, mtp_bulk=True)
+            validate_request([1]*2047, 2, 100, 2048, mtp_bulk=True)
         with self.assertRaises(ValueError):
-            Progress(1, 8, 4, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
+            validate_request([1]*8, 2, 100, 4096, mtp_bulk=True)
+        with self.assertRaises(ValueError):
+            Progress(1, 2047, 4, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
+        for prompt in (8, 65, 129, 2047):
+            p = Progress(1, prompt, 1, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 1 {prompt-1} BATCH 0 0"), ())
+            self.assertEqual(p.accept(f"HETERO_PROGRESS 1 2 {prompt} BATCH 0 1 10"), (10,))
 
     def test_ordinary_and_buffered_protocols_unchanged(self):
         for mtp in (0, 4):

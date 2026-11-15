@@ -8,6 +8,7 @@
 #include "strata_heterogeneous/boundary_capture.hpp"
 #include "strata_heterogeneous/host.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
+#include "strata_heterogeneous/mtp_request_policy.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -270,6 +271,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                 },false);
             }
         }
+        const bool mtp_bulk=bool(terminal_chunk);
         if (terminal_chunk) {
             if (sender || stage_probe || isolated || first_probe || entry_state || hc_probe || capture_bridge) {
                 error="terminal residual consumer requires ordinary grouped receiving prefill";return false;
@@ -282,13 +284,20 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         // Initialize native owners on their actual devices. No cache loans or recreation.
         for (size_t i=0;i<stages.size();++i) {
             auto& node=owned.nodes[i]; const auto& s=stages[i];
-            if (s.long_context_chunk && !check_native_prefill_capacity(node.device,boundary_stage+i,
-                    "prefill_before",s.geometry,s.session,static_cast<uint32_t>(chunk),s.reserve_bytes,error)) return false;
+            // Keep prime/graph headroom on the terminal GPU while target
+            // prefill scratch is live. Ordinary/legacy prefill is unchanged.
+            const uint64_t extra=mtp_bulk && i+1==stages.size()?MtpRequestPolicy::prime_headroom_bytes:0;
+            if (extra>std::numeric_limits<uint64_t>::max()-s.reserve_bytes) {
+                error="MTP prefill reserve overflow";return false;
+            }
+            const uint64_t reserve=s.reserve_bytes+extra;
+            if ((s.long_context_chunk || mtp_bulk) && !check_native_prefill_capacity(node.device,boundary_stage+i,
+                    "prefill_before",s.geometry,s.session,static_cast<uint32_t>(chunk),reserve,error)) return false;
             if (!check(cudaSetDevice(node.device),"prefill stage device") ||
                 !init_owned_native_prefill(*node.pf,s.weights,s.geometry,s.session,s.experts,
-                                           chunk,node.stream,s.reserve_bytes,0,error)) return false;
-            if (s.long_context_chunk && !sample_native_capacity(node.device,boundary_stage+i,
-                    "prefill_allocated",s.reserve_bytes,0,error)) return false;
+                                           chunk,node.stream,reserve,0,error)) return false;
+            if ((s.long_context_chunk || mtp_bulk) && !sample_native_capacity(node.device,boundary_stage+i,
+                    "prefill_allocated",reserve,0,error)) return false;
         }
         if (entry_state && !entry_state("after_init",error)) return false;
         std::vector<int64_t> tokens(cmd.window->token_ids.begin(),cmd.window->token_ids.end());
@@ -303,7 +312,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         for (size_t i=0;i<owned.nodes.size();++i) {
             auto& node = owned.nodes[i];
             if (!check(cudaSetDevice(node.device),"prefill drain device") || !node.pf->idle(error)) return false;
-            if (stages[i].long_context_chunk && !sample_native_capacity(node.device,boundary_stage+i,
+            if ((stages[i].long_context_chunk || mtp_bulk) && !sample_native_capacity(node.device,boundary_stage+i,
                     "prefill_drained",stages[i].reserve_bytes,0,error)) return false;
         }
         if (stage_probe) {

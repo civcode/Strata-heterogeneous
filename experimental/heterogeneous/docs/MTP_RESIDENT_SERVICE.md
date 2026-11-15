@@ -7,7 +7,7 @@ reset. This is not a robust speed comparison or production admission.
 The reference and MTP had different native overlap settings. No long
 contexts or HTTP/cancellation qualification in 0048.
 
-## Current candidate (HIP-only and streaming bounded-qualified in 0049)
+## Current candidate (HIP-only/streaming 0049; short bulk 0050 qualified)
 
 - Exact Q2_0 pack/runtime identity admitted by the pinned MTP validator;
   target conversion checkpoint provenance remains unresolved.
@@ -60,9 +60,9 @@ individually; cancel/close during any batch yield drains a cancellation
 ACK at the same checkpoint before subsequent request admission.
 No guarantee of network-level latency or production cancellation yet.
 
-## Bounded native bulk prompt seed (0050 candidate; not yet qualified)
+## Native bulk prompt seed (0051 expanded candidate; not yet qualified)
 
-Explicit `--native-prefill-chunk 1..8` with MTP admits at most seven prompt tokens in this initial candidate. One token bypasses bulk; larger prompts must select serial mode (chunk zero). The terminal HIP prefill's fenced `on_chunk` consumes completed R[p] with the actual prompt token at p+1, synchronous draft prime before R reuse. No host residual path to the drafter, no global embedding publication. The final prompt token remains in the ordinary verifier; a successful all-domain bulk ACK is an empty streaming checkpoint, allowing cancellation before that final token. The worker validates the exact request-local prefix and position; adoption requires a fully drained target and draft cursor at N-1. Capability `mtp_bulk_prompt_cap=7` gates Python activation. Do not use this experimental mode with general HTTP chat prompts or enable long contexts yet.
+Explicit `--native-prefill-chunk 1..64` with MTP now admits prompts under the same exact 2048-cell combined prompt/completion limit as serial MTP. One token bypasses bulk. The target may emit up to 64 residual rows; the cursor subdivides them into synchronous native graph batches of at most max_t (8), with actual successors across every boundary. The terminal HIP prefill's fenced `on_chunk` consumes completed R[p] with the actual prompt token at p+1, synchronous draft prime before R reuse. No host residual path to the drafter, no global embedding publication. The final prompt token remains in the ordinary verifier; a successful all-domain bulk ACK is an empty streaming checkpoint, allowing cancellation before that final token. The worker validates the exact request-local prefix and position; adoption requires a fully drained target and draft cursor at N-1. Capabilities `mtp_bulk_prompt_cap=2047` and `mtp_bulk_chunk_cap=64` gate Python activation; coordinators from 0050 cannot activate expanded bulk. The terminal callback checks exact chunk shape/position and device before priming. The native Q8 admission estimate now separately counts resident context-dependent allocations (shared-RoPE QSA state, identity rows and dense attention scratch) in addition to the original conservative cushion. The terminal prefill allocation preserves the existing reserve plus 512 MiB prime headroom while its scratch is live. These checks are allocation-boundary checks, not a measured peak. No long-context MTP is admitted.
 
 ## Test configuration
 
@@ -99,4 +99,6 @@ config). Native opt-in is --mtp-resident-service --mtp-probe-rt ABS_PATH
 
 0048: mixed buffered hardware passed. 0049: integrated host/CUDA/HIP builds and focused CTest 8/8 and Python 44/44 passed. HIP-only streaming A/B/cancel/A and mixed streaming regression passed with 46.88 s GPU process wall time, normal shutdown. Network HTTP and full state parity remain unverified.
 
-0050: terminal native bulk residual seed is implemented in source. Standalone C++17 bulk policy/cursor test passed 701 assertions with strict warnings; isolated Python progress/validation tests 4/4 passed. Header/module/test blobs were checked against the GitHub content hashes. The integrated build and GPU qualification remain outstanding. Direct Git checkout remains blocked by DNS. Handoff 0050 covers focused local integration and bounded smoke. Next after bounded seed qualification: scalable draft KV/memory admission and broader prompt support, with short tests only. Do not enable 256K MTP until those features are implemented and admitted.
+0050: all three integrated builds, CTest 9/9 and Python 45/45 passed; short HIP-only bulk A/cancel/A and serial comparison, and mixed bulk smoke, passed. The report records 62.09 s GPU process wall time and normal closure. No HTTP or long-context MTP qualification.
+
+0051: expanded 2K native bulk and explicit draft context sizing implemented in source. Integrated build and GPU checks remain outstanding; direct checkout from Chat AI remains blocked by DNS. See handoff 0051. This is still not 256K or production admission. Next: after broader 2K bulk and HTTP qualification, assess larger aligned context capacity and wire admission using measured owner headroom, without long-running tests unless authorized.

@@ -112,15 +112,25 @@ public:
             if (!ck(cudaSetDevice(device_),error)) return false;
             // Conservative bounded admission estimate, not a general native
             // allocator estimator: count head twice (subset/repack), embed
-            // even if mapped, exact runtime weights, plus 1 GiB for private
-            // state/graphs/scratch. Never resize expert residency to fit.
-            const uint64_t estimate=dense+experts+head_bytes*2+embed_bytes+(1ull<<30);
+            // even if mapped, exact runtime weights, plus 1 GiB for fixed
+            // scratch/graphs. Account for context-dependent allocations
+            // explicitly for service and retain the old cushion. Never resize
+            // expert residency to fit. This is not a transient peak model.
+            uint64_t context_bytes=0;
+            if (service_enabled()) {
+                context_bytes=core::MtpDrafter::resident_context_bytes(g,b.session.max_cells,b.max_t);
+                if (!context_bytes || b.session.qsa_states[b.session.qsa_primary()].max_cells!=b.session.max_cells) {
+                    error="MTP service requires sized fully resident Q8 draft context";return false;
+                }
+            }
+            const uint64_t estimate=dense+experts+head_bytes*2+embed_bytes+(1ull<<30)+context_bytes;
             size_t free_bytes=0, total_bytes=0;
             if (!ck(cudaMemGetInfo(&free_bytes,&total_bytes),error)) return false;
-            std::fprintf(stderr,"HETERO_MTP_PROBE_ADMISSION device=%d free=%llu total=%llu reserve=%llu estimate=%llu head=%llu embed=%llu\n",
+            std::fprintf(stderr,"HETERO_MTP_PROBE_ADMISSION device=%d free=%llu total=%llu reserve=%llu estimate=%llu head=%llu embed=%llu context_bytes=%llu\n",
                          device_,static_cast<unsigned long long>(free_bytes),static_cast<unsigned long long>(total_bytes),
                          static_cast<unsigned long long>(reserve_),static_cast<unsigned long long>(estimate),
-                         static_cast<unsigned long long>(head_bytes),static_cast<unsigned long long>(embed_bytes));
+                         static_cast<unsigned long long>(head_bytes),static_cast<unsigned long long>(embed_bytes),
+                         static_cast<unsigned long long>(context_bytes));
             if (!room(estimate,error)) return false;
             head_=std::make_unique<core::NativeHead>();
             if (!head_->load(shards_,g.n_embd,g.n_vocab,error) || head_->on_host() || !room(0,error)) {
@@ -192,11 +202,11 @@ public:
             cmd.kind!=Kind::prefill_spec || cmd.window_id!=1 || !cmd.window || cmd.window->pos0!=0 ||
             cmd.rows!=cmd.window->token_ids.size() || committed_ || bulk_active_ ||
             cursor_->committed_position() || relay_pending_ || verified_next_!=-1 ||
-            !resident_kv_supported() || !service_policy_.bulk_prefix(cmd.window->token_ids,cmd.prefill_chunk) ||
-            std::min<size_t>(cmd.rows,cmd.prefill_chunk)>max_t_) {
+            !resident_kv_supported() || !service_policy_.bulk_prefix(cmd.window->token_ids,cmd.prefill_chunk)) {
             error="MTP bulk prompt metadata or state refused";return false;
         }
         bulk_active_=true;
+        bulk_chunk_=cmd.prefill_chunk;
         return true;
     }
     // Native Prefill::on_chunk runs on the terminal owner's thread with its
@@ -204,7 +214,9 @@ public:
     // the native prefill scratch is reused; no residual pointer is retained.
     bool seed_bulk_prompt(const float* rows,int64_t count,int64_t pos,std::string& error) {
         int current=-1;
-        if (!bulk_active_ || !cursor_ || !drafter_ || count<=0 ||
+        if (!bulk_active_ || !cursor_ || !drafter_ || !rows || !bulk_chunk_ ||
+            pos!=cursor_->committed_position() || pos<0 || pos>=int64_t(service_policy_.prompt.size())-1 ||
+            count!=std::min<int64_t>(bulk_chunk_,int64_t(service_policy_.prompt.size())-1-pos) ||
             !ck(cudaGetDevice(&current),error) || current!=device_) {
             if(error.empty()) error="MTP bulk residual owner/state refused";
             return false;
@@ -220,6 +232,7 @@ public:
             return false;
         }
         bulk_active_=false;
+        bulk_chunk_=0;
         committed_=1; // one native prefill protocol window, not one per chunk
         return true;
     }
@@ -247,6 +260,7 @@ public:
             trace_=std::make_unique<MtpStateTrace>(trace_prefix_+".r"+std::to_string(request),*geometry_);
         committed_=0;
         bulk_active_=false;
+        bulk_chunk_=0;
         service_policy_={};
         verified_next_=-1;
         relay_pending_=false;
@@ -437,6 +451,7 @@ private:
     std::vector<int32_t> service_stops_;
     MtpRequestPolicy service_policy_;
     bool bulk_active_=false;
+    uint32_t bulk_chunk_=0;
     const core::ModelGeometry* geometry_=nullptr;
     int64_t context_=0;
     size_t max_t_=0;
@@ -500,7 +515,7 @@ private:
     }
     std::function<bool(const float*,const int32_t*,size_t,int64_t,std::string&)> prime() {
         return [this](const float* rows,const int32_t* next,size_t n,int64_t cell,std::string& e) {
-            if (!capture("prime_before",rows,next,n,cell,cell,e) || !room(512ull<<20,e) ||
+            if (!capture("prime_before",rows,next,n,cell,cell,e) || !room(MtpRequestPolicy::prime_headroom_bytes,e) ||
                 !drafter_->prefill(rows,next,static_cast<int64_t>(n),cell,e,true) ||
                 !room(0,e) || !capture("prime_after",rows,next,n,cell,cell+int64_t(n),e)) return false;
             std::fprintf(stderr,"HETERO_MTP_PROBE_PRIMED cell=%lld rows=%zu\n",static_cast<long long>(cell),n);

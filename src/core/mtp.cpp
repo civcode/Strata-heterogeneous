@@ -626,6 +626,21 @@ bool MtpDrafter::experts_reclaim(std::string& err) {
     return true;
 }
 
+uint64_t MtpDrafter::resident_context_bytes(const ModelGeometry& g, int64_t cells, int max_t) {
+    if (cells<2 || cells>262144 || max_t<1 || max_t>8 || !qsa_kv_int8() ||
+        qsa_kv_q4() || qsa_kv_hybrid() || qsa_kv_elastic() || qsa_kv_resident()!=0) return 0;
+    // Same sizing/layout as load(): fully resident (ring=0), shared RoPE,
+    // cap rounded to 64, and each arena allocation padded to 256 bytes.
+    const uint64_t state=qsa_state_bytes(g,cells,false,0);
+    const int64_t cap=((cells+63)/64)*64;
+    const uint64_t scratch=strata::kernels::qsa_decode_attn_scratch_floats(cap,shapes_of(g));
+    if (!state || scratch>(UINT64_MAX-255)/sizeof(float)) return 0;
+    const uint64_t ids=(uint64_t(max_t)*uint64_t(cap)*sizeof(int32_t)+255)&~255ull;
+    const uint64_t attn=(scratch*sizeof(float)+255)&~255ull;
+    if (ids>UINT64_MAX-state || attn>UINT64_MAX-state-ids) return 0;
+    return state+ids+attn;
+}
+
 uint64_t MtpDrafter::bind_bytes(uint64_t head_row_bytes, int64_t n_vocab) const {
     uint64_t bytes = head_logits_ ? 0 : (uint64_t) max_t_ * (uint64_t) n_vocab * sizeof(float);
     if (dhead_ == nullptr && owns_draft_head_ && !full_head_env()) {

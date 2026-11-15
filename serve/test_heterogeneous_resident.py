@@ -81,10 +81,10 @@ class TestLimits(unittest.TestCase):
             p.accept("HETERO_PROGRESS 1 5 11")
         with self.assertRaises(ValueError):
             Progress(1, 3, 8, 2, 100, {99}, False, lookup=True, mtp_spec=4)
-        # Bounded native prompt prefill is now an independent opt-in.
-        Progress(1, 3, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4)
+        # Bulk prefill remains within the exact 2K resident capacity.
+        Progress(1, 2040, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4)
         with self.assertRaises(ValueError):
-            Progress(1, 8, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4)
+            Progress(1, 2041, 8, 2, 100, {99}, False, native_prefill=True, mtp_spec=4)
 
     def test_mtp_stream_progress(self):
         p = Progress(1, 3, 8, 2, 100, {99}, True, mtp_spec=4)

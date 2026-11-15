@@ -108,6 +108,10 @@ public:
     /// The VRAM bind() will allocate for a native head of `head_row_bytes` per vocabulary row: the draft logits and
     /// the draft head over rt/draft_vocab.bin's subset.  The expert cache is sized before bind(), so it reserves this.
     uint64_t bind_bytes(uint64_t head_row_bytes, int64_t n_vocab) const;
+    /// Full resident plain-Q8 context-dependent allocations (K/V state with
+    /// shared RoPE, full identity rows and dense attention scratch). Returns
+    /// zero for unsupported sizing mode. Not a whole-loader/peak estimate.
+    static uint64_t resident_context_bytes(const ModelGeometry& g, int64_t cells, int max_t);
     /// The main model's embedding and head, and the verify window's final residuals (T rows, hc*n_embd each).
     bool bind(const WeightTable& wt, const NativeHead* head, const float* window_R, std::string& err,
               const MtpDrafter* shared = nullptr);
