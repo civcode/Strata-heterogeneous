@@ -42,7 +42,7 @@ bool HipFinalVerifierExecutor::wait_fence(std::string& error) {
     }
 }
 bool HipFinalVerifierExecutor::bind_direct_input(DirectVerifiedBinding b, std::string& error) {
-    if (state_ != State::fresh || direct_ || options_.receiver_arm || !b) {
+    if (state_ != State::fresh || direct_ || options_.receiver_arm || !b || b.guarded != options_.guarded_direct) {
         error = "direct HIP input binding refused"; return false;
     }
     direct_ = b;
@@ -107,6 +107,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     // An unsplit [0,n_layers) reference embeds tokens inside Verifier and
     // has no prior activation handoff; never upload the dummy input.
     if (!select_device(error)) return false;
+    if (options_.guarded_direct && !direct_) { error = "guarded direct requires registered input"; return false; }
     if (direct_) {
         if (!direct_verified_plan(plan) || !options_.native_split_overlap || observer_ ||
             !options_.include_logits || chain_stages_.size() != 2 || bindings_.max_t != 8 ||
@@ -133,7 +134,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     if (!check(cudaEventCreateWithFlags(&fence_, cudaEventDisableTiming), error)) return false;
     if (!chain_stages_.empty()) {
         if (!chain_.prepare(plan, chain_stages_, input_, nullptr, error, options_.native_split_overlap,
-                            input_flag_host_, input_flag_device_)) return false;
+                            input_flag_host_, input_flag_device_,options_.guarded_direct)) return false;
         verifier_ = &chain_.first();
     } else {
     owned_verifier_ = std::make_unique<core::Verifier>();
@@ -202,7 +203,7 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
 }
 bool HipFinalVerifierExecutor::adopt_native_prefill(uint64_t request,uint32_t rows,std::string& error) {
     // The native prompt engine has fully drained the same stage-local session.
-    if (observer_ || options_.receiver_arm || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
+    if (observer_ || receiver_arm_enabled() || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
         !rows || rows>=bindings_.session.max_cells || chain_stages_.empty()) {
         error="native prefill position adoption refused"; return false;
     }
@@ -251,7 +252,7 @@ bool HipFinalVerifierExecutor::begin_window(const WindowSpec& spec,
     return true;
 }
 bool HipFinalVerifierExecutor::arm_window(std::string& error) {
-    if (!options_.receiver_arm || state_ != State::begun || armed_ || !input_flag_host_ ||
+    if (!receiver_arm_enabled() || state_ != State::begun || armed_ || !input_flag_host_ ||
         !select_device(error)) {
         if (error.empty()) error = "HIP receiver arm not admitted";
         return false;
@@ -294,10 +295,12 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         return false;
     }
     if (direct_) {
-        // Existing worker gate checked exact checksum and every float after
-        // producer drain. Only now launch the native HIP graph with its wait.
+        // Checked device publication can release the already-armed HIP graph.
+        // CPU metadata, checksum and finite checks still gate result/commit.
+        // The old direct mode launches only after these host checks.
         strata_load_fence();
-        if (!direct_.matches(input.data(), input.bytes()) || !direct_.published()) {
+        if ((options_.guarded_direct && !armed_) ||
+            !direct_.matches(input.data(), input.bytes()) || !direct_.published()) {
             error = "direct HIP input publication or slot mismatch"; return false;
         }
     } else if (options_.receiver_arm) {

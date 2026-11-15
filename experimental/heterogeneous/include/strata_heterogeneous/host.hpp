@@ -75,7 +75,8 @@ enum class Kind : uint16_t {
     prefill_spec = 17, prefill_rows = 18, prefill_done = 19,
     window_armed = 20, // opt-in receiver prelaunch ACK
     mtp_proposal_request = 21, mtp_proposal = 22, // terminal-only, paired with last committed window
-    hello_direct_shared = 23, hello_direct_shared_final = 24 // registration and preparation already completed
+    hello_direct_shared = 23, hello_direct_shared_final = 24, // registration and preparation already completed
+    hello_guarded_direct = 25, hello_guarded_direct_final = 26 // distinct checked-publication capability
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
@@ -230,7 +231,7 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
                            StageExecutor& executor, int timeout_ms = default_io_timeout_ms,
                            bool shared_memory = false,
                            const WindowLimits* limits = nullptr, int startup_wait_ms = -1,
-                            NativePrefillHandler prefill = {}, DirectSharedBinder direct_bind = {});
+                            NativePrefillHandler prefill = {}, DirectSharedBinder direct_bind = {}, bool guarded_direct = false);
 // Backwards-compatible CPU-test convenience; now uses the same transactional
 // handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);

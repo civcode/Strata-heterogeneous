@@ -109,6 +109,9 @@ int main(int argc,char** argv) {
             const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
             const bool mapped_egress = hetero::performance_flag("STRATA_HETERO_CUDA_MAPPED_EGRESS");
             const bool direct_verified = hetero::performance_flag("STRATA_HETERO_DIRECT_VERIFIED");
+            const bool guarded_direct = hetero::performance_flag("STRATA_HETERO_GUARDED_DIRECT");
+            if (guarded_direct && (!direct_verified || config.max_cells!=2048 || config.free_reserve_bytes<1073741824ull))
+                throw std::runtime_error("guarded CUDA requires direct verified 2K capacity and 1 GiB reserve");
             if (extended && (direct_verified || mapped_egress || hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM")))
                 throw std::runtime_error("long-context rejects experimental direct or receiver-arm paths");
             if (direct_verified && (!invocation.shared_memory || index != 0 || compact || mapped_egress ||
@@ -207,6 +210,7 @@ int main(int argc,char** argv) {
                 hetero::DirectSharedBinder bind_slot;
                 if (direct_verified) bind_slot = [&](const hetero::SharedActivation& slot, std::string& e) {
                     auto b = hetero::register_verified_slot(registration,slot,static_cast<int>(plan.stages[index].ordinal),plan);
+                    b.guarded=guarded_direct;
                     return driver.bind_direct_output(b,e);
                 };
                 std::cerr << "HETERO_CUDA_MAPPED_EGRESS enabled=" << mapped_egress << '\n';
@@ -244,7 +248,7 @@ int main(int argc,char** argv) {
                 try {
                     hetero::serve_worker_stateful(3,plan,index,executor,
                         static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
-                        &window_limits,startup_wait_ms,std::move(prefill),std::move(bind_slot));
+                        &window_limits,startup_wait_ms,std::move(prefill),std::move(bind_slot),guarded_direct);
                 } catch (...) {
                     executor.shutdown(); driver.shutdown();
                     if (!registration.release_after_drain()) std::_Exit(70);

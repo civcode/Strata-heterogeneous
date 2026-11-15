@@ -26,7 +26,7 @@ Frame control(const Plan& plan, size_t index, Kind kind, uint64_t request = 1,
     f.rows = rows;
     f.plan_fingerprint = plan.fingerprint();
     f.geometry = plan.geometry;
-    if (kind == Kind::hello_final || kind == Kind::hello_shared_final || kind == Kind::hello_direct_shared_final) {
+    if (kind == Kind::hello_final || kind == Kind::hello_shared_final || kind == Kind::hello_direct_shared_final || kind == Kind::hello_guarded_direct_final) {
         const Stage& s = plan.stages.at(index);
         f.identity = {static_cast<uint32_t>(s.backend), s.ordinal, s.first_layer, s.end_layer};
     }
@@ -67,12 +67,13 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
 void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                               FinalStageExecutor& executor, int timeout_ms,
                               bool shared_memory, const WindowLimits* limits, int startup_wait_ms, bool group_hip,
-                              NativePrefillHandler prefill, DirectSharedBinder direct_bind) {
+                              NativePrefillHandler prefill, DirectSharedBinder direct_bind, bool guarded_direct) {
     plan.validate();
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
+    if (guarded_direct && !direct_bind) throw std::invalid_argument("guarded consumer needs registered slot");
     Frame hello = control(plan, index,
-        direct_bind ? Kind::hello_direct_shared_final :
+        direct_bind ? (guarded_direct ? Kind::hello_guarded_direct_final : Kind::hello_direct_shared_final) :
         shared_memory ? Kind::hello_shared_final : Kind::hello_final);
     if (group_hip) {
         const auto d = worker_domains(plan, true).back();
@@ -86,8 +87,8 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
     SharedActivation shared;
     if (direct_bind) {
         if (!shared_memory || !limits || !group_hip || !direct_verified_plan(plan) || prefill ||
-            executor.receiver_arm_enabled() || executor.mtp_relay_enabled())
-            throw std::invalid_argument("direct verified consumer requires bounded grouped HIP without prearm or prefill");
+            executor.receiver_arm_enabled() != guarded_direct || executor.mtp_relay_enabled())
+            throw std::invalid_argument("direct consumer requires bounded grouped HIP and matching checked prearm capability");
         shared = SharedActivation::receive(fd, timeout_ms);
         if (!direct_bind(shared, error)) throw std::runtime_error(error);
     }
@@ -277,10 +278,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified, bool early_window_spec)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified, bool early_window_spec, bool guarded_direct)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified), early_window_spec_(early_window_spec) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified), early_window_spec_(early_window_spec), guarded_direct_(guarded_direct) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
@@ -290,6 +291,7 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
     if (direct_verified_ && (!group_hip || !shared_memory_ || !direct_verified_plan(plan_) ||
         receiver_arm_ || mtp_relay_ || require_compact_ || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("direct verified mode requires two bounded mixed domains, shared and full logits");
+    if (guarded_direct_ && !direct_verified_) throw std::invalid_argument("guarded direct requires direct verified transport");
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
     if (early_window_spec_ && (!resident_ || !group_hip || !shared_memory_ ||
@@ -328,7 +330,8 @@ void FinalPipelineSession::initialize() {
             if (!hello) throw std::runtime_error("worker closed before final pipeline hello");
             if (hello->kind == Kind::failure) throw std::runtime_error("worker preparation: " + hello->error);
             const bool last = i + 1 == fds_.size();
-            const Kind kind = direct_verified_ ? (last ? Kind::hello_direct_shared_final : Kind::hello_direct_shared)
+            const Kind kind = guarded_direct_ ? (last ? Kind::hello_guarded_direct_final : Kind::hello_guarded_direct) :
+                          direct_verified_ ? (last ? Kind::hello_direct_shared_final : Kind::hello_direct_shared)
                           : last ? (shared_memory_ ? Kind::hello_shared_final : Kind::hello_final)
                                  : (shared_memory_ ? Kind::hello_shared : Kind::hello);
             const Frame expected = control(plan_, endpoints_[i], kind);
@@ -496,7 +499,7 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             downstream.window = spec;
             send_frame(fds_.back(), downstream, timeout_ms_);
         }
-        if (receiver_arm_) {
+        if (receiver_arm_ || guarded_direct_) {
             PerformanceSpan arm("coordinator", "receiver_arm_ack", endpoints_.back(), initial.request_id,
                                 initial.window_id, initial.rows);
             // No producer launch before a full-identity ACK from the armed consumer.
@@ -518,7 +521,7 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             {
                 PerformanceSpan send("coordinator", "stage_send_spec", endpoints_[i], initial.request_id,
                                      initial.window_id, initial.rows);
-                if ((!receiver_arm_ && !early_window_spec_) || i + 1 != fds_.size())
+                if ((!receiver_arm_ && !early_window_spec_ && !guarded_direct_) || i + 1 != fds_.size())
                     send_frame(fds_[i], context, timeout_ms_);
             }
             initial.stage_index = static_cast<uint32_t>(endpoints_[i]);

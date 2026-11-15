@@ -185,7 +185,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
                    bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false,
-                   bool direct_verified = false, bool bad_producer = false) {
+                   bool direct_verified = false, bool bad_producer = false, bool guarded_direct = false) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -258,13 +258,13 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     final.unmarked_logit = unmarked_logit;
                     final.fail_reset = fail_reset;
                     serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, (resident || mtp_mode || direct_verified) ? &limits : nullptr,
-                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf, bind);
+                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf, bind, guarded_direct);
                 } else {
                     MockStageExecutor intermediate;
                     NonfiniteProducer corrupt;
                     StageExecutor& selected = bad_producer ? static_cast<StageExecutor&>(corrupt) : static_cast<StageExecutor&>(intermediate);
                     serve_worker_stateful(fd[1], plan, i, selected, 1200, shared, (resident || direct_verified) ? &limits : nullptr,
-                                          delayed_startup ? 4000 : -1, pf, bind);
+                                          delayed_startup ? 4000 : -1, pf, bind, guarded_direct);
                 }
                 ::close(fd[1]);
                 ::_exit(0);
@@ -744,6 +744,41 @@ void negative(bool shared, bool fanout) {
         check(pipe.poisoned(), "wrong final capability poisons coordinator");
     }
 }
+void guarded_direct_protocol() {
+    const Plan p = parse_plan("cuda:0:0-15,hip:0:15-33,hip:1:33-48",48,{4,2560},3719);
+    auto start=[&](bool corrupt, bool guarded, int arm){
+        return launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,arm,0,false,true,corrupt,guarded);
+    };
+    {
+        auto w=start(false,true,1);
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,
+                                  false,false,false,false,true,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});
+        check(pipe.commit(2).predicted_tokens[0]==18,"guarded direct partial prefix");
+        pipe.execute_discard(input_frame(p,1,2),{2,{4,5,6}});
+        check(pipe.commit(3).predicted_tokens[0]==21,"guarded direct slot reuse");
+        pipe.begin_request(2);
+        pipe.execute_discard(input_frame(p,2,1),{0,{1,2,3}});
+        check(pipe.commit(3).request_id==2,"guarded direct resident reset");
+    }
+    {
+        auto w=start(true,true,1);
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,
+                                  false,false,false,false,true,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        fails([&]{pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});},"guarded direct corrupt producer blocked");
+        check(pipe.poisoned(),"guarded direct failure poisons all peers");
+        fails([&]{(void)pipe.commit(1);},"guarded direct failure cannot commit");
+    }
+    {
+        auto w=start(false,false,0);
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,
+                                  false,false,false,false,true,false,true);
+        fails([&]{pipe.initialize();},"legacy direct worker cannot attest guarded publication");
+        check(pipe.poisoned(),"guarded capability mismatch poisons session");
+    }
+}
 void direct_verified_protocol() {
     const Plan p = parse_plan("cuda:0:0-15,hip:0:15-33,hip:1:33-48",48,{4,2560},3719);
     check(direct_verified_plan(p),"preferred mixed direct admission");
@@ -844,6 +879,7 @@ int main() {
         startup_barrier(false); startup_barrier(true);
         startup_frame_failures();
         direct_verified_protocol();
+        guarded_direct_protocol();
         early_window_protocol();
         native_prefill_protocol(false); native_prefill_protocol(true);
         hip_only_local_failure(false); hip_only_local_failure(true);

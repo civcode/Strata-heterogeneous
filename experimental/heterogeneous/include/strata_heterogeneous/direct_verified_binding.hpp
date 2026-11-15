@@ -14,6 +14,7 @@ struct DirectVerifiedBinding {
     uint32_t* host_ready = nullptr;
     uint32_t* device_ready = nullptr;
     size_t capacity = 0;
+    bool guarded = false; // explicit checked device publication
 
     explicit operator bool() const noexcept {
         return transport && device_payload && host_ready && device_ready && capacity &&

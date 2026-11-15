@@ -183,6 +183,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     const bool overlap = hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP");
     const bool arm = hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM");
     const bool direct_verified = hetero::performance_flag("STRATA_HETERO_DIRECT_VERIFIED");
+    const bool guarded_direct = hetero::performance_flag("STRATA_HETERO_GUARDED_DIRECT");
+    if (guarded_direct && (!direct_verified || c.max_cells!=2048 || c.free_reserve_bytes<1073741824ull ||
+        configs.back().fields.free_reserve_bytes<1073741824ull))
+        throw std::runtime_error("guarded HIP requires direct verified 2K capacity and 1 GiB reserve per owner");
     if (direct_verified && (!invocation.shared_memory || !overlap || arm || compact || c.max_t != 8 ||
         !hetero::direct_verified_plan(plan) || std::getenv("STRATA_HETERO_MTP_PROBE_RT")))
         throw std::runtime_error("direct verified HIP requires mixed shared full-logit native overlap with max_t=8");
@@ -234,10 +238,11 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
                                                   last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round,three_round_variable,std::move(generation),resident_generation);
     }
     hetero::DirectHandoffRegistration registration;
-    hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
+    hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm,guarded_direct});
     hetero::DirectSharedBinder bind_slot;
     if (direct_verified) bind_slot = [&](const hetero::SharedActivation& slot, std::string& e) {
         auto b = hetero::register_verified_slot(registration,slot,static_cast<int>(plan.stages[domain.first_stage].ordinal),plan);
+        b.guarded=guarded_direct;
         return final.bind_direct_input(b,e);
     };
     if (mtp) final.set_observer(mtp.get());
@@ -252,7 +257,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         };
     try {
         hetero::serve_final_stage_worker(3,plan,invocation.stage_index,final,static_cast<int>(c.io_timeout_ms),
-            invocation.shared_memory,&limits,startup_wait_ms,true,std::move(prefill),std::move(bind_slot));
+            invocation.shared_memory,&limits,startup_wait_ms,true,std::move(prefill),std::move(bind_slot),guarded_direct);
     } catch (...) {
         final.shutdown();
         if (!registration.release_after_drain()) std::_Exit(70);

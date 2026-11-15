@@ -281,6 +281,9 @@ public:
     void set_handoff_flags(uint32_t* in_host, uint32_t* in_dev, uint32_t* out_host, uint32_t* out_dev) {
         hflag_in_h_ = in_host; hflag_in_d_ = in_dev; hflag_out_h_ = out_host; hflag_out_d_ = out_dev;
     }
+    /// Explicit heterogeneous guarded native edge, set before init. Both
+    /// endpoints must use the checked ready-word ABI; never mix with legacy.
+    void set_guarded_handoff(bool enabled) { guarded_handoff_ = enabled; }
     /// The next stage: `run` and `commit` continue into it (its pool calls get `next_user`); sampling settings
     /// and `final_R` are the last stage's.
     void set_next(Verifier* next, void* next_user) { next_ = next; next_user_ = next_user; }
@@ -650,6 +653,7 @@ private:
     int handoff_rows_ = 0;               ///< set_handoff_rows (0: kVerifyNarrowT)
     const float* hand_in_ = nullptr;
     float* hand_out_ = nullptr;
+    bool guarded_handoff_ = false;
     uint32_t* hflag_in_h_ = nullptr;     ///< set_handoff_flags: the incoming hand-off's ready word (host / device)
     uint32_t* hflag_in_d_ = nullptr;
     uint32_t* hflag_out_h_ = nullptr;    ///< ... and the outgoing one's

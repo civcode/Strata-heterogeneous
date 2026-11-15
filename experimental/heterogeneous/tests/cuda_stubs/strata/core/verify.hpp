@@ -73,6 +73,7 @@ public:
     }
     void set_handoff_rows(int n) { fake_verify::rows = n; }
     void set_next(Verifier*, void*) {}
+    void set_guarded_handoff(bool) {}
     void set_handoff_flags(uint32_t*, uint32_t*, uint32_t* host, uint32_t*) { fake_verify::output_flag = host; }
     void set_always_publish(bool b) { fake_verify::publish = b; }
     void set_head_sampling(bool) {}

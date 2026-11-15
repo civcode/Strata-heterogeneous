@@ -111,6 +111,7 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
         direct_ ? direct_.device_ready : mapped_output_ ? mapped_output_->device_flag() : nullptr);
     // Prevent T=1 from committing GDN/indexer state inside run(). Also forces
     // pool publication, so an actual live pool is mandatory even if resident.
+    verifier_->set_guarded_handoff(direct_ && direct_.guarded);
     verifier_->set_always_publish(true);
     verifier_->set_head_sampling(false);
     if (!taps_.configure(*verifier_, plan, index, error)) return false;
@@ -216,7 +217,8 @@ bool CudaVerifierDriver::enqueue_execute(const Frame& frame, std::string& error)
     }
     state_ = State::executing;
     if (direct_) {
-        // Prior commit is drained; the receiver is not armed in this mode.
+        // Guarded mode is armed by the consumer before producer dispatch.
+        // The previous prefix commit drained both domains in either mode.
         *static_cast<volatile uint32_t*>(direct_.host_ready) = 0;
         std::atomic_thread_fence(std::memory_order_seq_cst);
         strata_store_fence();

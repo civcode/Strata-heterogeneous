@@ -95,6 +95,7 @@ public:
     }
     void set_handoff_rows(int n){fake_final::rows=n;}
     void set_next(Verifier* next,void* user){next_=next;next_user_=user;}
+    void set_guarded_handoff(bool) {}
     void set_handoff_flags(uint32_t* ih,uint32_t* id,uint32_t* oh,uint32_t* od){
         fake_final::incoming_flags.push_back(ih == id ? ih : nullptr);
         fake_final::outgoing_flags.push_back(oh == od ? oh : nullptr);

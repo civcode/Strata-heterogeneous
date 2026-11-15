@@ -70,6 +70,7 @@ struct Options {
     bool receiver_arm = false;
     bool cuda_mapped_egress = false;
     bool direct_verified = false;
+    bool guarded_direct = false;
     std::string pipeline_mode; // empty preserves historical environment-controlled behavior
     hetero::KvMode kv = hetero::default_kv_mode;
     bool kv_explicit = false;
@@ -128,7 +129,7 @@ void usage() {
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
         "  [--split-reference-capture --capture-revision SHA --capture-binary-sha256 SHA] (ungrouped, explicit KV, canonical plans)\n"
-        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--kv int8|f16] [--run]\n"
+        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--guarded-direct-prelaunch] [--kv int8|f16] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
         "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
@@ -229,6 +230,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--receiver-arm") o.receiver_arm = true;
         else if (key == "--cuda-mapped-egress") o.cuda_mapped_egress = true;
         else if (key == "--direct-verified-shared") o.direct_verified = true;
+        else if (key == "--guarded-direct-prelaunch") o.guarded_direct = true;
         else if (key == "--kv") {
             if (o.kv_explicit) throw std::invalid_argument("duplicate --kv");
             o.kv = hetero::parse_kv_mode(required_value(i,argc,argv,"--kv"));
@@ -463,6 +465,9 @@ Options parse(int argc, char** argv) {
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
         o.mtp_probe_rt.find_first_of("\r\n")!=std::string::npos))
         throw std::invalid_argument("MTP probe requires explicit fixed tokens, absolute runtime path, grouped HIP overlap, nonresident and no receiver arm");
+    if (o.guarded_direct && (!o.direct_verified || o.generate || o.resident || o.workload_mode ||
+        o.long_context || o.warmup_windows || o.windows > 8))
+        throw std::invalid_argument("guarded direct is restricted to bounded fixed-token smoke with direct verified transport");
     if (o.direct_verified && (!o.shared || !o.group_hip || !o.hip_split_overlap ||
         o.receiver_arm || o.cuda_mapped_egress || o.native_prefill_chunk || o.lookup_draft ||
         o.describe_source || o.boundary_capture || o.layer_taps || o.layer_zero_probe ||
@@ -702,6 +707,9 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         if (o.direct_verified && (config.max_cells != 2048 || config.max_t != 8 ||
             config.max_cache_slots != uint64_t(config.end_layer-config.first_layer)*512))
             throw std::invalid_argument("direct verified qualification requires 2K context, max_t=8 and full residency");
+        if (o.guarded_direct && (config.free_reserve_bytes < 1073741824ull || config.arena_budget_bytes ||
+            config.index_sha256 != hetero::mtp_qualification_index))
+            throw std::invalid_argument("guarded direct requires Q2_0 full native arenas and at least 1 GiB reserve");
         const bool invalid_token = o.tokens.empty()
             ? config.n_vocab <= o.token
             : std::any_of(o.tokens.begin(), o.tokens.end(),
@@ -998,6 +1006,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     } else if (::unsetenv("STRATA_HETERO_MTP_PROBE_RT")!=0 || ::unsetenv("STRATA_HETERO_MTP_PROBE_WINDOWS")!=0 ||
                ::unsetenv("STRATA_HETERO_MTP_RELAY_ROUNDS")!=0)
         throw std::runtime_error("cannot clear inherited MTP probe mode");
+    if (::setenv("STRATA_HETERO_GUARDED_DIRECT", o.guarded_direct ? "1" : "0", 1) != 0)
+        throw std::runtime_error("cannot configure guarded direct mode");
     if (::setenv("STRATA_HETERO_DIRECT_VERIFIED", o.direct_verified ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit direct verified mode");
     if (::setenv("STRATA_HETERO_CUDA_MAPPED_EGRESS", o.cuda_mapped_egress ? "1" : "0", 1) != 0)
@@ -1047,12 +1057,13 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     } diagnostic_drain{workers,true,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
                                          fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation,o.mtp_resident_prompt_rows!=0,o.direct_verified,
-                                         o.pipeline_mode == "fast" && workers.size() == 2);
+                                         o.pipeline_mode == "fast" && workers.size() == 2,o.guarded_direct);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
               << " hip_split_overlap=" << o.hip_split_overlap << " receiver_arm=" << o.receiver_arm
               << " cuda_mapped_egress=" << o.cuda_mapped_egress
+              << " guarded_direct_prelaunch=" << o.guarded_direct
               << " direct_verified_shared=" << o.direct_verified
               << " pipeline_mode=" << (o.pipeline_mode.empty() ? "legacy" : o.pipeline_mode)
               << " compact=" << compact << " fanout=" << fanout

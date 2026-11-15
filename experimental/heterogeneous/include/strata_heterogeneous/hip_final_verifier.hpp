@@ -42,6 +42,7 @@ struct HipFinalVerifierOptions {
     bool include_logits = true; // fail-closed default when GPU nonfinite guard is off
     bool native_split_overlap = false; // qualification only; HIP-local edge
     bool receiver_arm = false; // qualification only; CPU-mediated vendor edge
+    bool guarded_direct = false; // qualification only; checked GPU publication
 };
 
 // Final-stage counterpart to HipVerifierDriver. Deliberately not a
@@ -67,7 +68,7 @@ public:
     bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
     bool begin_window(const WindowSpec&, uint64_t request_id,
                       uint64_t window_id, std::string&) override;
-    bool receiver_arm_enabled() const noexcept override { return options_.receiver_arm; }
+    bool receiver_arm_enabled() const noexcept override { return options_.receiver_arm || options_.guarded_direct; }
     bool arm_window(std::string&) override;
     bool mtp_relay_enabled() const noexcept override { return observer_ && observer_->relay_enabled(); }
     bool mtp_anchor_only_enabled() const noexcept override { return observer_ && observer_->anchor_only_enabled(); }

@@ -22,7 +22,7 @@ public:
     bool prepare(const Plan& plan, const std::vector<HipNativeChainStage>& stages,
                  const float* input, const core::NativeHead* head, std::string& error,
                  bool split_overlap = false, uint32_t* input_flag_host = nullptr,
-                 uint32_t* input_flag_device = nullptr) {
+                 uint32_t* input_flag_device = nullptr, bool guarded = false) {
         if (attempted_) { error = "HIP chain already attempted"; return false; }
         attempted_ = true;
         try {
@@ -39,6 +39,9 @@ public:
             }
             if (split_overlap && (stages.size() != 2 || plan.stages[domain.first_stage+1].first_layer <= 1)) {
                 error = "native HIP split overlap requires two stages and no downstream PLE"; return false;
+            }
+            if (guarded && (!split_overlap || !input_flag_host || stages.size()!=2)) {
+                error = "guarded chain requires two overlapped HIP stages and external ready word"; return false;
             }
             const auto& first = stages.front().bindings;
             if (first.max_t < 1 || first.max_t > strata::kernels::kVerifyMaxT || !first.pool ||
@@ -122,6 +125,7 @@ public:
                                         j+1 < stages.size() ? hands_[j].flag_host : nullptr,
                                         j+1 < stages.size() ? hands_[j].flag_writer : nullptr);
                 // Preserve transactional accepted-prefix commit in both modes.
+                v.set_guarded_handoff(guarded);
                 v.set_always_publish(true);
                 v.set_head_sampling(j + 1 == stages.size());
                 if (!v.init(b.weights, b.geometry, b.session, b.hits,

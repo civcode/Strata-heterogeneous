@@ -26,7 +26,7 @@ Frame control(const Plan& plan, size_t index, Kind kind,
     f.rows = rows;
     f.geometry = plan.geometry;
     f.plan_fingerprint = plan.fingerprint();
-    if (kind == Kind::hello || kind == Kind::hello_shared || kind == Kind::hello_direct_shared) {
+    if (kind == Kind::hello || kind == Kind::hello_shared || kind == Kind::hello_direct_shared || kind == Kind::hello_guarded_direct) {
         const Stage& stage = plan.stages.at(index);
         f.identity = {static_cast<uint32_t>(stage.backend), stage.ordinal,
                       stage.first_layer, stage.end_layer};
@@ -225,11 +225,12 @@ void MockStageExecutor::shutdown() noexcept { pending_ = false; has_spec_ = fals
 
 void serve_worker_stateful(int fd, const Plan& plan, size_t index,
                            StageExecutor& executor, int timeout_ms, bool shared_memory,
-                           const WindowLimits* limits, int startup_wait_ms, NativePrefillHandler prefill, DirectSharedBinder direct_bind) {
+                           const WindowLimits* limits, int startup_wait_ms, NativePrefillHandler prefill, DirectSharedBinder direct_bind, bool guarded_direct) {
     plan.validate();
     if (index >= plan.stages.size()) throw std::invalid_argument("worker index out of range");
     if (timeout_ms < 0) throw std::invalid_argument("negative worker timeout");
-    const Frame hello = control(plan, index, direct_bind ? Kind::hello_direct_shared :
+    if (guarded_direct && !direct_bind) throw std::invalid_argument("guarded producer needs registered slot");
+    const Frame hello = control(plan, index, direct_bind ? (guarded_direct ? Kind::hello_guarded_direct : Kind::hello_direct_shared) :
                                 shared_memory ? Kind::hello_shared : Kind::hello);
     std::unique_ptr<WindowAdmission> gate;
     if (limits) gate = std::make_unique<WindowAdmission>(plan, index, *limits);

@@ -173,6 +173,11 @@ void test_wire() {
     throws([&] { (void) decode(bad_hello); }, "invalid hello length rejected");
     hello.kind = Kind::hello_shared;
     check(decode(encode(hello)).identity == hello.identity, "shared worker handshake roundtrip");
+    for (auto kind : {Kind::hello_guarded_direct, Kind::hello_guarded_direct_final}) {
+        hello.kind = kind;
+        const auto decoded = decode(encode(hello));
+        check(decoded.kind == kind && decoded.identity == hello.identity, "guarded capability hello roundtrip");
+    }
     Frame shared = input(p, 52, 901, 2);
     shared.kind = Kind::shared_data; shared.payload.clear();
     shared.shared_checksum = 0xfedcba98;
