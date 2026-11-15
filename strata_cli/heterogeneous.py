@@ -38,6 +38,8 @@ def add_arguments(parser):
     parser.add_argument("--benchmark-repeat", type=int, default=1, help="repeat resident prompt sequence 1..20 times; JSON includes timing")
     parser.add_argument("--timeout-ms", type=int, default=120000, help="per worker I/O operation")
     parser.add_argument("--shared", action="store_true", help="use existing memfd transport")
+    parser.add_argument("--kv", choices=("int8", "f16"), default="int8",
+                        help="native KV cache: int8 (Q8, default) or f16 (reference)")
     parser.add_argument("--group-native-hip", action="store_true", help="use one native HIP domain for both HIP stages")
     parser.add_argument("--native-prefill-chunk", type=int, default=0, help="native bulk prefill chunk, 1..2048; 0 disables")
     parser.add_argument("--run", action="store_true", help="explicitly start native GPU workers; default is preflight only")
@@ -99,6 +101,13 @@ def worker_arguments(args):
     return result
 
 
+def kv_argument(args):
+    mode = getattr(args, "kv", "int8")
+    if not isinstance(mode, str) or mode not in ("int8", "f16"):
+        raise ValueError("heterogeneous KV mode must be int8 or f16")
+    return mode
+
+
 def prepare_native(args):
     """CPU-only source/identity and tokenizer loading for the CLI and server."""
     from serve.heterogeneous_contract import generation_limits
@@ -109,6 +118,8 @@ def prepare_native(args):
     argv = [_path(args.coordinator, True), "--plan", args.plan, "--fingerprint", str(args.fingerprint),
             "--layers", str(args.layers), "--hc", str(args.hc), "--n-embd", str(args.n_embd),
             "--timeout-ms", str(args.timeout_ms)] + worker_arguments(args)
+    kv = kv_argument(args)
+    argv.extend(("--kv", kv))
     for config in args.config:
         argv.extend(("--config", _path(config)))
     if args.shared:
@@ -124,6 +135,8 @@ def prepare_native(args):
     # The native config parser determines the authorized tokenizer source;
     # never accept an independently supplied tokenizer or ByteTokenizer.
     source = _native(argv + ["--describe-source"], marker="HETERO_SOURCE")
+    if source.get("kv") != kv:
+        raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
     gguf = source.get("gguf")
     index = source.get("pack_index_sha256")
     vocab = source.get("vocab")
@@ -218,6 +231,7 @@ def write_server_config(args):
                ("plan", "fingerprint", "layers", "hc", "n_embd", "max_new_tokens",
                 "prompt_chunk", "max_context", "timeout_ms", "shared", "stream_tokens",
                 "restart_clean", "lookup_draft", "group_native_hip", "native_prefill_chunk", "workload_mode")}}
+    cfg["heterogeneous"]["kv"] = kv_argument(args)
     cfg["heterogeneous"]["coordinator"] = _path(args.coordinator, True)
     workers = worker_arguments(args)
     for flag, value in zip(workers[::2], workers[1::2]):

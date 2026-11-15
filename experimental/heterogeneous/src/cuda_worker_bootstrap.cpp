@@ -24,11 +24,16 @@ uint32_t as_u32(const char* s) {
 bool parse_cuda_worker_invocation(int argc,const char* const* argv,
                                   CudaWorkerInvocation& out,std::string& error) {
     try {
-        if(argc!=10||!argv||!argv[1]||!argv[8]||!argv[9]||
+        if((argc!=10 && argc!=12)||!argv||!argv[1]||!argv[8]||!argv[9]||
            (std::string(argv[1])!="--worker"&&std::string(argv[1])!="--worker-shared")||
            std::string(argv[8])!="--config")
             throw std::invalid_argument("expected --worker[/-shared] plan layers hc n_embd fingerprint stage_index --config /absolute/path");
         CudaWorkerInvocation w;
+        if (argc == 12) {
+            if (!argv[10] || !argv[11] || std::string_view(argv[10]) != "--kv")
+                throw std::invalid_argument("expected --kv int8|f16");
+            w.kv = parse_kv_mode(argv[11]);
+        }
         w.shared_memory=std::string(argv[1])=="--worker-shared";
         w.plan=parse_plan(argv[2],as_u32(argv[3]),{as_u32(argv[4]),as_u32(argv[5])},number(argv[6]));
         w.stage_index=as_u32(argv[7]);

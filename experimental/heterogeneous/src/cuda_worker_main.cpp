@@ -115,7 +115,7 @@ int main(int argc,char** argv) {
             (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
             if(compact && index+1==plan.stages.size() && !strata::core::Verifier::nan_guard_on())
                 throw std::runtime_error("compact result requires native GPU nonfinite guard");
-            strata_heterogeneous_native_worker_defaults();
+            strata_heterogeneous_native_worker_defaults(invocation.kv);
             const auto& geometry=strata::core::kCompiledGeometry;
             hetero::CudaStageResources owner(geometry,plan.model_fingerprint);
             hetero::CudaStageLoadOptions lo;
@@ -150,6 +150,7 @@ int main(int argc,char** argv) {
             if(!owner.attach_experts(std::move(experts),error))
                 throw std::runtime_error("expert provider startup: "+error);
             auto bindings=owner.make_bindings();
+            strata_heterogeneous_verify_kv(bindings.session,invocation.kv,index);
             if (direct_verified) {
                 const auto& hits = bindings.hits;
                 if (!hits.h_res || !hits.d_res || !hits.cache_base || hits.n_slots <= 0)

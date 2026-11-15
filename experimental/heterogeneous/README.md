@@ -856,3 +856,7 @@ The subsequent [M2.18–M2.22 validation](docs/BOUNDARY_VALIDATION_M218_M222.md)
 reported exact native handoff bytes and bounded partial-prefix success, not
 another cross-backend kernel localization. Retain the opt-in observation and
 existing runner; no additional kernel changes are justified by this evidence.
+
+## Native KV format (after 0038)
+
+Ordinary heterogeneous inference defaults to vanilla's `--kv int8` (Q8 K/V with FP16 scales per 64 values), on both CUDA and HIP. Native CLI and Python text CLI accept `--kv f16` as the explicit reference. Resident server JSON uses `"heterogeneous": {"kv": "int8", ...}` (omission selects int8). The coordinator passes the selected mode as an explicit worker argv suffix before any native memory sizing; rebuild all native binaries together. Each native worker checks its actual QSA state format and complete VRAM residency and prints `HETERO_KV` for each physical stage. The CPU preflight source includes the selected `kv`. Keep earlier FP16 benchmarks labeled FP16 and rerun with matched settings. Existing specialized parity/MTP captures retain FP16 by default and refuse an explicit int8 request until separately qualified. The ordinary direct-verified shared path can select either format, but INT8 is pending hardware validation. No new 256K admission, KV spilling, elastic allocation, MTP promotion, or native kernel modification. Native RDNA4 INT8 prompt-attention dispatch retains vanilla architecture and environment selection rules; confirm it actually runs on the supported workload.

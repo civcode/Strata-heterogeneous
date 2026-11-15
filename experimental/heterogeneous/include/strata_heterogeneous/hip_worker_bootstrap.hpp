@@ -1,6 +1,7 @@
 #pragma once
 // Runtime-free parser for the separate HIP subprocess invocation.
 #include "strata_heterogeneous/host.hpp"
+#include "strata_heterogeneous/kv_mode.hpp"
 #include <cstddef>
 #include <string>
 namespace strata::heterogeneous {
@@ -8,6 +9,8 @@ struct HipWorkerInvocation {
     Plan plan;
     size_t stage_index = 0;
     bool shared_memory = false;
+    // Legacy internal argv without --kv retains its historical FP16 contract.
+    KvMode kv = KvMode::f16;
     std::string config_path;
     // Ordered physical HIP configs only for the explicit grouped mode.
     std::vector<std::string> domain_configs;

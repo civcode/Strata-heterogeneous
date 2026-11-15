@@ -107,7 +107,8 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_executable,
                                             const std::string& hip_executable, bool shared_memory,
                                             const std::string& cuda_config_path,
-                                            const std::vector<std::string>& stage_config_paths, bool group_hip, int graceful_only_timeout_ms) {
+                                            const std::vector<std::string>& stage_config_paths, bool group_hip, int graceful_only_timeout_ms,
+                                            std::optional<KvMode> kv) {
     const auto domains = worker_domains(plan, group_hip);
     // An unsplit native reference uses one backend. Only the worker
     // executable(s) named by this plan must exist; mixed plans need both.
@@ -132,6 +133,10 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
         for (const auto& path : stage_config_paths)
             if (path.empty()) throw std::invalid_argument("grouped mode requires nonempty stage configs");
     }
+    if (kv && stage_config_paths.size() != plan.stages.size())
+        throw std::invalid_argument("explicit KV mode needs configured native workers");
+    if (kv) for (const auto& path : stage_config_paths)
+        if (path.empty()) throw std::invalid_argument("explicit KV mode needs nonempty stage configs");
     const std::string spec = plan_spec(plan);
     const std::string no_config;
     WorkerProcessGroup group;
@@ -174,6 +179,9 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                 args.push_back("--config");
                 args.push_back(config_path);
             }
+            // An explicit argv capability makes pre-Q8 workers reject the
+            // launch instead of silently running their old FP16 default.
+            if (kv) { args.push_back("--kv"); args.push_back(kv_mode_name(*kv)); }
             std::vector<char*> argv;
             for (auto& a : args) argv.push_back(a.data());
             argv.push_back(nullptr);

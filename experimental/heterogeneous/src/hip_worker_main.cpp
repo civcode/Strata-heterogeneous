@@ -145,6 +145,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         auto owner = std::make_unique<LoadedHipStage>(plan.model_fingerprint);
         owner->load(plan,domain.first_stage+j,configs[j].fields);
         const auto b=owner->owner.make_bindings();
+        strata_heterogeneous_verify_kv(b.session,invocation.kv,domain.first_stage+j);
         bindings.push_back({b,configs[j].fields.free_reserve_bytes});
         pf_stages.push_back({b.weights,b.geometry,b.session,owner->pf_resources,
             configs[j].fields.free_reserve_bytes,configs[j].fields.arena_budget_bytes});
@@ -259,7 +260,7 @@ int main(int argc,char** argv) {
                 (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
                 if (compact && !strata::core::Verifier::nan_guard_on())
                     throw std::runtime_error("compact result requires native GPU nonfinite guard");
-                strata_heterogeneous_native_worker_defaults();
+                strata_heterogeneous_native_worker_defaults(invocation.kv);
                 serve_native_hip_domain(invocation,compact,startup_wait_ms);
                 return 0;
             }
@@ -287,10 +288,11 @@ int main(int argc,char** argv) {
             (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
             if(compact && index+1==plan.stages.size() && !strata::core::Verifier::nan_guard_on())
                 throw std::runtime_error("compact result requires native GPU nonfinite guard");
-            strata_heterogeneous_native_worker_defaults();
+            strata_heterogeneous_native_worker_defaults(invocation.kv);
             LoadedHipStage loaded(plan.model_fingerprint);
             loaded.load(plan,index,c);
             auto bindings=loaded.owner.make_bindings();
+            strata_heterogeneous_verify_kv(bindings.session,invocation.kv,index);
             const hetero::WindowLimits window_limits{
                 0, static_cast<int64_t>(c.max_cells),
                 static_cast<int64_t>(c.n_vocab), c.max_t};

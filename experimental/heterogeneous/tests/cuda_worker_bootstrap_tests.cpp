@@ -11,6 +11,11 @@ int main(){try{
  const char* argv[]={"worker","--worker","cuda:0:0-12,hip:0:12-30,hip:1:30-48","48","4","2560","12345","0","--config","/tmp/test.cfg",nullptr};
  CudaWorkerInvocation parsed;std::string error;
  need(parse_cuda_worker_invocation(10,argv,parsed,error),"valid launcher syntax");
+ need(parsed.kv==KvMode::f16,"legacy FP16 worker argv");
+ const char* q8[]={"worker","--worker","cuda:0:0-12,hip:0:12-30,hip:1:30-48","48","4","2560","12345","0","--config","/tmp/test.cfg","--kv","int8"};
+ need(parse_cuda_worker_invocation(12,q8,parsed,error)&&parsed.kv==KvMode::int8,"explicit int8");
+ q8[11]="f16"; need(parse_cuda_worker_invocation(12,q8,parsed,error)&&parsed.kv==KvMode::f16,"explicit f16");
+ q8[11]="q4"; need(!parse_cuda_worker_invocation(12,q8,parsed,error)&&parsed.kv==KvMode::f16,"unsupported mode refused without mutation");
  need(parsed.plan.total_layers==48&&parsed.plan.stages.size()==3,"plan parsed");
  need(parsed.stage_index==0&&!parsed.shared_memory,"basic flags");
  need(parsed.plan.model_fingerprint==12345&&parsed.config_path=="/tmp/test.cfg","exact identity");

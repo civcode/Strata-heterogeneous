@@ -59,6 +59,12 @@ int main() {
         const char* group[] = {"worker","--worker-hip-domain-shared","cuda:0:0-3,hip:0:3-7,hip:1:7-10",
             "10","2","6","999","2","--config","/tmp/hip-stage1.cfg","--config","/tmp/hip-stage2.cfg"};
         need(parse_hip_worker_invocation(12,group,parsed,error),"grouped HIP argv");
+        need(parsed.kv==KvMode::f16,"legacy FP16 argv");
+        const char* q8[]={"worker","--worker-hip-domain-shared","cuda:0:0-3,hip:0:3-7,hip:1:7-10",
+            "10","2","6","999","2","--config","/tmp/hip-stage1.cfg","--config","/tmp/hip-stage2.cfg","--kv","int8"};
+        need(parse_hip_worker_invocation(14,q8,parsed,error)&&parsed.kv==KvMode::int8,"grouped explicit int8");
+        q8[13]="f16"; need(parse_hip_worker_invocation(14,q8,parsed,error)&&parsed.kv==KvMode::f16,"grouped explicit f16");
+        q8[13]="q4"; need(!parse_hip_worker_invocation(14,q8,parsed,error)&&parsed.kv==KvMode::f16,"bad KV mode refused");
         need(parsed.stage_index==2 && parsed.shared_memory && parsed.domain_configs.size()==2 &&
             parsed.domain_configs[0]=="/tmp/hip-stage1.cfg" && parsed.domain_configs[1]=="/tmp/hip-stage2.cfg",
             "grouped ordered physical config routing");

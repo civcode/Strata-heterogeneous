@@ -13,6 +13,7 @@
 #include "strata/spec/suffix_drafter.hpp"
 #include "strata/prefill/hc_experiment.hpp"
 #include "strata_heterogeneous/process.hpp"
+#include "strata_heterogeneous/kv_mode.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -68,6 +69,8 @@ struct Options {
     bool receiver_arm = false;
     bool cuda_mapped_egress = false;
     bool direct_verified = false;
+    hetero::KvMode kv = hetero::default_kv_mode;
+    bool kv_explicit = false;
     std::string mtp_probe_rt;
     uint32_t mtp_relay_rounds=0;
     bool mtp_fresh_replay=false, mtp_three_round=false, mtp_three_round_variable=false;
@@ -120,7 +123,7 @@ void usage() {
         "  [--layer-taps] [--layer0-probe] [--stage0-phases] [--branch-probe] [--micro-probe]\n"
         "  [--boundary-capture] (requires --capture-prefix; real GPU handoff)\n"
         "  [--placement-capture] (explicit one-row tokens, up to 128 windows, STFR only)\n"
-        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--run]\n"
+        "  [--timeout-ms 120000] [--shared] [--group-native-hip] [--hip-split-overlap] [--receiver-arm] [--cuda-mapped-egress] [--direct-verified-shared] [--kv int8|f16] [--run]\n"
         "  --mtp-probe-rt ABS_PATH: native HIP MTP qualification runtime.\n"
         "  --generation-parity-capture --capture-prefix PATH: bounded actual nonresident greedy generation control.\n"
         "  --mtp-generation-qualification: same capture, with explicit --mtp-probe-rt; not general admission.\n"
@@ -216,6 +219,11 @@ Options parse(int argc, char** argv) {
         else if (key == "--receiver-arm") o.receiver_arm = true;
         else if (key == "--cuda-mapped-egress") o.cuda_mapped_egress = true;
         else if (key == "--direct-verified-shared") o.direct_verified = true;
+        else if (key == "--kv") {
+            if (o.kv_explicit) throw std::invalid_argument("duplicate --kv");
+            o.kv = hetero::parse_kv_mode(required_value(i,argc,argv,"--kv"));
+            o.kv_explicit = true;
+        }
         else if (key == "--mtp-repeat-native-round") o.mtp_repeat_native_round=true;
         else if (key == "--mtp-front-trace") o.mtp_front_trace=true;
         else if (key == "--mtp-state-trace") o.mtp_state_trace=true;
@@ -520,6 +528,18 @@ Options parse(int argc, char** argv) {
     } else if (!o.tokens.empty() && o.tokens.size() != static_cast<size_t>(o.rows) * o.windows) {
         throw std::invalid_argument("--tokens must contain exactly rows*windows token IDs");
     }
+    // Existing tightly bound diagnostics have FP16 reference artifacts.
+    // Keep them negative-capable without changing their historical semantics.
+    const bool legacy_f16 = !o.mtp_probe_rt.empty() || o.generation_capture ||
+        o.prefill_parity_at || o.prefill_state_capture || o.prefill_stage_capture ||
+        o.prefill_hc_replay || o.numerical_trace || o.layer_taps || o.layer_zero_probe ||
+        o.stage0_phases || o.branch_probe || o.micro_probe || o.boundary_capture ||
+        o.placement_capture;
+    if (legacy_f16) {
+        if (o.kv_explicit && o.kv != hetero::KvMode::f16)
+            throw std::invalid_argument("legacy parity/MTP diagnostics require --kv f16 until separately qualified");
+        o.kv = hetero::KvMode::f16;
+    }
     return o;
 }
 void require_executable(const std::string& path, const char* label) {
@@ -645,7 +665,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << " ordinal=" << config.device_ordinal
                   << " layers=[" << config.first_layer << ',' << config.end_layer << ')'
                   << " max_cells=" << config.max_cells
-                  << " max_t=" << config.max_t << '\n';
+                  << " max_t=" << config.max_t << " kv=" << hetero::kv_mode_name(o.kv) << '\n';
     }
     if (!common_model || common_model->gguf_shards.empty())
         throw std::invalid_argument("native model source is missing");
@@ -665,6 +685,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"pack_index_sha256\":" << json_string(common_model->index_sha256)
                   << ",\"vocab\":" << common_model->n_vocab
                   << ",\"max_cells\":" << max_cells << ",\"max_t\":" << max_t
+                  << ",\"kv\":\"" << hetero::kv_mode_name(o.kv) << "\""
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
     if (o.run) {
@@ -935,7 +956,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
         throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
-        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip, o.direct_verified ? o.timeout_ms : -1);
+        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip, o.timeout_ms, o.kv);
     // For this diagnostic only, drain by EOF even on post-launch exceptions;
     // if a worker cannot exit, report its PID rather than escalating to SIGKILL.
     struct DiagnosticDrain {
@@ -951,7 +972,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 std::cerr << "MTP diagnostic drain could not finish\n";
             }
         }
-    } diagnostic_drain{workers,o.mtp_three_round || o.generation_capture || o.prefill_parity_at || o.direct_verified,o.timeout_ms};
+    } diagnostic_drain{workers,true,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
                                          fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation,o.mtp_resident_prompt_rows!=0,o.direct_verified);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
@@ -959,7 +980,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
               << " hip_split_overlap=" << o.hip_split_overlap << " receiver_arm=" << o.receiver_arm
               << " cuda_mapped_egress=" << o.cuda_mapped_egress
-              << " direct_verified_shared=" << o.direct_verified << '\n';
+              << " direct_verified_shared=" << o.direct_verified
+              << " kv=" << hetero::kv_mode_name(o.kv) << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
     auto initial_frame = [&](const hetero::WindowSpec& spec, uint64_t id) {

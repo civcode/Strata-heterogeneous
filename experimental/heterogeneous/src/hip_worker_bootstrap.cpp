@@ -42,16 +42,22 @@ void check_path(const std::string& path) {
 bool parse_hip_worker_invocation(int argc, const char* const* argv,
                                  HipWorkerInvocation& out, std::string& error) {
     try {
-        if ((argc != 10 && argc != 12) || !argv)
+        if ((argc != 10 && argc != 12 && argc != 14) || !argv)
             throw std::invalid_argument("expected HIP worker mode plan layers hc n_embd fingerprint index --config /absolute/path");
         for (int i = 0; i < argc; ++i)
             if (!argv[i]) throw std::invalid_argument("missing HIP worker argument");
         const std::string mode(argv[1]);
         const bool grouped = mode == "--worker-hip-domain" || mode == "--worker-hip-domain-shared";
+        const int base_argc = grouped ? 12 : 10;
         if ((!grouped && mode != "--worker" && mode != "--worker-shared") ||
-            argc != (grouped ? 12 : 10) || std::string(argv[8]) != "--config")
+            (argc != base_argc && argc != base_argc + 2) || std::string(argv[8]) != "--config")
             throw std::invalid_argument("HIP worker mode/config argument mismatch");
         HipWorkerInvocation next;
+        if (argc == base_argc + 2) {
+            if (std::string_view(argv[base_argc]) != "--kv")
+                throw std::invalid_argument("expected --kv int8|f16");
+            next.kv = parse_kv_mode(argv[base_argc + 1]);
+        }
         next.shared_memory = mode == "--worker-shared" || mode == "--worker-hip-domain-shared";
         next.plan = parse_plan(argv[2], u32(argv[3]),
                                {u32(argv[4]), u32(argv[5])}, decimal(argv[6]));

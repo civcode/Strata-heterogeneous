@@ -2,6 +2,7 @@
 // CPU-only parser for the process supervisor's CUDA worker argv convention.
 // No CUDA include; a supervisor and CPU tests may use this without GPUs.
 #include "strata_heterogeneous/host.hpp"
+#include "strata_heterogeneous/kv_mode.hpp"
 #include <cstddef>
 #include <string>
 
@@ -10,6 +11,8 @@ struct CudaWorkerInvocation {
     Plan plan;
     size_t stage_index = 0;
     bool shared_memory = false;
+    // Legacy internal argv without --kv retains its historical FP16 contract.
+    KvMode kv = KvMode::f16;
     std::string config_path;
 };
 // Accepts ONLY the WorkerProcessGroup convention with explicit --config:
