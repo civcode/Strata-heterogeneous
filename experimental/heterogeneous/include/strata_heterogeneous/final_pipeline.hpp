@@ -62,7 +62,7 @@ public:
     void initialize();
     // All workers must reset and ACK before a new resident request can run.
     void begin_request(uint64_t request);
-    void native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk);
+    void native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference=false);
     // Returns provisional head predictions; DOES NOT commit model state.
     FinalStageResult execute(Frame initial, const WindowSpec& spec);
     // Keep the provisional result in the gate without copying discarded logits.

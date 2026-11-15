@@ -117,10 +117,34 @@ public:
         return true;
     }
 
+    // Separate native-to-native stage snapshots, after complete local drain.
+    // Same vanilla checkpoint API; every native session carves PLE history,
+    // even when the stage does not execute the PLE layer.
+    bool configure_native_stage(const std::string& prefix,size_t stage,int64_t cut,
+                                const core::SessionState& ss,const core::ModelGeometry& g,std::string& error) {
+        const int64_t lo[]={0,12,30}, hi[]={12,30,48};
+        const std::filesystem::path path(prefix);
+        if (stage>=3 || cut<1 || cut>16 || cut>=ss.max_cells || g.n_layers!=48 ||
+            ss.layer_lo!=lo[stage] || ss.layer_hi!=hi[stage] ||
+            ss.gdn_alloc<=0 || ss.qsa_alloc<=0 || !ss.gdn_state || !ss.qsa_states ||
+            ss.gdn_ord0<0 || ss.qsa_ord0<0 || !ss.ple_hist || (stage==0 && !ss.ple.ready()) ||
+            !path.is_absolute() || prefix.size()>4096 || !std::filesystem::is_directory(path.parent_path())) {
+            error="invalid native stage state capture owner/extent";return false;
+        }
+        for (const char* flag:{"STRATA_CKPT_ASYNC","STRATA_CKPT_GATHER","STRATA_CKPT_VRAM_SLOTS","STRATA_PARK_ASYNC"}) {
+            const char* v=std::getenv(flag);
+            if (v && *v && std::strcmp(v,"0")) {error=std::string("native stage synchronous snapshot required: ")+flag;return false;}
+        }
+        if (cudaGetDevice(&device_)!=cudaSuccess) {error="native stage device query failed";return false;}
+        native_stage_=true;stage_=stage;cut_=cut;
+        prefix_=prefix+".native-state.s"+std::to_string(stage);
+        return true;
+    }
+
     bool observe(uint64_t request, int64_t position, const core::SessionState& ss,
                  const core::ModelGeometry& g, std::string& error) const {
         if (!active() || position != cut_) return true;
-        if (request < 1 || request > 3) {
+        if (request < 1 || request > 3 || (native_stage_ && request!=2)) {
             error = "state capture request outside A/B/A"; return false;
         }
         int current = -1;
@@ -138,7 +162,8 @@ public:
             if (bytes > cap - total) return false;
             total += static_cast<size_t>(bytes); return true;
         };
-        if (!budget(sizes.gdn) || !budget(sizes.ple)) {
+        const size_t ple_bytes=ss.ple_hist ? sizes.ple : 0;
+        if (!budget(sizes.gdn) || !budget(ple_bytes)) {
             error = "state capture exceeds 256 MiB limit"; return false;
         }
         for (int64_t j = 0; j < ss.qsa_alloc; ++j) {
@@ -157,7 +182,7 @@ public:
         checkpoint.ids.resize(static_cast<size_t>(position));
         if (!core::conversation_checkpoint_save(checkpoint, ss, g, error)) return false;
         core::conversation_checkpoint_join(checkpoint.gdn.data());
-        if (checkpoint.gdn.size() != sizes.gdn || checkpoint.ple.size() != sizes.ple ||
+        if (checkpoint.gdn.size() != sizes.gdn || checkpoint.ple.size() != ple_bytes ||
             checkpoint.tails.size() != size_t(ss.qsa_alloc) * sizes.tail ||
             checkpoint.dead.size() != size_t(ss.qsa_alloc) * sizes.dead ||
             checkpoint.block_pos.size() != size_t(ss.qsa_alloc) * sizes.block_pos ||
@@ -179,7 +204,7 @@ public:
         auto raw = [&](const std::string& name, const char* type, const uint8_t* data, size_t count) {
             return emit(name, type, count, [&](int fd) { return write_all(fd, data, count, error); });
         };
-        if (!raw("ple.history", "f32", checkpoint.ple.data(), sizes.ple)) return false;
+        if (ple_bytes && !raw("ple.history", "f32", checkpoint.ple.data(), ple_bytes)) return false;
         const size_t gdn_row = sizes.gdn / size_t(ss.gdn_alloc);
         const size_t recurrent = size_t(g.ssm_state_size) * size_t(g.ssm_v_heads) *
                                  size_t(g.ssm_state_size) * sizeof(float);
@@ -231,7 +256,7 @@ public:
         // Only a completed snapshot gets a manifest. Raw files alone never
         // establish a valid observation. ple_token is scratch, not committed history.
         std::ostringstream meta;
-        meta << "{\"schema\":\"strata-heterogeneous-prefix-state/v1\",\"stage\":0"
+        meta << "{\"schema\":\"strata-heterogeneous-prefix-state/v1\",\"stage\":" << stage_
              << ",\"request\":" << request << ",\"position\":" << position
              << ",\"layer_lo\":" << ss.layer_lo << ",\"layer_hi\":" << ss.layer_hi
              << ",\"gdn_ord0\":" << ss.gdn_ord0 << ",\"gdn_alloc\":" << ss.gdn_alloc
@@ -247,6 +272,8 @@ public:
 private:
     std::string prefix_;
     bool first_token_=false;
+    bool native_stage_=false;
+    size_t stage_=0;
     bool hc_replay_=false;
     bool sample(uint64_t request,const std::string& name,const float* ptr,size_t count,
                 void* stream,std::string& error) const {

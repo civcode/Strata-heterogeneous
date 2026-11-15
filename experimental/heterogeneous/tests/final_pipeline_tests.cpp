@@ -163,7 +163,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
-                   bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0) {
+                   bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -178,6 +178,13 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                 const WindowLimits limits{0, 64, 1000, 8};
                 NativePrefillHandler pf;
                 if (grouped) pf=[&,i](const Frame& cmd,int sock,std::string& error) {
+                    if (isolated_prefill) {
+                        if (bad_prefill || cmd.request_id!=2 || cmd.rows!=3 || cmd.prefill_chunk!=2 ||
+                            !cmd.window || cmd.window->token_ids!=std::vector<int32_t>{1,2,3}) {
+                            error="mock isolated prefill refused";return false;
+                        }
+                        return true; // no prefill_rows messages on either socket
+                    }
                     const size_t stride=size_t(cmd.geometry.hc)*cmd.geometry.n_embd;
                     for (size_t offset=0;offset<cmd.rows;) {
                         const size_t count=std::min({size_t(prefill_piece_rows(cmd.geometry)),
@@ -505,6 +512,24 @@ void native_prefill_protocol(bool shared) {
         pipe.initialize(); pipe.begin_request(1);
         fails([&]{pipe.native_prefill({1,2,3},2);},"out-of-order native residual rejected");
         check(pipe.poisoned(),"native prefill failure poisons coordinator");
+    }
+    const Plan bounded=parse_plan("cuda:0:0-12,hip:0:12-30,hip:1:30-48",48,{4,2560},3719);
+    for (bool fail : {false,true}) {
+        auto w=launch(bounded,shared,false,false,false,false,0.f,true,false,false,true,false,fail,0,0,true);
+        FinalPipelineSession pipe(bounded,w.sockets,1200,shared,true,true,false,true);
+        pipe.initialize();pipe.begin_request(1);
+        fails([&]{pipe.native_prefill({1,2,3},2,true);},"isolated diagnostic requires request 2");
+        pipe.begin_request(2);
+        fails([&]{pipe.native_prefill({1,2,3},4,true);},"isolated diagnostic refuses oversized chunk");
+        check(!pipe.poisoned(),"invalid isolated arguments do not start a worker command");
+        if (fail) {
+            fails([&]{pipe.native_prefill({1,2,3},2,true);},"isolated worker failure is not an ACK");
+            check(pipe.poisoned(),"isolated failure poisons pipeline");
+        } else {
+            pipe.native_prefill({1,2,3},2,true); // workers send only prefill_done
+            (void)pipe.execute(input_frame(bounded,2,2),{3,{4,5,6}});
+            check(pipe.commit(1).request_id==2,"isolated prefill done ACKs allow only next committed window");
+        }
     }
 }
 

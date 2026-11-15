@@ -2,6 +2,8 @@
 // Native chunk-major Prefill in each backend. Only the R-only transport is new.
 // The caller owns weights/cache/session, and has completed its resident reset.
 #include "strata_heterogeneous/native_prefill_init.hpp"
+#include "strata_heterogeneous/prefill_stage_files.hpp"
+#include "strata_heterogeneous/prefill_state_capture.hpp"
 #include "strata_heterogeneous/boundary_capture.hpp"
 #include "strata_heterogeneous/host.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
@@ -67,6 +69,20 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             cmd.rows!=1 || cmd.prefill_chunk!=1 || cmd.request_id!=2)) {
             error="first-token prefill diagnostic requires one CUDA entry token";return false;
         }
+        const char* native_capture_raw=std::getenv("STRATA_HETERO_NATIVE_STAGE_CAPTURE");
+        const char* reference_raw=std::getenv("STRATA_HETERO_NATIVE_STAGE_REFERENCE");
+        const std::string stage_capture=native_capture_raw?native_capture_raw:"";
+        const std::string reference=reference_raw?reference_raw:"";
+        const bool stage_probe=!stage_capture.empty();
+        const bool isolated=!reference.empty();
+        if ((isolated && !stage_probe) || (stage_probe &&
+            (cmd.request_id!=2 || cmd.rows>prefill_stage_max_rows || cmd.prefill_chunk>cmd.rows ||
+             cmd.geometry.hc!=4 || cmd.geometry.n_embd!=2560 || cmd.stage_index!=(sender?0u:2u) ||
+             first_probe || entry_state || hc_probe ||
+             !std::filesystem::path(stage_capture).is_absolute() ||
+             (isolated && (!std::filesystem::path(reference).is_absolute() || reference==stage_capture))))) {
+            error="invalid bounded native stage replay diagnostic";return false;
+        }
         const int64_t n = cmd.rows;
         const int64_t chunk = std::min<int64_t>(n,cmd.prefill_chunk);
         const size_t stride = static_cast<size_t>(cmd.geometry.hc)*cmd.geometry.n_embd;
@@ -99,7 +115,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         }
         for (size_t i=0;i<stages.size();++i)
             owned.nodes[i].pf->set_stage(stages[i].session.layer_lo,stages[i].session.layer_hi,
-                i+1<stages.size()?owned.nodes[i+1].pf.get():nullptr);
+                !isolated && i+1<stages.size()?owned.nodes[i+1].pf.get():nullptr);
         auto& first=owned.nodes.front();
         if (!check(cudaSetDevice(first.device),"prefill bridge device") ||
             !check(cudaMallocHost(reinterpret_cast<void**>(&owned.pinned),size_t(chunk)*stride*sizeof(float)),
@@ -120,6 +136,30 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                     return false;
                 }, err, "STRATA_HETERO_PREFILL_CAPTURE_PREFIX");
         };
+        // Capture actual stage R, independently of pinned bridge staging.
+        // Each callback runs on the owning stage's native thread/stream.
+        if (stage_probe) {
+            for (size_t i=0;i<stages.size();++i) {
+                const size_t stage=boundary_stage+i;
+                const int device=owned.nodes[i].device;
+                owned.nodes[i].pf->on_stage_residual=[&,stage,device](const char* direction,const float* data,
+                    int64_t rows,int64_t width,int64_t pos,void* stream,std::string& err) {
+                    try {
+                        int current=-1;
+                        if (!prefill_stage_shape(stage,pos,rows,size_t(width)) || pos+rows>n ||
+                            !data || !stream || cudaGetDevice(&current)!=cudaSuccess || current!=device ||
+                            cudaStreamSynchronize(static_cast<cudaStream_t>(stream))!=cudaSuccess) {
+                            err="native stage R observation owner/shape/fence failed";return false;
+                        }
+                        std::vector<float> values(size_t(rows)*stride);
+                        if (cudaMemcpy(values.data(),data,values.size()*sizeof(float),cudaMemcpyDeviceToHost)!=cudaSuccess) {
+                            err="native stage R readback failed";return false;
+                        }
+                        return prefill_stage_write(prefill_stage_file(stage_capture,stage,pos,direction),values.data(),values.size(),err);
+                    } catch(const std::exception& ex) {err=ex.what();return false;}
+                };
+            }
+        }
         int64_t offset=0;
         auto shape = [&](int64_t rows,int64_t pos) {
             return pos==offset && offset<n && rows==std::min(chunk,n-offset);
@@ -146,7 +186,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                         if (!activation_finite(reinterpret_cast<const uint8_t*>(f.payload.data()),f.payload.size()*sizeof(float))) {
                             err="native prefill nonfinite output"; return false;
                         }
-                        send_frame(fd,f,timeout_ms); off+=count;
+                        if (!isolated) send_frame(fd,f,timeout_ms);
+                        off+=count;
                     }
                     offset+=rows; return true;
                 } catch (const std::exception& ex) { err=ex.what(); return false; }
@@ -158,7 +199,10 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                     if (!shape(rows,pos) || width!=static_cast<int64_t>(stride) || !dst || !stream) {
                         err="native prefill input chunk mismatch"; return false;
                     }
-                    for (size_t off=0;off<size_t(rows);) {
+                    if (isolated) {
+                        if (!prefill_stage_read(prefill_stage_file(reference,0,pos,"out"),owned.pinned,
+                                                size_t(rows)*stride,err)) return false;
+                    } else for (size_t off=0;off<size_t(rows);) {
                         const size_t count=std::min(cap,size_t(rows)-off);
                         auto f=receive_frame(fd,timeout_ms);
                         if (!f || f->kind!=Kind::prefill_rows || f->stage_index!=cmd.stage_index ||
@@ -183,7 +227,32 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                     }
                     offset+=rows; return true;
                 } catch (const std::exception& ex) { err=ex.what(); return false; }
-            },false);
+            },isolated); // an isolated HIP0 emits its own R, not a live successor
+            if (isolated) {
+                // HIP0 and HIP1 execute separately, with immutable producer R
+                // from the completed wire run. Neither consumes this run's
+                // earlier stage's output or uses the native local link.
+                first.pf->on_chunk=[](const float*,int64_t,int64_t,std::string&){return true;};
+                owned.nodes[1].pf->set_external_handoff([&](float* dst,int64_t rows,int64_t width,
+                        int64_t pos,void* stream,std::string& err) {
+                    try {
+                        int current=-1;
+                        if (!dst || !stream || !prefill_stage_shape(2,pos,rows,size_t(width)) || pos+rows>n ||
+                            cudaGetDevice(&current)!=cudaSuccess || current!=owned.nodes[1].device) {
+                            err="isolated HIP1 input owner/shape failed";return false;
+                        }
+                        std::vector<float> values(size_t(rows)*stride);
+                        if (!prefill_stage_read(prefill_stage_file(reference,1,pos,"out"),values.data(),values.size(),err))
+                            return false;
+                        // Synchronous host transfer; no borrowed pointer survives.
+                        if (cudaMemcpy(dst,values.data(),values.size()*sizeof(float),cudaMemcpyHostToDevice)!=cudaSuccess ||
+                            cudaDeviceSynchronize()!=cudaSuccess) {
+                            err="isolated HIP1 input upload failed";return false;
+                        }
+                        return true;
+                    } catch(const std::exception& ex) {err=ex.what();return false;}
+                },false);
+            }
         }
         // Initialize native owners on their actual devices. No cache loans or recreation.
         for (size_t i=0;i<stages.size();++i) {
@@ -197,8 +266,22 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         if (!check(cudaSetDevice(first.device),"prefill entry device") ||
             !first.pf->run_external(tokens.data(),n,0,chunk,n>chunk,error)) return false;
         if (offset!=n) { error="native prefill boundary did not transfer entire prompt"; return false; }
+        if (isolated && !sender) {
+            if (!check(cudaSetDevice(first.device),"isolated HIP0 drain owner") || !first.pf->idle(error) ||
+                !check(cudaSetDevice(owned.nodes[1].device),"isolated HIP1 owner") ||
+                !owned.nodes[1].pf->run_external(tokens.data(),n,0,chunk,n>chunk,error)) return false;
+        }
         for (auto& node:owned.nodes)
             if (!check(cudaSetDevice(node.device),"prefill drain device") || !node.pf->idle(error)) return false;
+        if (stage_probe) {
+            for (size_t i=0;i<stages.size();++i) {
+                PrefillStateCapture state;
+                const auto& s=stages[i];
+                if (!check(cudaSetDevice(owned.nodes[i].device),"native stage checkpoint owner") ||
+                    !state.configure_native_stage(stage_capture,boundary_stage+i,n,s.session,s.geometry,error) ||
+                    !state.observe(cmd.request_id,n,s.session,s.geometry,error)) return false;
+            }
+        }
         return true;
     } catch (const std::exception& ex) { error=ex.what(); return false; }
 }

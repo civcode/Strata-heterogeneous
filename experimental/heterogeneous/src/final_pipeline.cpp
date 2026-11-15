@@ -354,12 +354,22 @@ void FinalPipelineSession::begin_request(uint64_t request) {
     } catch (...) { poison(); throw; }
 }
 
-void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk) {
+void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference) {
     if (receiver_arm_ || mtp_relay_) throw std::logic_error("receiver arm/MTP relay does not support native bulk prefill");
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !resident_request_ || last_window_ ||
         endpoints_.size()!=2 || starts_.back()==endpoints_.back() ||
         tokens.empty() || tokens.size()>max_window_tokens || !chunk || chunk>max_native_prefill_chunk)
         throw std::logic_error("native prefill requires freshly reset grouped resident pipeline");
+    if (isolated_stage_reference && (resident_request_!=2 || tokens.size()>16 || chunk>tokens.size() ||
+        plan_.stages.size()!=3 || plan_.total_layers!=48 ||
+        plan_.stages[0].backend!=Backend::cuda || plan_.stages[0].ordinal!=0 ||
+        plan_.stages[0].first_layer!=0 || plan_.stages[0].end_layer!=12 ||
+        plan_.stages[1].backend!=Backend::hip || plan_.stages[1].ordinal!=0 ||
+        plan_.stages[1].first_layer!=12 || plan_.stages[1].end_layer!=30 ||
+        plan_.stages[2].backend!=Backend::hip || plan_.stages[2].ordinal!=1 ||
+        plan_.stages[2].first_layer!=30 || plan_.stages[2].end_layer!=48 ||
+        plan_.geometry.hc!=4 || plan_.geometry.n_embd!=2560))
+        throw std::logic_error("isolated stage reference requires bounded A/B/A diagnostic");
     try {
         Frame spec=control(plan_,endpoints_[0],Kind::prefill_spec,resident_request_,1,static_cast<uint32_t>(tokens.size()));
         spec.window=WindowSpec{0,tokens}; spec.prefill_chunk=chunk;
@@ -369,7 +379,7 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
         send_frame(fds_[0],spec,timeout_ms_);
         const uint32_t cap=prefill_piece_rows(plan_.geometry);
         size_t offset=0;
-        while (offset<tokens.size()) {
+        while (!isolated_stage_reference && offset<tokens.size()) {
             const size_t count=std::min({size_t(cap),size_t(chunk)-offset%chunk,tokens.size()-offset});
             auto piece=receive_frame(fds_[0],timeout_ms_);
             if (!piece || piece->kind==Kind::failure)

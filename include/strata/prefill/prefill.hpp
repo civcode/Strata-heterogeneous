@@ -263,6 +263,10 @@ public:
     // Byte count (not float count). No kernel changes.
     using FirstHcProbe = std::function<bool(const char*, const void*, size_t, void*, std::string&)>;
     FirstHcProbe on_first_hc;
+    // Bounded diagnostic only: actual R after embedding/upload and before
+    // outgoing staging. Borrowed on this stage's native stream; read only.
+    using StageResidualProbe = std::function<bool(const char*,const float*,int64_t,int64_t,int64_t,void*,std::string&)>;
+    StageResidualProbe on_stage_residual;
 
     /// Checked before every chunk: true stops the prompt early (`run` returns false with err "cancelled").
     std::function<bool()> should_stop;

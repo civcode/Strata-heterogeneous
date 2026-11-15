@@ -3610,6 +3610,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         if (on_first_token && LB==0 && p0==0 && T==1 &&
             !on_first_token("embedding",m.emb,size_t(N),m.cs,err)) return false;
         if (!incoming) gr_broadcast(m.emb, m.R, T, m.cs);
+        if (on_stage_residual && !on_stage_residual("in",m.R,T,D,p0,m.cs,err)) return false;
         // ---- the PLE rows of the whole chunk, one batched SSD request on a thread (see ple_gather).  A later chunk's
         // were read ahead during the previous chunk; the first chunk's are read beside layer 0 - they are needed from
         // layer 1 on, and gathering them here first left the GPU idle for the whole read (~0.4 s of a 32K prompt)
@@ -6307,6 +6308,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         stats_.tokens += T;
         core::progress_at("reading the prompt (batched): finishing the chunk from token", p0);
         pt.mark(kPfStart, cs);
+        if (on_stage_residual && !on_stage_residual("out",m.R,T,D,p0,m.cs,err)) return false;
         if (next_ != nullptr) {
             // The current hand-off slot was used two chunks ago.
             float* h = m.hand[hand_buf_];

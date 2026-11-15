@@ -83,6 +83,8 @@ struct Options {
     bool prefill_state_capture = false;
     bool prefill_first_token = false;
     bool prefill_hc_replay = false;
+    bool prefill_stage_capture = false;
+    std::string prefill_stage_reference;
 };
 uint64_t decimal(const std::string& str, const char* key) {
     if (str.empty() || str[0] == '-' || str[0] == '+')
@@ -137,6 +139,8 @@ void usage() {
         "    --prefill-state-capture: also snapshot the entry CUDA committed prefix (cut 1..16 only).\n"
         "    --prefill-first-token: paired native/verifier CUDA first-token observations (cut/chunk 1 only).\n"
         "    --prefill-hc-replay-capture: capture actual plain BF16 HC weights and intermediate images.\n"
+        "    --prefill-stage-capture: bounded A/B/A all physical stage R and native state.\n"
+        "    --prefill-stage-reference PREFIX: file-fed independent native stages (stage capture only).\n"
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
@@ -235,6 +239,9 @@ Options parse(int argc, char** argv) {
         else if (key == "--prefill-state-capture") o.prefill_state_capture = true;
         else if (key == "--prefill-first-token") o.prefill_first_token = true;
         else if (key == "--prefill-hc-replay-capture") o.prefill_hc_replay = true;
+        else if (key == "--prefill-stage-capture") o.prefill_stage_capture = true;
+        else if (key == "--prefill-stage-reference") o.prefill_stage_reference =
+            required_value(i,argc,argv,"--prefill-stage-reference");
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
@@ -417,6 +424,12 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
+    if (!o.prefill_stage_reference.empty() && !o.prefill_stage_capture)
+        throw std::invalid_argument("stage reference requires stage capture");
+    if (o.prefill_stage_capture && (!o.prefill_state_capture || !o.prefill_parity_at ||
+        o.prefill_parity_at>16 || !o.native_prefill_chunk || o.native_prefill_chunk>o.prefill_parity_at ||
+        o.prefill_first_token || o.prefill_hc_replay || !o.mtp_probe_rt.empty()))
+        throw std::invalid_argument("stage capture requires bounded A/B/A state capture without HC/MTP probes");
     if (o.prefill_hc_replay && !o.prefill_first_token)
         throw std::invalid_argument("HC replay capture requires first-token A/B/A");
     if (o.prefill_first_token && (!o.prefill_state_capture || o.prefill_parity_at!=1 || o.native_prefill_chunk!=1))
@@ -467,6 +480,20 @@ void require_executable(const std::string& path, const char* label) {
 std::string json_string(const std::string& value);
 struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
 GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
+    if (o.prefill_stage_capture) {
+        if (hetero::plan_spec(plan)!="cuda:0:0-12,hip:0:12-30,hip:1:30-48" ||
+            plan.geometry.hc!=4 || plan.geometry.n_embd!=2560 || o.context_limit!=2048)
+            throw std::invalid_argument("stage capture requires original physical plan and context");
+        if (!o.prefill_stage_reference.empty()) {
+            const std::filesystem::path ref(o.prefill_stage_reference);
+            if (!ref.is_absolute() || ref==std::filesystem::path(o.capture_prefix) ||
+                o.prefill_stage_reference.size()>4096 || o.prefill_stage_reference.find_first_of("\r\n")!=std::string::npos ||
+                !std::filesystem::is_regular_file(o.prefill_stage_reference+".prefill.json"))
+                throw std::invalid_argument("stage reference requires completed distinct absolute source prefix");
+            for (const auto& part:ref) if (part=="." || part=="..")
+                throw std::invalid_argument("stage reference may not use dot segments");
+        }
+    }
     if (o.prefill_hc_replay && (hetero::plan_spec(plan)!="cuda:0:0-12,hip:0:12-30,hip:1:30-48" ||
         plan.geometry.hc!=4 || plan.geometry.n_embd!=2560 || o.context_limit!=2048))
         throw std::invalid_argument("HC replay capture requires original physical plan and context");
@@ -700,6 +727,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
     if (o.generate && ::unsetenv("STRATA_HETERO_LAYER_TAP_PREFIX") != 0)
         throw std::runtime_error("cannot clear inherited native layer-tap capture");
+    if (o.prefill_stage_capture ? ::setenv("STRATA_HETERO_NATIVE_STAGE_CAPTURE",o.capture_prefix.c_str(),1)!=0
+                                : ::unsetenv("STRATA_HETERO_NATIVE_STAGE_CAPTURE")!=0)
+        throw std::runtime_error("cannot configure native stage capture");
+    if (!o.prefill_stage_reference.empty() ? ::setenv("STRATA_HETERO_NATIVE_STAGE_REFERENCE",o.prefill_stage_reference.c_str(),1)!=0
+                                            : ::unsetenv("STRATA_HETERO_NATIVE_STAGE_REFERENCE")!=0)
+        throw std::runtime_error("cannot configure native stage reference");
     if (o.prefill_hc_replay ? ::setenv("STRATA_HETERO_PREFILL_HC_REPLAY","1",1)!=0
                             : ::unsetenv("STRATA_HETERO_PREFILL_HC_REPLAY")!=0)
         throw std::runtime_error("cannot configure HC replay capture");
@@ -869,7 +902,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             session.begin_request(request_id);
             uint64_t window = 0;
             if (pass == 1) {
-                session.native_prefill(prefix, o.native_prefill_chunk);
+                session.native_prefill(prefix, o.native_prefill_chunk, !o.prefill_stage_reference.empty());
                 window = 1;
             } else {
                 for (size_t pos = 0; pos < cut; ++pos) {
@@ -898,8 +931,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"prefix_rows\":" << cut << ",\"chunk\":" << o.native_prefill_chunk
                  << ",\"state_capture\":" << (o.prefill_state_capture ? "true" : "false")
                  << ",\"first_token_capture\":" << (o.prefill_first_token ? "true" : "false")
-                 << ",\"hc_replay_capture\":" << (o.prefill_hc_replay ? "true" : "false")
-                 << ",\"hc\":" << o.hc << ",\"n_embd\":" << o.n_embd << ",\"token_ids\":[";
+                 << ",\"hc_replay_capture\":" << (o.prefill_hc_replay ? "true" : "false");
+        if (o.prefill_stage_capture)
+            complete << ",\"stage_capture\":true"
+                     << ",\"stage_reference\":" << json_string(o.prefill_stage_reference)
+                     << ",\"transport\":" << json_string(o.shared?"shared":"socket");
+        complete << ",\"hc\":" << o.hc << ",\"n_embd\":" << o.n_embd << ",\"token_ids\":[";
         for (size_t pos = 0; pos < o.tokens.size(); ++pos) {
             if (pos) complete << ',';
             complete << o.tokens[pos];

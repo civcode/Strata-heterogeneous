@@ -17,6 +17,29 @@ public:
     MtpPrefixCursor(const MtpPrefixCursor&) = delete;
     MtpPrefixCursor& operator=(const MtpPrefixCursor&) = delete;
 
+    // Prepared contract only; no worker calls this until bulk admission is
+    // independently established. Seed [0,N-1) from completed terminal native
+    // prompt chunks, leaving token N-1 for the ordinary verifier. Every
+    // successor is known from the actual prompt. Prime consumes and fences
+    // the borrowed R rows before return; no temporary tail pointer survives.
+    template<class Prime>
+    bool seed_bulk_prompt_chunk(const std::vector<int32_t>& prompt,int64_t pos,
+                                const float* residuals,size_t rows,Prime&& prime,std::string& error) {
+        if (state_!=State::ready || !stride_ || !max_rows_ || max_rows_>8 || context_<=0 || vocab_<=0 ||
+            tail_ || !offered_.empty() || !residuals || !rows || rows>max_rows_ ||
+            prompt.size()<2 || prompt.size()>7 || int64_t(prompt.size())>=context_ ||
+            pos!=next_ || pos<0 || pos>=int64_t(prompt.size()-1) ||
+            rows>prompt.size()-1-size_t(pos) ||
+            (bulk_prompt_.empty() ? next_!=0 : bulk_prompt_!=prompt))
+            return fail(error,"MTP bulk seed identity or extent refused");
+        for (auto id:prompt) if (id<0 || id>=vocab_) return fail(error,"MTP bulk seed token outside vocabulary");
+        if (bulk_prompt_.empty()) bulk_prompt_=prompt;
+        if (!prime(residuals,bulk_prompt_.data()+size_t(pos)+1,rows,pos,error))
+            return fail(error,"MTP bulk seed prime failed");
+        next_+=int64_t(rows);
+        return true;
+    }
+
     // Callback must synchronously drain native prefill before returning.
     template<class Prime>
     bool begin(int64_t pos, const std::vector<int32_t>& tokens, Prime&& prime, std::string& error) {
@@ -26,6 +49,11 @@ public:
             return fail(error, "MTP prefix begin identity/extent mismatch");
         for (auto token : tokens)
             if (token < 0 || token >= vocab_) return fail(error, "MTP token outside vocabulary");
+        if (!bulk_prompt_.empty()) {
+            if (pos!=int64_t(bulk_prompt_.size()-1) || tokens.size()!=1 || tokens.front()!=bulk_prompt_.back())
+                return fail(error,"MTP bulk seed must finish with the actual final prompt token");
+            bulk_prompt_.clear();
+        }
         if (!offered_.empty()) {
             if (tokens != offered_) return fail(error,"MTP relay did not consume exact offered window");
             offered_.clear();
@@ -95,11 +123,12 @@ private:
     size_t stride_, max_rows_;
     int64_t context_, vocab_, next_ = 0;
     const float* tail_ = nullptr;
-    std::vector<int32_t> tokens_, offered_;
+    std::vector<int32_t> tokens_, offered_, bulk_prompt_;
     bool fail(std::string& error, const char* message) {
         state_ = State::failed;
         tail_ = nullptr;
         offered_.clear();
+        bulk_prompt_.clear();
         if (error.empty()) error = message;
         return false;
     }
