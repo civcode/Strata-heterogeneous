@@ -10,6 +10,8 @@
 #include "strata/core/defaults_026.hpp"
 #include "strata/kernels/gfx_arch.hpp"
 #include "strata/core/verify.hpp"
+#include "strata/core/numerical_trace.hpp"
+#include "strata/core/conversation_snapshot.hpp"
 #include "strata/core/window_evict.hpp"
 #include "strata/core/expert_nibble.hpp"
 #include "strata/core/pin_budget.hpp"
@@ -734,6 +736,7 @@ Verifier::~Verifier() {
     if (layer_zero_q8_) cudaFree(layer_zero_q8_);
     if (layer_zero_hc_) cudaFree(layer_zero_hc_);
     if (stage0_phase_dev_) cudaFree(stage0_phase_dev_);
+    if (numerical_trace_dev_) cudaFree(numerical_trace_dev_);
     if (branch_probe_dev_) cudaFree(branch_probe_dev_);
     if (branch_ids_dev_) cudaFree(branch_ids_dev_);
     if (micro_dev_) cudaFree(micro_dev_);
@@ -1124,6 +1127,14 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         return false;
     }
     cudaMemset(arena_, 0, count.used);
+    if (numerical_trace::prefix()) {
+        namespace nt=numerical_trace;
+        if (!nt::cut() || nt::stage(lb_,le_)<0 || g.n_layers!=48 || g.n_embd!=nt::N || g.hc!=nt::HC ||
+            g.n_expert!=nt::NE || ss.k!=nt::K || ss.max_cells!=2048 ||
+            cudaMalloc(reinterpret_cast<void**>(&numerical_trace_dev_),size_t(le_-lb_)*(nt::stride+nt::N/2)*4)!=cudaSuccess) {
+            err="numerical trace verifier allocation or geometry refused";return false;
+        }
+    }
     if (layer_zero_hc_probe_on_) {
         if (!layer_zero_probe_on_ || lb_!=0 || g.n_embd!=2560 || g.hc!=4 || g.hc_lr!=320 ||
             cudaMalloc(reinterpret_cast<void**>(&layer_zero_hc_),
@@ -1572,6 +1583,18 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         }
     }
 
+    // Actual T=1 graph operands only; no CPU readback inside capture.
+    if (numerical_trace_dev_ && T==1 && !batch_rec_)
+        for(int64_t l=lb_;l<le_;++l) if(cvec().covers(l)) {err="numerical trace refuses control vectors";return false;}
+    namespace nt = numerical_trace;
+    auto nt_sample=[&](int64_t l,nt::Field field,const void* ptr) {
+        if (!numerical_trace_dev_ || T!=1 || batch_rec_) return true;
+        if (!ptr || cudaMemcpyAsync(numerical_trace_dev_+size_t(l-lb_)*(nt::stride+nt::N/2)+nt::offset(field),
+                ptr,nt::fields[field].words*4,cudaMemcpyDeviceToDevice,cs)!=cudaSuccess) {
+            err="numerical trace verifier graph snapshot failed";return false;
+        }
+        return true;
+    };
     // ---------------------------------------------------------------- pre(l, group): up to the ring
     auto pre = [&](int64_t l, int grp) -> bool {
         const int tb = tb_[grp], te = te_[grp], n = te - tb;
@@ -1745,6 +1768,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 }
             }
         }
+        if (!nt_sample(l,nt::r_attn,Rt(tb)) || !nt_sample(l,nt::attn_mixed,mixed_+tb*N)) return false;
         if (!stage0_phase_capture(l, tb, n, 0, mixed_, cs, err)) return false;
         if (layer_zero_probe_on_ && l == 0 &&
             cudaMemcpyAsync(layer_zero_mixed_ + (size_t) tb * N, mixed_ + (size_t) tb * N,
@@ -2340,10 +2364,13 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             return false;
         }
         stamp(l, 16, grp);
+        if (!nt_sample(l,nt::attn_bo,bo_+tb*N)) return false;
         if (!stage0_phase_capture(l, tb, n, 1, bo_, cs, err)) return false;
         const bool q8_ffn = gr_read_group(1, true, inj_, inj2_);   // true: nat_xq_ holds the MoE input's q8_1 (STRATA_QFUSE)
         if (micro_probe_on_ && T == 1 && l == 5 && grp == 0 &&
             !micro_capture(5, 0, mixed_ + (size_t) tb * N, cs, err)) return false;
+        if (!nt_sample(l,nt::r_ffn,Rt(tb)) || !nt_sample(l,nt::ffn_mixed,mixed_+tb*N) ||
+            !nt_sample(l,nt::ffn_inj,inj2_+tb*HC)) return false;
         if (!stage0_phase_capture(l, tb, n, 2, mixed_, cs, err)) return false;
         stamp(l, 32, grp);   // the profile only: the FFN-side read ends here, the router starts
         // with CPU experts in the window the shared expert forks off once the doorbell is published (it no longer
@@ -2409,6 +2436,15 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                       rr_stats_ != nullptr ? rr_stats_ + (n <= 8 ? 4 : 0) : nullptr, cs);
             } catch (const std::exception& e) { err = "verify route-resident: " + std::string(e.what()); return false; }
         }
+        // A T=1 router takes moe_route(): native FP32 activation or the
+        // actual BF16 image written to the session scratch by that call.
+        if (numerical_trace_dev_ && T==1 && !batch_rec_ && !layer_native_bf16_enabled() &&
+            cudaMemcpyAsync(numerical_trace_dev_+size_t(l-lb_)*(nt::stride+nt::N/2)+nt::stride,
+                            ss.moe.x_bf16,nt::N*2,cudaMemcpyDeviceToDevice,cs)!=cudaSuccess) {
+            err="numerical trace verifier BF16 router image failed";return false;
+        }
+        if (!nt_sample(l,nt::router_logits,logits_+tb*NE) ||
+            !nt_sample(l,nt::router_ids,ids_+tb*K) || !nt_sample(l,nt::router_weights,w_+tb*K)) return false;
         if (l == 5 && grp == 0 &&
             (!branch_capture(l, 0, logits_ + tb * NE, cs, err) ||
              !branch_capture(l, 1, w_ + tb * K, cs, err) ||
@@ -2671,6 +2707,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         stamp(l, 24, grp);
         if (l == 5 && grp == 0 &&
             !branch_capture(l, 4, bo_ + tb * N, cs, err)) return false;
+        if (!nt_sample(l,nt::ffn_bo,bo_+tb*N)) return false;
         if (!stage0_phase_capture(l, tb, n, 3, bo_, cs, err)) return false;
         if (tap_on_ && (!batch_rec_ || tap_batch_) && l < (int64_t) tap_slot_.size() && tap_slot_[(size_t) l] >= 0) {
             // the layer's completed output: R with this FFN half's write applied (the next layer's read would fold it), the mean of
@@ -4167,8 +4204,104 @@ bool Verifier::commit(int n_keep, std::string& err) {
             ss_->ple_prev[0] = ss_->ple_prev[1];
             ss_->ple_prev[1] = last_tokens_[t];
         }
+    if (numerical_trace_dev_ && !export_numerical_trace(n_keep,err)) return false;
     ms_commit += ms_since(t0);
     return next_ == nullptr || next_->commit(n_keep, err);
+}
+
+bool Verifier::export_numerical_trace(int keep,std::string& err) {
+    namespace nt=numerical_trace;
+    const char* root=nt::prefix();
+    const int c=nt::cut(), st=nt::stage(lb_,le_);
+    int request=0;
+    if (!root || st<0 || keep!=1 || last_t_!=1 || last_batch_ ||
+        !nt::identity(numerical_trace_sequence_,c,last_pos0_,last_tokens_[0],request) ||
+        cudaStreamSynchronize(cs_)!=cudaSuccess) {
+        err="numerical trace commit identity or fence refused";return false;
+    }
+    auto device_file=[&](const std::string& path,const void* ptr,size_t bytes) {
+        if (!ptr || !bytes || bytes>(16u<<20)) {err="numerical trace invalid device extent";return false;}
+        std::vector<uint8_t> image(bytes);
+        if (cudaMemcpy(image.data(),ptr,bytes,cudaMemcpyDeviceToHost)!=cudaSuccess) {
+            err="numerical trace readback failed";return false;
+        }
+        return nt::write(path,image.data(),bytes,err);
+    };
+    for(int64_t l=lb_;l<le_;++l) {
+        const auto name=nt::stem(root,request,l,last_pos0_);
+        for(int i=0;i<nt::count;++i) {
+            const auto f=static_cast<nt::Field>(i);
+            if (!device_file(name+nt::fields[i].name,numerical_trace_dev_+size_t(l-lb_)*(nt::stride+nt::N/2)+nt::offset(f),
+                             nt::fields[i].words*4)) return false;
+        }
+        const auto* row=numerical_trace_dev_+size_t(l-lb_)*(nt::stride+nt::N/2);
+        const bool native=layer_native_bf16_enabled();
+        if(!device_file(name+(native?"router_operand.f32":"router_operand.bf16"),
+                        row+(native?nt::offset(nt::ffn_mixed):nt::stride),native?nt::N*4:nt::N*2))return false;
+        if(numerical_trace_sequence_==0) {
+            const LayerView v(*wt_,l);
+            const auto* w=v.get("ffn_gate_inp.weight");
+            if(!w || !w->data || w->kind!=WeightKind::Bf16InF32 || w->ne0!=nt::N || w->ne1!=nt::NE ||
+               w->bytes!=nt::N*nt::NE*2 || w->q8_scale || w->hc_q8) {
+                err="numerical trace unsupported verifier router weight";return false;
+            }
+            if(!device_file(nt::weight(root,false,l),w->data,nt::N*nt::NE*2)) return false;
+        }
+    }
+    // Actual committed cut state, not intermediate or speculative scratch.
+    if(request!=2 && last_pos0_+1==c) {
+        const auto name=nt::state(root,request,st,c);
+        ConversationStateSizes z;
+        if(!conversation_session_sizes(*g_,*ss_,z,err))return false;
+        ConversationCheckpoint ck;ck.ids.resize(size_t(c));
+        if(!conversation_checkpoint_save(ck,*ss_,*g_,err))return false;
+        conversation_checkpoint_join(ck.gdn.data());
+        const size_t rec=size_t(g_->ssm_state_size)*g_->ssm_v_heads*g_->ssm_state_size*4;
+        const size_t row=rec+size_t(g_->ssm_conv_channels)*(g_->ssm_d_conv-1)*4;
+        if(ck.gdn.size()!=row*size_t(ss_->gdn_alloc) || ck.ple.size()!=z.ple ||
+           ck.tails.size()!=size_t(ss_->qsa_alloc)*z.tail || ck.dead.size()!=size_t(ss_->qsa_alloc)*z.dead ||
+           ck.block_pos.size()!=size_t(ss_->qsa_alloc)*z.block_pos) {
+            err="numerical trace checkpoint extent refused";return false;
+        }
+        if(!nt::write(name+"ple.history.bin",ck.ple.data(),ck.ple.size(),err) ||
+           !nt::write(name+"ple_prev.i32",ss_->ple_prev,2*sizeof(int32_t),err))return false;
+        for(int64_t j=0;j<ss_->gdn_alloc;++j) {
+            const auto key=name+"gdn"+std::to_string(ss_->gdn_ord0+j);
+            if(!nt::write(key+".recurrence.bin",ck.gdn.data()+size_t(j)*row,rec,err) ||
+               !nt::write(key+".conv.bin",ck.gdn.data()+size_t(j)*row+rec,row-rec,err))return false;
+        }
+        for(int64_t j=0;j<ss_->qsa_alloc;++j) {
+            const auto ordinal=ss_->qsa_ord0+j;
+            const auto key=name+"qsa"+std::to_string(ordinal);
+            if(!nt::write(key+".tail.bin",ck.tails.data()+size_t(j)*z.tail,z.tail,err) ||
+               !nt::write(key+".dead.bin",ck.dead.data()+size_t(j)*z.dead,z.dead,err) ||
+               !nt::write(key+".block_pos.bin",ck.block_pos.data()+size_t(j)*z.block_pos,z.block_pos,err))return false;
+            ConversationKv kv;
+            if(!conversation_kv_save(kv,ss_->qsa_states[ordinal],*g_,c,true,err) ||
+               kv.cells<c || kv.cells<=0 || kv.pooled_rows<=0)return false;
+            const int32_t layout[]={int32_t(kv.format),int32_t(kv.cells),int32_t(kv.page_size),
+                int32_t(kv.heads),int32_t(kv.head_dim),int32_t(kv.pooled_rows),int32_t(kv.idx_dim)};
+            if(!nt::write(key+".layout.i32",layout,sizeof layout,err))return false;
+            auto part=[&](const char* suffix,const ConversationBuffer& b,bool pooled) {
+                if(!pooled && b.size()%size_t(kv.cells)){err="numerical trace K/V stride";return false;}
+                const size_t n=pooled?b.size():b.size()/size_t(kv.cells)*size_t(c);
+                if(n>(16u<<20)){err="numerical trace K/V cap";return false;}
+                std::vector<uint8_t> raw(n);
+                if(n && !b.visit(0,n,[&](const uint8_t* p,size_t bytes,size_t off) {
+                    if(off>n || bytes>n-off)return false;
+                    std::memcpy(raw.data()+off,p,bytes);return true;
+                }))return false;
+                return !n || nt::write(key+"."+suffix+".bin",raw.data(),n,err);
+            };
+            if(!part("k",kv.k,false)||!part("v",kv.v,false)||!part("k_scale",kv.k_scale,false)||
+               !part("v_scale",kv.v_scale,false)||!part("pooled",kv.pooled,true))return false;
+        }
+    }
+    const int32_t token=last_tokens_[0];
+    if(!nt::write(std::string(root)+".trace.r"+std::to_string(request)+".s"+std::to_string(st)+
+                  ".p"+std::to_string(last_pos0_)+".token.i32",&token,4,err))return false;
+    ++numerical_trace_sequence_;
+    return true;
 }
 
 bool Verifier::wait_commit(std::string& err) {

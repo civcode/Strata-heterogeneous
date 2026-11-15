@@ -1,6 +1,7 @@
 // src/prefill/prefill.cpp - see include/strata/prefill/prefill.hpp.
 #include "strata/kernels/fused_gr.hpp"
 #include "strata/prefill/prefill.hpp"
+#include "strata/core/numerical_trace.hpp"
 #include "strata/prefill/copy_events.hpp"
 #include "strata/prefill/timer_marks.hpp"
 #include "strata/prefill/mmq_ids_margin.hpp"
@@ -3318,6 +3319,16 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
     core::SessionState& ss = *m.ss;
     const auto t_start = Clock::now();
     const int64_t LB = stage_lb_, LE = stage_le_;
+    namespace nt=core::numerical_trace;
+    const char* trace_root=nt::prefix();
+    if(trace_root && (!nt::cut() || nt::stage(LB,LE)<0 || pos0<0 || n<1 || pos0+n>nt::cut() ||
+        !on_stage_residual || g.n_layers!=48 || g.n_embd!=nt::N || g.hc!=nt::HC ||
+        g.n_expert!=nt::NE || ss.k!=nt::K || std::getenv("STRATA_DBG_ROUTE_OVERRIDE"))) {
+        err="native numerical trace extent/dispatch refused";return false;
+    }
+    if(trace_root) for(int64_t i=0;i<n;++i) if(tokens[i]!=nt::tokens[pos0+i]) {
+        err="native numerical trace token identity refused";return false;
+    }
     // STRATA_KVA: the approximate-prefix plan of this run, if it qualifies (a cold read of one long prompt, one
     // stage, no capture).  Positions [0, kva_frontier) are approximated in the layers at and after the split.
     const KvaConfig& kva = kva_config();
@@ -3336,6 +3347,12 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                          (long long) g.n_layers, (long long) g.n_expert);
     }
     const bool kva_run = kva_why_not == nullptr;
+    if(trace_root) {
+        if(kva_run || m.gemm.bf16_converts_x()) {err="numerical trace unsupported approximate/converted prompt path";return false;}
+        for(int64_t l=LB;l<LE;++l) if(strata::kernels::cvec().covers(l)) {
+            err="numerical trace refuses control vectors";return false;
+        }
+    }
     const int64_t kva_split = std::min<int64_t>(std::max<int64_t>(kva.split, 1), g.n_layers);
     const int64_t kva_frontier = std::max<int64_t>(0, n - kva_suffix);
     static KvaTap kva_capture;   // process-wide: one cold read at a time, so the per-layer position is enough
@@ -3611,6 +3628,27 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
             !on_first_token("embedding",m.emb,size_t(N),m.cs,err)) return false;
         if (!incoming) gr_broadcast(m.emb, m.R, T, m.cs);
         if (on_stage_residual && !on_stage_residual("in",m.R,T,D,p0,m.cs,err)) return false;
+        auto nt_device=[&](const void* p,size_t bytes,std::vector<uint8_t>& image) {
+            if(!p||!bytes||bytes>(16u<<20)||cudaStreamSynchronize(m.cs)!=cudaSuccess) {
+                err="native numerical trace fence/extent refused";return false;
+            }
+            image.resize(bytes);
+            if(cudaMemcpy(image.data(),p,bytes,cudaMemcpyDeviceToHost)!=cudaSuccess) {
+                err="native numerical trace readback failed";return false;
+            }
+            return true;
+        };
+        auto nt_rows=[&](int64_t layer,const char* field,const void* p,size_t row_bytes) {
+            if(!trace_root)return true;
+            std::vector<uint8_t> image;
+            if(!nt_device(p,size_t(T)*row_bytes,image))return false;
+            for(int64_t t=0;t<T;++t)
+                if(!nt::write(nt::stem(trace_root,2,layer,p0+t)+field,image.data()+size_t(t)*row_bytes,row_bytes,err))return false;
+            return true;
+        };
+        auto nt_sample=[&](int64_t l,nt::Field field,const void* p) {
+            return nt_rows(l,nt::fields[field].name,p,nt::fields[field].words*4);
+        };
         // ---- the PLE rows of the whole chunk, one batched SSD request on a thread (see ple_gather).  A later chunk's
         // were read ahead during the previous chunk; the first chunk's are read beside layer 0 - they are needed from
         // layer 1 on, and gathering them here first left the GPU idle for the whole read (~0.4 s of a 32K prompt)
@@ -4259,6 +4297,9 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                              m.mixed_bf_lo);
                 }
 
+                if (!nt_sample(l,half==0?nt::r_attn:nt::r_ffn,m.R) ||
+                    !nt_sample(l,half==0?nt::attn_mixed:nt::ffn_mixed,m.mixed) ||
+                    (half==1 && !nt_sample(l,nt::ffn_inj,m.inj))) return false;
                 if (!hc_sample("mixed.f32",m.mixed,N*4)) return false;
                 if (on_first_token && l==0 && half==0 && p0==0 && T==1 &&
                     !on_first_token("hc_mixed",m.mixed,size_t(N),m.cs,err)) return false;
@@ -4685,6 +4726,19 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     pt.mark(kPfRouter, cs);
                     if (!bf16_proj(m.gemm, wr, m.mixed_bf, m.logits, T, v.name("ffn_gate_inp.weight"), err, 0, m.mixed_bf_lo)) return false;
                     route(m.logits, m.ids, m.w, T, m.g->n_expert, m.cs);
+                    if (trace_root) {
+                        if(!wr->data || wr->ne0!=nt::N || wr->ne1!=nt::NE || wr->bytes!=nt::N*nt::NE*2 ||
+                           wr->q8_scale || wr->hc_q8) {err="unsupported prompt router weight";return false;}
+                        if(p0==0) {
+                            std::vector<uint8_t> image;
+                            if(!nt_device(wr->data,nt::N*nt::NE*2,image) ||
+                               !nt::write(nt::weight(trace_root,true,l),image.data(),image.size(),err))return false;
+                        }
+                        if(!nt_rows(l,m.f16_io?"router_operand.f16":"router_operand.bf16",m.mixed_bf,nt::N*2) ||
+                           (m.mixed_bf_lo && !nt_rows(l,"router_operand_lo.bf16",m.mixed_bf_lo,nt::N*2)) ||
+                           !nt_sample(l,nt::router_logits,m.logits) || !nt_sample(l,nt::router_ids,m.ids) ||
+                           !nt_sample(l,nt::router_weights,m.w))return false;
+                    }
                     // RESEARCH HOOK (141-research, opt-in, never on by default): STRATA_DBG_FEAT=<file> dumps, per MoE layer and chunk,
                     // the routed ids + weights (and for the layers in STRATA_DBG_FEAT_LAYERS the router-input hidden state, bf16);
                     // STRATA_DBG_ROUTE_OVERRIDE=<file> replaces the routing of the layers listed in that file with the file's ids + weights.
@@ -6218,6 +6272,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         }
                     }
                 }
+                if (!nt_sample(l,half==0?nt::attn_bo:nt::ffn_bo,m.bo))return false;
                 pt.mark(kPfHcWrite, cs);   // the write-back (and the next half's norm) on its own line; it used to be charged to the phase before
                 // ---- the hyper-connection write of this half; F-2: fused with the next half's norm when nothing else
                 // touches R in between (not the stage's last half, not before the PLE block of layer 1, not under a
@@ -6282,6 +6337,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 }
                 if (steered && !cv_fused)   // --control-vector-scaled
                     strata::kernels::cvec_apply(m.R, l, T, D, nullptr, 0, nullptr, 0, false, m.cs);
+                if (half==1 && !nt_rows(l,"r_out.f32",m.R,nt::D*4))return false;
 #if defined(STRATA_HAVE_DFLASH2)
                 if (half == 1 && tap_rows > 0 && tap_slot[(size_t) l] >= 0)   // DFlash2: this layer's completed output, mean of the streams
                     strata::kernels::df2_tap_rows(m.R + (size_t) tap_t0 * D, tap_dev_ + (size_t) tap_slot[(size_t) l] * N, (int64_t) tap_local_.size() * N, N,
@@ -6309,6 +6365,11 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         core::progress_at("reading the prompt (batched): finishing the chunk from token", p0);
         pt.mark(kPfStart, cs);
         if (on_stage_residual && !on_stage_residual("out",m.R,T,D,p0,m.cs,err)) return false;
+        if(trace_root) for(int64_t t=0;t<T;++t) {
+            const int32_t token=int32_t(tokens[c0+t]);
+            if(!nt::write(std::string(trace_root)+".trace.r2.s"+std::to_string(nt::stage(LB,LE))+
+                          ".p"+std::to_string(p0+t)+".token.i32",&token,4,err))return false;
+        }
         if (next_ != nullptr) {
             // The current hand-off slot was used two chunks ago.
             float* h = m.hand[hand_buf_];

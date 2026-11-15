@@ -84,6 +84,7 @@ struct Options {
     bool prefill_first_token = false;
     bool prefill_hc_replay = false;
     bool prefill_stage_capture = false;
+    bool numerical_trace = false;
     std::string prefill_stage_reference;
 };
 uint64_t decimal(const std::string& str, const char* key) {
@@ -140,6 +141,7 @@ void usage() {
         "    --prefill-first-token: paired native/verifier CUDA first-token observations (cut/chunk 1 only).\n"
         "    --prefill-hc-replay-capture: capture actual plain BF16 HC weights and intermediate images.\n"
         "    --prefill-stage-capture: bounded A/B/A all physical stage R and native state.\n"
+        "    --prefill-numerical-trace: read-only layer/routing trace for canonical cut 2 or 6.\n"
         "    --prefill-stage-reference PREFIX: file-fed independent native stages (stage capture only).\n"
         "  Ordinary generation reads prompt token IDs from stdin, not --tokens or diagnostic options.\n"
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
@@ -240,6 +242,7 @@ Options parse(int argc, char** argv) {
         else if (key == "--prefill-first-token") o.prefill_first_token = true;
         else if (key == "--prefill-hc-replay-capture") o.prefill_hc_replay = true;
         else if (key == "--prefill-stage-capture") o.prefill_stage_capture = true;
+        else if (key == "--prefill-numerical-trace") o.numerical_trace = true;
         else if (key == "--prefill-stage-reference") o.prefill_stage_reference =
             required_value(i,argc,argv,"--prefill-stage-reference");
         else if (key == "--describe-source") o.describe_source = true;
@@ -424,6 +427,10 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
+    if (o.numerical_trace && (!o.prefill_stage_capture || !o.prefill_stage_reference.empty() ||
+        !((o.prefill_parity_at==2 && (o.native_prefill_chunk==1 || o.native_prefill_chunk==2)) ||
+          (o.prefill_parity_at==6 && (o.native_prefill_chunk==3 || o.native_prefill_chunk==6)))))
+        throw std::invalid_argument("numerical trace requires wire stage capture at cut 2 or 6");
     if (!o.prefill_stage_reference.empty() && !o.prefill_stage_capture)
         throw std::invalid_argument("stage reference requires stage capture");
     if (o.prefill_stage_capture && (!o.prefill_state_capture || !o.prefill_parity_at ||
@@ -459,6 +466,12 @@ Options parse(int argc, char** argv) {
             }
             if (uint64_t(o.tokens.size()) + o.generate > o.context_limit)
                 throw std::invalid_argument("prompt and completion exceed context limit");
+            if (o.numerical_trace) {
+                const std::vector<int32_t> expected{248045,846,198,2523,513,32767,264};
+                if(o.tokens.size()!=o.prefill_parity_at+1 ||
+                   !std::equal(o.tokens.begin(),o.tokens.end(),expected.begin()))
+                    throw std::invalid_argument("numerical trace requires canonical teacher-forced sequence");
+            }
             if (o.prefill_first_token && o.tokens.size()!=2)
                 throw std::invalid_argument("first-token localization requires one prefix and one forced token");
             if (o.prefill_parity_at && (o.prefill_parity_at >= o.tokens.size() ||
@@ -727,6 +740,18 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure native worker layer-tap capture");
     if (o.generate && ::unsetenv("STRATA_HETERO_LAYER_TAP_PREFIX") != 0)
         throw std::runtime_error("cannot clear inherited native layer-tap capture");
+    if (o.numerical_trace ? (::setenv("STRATA_HETERO_NUMERICAL_TRACE_PREFIX",o.capture_prefix.c_str(),1)!=0 ||
+                             ::setenv("STRATA_HETERO_NUMERICAL_TRACE_CUT",std::to_string(o.prefill_parity_at).c_str(),1)!=0)
+                          : (::unsetenv("STRATA_HETERO_NUMERICAL_TRACE_PREFIX")!=0 ||
+                             ::unsetenv("STRATA_HETERO_NUMERICAL_TRACE_CUT")!=0))
+        throw std::runtime_error("cannot configure numerical trace");
+    if (o.numerical_trace) {
+        for(const char* flag:{"STRATA_CKPT_ASYNC","STRATA_CKPT_GATHER","STRATA_CKPT_VRAM_SLOTS","STRATA_PARK_ASYNC",
+                              "STRATA_DBG_ROUTE_OVERRIDE","STRATA_ROUTE_PRIOR","STRATA_ROUTE_RESIDENT"}) {
+            const char* v=std::getenv(flag);
+            if(v && *v && std::strcmp(v,"0")) throw std::invalid_argument(std::string("numerical trace refuses ")+flag);
+        }
+    }
     if (o.prefill_stage_capture ? ::setenv("STRATA_HETERO_NATIVE_STAGE_CAPTURE",o.capture_prefix.c_str(),1)!=0
                                 : ::unsetenv("STRATA_HETERO_NATIVE_STAGE_CAPTURE")!=0)
         throw std::runtime_error("cannot configure native stage capture");
@@ -932,6 +957,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"state_capture\":" << (o.prefill_state_capture ? "true" : "false")
                  << ",\"first_token_capture\":" << (o.prefill_first_token ? "true" : "false")
                  << ",\"hc_replay_capture\":" << (o.prefill_hc_replay ? "true" : "false");
+        if (o.numerical_trace) complete << ",\"numerical_trace\":true";
         if (o.prefill_stage_capture)
             complete << ",\"stage_capture\":true"
                      << ",\"stage_reference\":" << json_string(o.prefill_stage_reference)

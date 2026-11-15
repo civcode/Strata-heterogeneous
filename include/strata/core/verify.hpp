@@ -722,6 +722,10 @@ private:
     size_t micro_floats_ = 0;
     bool micro_capture(int layer, int field, const float* src,
                        cudaStream_t stream, std::string& err) const;
+    // Graph-safe one-row native numerical trace; no storage when disabled.
+    float* numerical_trace_dev_ = nullptr;
+    unsigned numerical_trace_sequence_ = 0;
+    bool export_numerical_trace(int keep,std::string& err);
     bool stage0_phase_on_ = false;
     float* stage0_phase_dev_ = nullptr;   // [T][12 layers][4 phases][n_embd]
     bool stage0_phase_capture(int64_t layer, int row0, int rows, int phase,
