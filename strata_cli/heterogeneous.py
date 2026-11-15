@@ -29,7 +29,7 @@ def add_arguments(parser):
     parser.add_argument("--model-name", default="qwen3.8-flash-next", help="served model name for generated config")
     parser.add_argument("--chat", action="store_true", help="render one user message with the exact model chat template")
     parser.add_argument("--max-new-tokens", type=int, default=16, help="1..256; workload mode up to 4096, greedy head")
-    parser.add_argument("--workload-mode", action="store_true", help="experimental grouped resident context <=32768 and completion <=4096")
+    parser.add_argument("--workload-mode", action="store_true", help="experimental grouped or two-HIP-stage resident context <=32768 and completion <=4096")
     parser.add_argument("--prompt-chunk", type=int, default=1, help="1..8; 0 selects largest safe verifier window")
     parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 2..8192 or 32768 in workload mode; worker capacities apply")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")

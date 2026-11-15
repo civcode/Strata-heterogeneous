@@ -161,6 +161,43 @@ void nonfinite_fail_closed() {
     }
     check(fake_cuda::allocations==0,"guard cleanup");
 }
+void hip_only_grouped_entry() {
+    fv::reset(); Fixture f; std::string err;
+    f.plan.stages={{Backend::hip,0,0,2},{Backend::hip,1,2,4}};
+    strata::core::SessionState front{0,2,32}, back{2,4,32};
+    int pools0=0,pools1=0;
+    int32_t r0[8]={0,1,2,3,-1,-1,-1,-1};
+    int32_t r1[8]={-1,-1,-1,-1,0,1,2,3};
+    uint8_t cache=1;
+    const auto zero=[](strata::core::SessionState&,const strata::core::ModelGeometry&,void*){};
+    std::vector<HipNativeChainStage> bindings={
+        {{f.weights,f.model,front,{r0,r0,&cache,nullptr,4},pool,&pools0,123,8,4,0,zero},0},
+        {{f.weights,f.model,back,{r1,r1,&cache,nullptr,4},pool,&pools1,123,8,4,0,zero},0}
+    };
+    {
+        HipFinalVerifierExecutor stage(bindings);
+        check(stage.prepare(f.plan,1,err),"HIP-only grouped entry needs no external input");
+        check(fake_cuda::allocations==1,"only native local mapped handoff, no cross-runtime input/staging");
+        check(stage.reset_request(1,err),"HIP-only grouped reset");
+        check(stage.adopt_native_prefill(1,5,err),"adopt already drained local prefill");
+        check(!stage.begin_window({0,{5,6}},1,2,err),"stale position after local prompt refused");
+        check(stage.begin_window({5,{5,6}},1,2,err),"local prompt continuation admitted");
+        Buffer input(2,f.plan.geometry); FinalStageResult output;
+        auto frame=f.frame(2,1,2); frame.stage_index=1;
+        const int copies=fake_cuda::copies;
+        check(stage.run_final_window(frame,input.view,output,err),"HIP-only grouped final result");
+        check(fake_cuda::copies==copies,"no dummy activation uploaded at embedding entry");
+        check(fv::run_devices==std::vector<int>({0,1}) && pools0==1 && pools1==1,
+              "both HIP owners execute native chain");
+        check(output.stage_index==1 && fv::logit_devices==std::vector<int>({1,1}),
+              "head stays on terminal owner");
+        check(stage.commit_prefix(1,2,1,err) && fv::commit_devices==std::vector<int>({0,1}),
+              "both HIP owners commit before ACK");
+        check(stage.reset_request(2,err),"HIP-only grouped chain can be reset after commit");
+        stage.shutdown();
+    }
+    check(fake_cuda::allocations==0,"HIP-only grouped cleanup");
+}
 void grouped_native_chain() {
     fv::reset(); Fixture f; std::string err;
     f.plan.stages = {{Backend::cuda,0,0,2},{Backend::hip,0,2,3},{Backend::hip,1,3,4}};
@@ -347,7 +384,7 @@ void fault_injection() {
 }
 int main() {
     try {
-        success_and_replay(); invalid_inputs(); nonfinite_fail_closed(); fault_injection(); grouped_native_chain();
+        success_and_replay(); invalid_inputs(); nonfinite_fail_closed(); fault_injection(); grouped_native_chain(); hip_only_grouped_entry();
         std::cout << "HIP final verifier CPU-double tests: PASS (" << assertions << " assertions; no GPU)\n";
         return 0;
     } catch (const std::exception& e) {
