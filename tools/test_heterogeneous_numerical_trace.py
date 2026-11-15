@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 import heterogeneous_numerical_trace as t
+from heterogeneous_prefill_stage_gate import experiment_identity
 
 
 class TraceTests(unittest.TestCase):
@@ -125,7 +126,8 @@ class TraceTests(unittest.TestCase):
             rec={'marker':marker,'source':(1,2),'bridge':{'status':'PASS'},'local_links_exact':True,'serial_controls_exact':True,
                  'residuals':{},'states':states,'logits':{},'quality':{'status':'FAIL'}}
             old=copy.deepcopy(rec);old['marker'].pop('numerical_trace')
-            stub=types.SimpleNamespace(read_capture=lambda p:rec if p==cap else old)
+            stub=types.SimpleNamespace(read_capture=lambda p:rec if p==cap else old,
+                                       experiment_identity=experiment_identity)
             with patch.dict(sys.modules,{'heterogeneous_prefill_stage_gate':stub}):
                 out=t.analyze(cap,base)
                 self.assertEqual(len(out['layers']),48*3)
