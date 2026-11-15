@@ -9,6 +9,7 @@
 #include "strata_heterogeneous/mtp_three_round.hpp"
 #include "strata_heterogeneous/mtp_generation.hpp"
 #include "strata_heterogeneous/mtp_resident.hpp"
+#include "strata_heterogeneous/mtp_request_policy.hpp"
 #include "strata_heterogeneous/speculation.hpp"
 #include "strata_heterogeneous/mtp_state_trace.hpp"
 #include "strata/artifact/gguf_reader.hpp"
@@ -39,10 +40,10 @@ class NativeMtpProbe final : public HipFinalObserver {
 public:
     NativeMtpProbe(std::string rt, std::vector<std::string> shards, uint64_t reserve,
                    uint64_t arena_budget, unsigned windows, unsigned relay_rounds = 0,
-                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false, MtpGenerationPolicy generation = {}, bool resident_generation = false)
+                   std::string trace_prefix = {}, bool reprime_tail = false, bool front_trace = false, bool repeat_round = false, bool fresh_replay = false, bool three_round = false, bool three_round_variable = false, MtpGenerationPolicy generation = {}, bool resident_generation = false, std::vector<int32_t> service_stops = {})
         : rt_(std::move(rt)), shards_(std::move(shards)), reserve_(reserve),
           arena_budget_(arena_budget), windows_(windows), relay_rounds_(relay_rounds),
-          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable), generation_(std::move(generation)), resident_generation_(resident_generation), request_(resident_generation?0:1) {}
+          trace_prefix_(std::move(trace_prefix)), reprime_tail_(reprime_tail), front_trace_(front_trace), repeat_round_(repeat_round), fresh_replay_(fresh_replay), three_round_(three_round), three_round_variable_(three_round_variable), generation_(std::move(generation)), resident_generation_(resident_generation), request_(resident_generation?0:1), service_stops_(std::move(service_stops)) {}
     ~NativeMtpProbe() override { shutdown(); }
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
@@ -62,7 +63,12 @@ public:
             (trace_prefix_.empty()==front_trace_))) {
             error="invalid MTP three-round diagnostic"; return false;
         }
-        if (resident_generation_ && !generation_.enabled()) {error="resident MTP requires bounded generation";return false;}
+        if (service_enabled() && (!resident_generation_ || generation_.enabled() || relay_rounds_ ||
+            three_round_ || three_round_variable_ || fresh_replay_ || repeat_round_ || reprime_tail_ || front_trace_ ||
+            !trace_prefix_.empty() || reserve_ < (1ull<<30) || !MtpRequestPolicy{2048,1,4,248320,{0},service_stops_}.valid())) {
+            error="invalid experimental resident MTP service configuration";return false;
+        }
+        if (resident_generation_ && !generation_.enabled() && !service_enabled()) {error="resident MTP requires bounded generation";return false;}
         if (generation_.enabled() && (!generation_.valid() || generation_.prompt_rows!=windows_ ||
             relay_rounds_ || three_round_ || three_round_variable_ || fresh_replay_ || repeat_round_ || reprime_tail_ ||
             (trace_prefix_.empty()==front_trace_))) {
@@ -143,7 +149,7 @@ public:
             geometry_=&g;
             context_=b.session.max_cells;
             max_t_=b.max_t;
-            if (resident_generation_ && !resident_kv_supported()) {error="resident MTP requires nonelastic dense resident BF16 draft state";return false;}
+            if (resident_generation_ && !resident_kv_supported()) {error="resident MTP draft KV format/residency mismatch";return false;}
             if (!resident_generation_ && !trace_prefix_.empty()) trace_=std::make_unique<MtpStateTrace>(trace_prefix_,g);
             std::fprintf(stderr,"HETERO_MTP_PROBE_MODE state_trace=%d front_trace=%d repeat_round=%d relay_rounds=%u\n",
                          !trace_prefix_.empty()?1:0,front_trace_?1:0,repeat_round_?1:0,relay_rounds_);
@@ -157,8 +163,22 @@ public:
     }
 
     bool resident_relay_enabled() const noexcept override {return resident_generation_;}
+    bool service_enabled() const noexcept override {return !service_stops_.empty();}
+    bool configure_request(const Frame& meta,std::string& error) override {
+        if (!service_enabled() || !cursor_ || !drafter_ || !request_ || meta.request_id!=request_ ||
+            meta.kind!=Kind::mtp_service_request || !meta.window || meta.window_id || meta.window->pos0 ||
+            committed_ || cursor_->committed_position() || service_policy_.valid() || !resident_kv_supported()) {
+            error="MTP service request identity or state refused";return false;
+        }
+        MtpRequestPolicy policy{static_cast<uint32_t>(context_),meta.mtp_max_new,4,static_cast<uint32_t>(n_vocab_),meta.window->token_ids,service_stops_};
+        if (!policy.valid() || meta.rows!=policy.prompt.size()) {error="invalid MTP service prompt or budget";return false;}
+        service_policy_=std::move(policy);
+        drafter_->set_prompt_len(static_cast<int64_t>(service_policy_.prompt.size()));
+        return true;
+    }
     bool reset_request(uint64_t request,std::string& error) override {
-        if (!resident_generation_ || !mtp_resident_next_request(request_,request) || !geometry_ ||
+        if (!resident_generation_ || (service_enabled() ? (!request || request_==UINT64_MAX || request!=request_+1) :
+            !mtp_resident_next_request(request_,request)) || !geometry_ ||
             !drafter_ || !cursor_ || !resident_kv_supported() || drafter_->chain_live() ||
             !ck(cudaSetDevice(device_),error) || !drafter_->idle(error)) {
             if(error.empty()) error="resident MTP reset identity/state/drain refused";
@@ -179,6 +199,7 @@ public:
         if (!trace_prefix_.empty())
             trace_=std::make_unique<MtpStateTrace>(trace_prefix_+".r"+std::to_string(request),*geometry_);
         committed_=0;
+        service_policy_={};
         verified_next_=-1;
         relay_pending_=false;
         request_=request;
@@ -188,10 +209,18 @@ public:
 
     bool begin(const WindowSpec& spec,uint64_t request,uint64_t window,std::string& error) override {
         if (!cursor_ || !request_ || request!=request_ || window!=committed_+1 || window>window_limit() ||
-            (window>windows_ && !relay_pending_) ||
+            (!service_enabled() && window>windows_ && !relay_pending_) ||
             (fresh_replay_ && spec.token_ids.size()!=1) || !ck(cudaSetDevice(device_),error)) {
             if(error.empty()) error="MTP probe window identity mismatch";
             return false;
+        }
+        if (service_enabled()) {
+            if (!service_policy_.valid() || (spec.pos0 < int64_t(service_policy_.prompt.size()) ?
+                !service_policy_.prompt_window(spec.pos0,spec.token_ids) :
+                (!service_policy_.decode_window(spec.pos0,verified_next_,spec.token_ids) ||
+                 (!relay_pending_ && (spec.token_ids.size()!=1 || service_policy_.can_offer(spec.pos0,verified_next_)))))) {
+                error="MTP service window outside admitted prompt or decode policy";return false;
+            }
         }
         if (generation_.enabled()) {
             if (window<=windows_ ? (spec.pos0!=int64_t(window-1) || spec.token_ids.size()!=1)
@@ -230,10 +259,14 @@ public:
               keep!=greedy_accepted_prefix(spec.token_ids,predictions)))) {
             error="invalid MTP generation commit"; return false;
         }
+        if (service_enabled() && (!service_policy_.valid() || (spec.pos0 < int64_t(service_policy_.prompt.size()) ?
+            keep!=spec.token_ids.size() : keep!=greedy_accepted_prefix(spec.token_ids,predictions)))) {
+            error="MTP service commit differs from admitted prefix";return false;
+        }
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
         ++committed_;
         verified_next_=predictions[keep-1];
-        if (generation_.enabled()) return true; // explicit next/terminal unsubmitted proposal requested by host
+        if (generation_.enabled() || service_enabled()) return true; // service has no terminal diagnostic draft
         // Finish the sole live relay with a second native draft for diagnosis
         // ONLY, even without tracing. Never submit another candidate window.
         // No front taps or state readbacks are added to the trace-free path.
@@ -265,11 +298,12 @@ public:
                 return true;
             },error);
     }
-    bool relay_enabled() const noexcept override { return relay_rounds_!=0 || generation_.enabled(); }
-    bool anchor_only_enabled() const noexcept override { return generation_.enabled(); }
+    bool relay_enabled() const noexcept override { return relay_rounds_!=0 || generation_.enabled() || service_enabled(); }
+    bool anchor_only_enabled() const noexcept override { return generation_.enabled() || service_enabled(); }
     bool propose(const WindowSpec& anchor, WindowSpec& offer, std::string& error) override {
         if (!relay_enabled() || !request_ || relay_pending_ || committed_<windows_ ||
-            (!generation_.enabled() && committed_>=windows_+relay_rounds_) ||
+            (service_enabled() && (!service_policy_.valid() || !service_policy_.can_offer(anchor.pos0,verified_next_))) ||
+            (!service_enabled() && !generation_.enabled() && committed_>=windows_+relay_rounds_) ||
             (generation_.enabled() && !generation_.can_draft(anchor.pos0)) ||
             !cursor_ || anchor.pos0!=cursor_->committed_position() ||
             anchor.token_ids!=std::vector<int32_t>{verified_next_} ||
@@ -297,6 +331,10 @@ public:
                     if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
                        probs[i]<0.f || probs[i]>1.f) {e="MTP relay invalid candidate";return false;}
                 candidates.assign(tokens.begin(),tokens.begin()+n);
+                if (service_enabled()) {
+                    auto clipped=service_policy_.clip_offer(cell+1,next,candidates);
+                    candidates.assign(clipped.begin()+1,clipped.end());
+                }
                 if (generation_.enabled()) {
                     // Record the original native list for independent fresh replay.
                     // Truncate only the outgoing live IDs, not the native draft.
@@ -311,7 +349,7 @@ public:
                 std::fprintf(stderr,"HETERO_MTP_RELAY_OFFER cell=%lld anchor=%d count=%d\n",
                              static_cast<long long>(cell),next,n);
                 return true;
-            },error,generation_.enabled());
+            },error,generation_.enabled() || service_enabled());
         relay_pending_=ok;
         return ok;
     }
@@ -348,10 +386,12 @@ private:
     MtpGenerationPolicy generation_;
     bool resident_generation_=false;
     uint64_t request_=1;
+    std::vector<int32_t> service_stops_;
+    MtpRequestPolicy service_policy_;
     const core::ModelGeometry* geometry_=nullptr;
     int64_t context_=0;
     size_t max_t_=0;
-    unsigned window_limit() const noexcept { return generation_.enabled()?generation_.feed_end():windows_+relay_rounds_; }
+    unsigned window_limit() const noexcept { return service_enabled() ? (service_policy_.valid()?static_cast<unsigned>(service_policy_.feed_end()):0u) : generation_.enabled()?generation_.feed_end():windows_+relay_rounds_; }
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;
@@ -365,6 +405,14 @@ private:
     bool resident_kv_supported() const noexcept {
         if (!drafter_) return false;
         const auto& state=drafter_->kv_state();
+        if (service_enabled()) {
+            // Native MtpDrafter inherits the requested target INT8 setting.
+            // Verify the actual independent draft state, not only the flag.
+            return state.kv_mode==0 && state.kv_elastic==-1 && state.kv_int8 && !state.kv_q4 &&
+                   !state.kv_hybrid && !state.kv_rot && state.k_q && state.v_q && state.k_scale && state.v_scale &&
+                   !state.k_pool && !state.v_pool && state.page_table && state.n_pages>0 &&
+                   state.n_slots==state.n_pages && !state.host.present() && state.max_cells==context_;
+        }
         return state.kv_mode==0 && state.kv_elastic<0 && !state.kv_int8 && !state.kv_q4 &&
                !state.kv_hybrid && state.k_pool && state.v_pool && state.n_slots==state.n_pages;
     }
@@ -380,7 +428,7 @@ private:
             ~ClearSource() { d.set_source_R(nullptr); }
         } clear{*drafter_};
         drafter_->set_source_R(row);
-        return drafter_->draft(1,&next,cell,0,tokens,e,probs,0.f,&n,&result);
+        return drafter_->draft(1,&next,cell,0,tokens,e,probs,service_enabled()?0.5f:0.f,&n,&result);
     }
     bool ck(cudaError_t rc,std::string& e) const {
         if(rc==cudaSuccess) return true;

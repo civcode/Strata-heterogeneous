@@ -29,6 +29,8 @@ public:
     virtual bool relay_enabled() const noexcept { return false; }
     virtual bool anchor_only_enabled() const noexcept { return false; }
     virtual bool resident_relay_enabled() const noexcept { return false; }
+    virtual bool service_enabled() const noexcept { return false; }
+    virtual bool configure_request(const Frame&,std::string& error) { error="MTP request-local policy unsupported";return false; }
     virtual bool reset_request(uint64_t,std::string& error) { error="terminal observer cannot reset";return false; }
     virtual bool propose(const WindowSpec&, WindowSpec&, std::string& error) {
         error="terminal observer does not relay proposals"; return false;
@@ -73,6 +75,8 @@ public:
     bool mtp_relay_enabled() const noexcept override { return observer_ && observer_->relay_enabled(); }
     bool mtp_anchor_only_enabled() const noexcept override { return observer_ && observer_->anchor_only_enabled(); }
     bool mtp_resident_enabled() const noexcept override { return observer_ && observer_->resident_relay_enabled(); }
+    bool mtp_service_enabled() const noexcept override { return observer_ && observer_->service_enabled(); }
+    bool configure_mtp_request(const Frame&, std::string&) override;
     bool propose_mtp(const WindowSpec&, WindowSpec&, std::string&) override;
     bool run_final_window(const Frame&, ActivationView, FinalStageResult&,
                           std::string&) override;

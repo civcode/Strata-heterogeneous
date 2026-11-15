@@ -80,7 +80,8 @@ uint32_t expected_bytes(const Frame& f) {
 }
 void validate_frame(const Frame& f) {
     if (f.kind != Kind::window_spec && f.kind != Kind::prefill_spec &&
-        f.kind != Kind::mtp_proposal_request && f.kind != Kind::mtp_proposal && f.window)
+        f.kind != Kind::mtp_proposal_request && f.kind != Kind::mtp_proposal &&
+        f.kind != Kind::mtp_service_request && f.kind != Kind::mtp_service_ready && f.window)
         throw std::invalid_argument("unexpected window specification");
     if (f.kind != Kind::commit_prefix && f.kind != Kind::committed_prefix && f.keep_count)
         throw std::invalid_argument("unexpected accepted-token count");
@@ -88,6 +89,8 @@ void validate_frame(const Frame& f) {
         throw std::invalid_argument("frame has unset request, plan, rows, or geometry");
     if (f.kind != Kind::prefill_spec && f.prefill_chunk)
         throw std::invalid_argument("unexpected native prefill chunk size");
+    if (f.kind != Kind::mtp_service_request && f.kind != Kind::mtp_service_ready && f.mtp_max_new)
+        throw std::invalid_argument("unexpected MTP service budget");
     const bool zero_identity = f.identity == std::array<uint32_t, 4>{};
     switch (f.kind) {
         case Kind::data:
@@ -125,6 +128,14 @@ void validate_frame(const Frame& f) {
                 throw std::invalid_argument("invalid window specification frame");
             f.window->validate(f.rows);
             break;
+        case Kind::mtp_service_request:
+        case Kind::mtp_service_ready:
+            if (f.window_id != 0 || !zero_identity || f.shared_checksum || !f.payload.empty() ||
+                !f.error.empty() || !f.window || f.window->pos0 != 0 || !f.mtp_max_new ||
+                f.mtp_max_new > 256 || uint64_t(f.rows) + f.mtp_max_new > 2048)
+                throw std::invalid_argument("invalid MTP service request shape or budget");
+            f.window->validate(f.rows);
+            break;
         case Kind::mtp_proposal_request:
         case Kind::mtp_proposal:
             if (!f.window_id || !zero_identity || f.shared_checksum || !f.payload.empty() ||
@@ -156,6 +167,7 @@ void validate_frame(const Frame& f) {
         case Kind::hello_direct_shared_final:
         case Kind::hello_guarded_direct:
         case Kind::hello_guarded_direct_final:
+        case Kind::hello_mtp_service_final:
             if (f.shared_checksum || !f.payload.empty() || !f.error.empty() ||
                 (f.identity[0] != static_cast<uint32_t>(Backend::cuda) &&
                  f.identity[0] != static_cast<uint32_t>(Backend::hip)) ||
@@ -309,15 +321,18 @@ std::vector<uint8_t> encode(const Frame& f) {
     else if (f.kind == Kind::hello || f.kind == Kind::hello_shared ||
              f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final ||
              f.kind == Kind::hello_direct_shared || f.kind == Kind::hello_direct_shared_final ||
-             f.kind == Kind::hello_guarded_direct || f.kind == Kind::hello_guarded_direct_final)
+             f.kind == Kind::hello_guarded_direct || f.kind == Kind::hello_guarded_direct_final ||
+             f.kind == Kind::hello_mtp_service_final)
         for (uint32_t word : f.identity) add_u32(payload, word);
     else if (f.kind == Kind::shared_data) add_u32(payload, f.shared_checksum);
     else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec ||
-               f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal) {
+               f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal ||
+               f.kind == Kind::mtp_service_request || f.kind == Kind::mtp_service_ready) {
         add_u64(payload, static_cast<uint64_t>(f.window->pos0));
         add_u32(payload, static_cast<uint32_t>(f.window->token_ids.size()));
         for (int32_t token : f.window->token_ids) add_u32(payload, static_cast<uint32_t>(token));
         if (f.kind == Kind::prefill_spec) add_u32(payload,f.prefill_chunk);
+        if (f.kind == Kind::mtp_service_request || f.kind == Kind::mtp_service_ready) add_u32(payload,f.mtp_max_new);
     } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix)
         add_u32(payload, f.keep_count);
     // Data is already little-endian float32 (validate_wire_frame).
@@ -362,8 +377,10 @@ Frame decode(const std::vector<uint8_t>& bytes) {
         if (n) std::memcpy(f.payload.data(), payload, n);
     } else if (f.kind == Kind::failure) f.error.assign(reinterpret_cast<const char*>(payload), n);
     else if (f.kind == Kind::window_spec || f.kind == Kind::prefill_spec ||
-               f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal) {
-        const uint32_t fixed = f.kind == Kind::prefill_spec ? 16 : 12;
+               f.kind == Kind::mtp_proposal_request || f.kind == Kind::mtp_proposal ||
+               f.kind == Kind::mtp_service_request || f.kind == Kind::mtp_service_ready) {
+        const bool mtp_service = f.kind == Kind::mtp_service_request || f.kind == Kind::mtp_service_ready;
+        const uint32_t fixed = (f.kind == Kind::prefill_spec || mtp_service) ? 16 : 12;
         if (n < fixed || (n - fixed) % 4 != 0 || get_u32(payload + 8) != (n - fixed) / 4 ||
             get_u32(payload + 8) > (f.kind == Kind::prefill_spec ? max_native_prefill_tokens : max_window_tokens))
             throw std::invalid_argument("invalid token window wire length");
@@ -375,6 +392,7 @@ Frame decode(const std::vector<uint8_t>& bytes) {
             w.token_ids.push_back(static_cast<int32_t>(get_u32(payload + 12 + 4 * i)));
         f.window = std::move(w);
         if (f.kind == Kind::prefill_spec) f.prefill_chunk = get_u32(payload + n - 4);
+        if (mtp_service) f.mtp_max_new = get_u32(payload + n - 4);
     } else if (f.kind == Kind::commit_prefix || f.kind == Kind::committed_prefix) {
         if (n != 4) throw std::invalid_argument("invalid accepted-prefix wire length");
         f.keep_count = get_u32(payload);
@@ -384,7 +402,8 @@ Frame decode(const std::vector<uint8_t>& bytes) {
     } else if (f.kind == Kind::hello || f.kind == Kind::hello_shared ||
                f.kind == Kind::hello_final || f.kind == Kind::hello_shared_final ||
              f.kind == Kind::hello_direct_shared || f.kind == Kind::hello_direct_shared_final ||
-             f.kind == Kind::hello_guarded_direct || f.kind == Kind::hello_guarded_direct_final) {
+             f.kind == Kind::hello_guarded_direct || f.kind == Kind::hello_guarded_direct_final ||
+             f.kind == Kind::hello_mtp_service_final) {
         if (n != 16) throw std::invalid_argument("hello identity has wrong length");
         for (size_t i = 0; i < 4; ++i) f.identity[i] = get_u32(payload + 4 * i);
     }

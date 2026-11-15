@@ -76,7 +76,8 @@ enum class Kind : uint16_t {
     window_armed = 20, // opt-in receiver prelaunch ACK
     mtp_proposal_request = 21, mtp_proposal = 22, // terminal-only, paired with last committed window
     hello_direct_shared = 23, hello_direct_shared_final = 24, // registration and preparation already completed
-    hello_guarded_direct = 25, hello_guarded_direct_final = 26 // distinct checked-publication capability
+    hello_guarded_direct = 25, hello_guarded_direct_final = 26, // distinct checked-publication capability
+    hello_mtp_service_final = 27, mtp_service_request = 28, mtp_service_ready = 29
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
@@ -107,6 +108,7 @@ struct Frame {
     std::optional<WindowSpec> window; // window_spec, prefill_spec, MTP request/proposal
     uint32_t keep_count = 0; // commit_prefix and committed_prefix only
     uint32_t prefill_chunk = 0; // prefill_spec only
+    uint32_t mtp_max_new = 0; // request-local MTP service metadata only
 };
 
 constexpr uint32_t max_payload_bytes = 16 * 1024 * 1024;

@@ -26,7 +26,7 @@ Frame control(const Plan& plan, size_t index, Kind kind, uint64_t request = 1,
     f.rows = rows;
     f.plan_fingerprint = plan.fingerprint();
     f.geometry = plan.geometry;
-    if (kind == Kind::hello_final || kind == Kind::hello_shared_final || kind == Kind::hello_direct_shared_final || kind == Kind::hello_guarded_direct_final) {
+    if (kind == Kind::hello_final || kind == Kind::hello_shared_final || kind == Kind::hello_direct_shared_final || kind == Kind::hello_guarded_direct_final || kind == Kind::hello_mtp_service_final) {
         const Stage& s = plan.stages.at(index);
         f.identity = {static_cast<uint32_t>(s.backend), s.ordinal, s.first_layer, s.end_layer};
     }
@@ -74,6 +74,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
     if (guarded_direct && !direct_bind) throw std::invalid_argument("guarded consumer needs registered slot");
     Frame hello = control(plan, index,
         direct_bind ? (guarded_direct ? Kind::hello_guarded_direct_final : Kind::hello_direct_shared_final) :
+        executor.mtp_service_enabled() ? Kind::hello_mtp_service_final :
         shared_memory ? Kind::hello_shared_final : Kind::hello_final);
     if (group_hip) {
         const auto d = worker_domains(plan, true).back();
@@ -111,13 +112,17 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
             throw std::runtime_error("resident MTP requires explicit resident relay");
         if (executor.mtp_relay_enabled() && ((resident && !executor.mtp_resident_enabled()) || !group_hip || !gate || executor.receiver_arm_enabled()))
             throw std::runtime_error("MTP relay requires explicitly admitted grouped HIP without external arm");
+        if (executor.mtp_service_enabled() && (!resident || !shared_memory || !executor.mtp_resident_enabled()))
+            throw std::runtime_error("MTP service requires shared resident relay");
+        bool mtp_service_configured = false;
         std::optional<Frame> last_mtp_commit;
         bool mtp_requested = false;
         while (auto request = resident ? receive_idle_frame(fd, timeout_ms)
                                        : receive_frame(fd, timeout_ms)) {
             try {
                 if (request->kind == Kind::begin_request) {
-                    if (!resident || request->request_id <= active_request || (executor.mtp_resident_enabled() && !mtp_resident_next_request(active_request,request->request_id)))
+                    if (!resident || request->request_id <= active_request || (executor.mtp_resident_enabled() && !executor.mtp_service_enabled() && !mtp_resident_next_request(active_request,request->request_id)) ||
+                        (executor.mtp_service_enabled() && request->request_id != active_request+1))
                         throw std::runtime_error("unexpected or replayed resident request");
                     const auto expected = control(plan, index, Kind::begin_request,
                                                   request->request_id, 0, 1);
@@ -128,6 +133,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                     active_request = request->request_id;
                     last_mtp_commit.reset();
                     mtp_requested=false;
+                    mtp_service_configured=false;
                     trace_window(gate.get(), "request_ready");
                     Frame ack = *request;
                     ack.kind = Kind::request_ready;
@@ -136,6 +142,20 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 }
                 if (resident && (!active_request || request->request_id != active_request))
                     throw std::runtime_error("resident window lacks matching request reset");
+                if (request->kind == Kind::mtp_service_request) {
+                    if (!executor.mtp_service_enabled() || mtp_service_configured || last_mtp_commit ||
+                        !request->window || !gate)
+                        throw std::runtime_error("unexpected MTP service request metadata");
+                    match(*request,control(plan,index,Kind::mtp_service_request,active_request,0,request->rows),Kind::mtp_service_request);
+                    if (!executor.configure_mtp_request(*request,error))
+                        throw std::runtime_error(error.empty()?"MTP service metadata refused":error);
+                    mtp_service_configured=true;
+                    request->kind=Kind::mtp_service_ready;
+                    send_frame(fd,*request,timeout_ms);
+                    continue;
+                }
+                if (executor.mtp_service_enabled() && !mtp_service_configured)
+                    throw std::runtime_error("MTP service requires request-local metadata before execution");
                 if (request->kind == Kind::prefill_spec) {
                     if (executor.mtp_relay_enabled() || executor.receiver_arm_enabled() || !resident || !gate || !prefill ||
                         !gate->begin_prefill(*request,error) ||
@@ -278,10 +298,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified, bool early_window_spec, bool guarded_direct)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified, bool early_window_spec, bool guarded_direct, bool mtp_service)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified), early_window_spec_(early_window_spec), guarded_direct_(guarded_direct) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified), early_window_spec_(early_window_spec), guarded_direct_(guarded_direct), mtp_service_(mtp_service) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
@@ -297,6 +317,9 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
     if (early_window_spec_ && (!resident_ || !group_hip || !shared_memory_ ||
         fds_.size() != 2 || receiver_arm_ || mtp_relay_ || direct_verified_ || !timeout_ms_))
         throw std::invalid_argument("early window metadata requires ordinary grouped mixed resident shared transport");
+    if (mtp_service_ && (!mtp_resident_ || !shared_memory_ || !mtp_relay_ || !mtp_anchor_only_ ||
+                         fds_.size()!=2 || !group_hip || require_compact_ || receiver_arm_ || direct_verified_))
+        throw std::invalid_argument("MTP service requires two grouped mixed resident shared domains and full logits");
     if (mtp_anchor_only_ && !mtp_relay_) throw std::invalid_argument("anchor-only MTP requires relay");
     if (mtp_resident_ && (!resident_ || !mtp_relay_ || !mtp_anchor_only_))
         throw std::invalid_argument("resident MTP requires explicit resident and anchor-only relay");
@@ -332,7 +355,7 @@ void FinalPipelineSession::initialize() {
             const bool last = i + 1 == fds_.size();
             const Kind kind = guarded_direct_ ? (last ? Kind::hello_guarded_direct_final : Kind::hello_guarded_direct) :
                           direct_verified_ ? (last ? Kind::hello_direct_shared_final : Kind::hello_direct_shared)
-                          : last ? (shared_memory_ ? Kind::hello_shared_final : Kind::hello_final)
+                          : last ? (mtp_service_ ? Kind::hello_mtp_service_final : shared_memory_ ? Kind::hello_shared_final : Kind::hello_final)
                                  : (shared_memory_ ? Kind::hello_shared : Kind::hello);
             const Frame expected = control(plan_, endpoints_[i], kind);
             match(*hello, expected, kind);
@@ -351,7 +374,8 @@ void FinalPipelineSession::initialize() {
 }
 void FinalPipelineSession::begin_request(uint64_t request) {
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !request ||
-        request <= resident_request_ || (mtp_resident_ && !mtp_resident_next_request(resident_request_,request)))
+        request <= resident_request_ || (mtp_resident_ && !mtp_service_ && !mtp_resident_next_request(resident_request_,request)) ||
+        (mtp_service_ && request != resident_request_+1))
         throw std::logic_error("resident reset requires an idle pipeline and increasing request ID");
     try {
         PerformanceSpan total("coordinator", "reset_barrier", fds_.size(), request, 0, 1);
@@ -375,6 +399,26 @@ void FinalPipelineSession::begin_request(uint64_t request) {
         last_window_ = 0;
         mtp_anchor_.reset(); mtp_offer_.reset(); mtp_requested_=false;
         mtp_pending_inputs_.clear(); mtp_vocab_=0;
+        mtp_service_policy_.reset();
+    } catch (...) { poison(); throw; }
+}
+
+void FinalPipelineSession::configure_mtp_request(uint64_t request, const MtpRequestPolicy& policy) {
+    if (!mtp_service_ || !initialized_ || poisoned_ || pending_ || last_window_ ||
+        !request || request != resident_request_ || mtp_service_policy_ || !policy.valid() || policy.spec != 4)
+        throw std::logic_error("MTP service requires a valid new request after all reset ACKs");
+    try {
+        Frame meta = control(plan_,endpoints_.back(),Kind::mtp_service_request,request,0,static_cast<uint32_t>(policy.prompt.size()));
+        meta.window=WindowSpec{0,policy.prompt};
+        meta.mtp_max_new=policy.max_new;
+        send_frame(fds_.back(),meta,timeout_ms_);
+        auto ack=receive_frame(fds_.back(),timeout_ms_);
+        if (!ack) throw std::runtime_error("terminal closed during MTP service metadata");
+        if (ack->kind==Kind::failure) throw std::runtime_error("terminal MTP service metadata: "+ack->error);
+        match(*ack,meta,Kind::mtp_service_ready);
+        if (!ack->window || ack->window->pos0!=0 || ack->window->token_ids!=policy.prompt || ack->mtp_max_new!=policy.max_new)
+            throw std::runtime_error("MTP service metadata ACK mismatch");
+        mtp_service_policy_=policy;
     } catch (...) { poison(); throw; }
 }
 
@@ -469,6 +513,16 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
         spec.validate(initial.rows);
         if (direct_verified_ && initial.rows > 8)
             throw std::invalid_argument("direct verified slot supports at most eight rows");
+        if (mtp_service_) {
+            if (!mtp_service_policy_) throw std::logic_error("MTP service request metadata missing");
+            const auto& policy=*mtp_service_policy_;
+            if (spec.pos0 < int64_t(policy.prompt.size())) {
+                if (!policy.prompt_window(spec.pos0,spec.token_ids)) throw std::invalid_argument("MTP service prompt mismatch");
+            } else if (!mtp_anchor_ || mtp_anchor_->pos0!=spec.pos0 ||
+                       !policy.decode_window(spec.pos0,mtp_anchor_->token_ids.front(),spec.token_ids) ||
+                       (!mtp_offer_ && (spec.token_ids.size()!=1 || policy.can_offer(spec.pos0,spec.token_ids.front()))))
+                throw std::invalid_argument("MTP service decode window mismatch");
+        }
         if (mtp_offer_ && (initial.request_id!=last_request_ || initial.window_id!=last_window_+1 ||
                           spec.pos0!=mtp_offer_->pos0 || spec.token_ids!=mtp_offer_->token_ids))
             throw std::invalid_argument("next window must consume exact MTP offer");
@@ -570,6 +624,8 @@ FinalStageResult FinalPipelineSession::commit(uint32_t n_keep) {
     try {
         if (gate_.provisional().has_nonfinite())
             throw std::runtime_error("nonfinite head result cannot be committed");
+        if (mtp_service_policy_ && pending_pos_ < int64_t(mtp_service_policy_->prompt.size()) && n_keep!=pending_rows_)
+            throw std::invalid_argument("MTP service prompt requires full commit");
         if (!mtp_pending_inputs_.empty() && n_keep!=greedy_accepted_prefix(mtp_pending_inputs_,gate_.provisional().predicted_tokens))
             throw std::invalid_argument("MTP commit differs from target-authoritative greedy prefix");
         PerformanceSpan total("coordinator", "commit_barrier", fds_.size(), pending_request_,
@@ -617,6 +673,8 @@ WindowSpec FinalPipelineSession::request_mtp_proposal() {
         !mtp_anchor_ || mtp_requested_ || mtp_offer_)
         throw std::logic_error("MTP relay requires fresh all-stage committed prefix");
     try {
+        if (mtp_service_ && (!mtp_service_policy_ || !mtp_service_policy_->can_offer(mtp_anchor_->pos0,mtp_anchor_->token_ids.front())))
+            throw std::invalid_argument("MTP service proposal outside safe request budget");
         mtp_requested_=true;
         Frame request=control(plan_,endpoints_.back(),Kind::mtp_proposal_request,last_request_,last_window_,1);
         request.window=*mtp_anchor_;
@@ -632,6 +690,8 @@ WindowSpec FinalPipelineSession::request_mtp_proposal() {
             std::any_of(reply->window->token_ids.begin(),reply->window->token_ids.end(),
                 [this](int32_t id){return id<0 || static_cast<uint32_t>(id)>=mtp_vocab_;}))
             throw std::runtime_error("MTP proposal invalid anchor, position or vocabulary");
+        if (mtp_service_policy_ && !mtp_service_policy_->decode_window(reply->window->pos0,mtp_anchor_->token_ids.front(),reply->window->token_ids))
+            throw std::runtime_error("MTP service proposal exceeds stop or completion budget");
         mtp_offer_=*reply->window;
         return *mtp_offer_;
     } catch (...) { poison(); throw; }

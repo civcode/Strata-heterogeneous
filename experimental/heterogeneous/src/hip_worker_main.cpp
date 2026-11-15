@@ -126,6 +126,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     if (invocation.stage_index != domain.terminal_stage() || invocation.domain_configs.size() != domain.size())
         throw std::runtime_error("HIP domain invocation mismatch");
     const bool extended = invocation.long_context_chunk != 0;
+    const bool mtp_service = hetero::performance_flag("STRATA_HETERO_MTP_SERVICE");
+    if (mtp_service && (extended || invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
+        hetero::plan_spec(plan)!="cuda:0:0-15,hip:0:15-33,hip:1:33-48"))
+        throw std::runtime_error("MTP service candidate requires shared Q8 mixed 15/18/15");
     std::vector<hetero::HipWorkerConfig> configs;
     std::string error;
     for (size_t j = 0; j < domain.size(); ++j) {
@@ -151,6 +155,9 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
                 c.io_timeout_ms != first.io_timeout_ms)
                 throw std::runtime_error("HIP domain requires identical model, context and window limits");
         }
+        if (mtp_service && (c.max_cells!=2048 || c.max_t!=8 || c.free_reserve_bytes < (1ull<<30) ||
+            c.arena_budget_bytes || c.index_sha256!=hetero::mtp_qualification_index))
+            throw std::runtime_error("MTP service requires approved 2K full native capacity and reserve");
         configs.push_back(std::move(config));
     }
     std::vector<std::unique_ptr<LoadedHipStage>> owners;
@@ -223,11 +230,13 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
             (reprime && (trace_prefix.empty() || relay!=1)) || (front_trace && trace_prefix.empty())) throw std::runtime_error("invalid bounded MTP state trace");
         const char* raw_budget=std::getenv("STRATA_HETERO_MTP_GENERATE_MAX_NEW");
         const char* raw_stops=std::getenv("STRATA_HETERO_MTP_GENERATE_STOPS");
-        auto generation=hetero::mtp_generation_policy(windows,raw_budget?raw_budget:"0",raw_stops?raw_stops:"");
+        std::vector<int32_t> service_stops;
+        if (mtp_service) service_stops=hetero::mtp_generation_policy(1,"1",raw_stops?raw_stops:"").stops;
+        auto generation=hetero::mtp_generation_policy(windows,raw_budget?raw_budget:"0",mtp_service?"":raw_stops?raw_stops:"");
         const bool resident_generation=hetero::performance_flag("STRATA_HETERO_MTP_RESIDENT_GENERATION");
-        if (resident_generation && !generation.enabled()) throw std::runtime_error("resident MTP requires explicit generation policy");
+        if (resident_generation && !generation.enabled() && !mtp_service) throw std::runtime_error("resident MTP requires explicit generation policy");
         const auto& last=configs.back().fields;
-        if (generation.enabled()) {
+        if (generation.enabled() || mtp_service) {
             if (relay || fresh_replay || three_round || three_round_variable || reprime || repeat_round ||
                 (trace_prefix.empty()==front_trace))
                 throw std::runtime_error("invalid MTP generation qualification mode");
@@ -235,8 +244,9 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
                 throw std::runtime_error(error);
         }
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
-                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round,three_round_variable,std::move(generation),resident_generation);
+                                                  last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round,three_round_variable,std::move(generation),resident_generation,std::move(service_stops));
     }
+    if (mtp_service && !mtp) throw std::runtime_error("MTP service runtime missing");
     hetero::DirectHandoffRegistration registration;
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm,guarded_direct});
     hetero::DirectSharedBinder bind_slot;

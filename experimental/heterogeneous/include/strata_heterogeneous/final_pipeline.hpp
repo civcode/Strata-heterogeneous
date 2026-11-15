@@ -4,6 +4,7 @@
 // STFR/v1 result packet. No default engine path, weights, CUDA or HIP runtime.
 #include "strata_heterogeneous/host.hpp"
 #include "strata_heterogeneous/final_result.hpp"
+#include "strata_heterogeneous/mtp_request_policy.hpp"
 
 #include <memory>
 #include <string>
@@ -25,6 +26,10 @@ public:
     virtual bool mtp_relay_enabled() const noexcept { return false; }
     virtual bool mtp_anchor_only_enabled() const noexcept { return false; }
     virtual bool mtp_resident_enabled() const noexcept { return false; }
+    virtual bool mtp_service_enabled() const noexcept { return false; }
+    virtual bool configure_mtp_request(const Frame&, std::string& error) {
+        error = "request-local native MTP unsupported"; return false;
+    }
     virtual bool propose_mtp(const WindowSpec&, WindowSpec&, std::string& error) {
         error = "native MTP proposal relay unsupported"; return false;
     }
@@ -56,13 +61,14 @@ public:
                          bool shared_memory = false, bool resident = false,
                          bool fanout_control = false, bool require_compact = false, bool group_hip = false,
                          bool receiver_arm = false, bool mtp_relay = false, bool mtp_anchor_only = false, bool mtp_resident = false, bool direct_verified = false,
-                         bool early_window_spec = false, bool guarded_direct = false);
+                         bool early_window_spec = false, bool guarded_direct = false, bool mtp_service = false);
     ~FinalPipelineSession();
     FinalPipelineSession(const FinalPipelineSession&) = delete;
     FinalPipelineSession& operator=(const FinalPipelineSession&) = delete;
     void initialize();
     // All workers must reset and ACK before a new resident request can run.
     void begin_request(uint64_t request);
+    void configure_mtp_request(uint64_t request, const MtpRequestPolicy& policy);
     void native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference=false,
                         int total_timeout_ms=0);
     // Returns provisional head predictions; DOES NOT commit model state.
@@ -96,6 +102,8 @@ private:
     bool direct_verified_;
     bool early_window_spec_;
     bool guarded_direct_;
+    bool mtp_service_;
+    std::optional<MtpRequestPolicy> mtp_service_policy_;
     uint64_t resident_request_ = 0;
     bool initialized_ = false;
     bool poisoned_ = false;
