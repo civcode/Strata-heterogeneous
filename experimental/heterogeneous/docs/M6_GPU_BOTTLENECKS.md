@@ -2,7 +2,7 @@
 
 ## Why this is now the priority
 
-Operator observation after report 0008: vanilla Strata on two Radeon AI PRO R9700s reaches approximately AMD0 50% / AMD1 100% during decode and approximately 100% / 100% during prompt processing. Prior operator-reported decode throughput is ~120 tok/s. These are useful comparison points, not matched independent measurements; exact launch/model/profile/residency/draft mode/phase duration and sensor semantics still need verification.
+Operator observation after report 0008: vanilla Strata on two Radeon AI PRO R9700s reaches approximately AMD0 50% / AMD1 100% during decode and approximately 100% / 100% during prompt processing. Prior operator-reported decode throughput is ~120 tok/s; on 2026-11-15 the operator additionally reported prefill reaching ~4,000 tok/s. These are useful comparison points, not matched independent measurements; exact launch/model/profile/residency/draft mode/phase duration, prompt length, timing denominator and sensor semantics still need verification. See [VANILLA_STRATA_BASELINE.md](VANILLA_STRATA_BASELINE.md).
 
 Report 0008 (source 54011bed plus CPU reporting changes): same 12/18/18 full Q2_0 resident plan, six-task replay median native feedback 58.987 tok/s lookup-off, 58.172 lookup-on; all turns capped at 128 outputs, not primary agentic qualification. Lookup accepted 888/4182 draft proposals (~21.2%), and overall speed regressed. Prior repetitive-copy controls are non-gating. Neither changing placement nor tuning suffix copy can substitute for the bottleneck analysis.
 

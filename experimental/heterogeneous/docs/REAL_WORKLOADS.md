@@ -2,6 +2,10 @@
 
 Objective: useful tasks and reliable runtime at sustained performance, not tuning to a six-token numerical sample. Prior reports 0027.15 and 0030 remain FAIL under their unchanged diagnostic rules. Functional/task qualification is a new evidence track, not a reclassification or threshold change. Start with vanilla default HC weight/activation settings. Preserve process isolation, layer split, native kernels, stage-owned state, exact transport, finite checks and ACK-before-publication. No reverse grouped or bulk+MTP admission. Explicit opt-in only.
 
+## Vanilla reference
+
+The operator reports vanilla Strata on two R9700 GPUs reaching ~4,000 prefill tok/s and ~120 decode tok/s. See [VANILLA_STRATA_BASELINE.md](VANILLA_STRATA_BASELINE.md) for provenance and limitations. Use these as reference observations, not matched acceptance measurements; compare against the same workload and configuration before claiming a speed ratio or regression.
+
 ## Existing path and implementation candidate
 
 Use the existing CLI, resident coordinator and serve.server (no new HTTP server). One greedy active request, full independent reset and model's actual tokenizer/chat template. Stream committed tokens with --stream-tokens; bulk prefill via --native-prefill-chunk; serial baseline via chunk 1. Verified suffix lookup remains buffered only; bounded MTP harness stays separate, no general MTP integration yet.
