@@ -38,6 +38,7 @@ def check_log(text, identity):
 
 def compare_evidence(b, e, identity):
     a, z = b['marker'], e['marker']
+    require(a.get('hc_weight_contract') == z.get('hc_weight_contract'), 'activation intervention changed weight contract')
     require(a.get('hc_experiment') is None and z.get('hc_experiment') == identity and identity is not None,
             'expected default baseline and explicitly labeled intervention')
     require(all(a[k] == z[k] for k in ('plan', 'prefix_rows', 'chunk', 'token_ids', 'transport')) and

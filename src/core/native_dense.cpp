@@ -50,6 +50,10 @@ bool hc_q8_env() {
     // STRATA_GFX12_DEFAULTS=0; also on for gfx1151 (Strix Halo, STRATA_HC_Q8=0 turns it off), off elsewhere
     static const bool on = [] {
         const char* v = std::getenv("STRATA_HC_Q8");
+        if (v != nullptr && (std::strcmp(v, "0") == 0 || std::strcmp(v, "1") == 0)) {
+            std::fprintf(stderr, "STRATA_HC_WEIGHT_REQUEST q8=%s (explicit loader selection)\n", v);
+            return v[0] == '1';
+        }
         if (v != nullptr && v[0] == '1') return true;
         if (v != nullptr && v[0] != '\0' && std::strcmp(v, "auto") != 0) return false;
 #if defined(STRATA_USE_HIP)

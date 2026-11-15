@@ -428,6 +428,17 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
     if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
+    // Label explicit common-weight diagnostics without changing native loader defaults.
+    const char* weight_mode = std::getenv("STRATA_HETERO_HC_WEIGHT_CONTRACT");
+    if (weight_mode && *weight_mode) {
+        const std::string mode(weight_mode);
+        const char* q8 = std::getenv("STRATA_HC_Q8");
+        if ((mode != "bf16" && mode != "q8") || !q8 ||
+            std::string(q8) != (mode == "bf16" ? "0" : "1") ||
+            !(o.placement_capture || o.prefill_stage_capture || o.warmup_windows) ||
+            o.resident || !o.mtp_probe_rt.empty())
+            throw std::invalid_argument("explicit HC weight contract requires matching STRATA_HC_Q8 and bounded diagnostic");
+    }
     const auto hc_exp = strata::prefill::hc_experiment_config();
     const char* global_bf16x2 = std::getenv("STRATA_PREFILL_BF16X2");
     if (!hc_exp.valid() || (hc_exp.requested() &&
@@ -975,6 +986,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"state_capture\":" << (o.prefill_state_capture ? "true" : "false")
                  << ",\"first_token_capture\":" << (o.prefill_first_token ? "true" : "false")
                  << ",\"hc_replay_capture\":" << (o.prefill_hc_replay ? "true" : "false");
+        if (const char* weight = std::getenv("STRATA_HETERO_HC_WEIGHT_CONTRACT"); weight && *weight)
+            complete << ",\"hc_weight_contract\":" << json_string(weight);
         if (o.numerical_trace) complete << ",\"numerical_trace\":true";
         const auto hc_exp = strata::prefill::hc_experiment_config();
         if (hc_exp.requested())
@@ -1339,7 +1352,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                  << ",\"mtp_three_round_variable\":" << (o.mtp_three_round_variable ? "true" : "false")
                  << ",\"mtp_prompt_windows\":" << (o.mtp_three_round ? o.windows : 0u)
                  << ",\"model_fingerprint\":" << o.fingerprint
-                 << ",\"plan\":" << json_string(hetero::plan_spec(plan)) << "}\n";
+                 << ",\"plan\":" << json_string(hetero::plan_spec(plan));
+        if (const char* weight = std::getenv("STRATA_HETERO_HC_WEIGHT_CONTRACT"); weight && *weight)
+            complete << ",\"hc_weight_contract\":" << json_string(weight);
+        complete << "}\n";
         complete.flush();
         if (!complete) throw std::runtime_error("parity completion marker write failed");
     }

@@ -193,6 +193,7 @@ def analyze(prefix, baseline):
     c,b = read_capture(prefix), read_capture(baseline)
     m,old = c['marker'],b['marker']; cut,chunk=m['prefix_rows'],m['chunk']
     require(experiment_identity(m)==experiment_identity(old), 'observer baseline must use same HC experiment')
+    require(m.get('hc_weight_contract')==old.get('hc_weight_contract'), 'observer baseline must use same weight contract')
     require(prefix.resolve()!=baseline.resolve() and m.get('numerical_trace') is True and
             not old.get('numerical_trace') and not m['stage_reference'] and not old['stage_reference'] and
             (cut,chunk) in ((2,1),(2,2),(6,3),(6,6)) and tuple(m['token_ids'])==TOKENS[:cut+1], 'invalid trace case')
@@ -242,7 +243,8 @@ def analyze(prefix, baseline):
             previous[pos]=(completed_r(a),n['r_out.f32'] if pos<cut else completed_r(n))
             layers.append(item)
     return {'status':'DIAGNOSTIC_ONLY','case':[cut,chunk],'transport':m['transport'],'baseline_exact':True,
-            'quality':c['quality'],'baseline_files_exact':overlap_count,'first_differing_phase_by_position':first_phase,
+            'quality':c['quality'],'plan':m['plan'],'hc_weight_contract':m.get('hc_weight_contract'),
+            'hc_experiment':experiment_identity(m),'baseline_files_exact':overlap_count,'first_differing_phase_by_position':first_phase,
             'first_changed_route_layer_by_position':first_route,'layers':layers,'cut_state':states,
             'root_cause':'REQUIRES_REVIEW; router counterfactuals do not execute downstream experts or prove whole-model causality',
             'production_admission':'NOT_QUALIFIED','bulk_mtp':'NOT_ENABLED'}
