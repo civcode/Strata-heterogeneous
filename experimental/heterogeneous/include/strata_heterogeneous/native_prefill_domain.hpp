@@ -65,6 +65,10 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             cmd.stage_index < stages.size() - 1) {
             error = "native prefill domain command/topology mismatch"; return false;
         }
+        const bool local = !sender && stages.front().session.layer_lo == 0;
+        if (local && cmd.stage_index != 1) {
+            error = "full native HIP pair requires terminal physical stage 1"; return false;
+        }
         if ((first_probe || entry_state || hc_probe) && (!sender || !first_probe || !entry_state ||
             cmd.rows!=1 || cmd.prefill_chunk!=1 || cmd.request_id!=2)) {
             error="first-token prefill diagnostic requires one CUDA entry token";return false;
@@ -75,7 +79,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         const std::string reference=reference_raw?reference_raw:"";
         const bool stage_probe=!stage_capture.empty();
         const bool isolated=!reference.empty();
-        if ((isolated && !stage_probe) || (stage_probe &&
+        if ((local && (stage_probe || isolated)) || (isolated && !stage_probe) || (stage_probe &&
             (cmd.request_id!=2 || cmd.rows>prefill_stage_max_rows || cmd.prefill_chunk>cmd.rows ||
              cmd.geometry.hc!=4 || cmd.geometry.n_embd!=2560 || cmd.stage_index!=(sender?0u:2u) ||
              first_probe || entry_state || hc_probe ||
@@ -102,7 +106,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             lb = s.session.layer_hi;
         }
         if (sender ? (stages.front().session.layer_lo != 0 || lb >= stages.front().geometry.n_layers)
-                   : (stages.front().session.layer_lo <= 0 || lb != stages.front().geometry.n_layers)) {
+                   : (lb != stages.front().geometry.n_layers ||
+                      (!local && stages.front().session.layer_lo <= 0))) {
             error = "native prefill backend stage range mismatch"; return false;
         }
         owned.nodes.resize(stages.size());
@@ -117,13 +122,16 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             owned.nodes[i].pf->set_stage(stages[i].session.layer_lo,stages[i].session.layer_hi,
                 !isolated && i+1<stages.size()?owned.nodes[i+1].pf.get():nullptr);
         auto& first=owned.nodes.front();
-        if (!check(cudaSetDevice(first.device),"prefill bridge device") ||
+        if (!local && (!check(cudaSetDevice(first.device),"prefill bridge device") ||
             !check(cudaMallocHost(reinterpret_cast<void**>(&owned.pinned),size_t(chunk)*stride*sizeof(float)),
-                   "prefill bridge pinned staging")) return false;
+                   "prefill bridge pinned staging"))) return false;
         // Physical receiving stage, not the terminal HIP domain endpoint (2).
         const size_t boundary_stage = cmd.stage_index - (stages.size() - 1);
         const char* capture_prefix = std::getenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX");
         const bool capture_bridge = capture_prefix && *capture_prefix;
+        if (local && capture_bridge) {
+            error = "cross-runtime prefill capture is not valid on a full local domain"; return false;
+        }
         auto verify_piece = [&](const float* device, size_t off, size_t count,
                                 int64_t pos, const char* direction, cudaStream_t stream, std::string& err) {
             return capture_device_handoff(device + off * stride, owned.pinned + off * stride,
@@ -192,7 +200,7 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                     offset+=rows; return true;
                 } catch (const std::exception& ex) { err=ex.what(); return false; }
             };
-        } else {
+        } else if (!local) {
             first.pf->set_external_handoff([&](float* dst,int64_t rows,int64_t width,
                     int64_t pos,void* stream,std::string& err) {
                 try {
@@ -264,8 +272,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         if (entry_state && !entry_state("after_init",error)) return false;
         std::vector<int64_t> tokens(cmd.window->token_ids.begin(),cmd.window->token_ids.end());
         if (!check(cudaSetDevice(first.device),"prefill entry device") ||
-            !first.pf->run_external(tokens.data(),n,0,chunk,n>chunk,error)) return false;
-        if (offset!=n) { error="native prefill boundary did not transfer entire prompt"; return false; }
+            !first.pf->run_external(tokens.data(),n,0,chunk,n>chunk,error,local)) return false;
+        if (!local && offset!=n) { error="native prefill boundary did not transfer entire prompt"; return false; }
         if (isolated && !sender) {
             if (!check(cudaSetDevice(first.device),"isolated HIP0 drain owner") || !first.pf->idle(error) ||
                 !check(cudaSetDevice(owned.nodes[1].device),"isolated HIP1 owner") ||

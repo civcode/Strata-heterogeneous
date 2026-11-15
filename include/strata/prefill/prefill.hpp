@@ -225,8 +225,9 @@ public:
     /// Every local Prefill must have been successfully initialized, with idle, exclusively owned session/streams.
     /// A failure poisons the mixed request; the worker must settle its streams before releasing any resources.
     /// No layer-major, multi-prompt or early segment truncation on an external boundary yet.
+    /// Explicit local_full_chain uses the same validated chunk-major engine with no external callbacks.
     bool run_external(const int64_t* tokens, int64_t n, int64_t pos0, int64_t chunk_size,
-                      bool planned, std::string& err);
+                      bool planned, std::string& err, bool local_full_chain = false);
 
     const PrefillStats& stats() const { return stats_; }
 

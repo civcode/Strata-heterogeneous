@@ -8142,14 +8142,16 @@ bool Prefill::has_external_handoff() const {
 }
 
 bool Prefill::run_external(const int64_t* tokens, int64_t n, int64_t pos0, int64_t chunk_size,
-                           bool planned, std::string& err) {
+                           bool planned, std::string& err, bool local_full_chain) {
     err.clear();
 #if defined(STRATA_GPU_METAL)
-    (void) tokens; (void) n; (void) pos0; (void) chunk_size; (void) planned;
+    (void) tokens; (void) n; (void) pos0; (void) chunk_size; (void) planned; (void) local_full_chain;
     err = "prefill: external hand-off is a CUDA/HIP interface";
     return false;
 #else
-    if (!has_external_handoff() || !tokens || n <= 0 || pos0 < 0 || chunk_size <= 0 ||
+    if ((local_full_chain ? (has_external_handoff() || stage_lb_ != 0 || !next_)
+                          : !has_external_handoff()) ||
+        !tokens || n <= 0 || pos0 < 0 || chunk_size <= 0 ||
         (stage_lb_ != 0) != static_cast<bool>(external_input_) || hand_in_ != nullptr) {
         err = "prefill: invalid external segment or missing input callback";
         return false;

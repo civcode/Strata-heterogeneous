@@ -479,9 +479,9 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--lookup-draft requires buffered generation and chunk >= 2");
     if (!o.workload_mode && (o.context_limit > 8192 || o.generate > 256))
         throw std::invalid_argument("extended context or completion requires --workload-mode");
-    if (o.workload_mode && (!o.resident || !o.generate || !o.group_hip || o.prefill_parity_at ||
+    if (o.workload_mode && (!o.resident || !o.generate || o.prefill_parity_at ||
         o.generation_capture || !o.mtp_probe_rt.empty() || o.receiver_arm || o.hip_split_overlap))
-        throw std::invalid_argument("workload mode needs grouped resident ordinary text, without MTP or diagnostic overlap");
+        throw std::invalid_argument("workload mode needs resident ordinary text, without MTP or diagnostic overlap");
     if (o.generate) {
         if (o.generate >= o.context_limit)
             throw std::invalid_argument("completion budget leaves no prompt context");
@@ -524,6 +524,15 @@ std::string json_string(const std::string& value);
 struct GenerationLimits { uint32_t vocab, max_cells, max_t; };
 GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     const bool reverse = hetero::plan_spec(plan) == "hip:0:0-18,hip:1:18-36,cuda:0:36-48";
+    const bool hip_pair = plan.stages.size()==2 &&
+        plan.stages[0].backend==hetero::Backend::hip && plan.stages[1].backend==hetero::Backend::hip;
+    if (o.workload_mode && !o.group_hip && !hip_pair)
+        throw std::invalid_argument("ungrouped workload mode is restricted to two HIP stages");
+    if (hip_pair && (o.hip_split_overlap || o.receiver_arm || o.cuda_mapped_egress ||
+        !o.mtp_probe_rt.empty() || o.prefill_parity_at || !o.capture_prefix.empty() ||
+        o.generation_capture || o.placement_capture || o.layer_taps || o.boundary_capture ||
+        o.layer_zero_probe || o.stage0_phases || o.branch_probe || o.micro_probe))
+        throw std::invalid_argument("HIP-only pair supports ordinary inference only; diagnostic overlap, captures and MTP remain gated");
     // Reverse topology first qualifies the existing per-stage serial worker path.
     // Do not advertise grouped bulk prefill or MTP until their protocols are implemented.
     if (reverse && (o.group_hip || o.native_prefill_chunk || o.prefill_parity_at ||

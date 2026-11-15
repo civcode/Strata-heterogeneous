@@ -29,15 +29,19 @@ inline std::vector<BackendDomain> native_backend_domains(const Plan& plan) {
     return domains;
 }
 
-// Initial qualified topology target: CUDA front, terminal HIP chain.
+// Supported grouped topology shapes: CUDA front + terminal HIP pair, or a full HIP pair.
+// Grouped HIP-only is experimental; physical stage identity remains unchanged.
 // Do not quietly fall back to per-GPU execution for unsupported grouping.
 inline std::vector<BackendDomain> worker_domains(const Plan& plan, bool group_hip) {
     if (group_hip) {
         auto domains = native_backend_domains(plan);
-        if (domains.size() != 2 || domains[0].backend != Backend::cuda ||
-            domains[0].size() != 1 || domains[1].backend != Backend::hip ||
-            domains[1].size() != 2)
-            throw std::invalid_argument("grouped mode requires one CUDA stage followed by two HIP stages");
+        const bool hip_only = domains.size() == 1 && domains[0].backend == Backend::hip &&
+                              domains[0].size() == 2;
+        const bool mixed = domains.size() == 2 && domains[0].backend == Backend::cuda &&
+                           domains[0].size() == 1 && domains[1].backend == Backend::hip &&
+                           domains[1].size() == 2;
+        if (!hip_only && !mixed)
+            throw std::invalid_argument("grouped mode requires two HIP stages, optionally preceded by one CUDA stage");
         return domains;
     }
     plan.validate();

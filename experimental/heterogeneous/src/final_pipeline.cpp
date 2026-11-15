@@ -356,8 +356,12 @@ void FinalPipelineSession::begin_request(uint64_t request) {
 
 void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference) {
     if (receiver_arm_ || mtp_relay_) throw std::logic_error("receiver arm/MTP relay does not support native bulk prefill");
+    const bool local = endpoints_.size()==1 && starts_.front()==0 &&
+        endpoints_.front()==1 && plan_.stages.size()==2 &&
+        plan_.stages[0].backend==Backend::hip && plan_.stages[1].backend==Backend::hip;
+    const bool bridge = endpoints_.size()==2 && starts_.back()!=endpoints_.back();
     if (!initialized_ || poisoned_ || pending_ || !resident_ || !resident_request_ || last_window_ ||
-        endpoints_.size()!=2 || starts_.back()==endpoints_.back() ||
+        (!local && !bridge) ||
         tokens.empty() || tokens.size()>max_native_prefill_tokens || !chunk || chunk>max_native_prefill_chunk)
         throw std::logic_error("native prefill requires freshly reset grouped resident pipeline");
     if (isolated_stage_reference && (resident_request_!=2 || tokens.size()>16 || chunk>tokens.size() ||
@@ -374,12 +378,15 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
         Frame spec=control(plan_,endpoints_[0],Kind::prefill_spec,resident_request_,1,static_cast<uint32_t>(tokens.size()));
         spec.window=WindowSpec{0,tokens}; spec.prefill_chunk=chunk;
         validate_wire_frame(spec);
-        auto receive_spec=spec; receive_spec.stage_index=static_cast<uint32_t>(endpoints_[1]);
-        send_frame(fds_[1],receive_spec,timeout_ms_);
+        if (bridge) {
+            auto receive_spec=spec; receive_spec.stage_index=static_cast<uint32_t>(endpoints_[1]);
+            send_frame(fds_[1],receive_spec,timeout_ms_);
+        }
+        // A complete local HIP domain consumes the token spec once. No host R relay.
         send_frame(fds_[0],spec,timeout_ms_);
         const uint32_t cap=prefill_piece_rows(plan_.geometry);
         size_t offset=0;
-        while (!isolated_stage_reference && offset<tokens.size()) {
+        while (bridge && !isolated_stage_reference && offset<tokens.size()) {
             const size_t count=std::min({size_t(cap),size_t(chunk)-offset%chunk,tokens.size()-offset});
             auto piece=receive_frame(fds_[0],timeout_ms_);
             if (!piece || piece->kind==Kind::failure)
