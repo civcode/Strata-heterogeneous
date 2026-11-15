@@ -147,10 +147,10 @@ def prepare_native(args):
                 (spec_min_p is not None and (type(spec_min_p) not in (int, float) or spec_min_p != 0.5))):
             raise ValueError("MTP service candidate requires a runtime path, spec 4 and spec_min_p 0.5")
         if (args.plan not in ("cuda:0:0-15,hip:0:15-33,hip:1:33-48", "hip:0:0-24,hip:1:24-48") or not group or not args.shared or
-                kv != "int8" or args.max_context != 2048 or workload or extended or bulk or
+                kv != "int8" or args.max_context != 2048 or workload or extended or bulk>8 or
                 getattr(args, "lookup_draft", False) or
                 getattr(args, "pipeline_mode", None) is not None or getattr(args, "restart_clean", False)):
-            raise ValueError("MTP service candidate requires shared grouped Q8 2K and serial prefill")
+            raise ValueError("MTP service candidate requires shared grouped Q8 2K and bounded bulk chunk <=8")
         mtp_path = Path(mtp).expanduser().resolve(strict=True)
         if not mtp_path.is_dir():
             raise ValueError("MTP runtime must be an existing local directory")
@@ -177,6 +177,8 @@ def prepare_native(args):
         raise ValueError("coordinator lacks HIP-only MTP capability; rebuild matching binaries")
     if mtp is not None and getattr(args, "stream_tokens", False) and source.get("mtp_stream_cap") != 1:
         raise ValueError("coordinator lacks MTP streaming capability; rebuild matching binaries")
+    if mtp is not None and bulk and source.get("mtp_bulk_prompt_cap") != 7:
+        raise ValueError("coordinator lacks bounded MTP bulk prompt capability; rebuild matching binaries")
     if extended and source.get("long_context_cap") != MAX_LONG_CONTEXT:
         raise ValueError("coordinator does not advertise the long-context capability; rebuild matching binaries")
     gguf = source.get("gguf")
@@ -269,7 +271,8 @@ def encode_prompt(tok, source, prompt, chat, max_new, chunk):
     from serve.heterogeneous_contract import validate_request
     validate_request(ids, max_new, source["vocab"],
                      source.get("context_limit", min(source["max_cells"], 4096)),
-                     source.get("long_context", False))
+                     source.get("long_context", False),
+                     mtp_bulk=bool(source.get("mtp") and source.get("native_prefill_chunk")))
     if min(len(ids), chunk) > source["max_t"]:
         raise ValueError("prompt chunk exceeds validated worker max_t")
     return ids

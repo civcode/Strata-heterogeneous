@@ -472,10 +472,10 @@ Options parse(int argc, char** argv) {
         o.mtp_generation || o.mtp_resident_prompt_rows || o.generation_capture || o.mtp_relay_rounds ||
         o.mtp_state_trace || o.mtp_front_trace || o.mtp_repeat_native_round || o.mtp_reprime_tail ||
         o.mtp_three_round || o.mtp_three_round_variable || o.mtp_fresh_replay || o.workload_mode ||
-        o.long_context || o.lookup_draft || o.native_prefill_chunk || o.receiver_arm ||
+        o.long_context || o.lookup_draft || o.native_prefill_chunk>8 || o.receiver_arm ||
         o.cuda_mapped_egress || o.direct_verified || o.guarded_direct || !o.pipeline_mode.empty() ||
         !o.capture_prefix.empty() || o.warmup_windows || o.describe_source))
-        throw std::invalid_argument("MTP service requires explicit grouped Q8 2K resident generation; no other diagnostics or bulk");
+        throw std::invalid_argument("MTP service requires explicit grouped Q8 2K resident generation; bounded bulk chunk <=8 only");
     if (!o.mtp_service && !o.mtp_probe_rt.empty() && (!o.group_hip || !o.hip_split_overlap || o.receiver_arm || (o.generate && !o.mtp_generation) ||
         o.describe_source || o.warmup_windows || o.native_prefill_chunk || (!o.mtp_generation && o.tokens.empty()) ||
         !std::filesystem::path(o.mtp_probe_rt).is_absolute() || o.mtp_probe_rt.size()>4096 ||
@@ -501,7 +501,7 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("timed smoke requires grouped fixed tokens, 1..127 warm windows and <=128 evaluated tokens, no probes/captures");
     if (o.receiver_arm && (!o.hip_split_overlap || !o.group_hip || o.native_prefill_chunk || o.describe_source))
         throw std::invalid_argument("receiver arm requires explicit grouped HIP overlap and serial prefill");
-    if (o.hip_split_overlap && (!o.group_hip || o.native_prefill_chunk || o.describe_source))
+    if (o.hip_split_overlap && (!o.group_hip || (o.native_prefill_chunk && !o.mtp_service) || o.describe_source))
         throw std::invalid_argument("HIP split overlap qualification requires grouped native HIP and serial prefill");
     // Label explicit common-weight diagnostics without changing native loader defaults.
     const char* weight_mode = std::getenv("STRATA_HETERO_HC_WEIGHT_CONTRACT");
@@ -778,6 +778,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"mtp_service_cap\":1"
                   << ",\"mtp_hip_pair_cap\":1"
                   << ",\"mtp_stream_cap\":1"
+                  << ",\"mtp_bulk_prompt_cap\":7"
                   << ",\"long_context_cap\":" << hetero::max_long_context
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
@@ -1443,6 +1444,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             in >> count;
             const uint32_t max_new = u32(count, "resident max-new-tokens");
             const auto prompt = prompt_ids(in, o.context_limit);
+            if (o.mtp_service && o.native_prefill_chunk && prompt.size()>hetero::MtpRequestPolicy::bulk_prompt_limit)
+                throw std::invalid_argument("bounded MTP bulk prompt accepts at most seven tokens");
             if (!max_new || max_new > o.generate ||
                 uint64_t(prompt.size()) + max_new > limits.max_cells ||
                 uint64_t(prompt.size()) + max_new > o.context_limit ||

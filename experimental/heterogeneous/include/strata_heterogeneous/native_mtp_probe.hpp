@@ -186,6 +186,43 @@ public:
         drafter_->set_prompt_len(static_cast<int64_t>(service_policy_.prompt.size()));
         return true;
     }
+    // Called on the worker control thread before any target bulk execution.
+    bool begin_bulk_prompt(const Frame& cmd,std::string& error) {
+        if (!service_enabled() || !cursor_ || !drafter_ || !request_ || cmd.request_id!=request_ ||
+            cmd.kind!=Kind::prefill_spec || cmd.window_id!=1 || !cmd.window || cmd.window->pos0!=0 ||
+            cmd.rows!=cmd.window->token_ids.size() || committed_ || bulk_active_ ||
+            cursor_->committed_position() || relay_pending_ || verified_next_!=-1 ||
+            !resident_kv_supported() || !service_policy_.bulk_prefix(cmd.window->token_ids,cmd.prefill_chunk) ||
+            std::min<size_t>(cmd.rows,cmd.prefill_chunk)>max_t_) {
+            error="MTP bulk prompt metadata or state refused";return false;
+        }
+        bulk_active_=true;
+        return true;
+    }
+    // Native Prefill::on_chunk runs on the terminal owner's thread with its
+    // producer stream already fenced. Synchronous prime consumes R before
+    // the native prefill scratch is reused; no residual pointer is retained.
+    bool seed_bulk_prompt(const float* rows,int64_t count,int64_t pos,std::string& error) {
+        int current=-1;
+        if (!bulk_active_ || !cursor_ || !drafter_ || count<=0 ||
+            !ck(cudaGetDevice(&current),error) || current!=device_) {
+            if(error.empty()) error="MTP bulk residual owner/state refused";
+            return false;
+        }
+        return cursor_->seed_bulk_prompt_chunk(service_policy_.prompt,pos,rows,size_t(count),prime(),error);
+    }
+    bool finish_bulk_prompt(uint64_t request,uint32_t rows,std::string& error) override {
+        if (!bulk_active_ || !cursor_ || !drafter_ || request!=request_ || committed_ ||
+            !service_policy_.valid() || rows+1!=service_policy_.prompt.size() ||
+            cursor_->committed_position()!=rows || !ck(cudaSetDevice(device_),error) ||
+            !drafter_->idle(error) || !room(0,error)) {
+            if(error.empty()) error="MTP bulk prompt drain/adoption refused";
+            return false;
+        }
+        bulk_active_=false;
+        committed_=1; // one native prefill protocol window, not one per chunk
+        return true;
+    }
     bool reset_request(uint64_t request,std::string& error) override {
         if (!resident_generation_ || (service_enabled() ? (!request || request_==UINT64_MAX || request!=request_+1) :
             !mtp_resident_next_request(request_,request)) || !geometry_ ||
@@ -209,6 +246,7 @@ public:
         if (!trace_prefix_.empty())
             trace_=std::make_unique<MtpStateTrace>(trace_prefix_+".r"+std::to_string(request),*geometry_);
         committed_=0;
+        bulk_active_=false;
         service_policy_={};
         verified_next_=-1;
         relay_pending_=false;
@@ -398,6 +436,7 @@ private:
     uint64_t request_=1;
     std::vector<int32_t> service_stops_;
     MtpRequestPolicy service_policy_;
+    bool bulk_active_=false;
     const core::ModelGeometry* geometry_=nullptr;
     int64_t context_=0;
     size_t max_t_=0;

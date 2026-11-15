@@ -203,9 +203,13 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
 }
 bool HipFinalVerifierExecutor::adopt_native_prefill(uint64_t request,uint32_t rows,std::string& error) {
     // The native prompt engine has fully drained the same stage-local session.
-    if (observer_ || receiver_arm_enabled() || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
+    if (receiver_arm_enabled() || state_!=State::ready || request_!=request || !request || window_ || next_position_ ||
         !rows || rows>=bindings_.session.max_cells || chain_stages_.empty()) {
         error="native prefill position adoption refused"; return false;
+    }
+    if (observer_ && (!observer_->service_enabled() || !observer_->finish_bulk_prompt(request,rows,error) || !select_device(error))) {
+        if(error.empty()) error="native MTP bulk prompt adoption refused";
+        abort_once();return false;
     }
     next_position_=rows; window_=1; return true;
 }

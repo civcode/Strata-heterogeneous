@@ -7,7 +7,7 @@ reset. This is not a robust speed comparison or production admission.
 The reference and MTP had different native overlap settings. No long
 contexts or HTTP/cancellation qualification in 0048.
 
-## Current candidate (new HIP-only and streaming paths awaiting validation)
+## Current candidate (HIP-only and streaming bounded-qualified in 0049)
 
 - Exact Q2_0 pack/runtime identity admitted by the pinned MTP validator;
   target conversion checkpoint provenance remains unresolved.
@@ -23,7 +23,8 @@ contexts or HTTP/cancellation qualification in 0048.
 - Variable prompts and completion budgets 1..256 within 2048 total.
   Fixed spec=4, confidence threshold 0.5, serial prompt chunks 1..8.
   Buffered or incremental streaming is explicitly selected.
-- No native bulk prefill, long-context, lookup, compact/fast pipeline,
+- Serial prompt prefill remains the default. Explicit native bulk is an experimental bounded candidate; see below.
+- No long-context, lookup, compact/fast pipeline,
   guarded direct, automatic restart, stochastic sampling or MTP
   diagnostic captures in this candidate.
 - All-domain target prefix commit remains authoritative. Distinct final
@@ -59,6 +60,10 @@ individually; cancel/close during any batch yield drains a cancellation
 ACK at the same checkpoint before subsequent request admission.
 No guarantee of network-level latency or production cancellation yet.
 
+## Bounded native bulk prompt seed (0050 candidate; not yet qualified)
+
+Explicit `--native-prefill-chunk 1..8` with MTP admits at most seven prompt tokens in this initial candidate. One token bypasses bulk; larger prompts must select serial mode (chunk zero). The terminal HIP prefill's fenced `on_chunk` consumes completed R[p] with the actual prompt token at p+1, synchronous draft prime before R reuse. No host residual path to the drafter, no global embedding publication. The final prompt token remains in the ordinary verifier; a successful all-domain bulk ACK is an empty streaming checkpoint, allowing cancellation before that final token. The worker validates the exact request-local prefix and position; adoption requires a fully drained target and draft cursor at N-1. Capability `mtp_bulk_prompt_cap=7` gates Python activation. Do not use this experimental mode with general HTTP chat prompts or enable long contexts yet.
+
 ## Test configuration
 
 Create a new private server JSON using the established 2K stage configs
@@ -92,17 +97,6 @@ config). Native opt-in is --mtp-resident-service --mtp-probe-rt ABS_PATH
 
 ## Validation and next work
 
-0048: mixed buffered hardware scope passed; original focused CTest 7/7
-and Python 55/55 passed. New HIP-only and streaming work has not been
-compiled in the integrated checkout or exercised on GPUs/HTTP. Chat AI
-compiled exact new C++ stream cursor/header and test with g++ C++17
--Wall -Wextra -Wpedantic -Werror (18,248 assertions passed), ran the
-three independent Python stream contract tests against exact checked-in
-contract/long-context module blobs (PASS), and checked Python syntax for
-those two modules. Full adapter/CLI, native integration build and real
-GPU validation are outstanding (handoff 0049). The local full checkout
-remains blocked by GitHub DNS/access. No changes to default profiles.
+0048: mixed buffered hardware passed. 0049: integrated host/CUDA/HIP builds and focused CTest 8/8 and Python 44/44 passed. HIP-only streaming A/B/cancel/A and mixed streaming regression passed with 46.88 s GPU process wall time, normal shutdown. Network HTTP and full state parity remain unverified.
 
-Next: terminal native bulk residual seed with actual prompt successors,
-then scalable draft KV/memory admission, with short tests only. Do not
-enable 256K MTP until those features are implemented and admitted.
+0050: terminal native bulk residual seed is implemented in source but not integrated-built or GPU-qualified by Chat AI. Direct Git checkout remains blocked by DNS. Handoff 0050 covers focused local integration and bounded smoke. Next after bounded seed qualification: scalable draft KV/memory admission and broader prompt support, with short tests only. Do not enable 256K MTP until those features are implemented and admitted.

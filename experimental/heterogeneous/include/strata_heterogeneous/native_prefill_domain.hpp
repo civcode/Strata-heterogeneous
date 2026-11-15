@@ -31,7 +31,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         int timeout_ms, std::string& error,
         prefill::Prefill::FirstTokenProbe first_probe = {},
         std::function<bool(const char*,std::string&)> entry_state = {},
-        prefill::Prefill::FirstHcProbe hc_probe = {}) {
+        prefill::Prefill::FirstHcProbe hc_probe = {},
+        std::function<bool(const float*,int64_t,int64_t,std::string&)> terminal_chunk = {}) {
     struct Local {
         int device = -1;
         cudaStream_t stream = nullptr;
@@ -268,6 +269,15 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                     } catch(const std::exception& ex) {err=ex.what();return false;}
                 },false);
             }
+        }
+        if (terminal_chunk) {
+            if (sender || stage_probe || isolated || first_probe || entry_state || hc_probe || capture_bridge) {
+                error="terminal residual consumer requires ordinary grouped receiving prefill";return false;
+            }
+            // The final stage alone owns the post-layer residual. The native
+            // callback synchronizes its producer stream and fences reuse until
+            // the consumer returns. Never install a callback on the earlier GPU.
+            owned.nodes.back().pf->on_chunk=std::move(terminal_chunk);
         }
         // Initialize native owners on their actual devices. No cache loans or recreation.
         for (size_t i=0;i<stages.size();++i) {

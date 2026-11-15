@@ -157,7 +157,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                 if (executor.mtp_service_enabled() && !mtp_service_configured)
                     throw std::runtime_error("MTP service requires request-local metadata before execution");
                 if (request->kind == Kind::prefill_spec) {
-                    if (executor.mtp_relay_enabled() || executor.receiver_arm_enabled() || !resident || !gate || !prefill ||
+                    if ((executor.mtp_relay_enabled() && !executor.mtp_service_enabled()) || executor.receiver_arm_enabled() || !resident || !gate || !prefill ||
                         !gate->begin_prefill(*request,error) ||
                         !prefill(*request,fd,error) ||
                         !gate->finished_prefill(error))
@@ -429,8 +429,11 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
     if (total_timeout_ms < 0 || total_timeout_ms > long_prefill_timeout_ms ||
         (total_timeout_ms && isolated_stage_reference))
         throw std::invalid_argument("invalid extended prefill deadline");
-    if (receiver_arm_ || mtp_relay_ || direct_verified_)
-        throw std::logic_error("receiver arm/MTP relay/direct verified mode does not support native bulk prefill");
+    if (receiver_arm_ || (mtp_relay_ && !mtp_service_) || direct_verified_)
+        throw std::logic_error("receiver arm/legacy MTP relay/direct verified mode does not support native bulk prefill");
+    if (mtp_service_ && (isolated_stage_reference || total_timeout_ms || !mtp_service_policy_ ||
+        !mtp_service_policy_->bulk_prefix(tokens,chunk)))
+        throw std::invalid_argument("MTP bulk prefill requires exact bounded request prefix");
     const bool local = endpoints_.size()==1 && starts_.front()==0 &&
         endpoints_.front()==1 && plan_.stages.size()==2 &&
         plan_.stages[0].backend==Backend::hip && plan_.stages[1].backend==Backend::hip;

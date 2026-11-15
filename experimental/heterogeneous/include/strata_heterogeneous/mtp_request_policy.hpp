@@ -11,6 +11,7 @@ namespace strata::heterogeneous {
 struct MtpRequestPolicy {
     static constexpr uint32_t initial_capacity = 2048;
     static constexpr uint32_t max_candidates = 4;
+    static constexpr size_t bulk_prompt_limit = 7;
     uint32_t context = 0, max_new = 0, spec = 0, vocab = 0;
     std::vector<int32_t> prompt, stops;
 
@@ -25,6 +26,13 @@ struct MtpRequestPolicy {
             max_new <= context - prompt.size() && !stops.empty() && stops.size() <= 64 &&
             std::all_of(prompt.begin(), prompt.end(), [this](auto id){return token(id);}) &&
             std::all_of(stops.begin(), stops.end(), [this](auto id){return token(id);});
+    }
+    // Initial bulk qualification only: the final prompt token is always
+    // evaluated by the ordinary target verifier/head.
+    bool bulk_prefix(const std::vector<int32_t>& ids, uint32_t chunk) const noexcept {
+        return valid() && prompt.size() >= 2 && prompt.size() <= bulk_prompt_limit &&
+            chunk >= 1 && chunk <= 8 && ids.size() == prompt.size()-1 &&
+            std::equal(ids.begin(), ids.end(), prompt.begin());
     }
     // Keep one final generated token un-fed, as ordinary greedy generation does.
     int64_t feed_end() const noexcept { return int64_t(prompt.size()) + max_new - 1; }

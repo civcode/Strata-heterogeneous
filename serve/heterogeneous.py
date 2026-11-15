@@ -210,7 +210,8 @@ class ResidentEngine:
         if type(max_new) is not int or not 1 <= max_new <= self.max_completion_tokens:
             raise ValueError(f"resident completion budget must be 1..{self.max_completion_tokens} tokens")
         validate_request(ids, max_new, self.source["vocab"], self.max_context,
-                         self.source.get("long_context", False))
+                         self.source.get("long_context", False),
+                         mtp_bulk=bool(self.source.get("mtp") and self.source.get("native_prefill_chunk")))
         sampling = sampling or {}
         allowed = {"temperature": (None, 0), "top_p": (None, 1),
                    "top_k": (None, 0, 1), "min_p": (None, 0),

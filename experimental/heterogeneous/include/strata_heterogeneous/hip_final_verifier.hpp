@@ -31,6 +31,7 @@ public:
     virtual bool resident_relay_enabled() const noexcept { return false; }
     virtual bool service_enabled() const noexcept { return false; }
     virtual bool configure_request(const Frame&,std::string& error) { error="MTP request-local policy unsupported";return false; }
+    virtual bool finish_bulk_prompt(uint64_t,uint32_t,std::string& error) { error="terminal observer cannot adopt bulk prompt";return false; }
     virtual bool reset_request(uint64_t,std::string& error) { error="terminal observer cannot reset";return false; }
     virtual bool propose(const WindowSpec&, WindowSpec&, std::string& error) {
         error="terminal observer does not relay proposals"; return false;

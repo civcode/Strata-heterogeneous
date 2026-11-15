@@ -2,7 +2,7 @@
 import itertools
 import unittest
 
-from serve.heterogeneous_contract import Progress
+from serve.heterogeneous_contract import Progress, validate_request
 
 
 def compositions(n, largest):
@@ -66,6 +66,32 @@ class MtpStreamContract(unittest.TestCase):
                 p.accept(line)
             self.assertEqual((p.pos, p.window, p.tokens, p.terminal), (2, 1, [11], False))
         self.assertEqual(p.accept("HETERO_PROGRESS 7 2 4 BATCH 0 2 12 13"), (12, 13))
+
+    def test_bounded_bulk_progress_and_request_limit(self):
+        for stream in (False, True):
+            p = Progress(1, 7, 4, 8, 100, {99}, stream, native_prefill=True, mtp_spec=4)
+            prefix = "HETERO_PROGRESS 1 1 6"
+            suffix = " BATCH 0 0" if stream else ""
+            with self.assertRaises(ValueError):
+                p.accept("HETERO_PROGRESS 1 1 5" + suffix)
+            self.assertEqual((p.pos, p.window), (0, 0))
+            self.assertEqual(p.accept(prefix + suffix), () if stream else None)
+            if stream:
+                with self.assertRaises(ValueError):
+                    Progress(1, 2, 4, 8, 100, {99}, True, native_prefill=True, mtp_spec=4).accept("HETERO_PROGRESS 1 1 1 BATCH 0 1 10")
+            p.accept("HETERO_PROGRESS 1 2 7" + (" BATCH 0 1 11" if stream else ""))
+            p.accept("HETERO_PROGRESS 1 3 10" + (" BATCH 0 3 12 13 14" if stream else ""))
+            self.assertEqual(p.pos, 10)
+            if stream:
+                self.assertEqual(p.tokens, [11, 12, 13, 14])
+        p = Progress(2, 1, 1, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
+        self.assertEqual(p.accept("HETERO_PROGRESS 2 1 1 BATCH 0 1 10"), (10,))
+        validate_request([1]*7, 2, 100, 2048, mtp_bulk=True)
+        validate_request([1]*8, 2, 100, 2048)
+        with self.assertRaises(ValueError):
+            validate_request([1]*8, 2, 100, 2048, mtp_bulk=True)
+        with self.assertRaises(ValueError):
+            Progress(1, 8, 4, 8, 100, {99}, True, native_prefill=True, mtp_spec=4)
 
     def test_ordinary_and_buffered_protocols_unchanged(self):
         for mtp in (0, 4):

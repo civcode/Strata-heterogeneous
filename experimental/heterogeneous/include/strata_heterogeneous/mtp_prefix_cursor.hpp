@@ -17,8 +17,7 @@ public:
     MtpPrefixCursor(const MtpPrefixCursor&) = delete;
     MtpPrefixCursor& operator=(const MtpPrefixCursor&) = delete;
 
-    // Prepared contract only; no worker calls this until bulk admission is
-    // independently established. Seed [0,N-1) from completed terminal native
+    // Bounded seed [0,N-1) from completed terminal native
     // prompt chunks, leaving token N-1 for the ordinary verifier. Every
     // successor is known from the actual prompt. Prime consumes and fences
     // the borrowed R rows before return; no temporary tail pointer survives.
