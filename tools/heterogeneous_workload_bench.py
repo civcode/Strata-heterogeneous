@@ -37,6 +37,7 @@ def request(url, body, key="", timeout=600, cancel_after_first=False):
     usage = timings = finish = None
     calls = {}
     done = False
+    r = None
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
@@ -52,6 +53,8 @@ def request(url, body, key="", timeout=600, cancel_after_first=False):
             need(not j.get("error") and len(j["choices"]) == 1, "bad completion")
             choice = j["choices"][0]
             message = choice["message"]
+            need(isinstance(message, dict) and (message.get("content") is None or isinstance(message.get("content"), str)),
+                 "invalid message")
             finish, usage, timings = choice["finish_reason"], j.get("usage"), j.get("timings")
             need(finish in ("stop", "length", "tool_calls"), "missing terminal finish")
             return {"status":"COMPLETE", "elapsed_s":time.monotonic()-start, "ttft_s":None,
@@ -63,6 +66,7 @@ def request(url, body, key="", timeout=600, cancel_after_first=False):
             if not raw:
                 break
             count += len(raw)
+            need(time.monotonic()-start <= timeout, "overall streaming deadline exceeded")
             need(len(raw) <= 2*1024*1024 and count <= 32*1024*1024, "stream exceeds cap")
             if not raw.startswith(b"data:"):
                 continue
@@ -108,10 +112,12 @@ def request(url, body, key="", timeout=600, cancel_after_first=False):
         return {"status":"COMPLETE", "elapsed_s":time.monotonic()-start, "ttft_s":first,
                 "first_visible_s":visible, "finish_reason":finish, "message":message,
                 "usage":usage, "server_timings":timings}
-    except (OSError, http.client.HTTPException, ValueError, KeyError, TypeError, IndexError) as exc:
+    except (OSError, http.client.HTTPException, ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
         return {"status":"ERROR", "error_type":type(exc).__name__, "elapsed_s":time.monotonic()-start,
                 "ttft_s":first, "first_visible_s":visible}
     finally:
+        if r is not None:
+            r.close()
         conn.close()
 
 def score(result, expected):
@@ -199,6 +205,8 @@ def aggregate(records):
                    "quality_fail":sum(r["quality"]=="FAIL" for r in rows),
                    "unscored":sum(r["quality"]=="UNSCORED" for r in rows),
                    "completed_http_stages":len(good),
+                   "finish_reasons":{k:sum(s.get("finish_reason")==k for s in good)
+                                     for k in ("stop","length","tool_calls")},
                    "median_http_elapsed_s":median("elapsed_s"),"median_client_ttft_s":median("ttft_s"),
                    "median_end_to_end_completion_tokens_s":statistics.median(rates) if rates else None}
     return out

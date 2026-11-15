@@ -104,6 +104,23 @@ class TestResident(unittest.TestCase):
         self.assertTrue(e.alive())
         self.assertEqual(e.last_completion["token_ids"], [10, 11])
 
+    def test_workload_server_timings(self):
+        for stream in (True, False):
+            progress = ["HETERO_PROGRESS 1 1 2", "HETERO_PROGRESS 1 2 3"]
+            if stream:
+                progress = [progress[0]+" 10", progress[1]+" 11"]
+            e = self.engine(progress+[
+                'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"length","stop_token":-1}'], stream)
+            e.source["workload_mode"] = True
+            clock = [1.0, 2.0, 2.1, 3.0, 4.0] if stream else [1.0, 2.0, 3.0, 4.0]
+            with patch("serve.heterogeneous.time.monotonic", side_effect=clock):
+                list(e.generate([1,2], 2, {}, Event()))
+            self.assertEqual(e.last["prompt_read"], 2)
+            self.assertEqual(e.last["generated"], 2)
+            self.assertEqual(e.last["prompt_ms"], 1000)
+            self.assertEqual(e.last["decode_ms"], 1000 if stream else None)
+            self.assertEqual(e.last["timing_source"], "heterogeneous_host_commit_progress")
+
     def test_buffered_compatibility(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2", "HETERO_PROGRESS 1 2 3",
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"length","stop_token":-1}'], False)

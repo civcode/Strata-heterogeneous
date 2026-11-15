@@ -1,5 +1,7 @@
 import unittest
-from heterogeneous_workload_bench import endpoint, score, run_case, aggregate, validate_manifest, SCHEMA
+import io
+from unittest.mock import Mock, patch
+from heterogeneous_workload_bench import endpoint, score, run_case, aggregate, validate_manifest, request, SCHEMA
 
 class Tests(unittest.TestCase):
     def test_loopback_only(self):
@@ -29,6 +31,29 @@ class Tests(unittest.TestCase):
         def bad(*args):
             return {"status":"COMPLETE","finish_reason":"tool_calls","message":{"tool_calls":[]}}
         self.assertEqual(run_case("","",case,"",10,bad)["quality"],"FAIL")
+    def test_stream_completion_and_truncation(self):
+        data=b'data: {"choices":[{"delta":{"content":"42"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}\n\n'
+        for suffix, expected in [(b'data: [DONE]\n\n',"COMPLETE"), (b'',"ERROR")]:
+            r=io.BytesIO(data+suffix); r.status=200
+            conn=Mock(); conn.getresponse.return_value=r
+            with patch("heterogeneous_workload_bench.http.client.HTTPConnection",return_value=conn):
+                result=request("http://127.0.0.1:8080",{"stream":True})
+            self.assertEqual(result["status"],expected)
+            self.assertTrue(r.closed)
+            if expected=="COMPLETE":
+                self.assertEqual(result["message"]["content"],"42")
+                self.assertEqual(result["usage"]["completion_tokens"],1)
+                self.assertIsNotNone(result["ttft_s"])
+
+    def test_client_cancel_closes_response(self):
+        r=io.BytesIO(b'data: {"choices":[{"delta":{"content":"first"}}]}\n\n'); r.status=200
+        conn=Mock();conn.getresponse.return_value=r
+        with patch("heterogeneous_workload_bench.http.client.HTTPConnection",return_value=conn):
+            result=request("http://127.0.0.1:8080",{"stream":True},cancel_after_first=True)
+        self.assertEqual(result["status"],"CLIENT_CANCELLED")
+        self.assertTrue(r.closed)
+        conn.close.assert_called_once()
+
     def test_failures_kept(self):
         rows=[{"id":"a","quality":"FAIL","stages":[{"status":"ERROR"}]},
               {"id":"a","quality":"PASS","stages":[{"status":"COMPLETE","elapsed_s":2,

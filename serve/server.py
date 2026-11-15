@@ -6841,6 +6841,7 @@ def request_timings(prompt_tokens: int, generated: int, last: dict) -> dict | No
             "predicted_n": generated, "predicted_ms": round(decode_ms, 1) if decode_ms is not None else None,
             "predicted_per_token_ms": round(decode_ms / decoded, 3) if decoded and decode_ms is not None else None,
             "predicted_per_second": round(decoded / (decode_ms / 1000), 1) if decoded and decode_ms and decode_ms > 0 else None,
+            **({"timing_source": last["timing_source"]} if last.get("timing_source") else {}),
             # the speculative drafts, as llama.cpp names them (from PR #83, @mikicvi): only when the engine reported them
             **({"draft_n": int(last["drafts_offered"]), "draft_n_accepted": int(last["drafts_accepted"])}
                if last.get("drafts_offered") is not None else {})}

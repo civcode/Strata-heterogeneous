@@ -96,6 +96,7 @@ class ResidentEngine:
         self._request = 0
         self._failed = False
         self.last_completion = self.last_metrics = None
+        self.last = None  # existing Service timing record, published only after validated completion
         self.proc = subprocess.Popen([*self._argv, "--run"], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=None, text=True,
                                      encoding="utf-8", errors="replace", bufsize=1,
@@ -244,7 +245,7 @@ class ResidentEngine:
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
                                  self.lookup_draft, bool(self.source.get("native_prefill_chunk", 0)))
             start = time.monotonic()
-            prefill_end = last_checkpoint = first_output = None
+            prefill_end = last_checkpoint = first_output = last_output_checkpoint = None
             emitted = 0
             try:
                 self._send(" ".join(map(str, [max_new, *ids])))
@@ -258,6 +259,8 @@ class ResidentEngine:
                         except ValueError as exc:
                             raise self._died("invalid resident progress") from exc
                         last_checkpoint = time.monotonic()
+                        if token is not None:
+                            last_output_checkpoint = last_checkpoint
                         if progress.pos >= len(ids) and prefill_end is None:
                             prefill_end = last_checkpoint
                         waiting = True
@@ -295,6 +298,24 @@ class ResidentEngine:
                             "request_start": start, "prefill_end": prefill_end,
                             "decode_end": last_checkpoint if prefill_end is not None else None,
                             "request_end": end}
+                        if self.source.get("workload_mode"):
+                            # Only a fully validated, non-cancelled request contributes to
+                            # the existing Service's timing summary. Buffered output does not
+                            # establish first-to-last token timestamps.
+                            if not cancelled and not cancel.is_set():
+                                produced = len(record["token_ids"])
+                                decode_span = (last_output_checkpoint - prefill_end
+                                    if self.stream_tokens and produced >= 2 and
+                                       last_output_checkpoint is not None and prefill_end is not None
+                                    else None)
+                                self.last = {"prompt_ms": self.last_metrics["prefill_ms"],
+                                             "prompt_read": len(ids), "reused": 0,
+                                             "generated": produced,
+                                             "decode_ms": decode_span * 1000 if decode_span and decode_span > 0 else None,
+                                             "timing_source": "heterogeneous_host_commit_progress"}
+                            print("HETERO_REQUEST_TIMING " + json.dumps({
+                                  "request_id": self._request, "finish": reason, **self.last_metrics},
+                                  allow_nan=False), file=sys.stderr, flush=True)
                         print(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}",
                               file=sys.stderr, flush=True)
                         completed = True
