@@ -136,6 +136,48 @@ class ContextOverflow(unittest.TestCase):
                     self.assertEqual(status, 400, body)
                     self.assertIn("exceeds the context window", body["error"]["message"])
 
+    def test_engine_completion_cap_http_defaults_and_fit(self):
+        # Mock the engine capability, but exercise the actual shared HTTP prepare path.
+        with mock.patch.object(self.engine, "max_completion_tokens", 2048, create=True):
+            for path, key in (*APIS, ("/v1/chat/completions", "max_completion_tokens")):
+                for fit in (False, True):
+                    self.svc.fit_max_tokens = fit
+                    for budget, expected in ((None, 2048), (8, 8), (2048, 2048), (2049, 2048)):
+                        if not fit and budget == 2049:
+                            continue
+                        with self.subTest(path=path, key=key, fit=fit, budget=budget):
+                            with mock.patch.object(self.engine, "generate", wraps=self.engine.generate) as generate:
+                                status, _, body = self.post(path, key, 15, budget)
+                            self.assertEqual(status, 200, body)
+                            self.assertEqual(generate.call_args.args[1], expected)
+
+    def test_engine_completion_cap_strict_before_streaming(self):
+        self.svc.fit_max_tokens = False
+        with mock.patch.object(self.engine, "max_completion_tokens", 2048, create=True):
+            for path, key in APIS:
+                for stream in (False, True):
+                    with self.subTest(path=path, stream=stream):
+                        with mock.patch.object(self.engine, "generate") as generate:
+                            status, content_type, body = self.post(path, key, 15, 2049, stream)
+                        self.assertEqual(status, 400, body)
+                        self.assertIn("application/json", content_type)
+                        self.assertIn("engine completion limit (2048)", body["error"]["message"])
+                        generate.assert_not_called()
+
+    def test_engine_completion_cap_and_remaining_context(self):
+        with mock.patch.object(self.engine, "max_completion_tokens", 2048, create=True):
+            for fit in (False, True):
+                self.svc.fit_max_tokens = fit
+                for budget in (None, 0, -1, 1):
+                    ids = [ord("x")] * (CTX - CTX_SLACK - 1)
+                    with self.subTest(fit=fit, budget=budget), mock.patch.object(self.svc, "encode_prompt", return_value=ids):
+                        prepared, _, maximum = self.svc.prepare([], None, {}, budget)
+                        self.assertEqual(prepared, ids)
+                        self.assertEqual(maximum, 1)
+                with mock.patch.object(self.svc, "encode_prompt", return_value=[ord("x")] * (CTX - CTX_SLACK)):
+                    with self.assertRaisesRegex(ValueError, "no room to answer"):
+                        self.svc.prepare([], None, {}, None)
+
     def test_prepare_preserves_prompt_and_budget_limits(self):
         ids = [ord("x")] * 1024
         room = CTX - CTX_SLACK - len(ids)

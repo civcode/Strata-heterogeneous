@@ -5891,7 +5891,7 @@ class Service:
 
     def prepare(self, messages, tools, kwargs, max_new=None, force=None, req=None, cancel=None):
         """-> (ids, thinking, max_new). An unset or non-positive max_new (some clients send -1) means "unlimited":
-        the rest of the context.  `force` (forced_call): without thinking the reply starts with it, so it ends the
+        the rest of the context, bounded by an advertised engine completion limit.  `force` (forced_call): without thinking the reply starts with it, so it ends the
         prompt; with thinking, Service.run writes it once the thinking is over."""
         # `cancel` (#1999): set when the client hangs up; the downloads, the wait for the turn and the encodes stop
         # between pictures and raise ClientGone
@@ -5989,6 +5989,7 @@ class Service:
             if ctx <= 0:
                 raise EngineStarting("the engine is starting (a minute or two); try again shortly")
         room = ctx - CTX_SLACK - len(ids)
+        requested_max_new = max_new
         if max_new is None or max_new <= 0 or (self.fit_max_tokens and room < 1):
             if room < 1:
                 # A prompt refused for the context is not kept (#567): the client cannot resend it unchanged.  The
@@ -6010,6 +6011,15 @@ class Service:
             print(f"[strata] max_tokens {max_new} shortened to {max(1, room)}: the prompt ({len(ids)} tokens) leaves that much "
                   f"of the context ({ctx}); \"fit_max_tokens\": false answers 400 instead", flush=True)
             max_new = max(1, room)          # a shorter completion beats a 400 (the default)
+        # Some engines have a separate completion limit below their context size.
+        # Apply it before generation (and before HTTP streaming headers) for every API dialect.
+        completion_cap = getattr(self.engine, "max_completion_tokens", None)
+        if type(completion_cap) is int and completion_cap > 0 and max_new > completion_cap:
+            if requested_max_new is not None and requested_max_new > 0:
+                if not self.fit_max_tokens:
+                    raise ValueError(f"max_tokens {requested_max_new} exceeds the engine completion limit ({completion_cap}); send a smaller completion budget")
+                print(f"[strata] max_tokens {max_new} shortened to {completion_cap}: engine completion limit", flush=True)
+            max_new = completion_cap
         if images:
             # The request's images in one file for GENI (~10 MB a picture), written once nothing above refuses the
             # request: one refused after it (the engine starting, no room) left it in the vision directory for good,

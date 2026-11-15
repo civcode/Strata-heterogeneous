@@ -193,9 +193,16 @@ class ResidentEngine:
     def exit_code(self):
         return self.proc.poll()
 
+    @property
+    def max_completion_tokens(self):
+        """Advertise the configured native completion limit to the HTTP Service."""
+        return self.max_new
+
     def _validate(self, ids, max_new, sampling, embeddings):
-        if embeddings is not None or type(max_new) is not int or not 1 <= max_new <= self.max_new:
-            raise ValueError("unsupported resident request or completion budget")
+        if embeddings is not None:
+            raise ValueError("embeddings are not supported by the resident engine")
+        if type(max_new) is not int or not 1 <= max_new <= self.max_completion_tokens:
+            raise ValueError(f"resident completion budget must be 1..{self.max_completion_tokens} tokens")
         validate_request(ids, max_new, self.source["vocab"], self.max_context,
                          self.source.get("long_context", False))
         sampling = sampling or {}
