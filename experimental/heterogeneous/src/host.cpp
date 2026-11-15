@@ -16,6 +16,8 @@
 #include <utility>
 
 namespace strata::heterogeneous {
+static_assert(MtpRequestPolicy::max_capacity<=max_window_tokens,
+              "MTP request metadata must fit the existing token window ceiling");
 void WindowSpec::validate(uint32_t rows, bool native_prefill) const {
     if (!rows || rows > (native_prefill ? max_native_prefill_tokens : max_window_tokens) || token_ids.size() != rows || pos0 < 0 ||
         static_cast<uint64_t>(pos0) > static_cast<uint64_t>(INT64_MAX) - (rows - 1))

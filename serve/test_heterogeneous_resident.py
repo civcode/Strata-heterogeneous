@@ -247,6 +247,7 @@ class TestResident(unittest.TestCase):
         e = self.engine(["HETERO_PROGRESS 1 1 2 BATCH 0 1 10",
                          "HETERO_PROGRESS 1 2 4 BATCH 1 1 11",
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"stop","stop_token":99}'])
+        e.max_context = 2048
         e.source.update(mtp="/local/rt",spec=4,spec_min_p=0.5)
         self.assertEqual(list(e.generate([1,2],3,{},Event())),[10,11,99])
 
