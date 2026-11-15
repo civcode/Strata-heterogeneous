@@ -306,7 +306,7 @@ bool CudaVerifierDriver::wait_commit(std::string& error) {
     PerformanceSpan perf("worker", "wait_commit", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::committing, error) || !wait(error)) return false;
     const int64_t committed = next_position_ + keep_;
-    if (window_ <= 2 && bindings_.capacity_probe && !bindings_.capacity_probe("first_commit",error)) return false;
+    if (window_ <= 3 && bindings_.capacity_probe && !bindings_.capacity_probe("early_commit",error)) return false;
     if (prefix_observer_ && !prefix_observer_(request_, committed, error)) return false;
     next_position_ = committed;
     state_ = State::ready; spec_ = {}; return true;

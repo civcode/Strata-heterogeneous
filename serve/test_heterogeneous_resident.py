@@ -30,6 +30,26 @@ class TestLimits(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_request([248319] * 28673, 4096, 248320, 32768)
 
+    def test_long_context_limits(self):
+        self.assertEqual(generation_limits(262144, 8, 248320, 4, 2560, 262144, 1, 0, True, True),
+                         (262144, 8))
+        ids = [248319] * 262143
+        validate_request(ids, 1, 248320, 262144, True)
+        with self.assertRaises(ValueError):
+            validate_request(ids, 2, 248320, 262144, True)
+        with self.assertRaises(ValueError):
+            validate_request(ids, 1, 248320, 262144)
+        for cells, context, workload, extended in [(262144, 262144, True, False),
+                                                   (262144, 262144, False, True),
+                                                   (262144, 131072, True, True),
+                                                   (262145, 262145, True, True)]:
+            with self.assertRaises(ValueError):
+                generation_limits(cells, 8, 248320, 4, 2560, context, 1, 1, workload, extended)
+        p = Progress(1, 262143, 2, 8, 248320, {99}, True, native_prefill=True)
+        self.assertIsNone(p.accept("HETERO_PROGRESS 1 1 262142 -1"))
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 2 262143 10"), 10)
+        self.assertEqual(p.accept("HETERO_PROGRESS 1 3 262144 11"), 11)
+
     def test_request_bounds(self):
         validate_request([249999] * 8191, 1, 250000, 8192)
         for ids, vocab in [([1] * 8192, 250000), ([999999999] * 8191, 1000000000), ([True], 3)]:

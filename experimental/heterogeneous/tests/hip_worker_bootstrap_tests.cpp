@@ -83,6 +83,17 @@ int main() {
         pair[7]="0"; need(!parse_hip_worker_invocation(12,pair,parsed,error),"full HIP pair requires terminal index");
         pair[7]="1"; pair[2]="hip:0:0-3,hip:1:3-7,hip:2:7-10";
         need(!parse_hip_worker_invocation(12,pair,parsed,error),"three-HIP grouping remains unsupported");
+        const char* long_args[]={"worker","--worker-hip-domain-shared","hip:0:0-24,hip:1:24-48",
+            "48","4","2560","999","1","--config","/tmp/hip0.cfg","--config","/tmp/hip1.cfg",
+            "--kv","int8","--long-context-chunk","128"};
+        need(parse_hip_worker_invocation(16,long_args,parsed,error)&&parsed.long_context_chunk==128,
+             "grouped long-context argv");
+        long_args[15]="0"; need(!parse_hip_worker_invocation(16,long_args,parsed,error)&&parsed.long_context_chunk==128,
+             "zero chunk refused without mutation");
+        long_args[15]="128"; long_args[13]="f16"; need(!parse_hip_worker_invocation(16,long_args,parsed,error),
+             "long-context F16 refused");
+        long_args[13]="int8"; long_args[1]="--worker-shared";
+        need(!parse_hip_worker_invocation(16,long_args,parsed,error),"ungrouped long-context refused");
         std::cout << "HIP bootstrap: PASS (" << checks << " assertions, no HIP runtime)\n";
         return 0;
     } catch (const std::exception& ex) {

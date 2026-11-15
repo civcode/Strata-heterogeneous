@@ -36,5 +36,9 @@ int main(){try{
  need(!parse_cuda_worker_invocation(10,overflow,parsed,error),"u32 overflow refused");
  const char* trailing[]={"worker","--worker","cuda:0:0-12,hip:0:12-30,hip:1:30-48","48x","4","2560","12345","0","--config","/tmp/test.cfg",nullptr};
  need(!parse_cuda_worker_invocation(10,trailing,parsed,error),"bad numeric suffix refused");
+ const char* long_args[]={"worker","--worker","cuda:0:0-12,hip:0:12-30,hip:1:30-48","48","4","2560","12345","0","--config","/tmp/test.cfg","--kv","int8","--long-context-chunk","128"};
+ need(parse_cuda_worker_invocation(14,long_args,parsed,error)&&parsed.long_context_chunk==128,"long-context argv");
+ long_args[13]="2049"; need(!parse_cuda_worker_invocation(14,long_args,parsed,error)&&parsed.long_context_chunk==128,"oversized chunk refused");
+ long_args[13]="128"; long_args[11]="f16"; need(!parse_cuda_worker_invocation(14,long_args,parsed,error),"long-context F16 refused");
  std::cout<<"M1.16 CUDA worker process argv: PASS ("<<assertions<<" assertions; no GPU)\n";return 0;
 }catch(const std::exception& ex){std::cerr<<"FAIL after "<<assertions<<": "<<ex.what()<<'\n';return 1;}}
