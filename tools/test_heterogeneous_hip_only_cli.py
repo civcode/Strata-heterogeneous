@@ -50,6 +50,31 @@ class HipOnlyCLI(unittest.TestCase):
                 argv = native.call_args.args[0]
                 self.assertEqual(argv[argv.index("--kv") + 1], mode)
 
+    def test_explicit_pipeline_mode(self):
+        args = Namespace(coordinator=sys.executable, plan=HIP, fingerprint=1,
+                         layers=48, hc=4, n_embd=2560, timeout_ms=1000,
+                         hip_worker=sys.executable, config=[], shared=True,
+                         max_new_tokens=8, prompt_chunk=1, max_context=2048,
+                         group_native_hip=True, stream_tokens=True, pipeline_mode="fast")
+        with patch("strata_cli.heterogeneous._native", return_value={"kv":"int8"}) as native:
+            with self.assertRaisesRegex(ValueError, "lacks explicit pipeline-mode"):
+                prepare_native(args)
+            args.shared = False
+            with self.assertRaisesRegex(ValueError, "pipeline mode requires"):
+                prepare_native(args)
+            self.assertEqual(native.call_count, 1)
+        cfg = {"heterogeneous": dict(plan=HIP, coordinator=sys.executable,
+                   hip_worker=sys.executable, config=["hip0.cfg", "hip1.cfg"],
+                   fingerprint=1, pipeline_mode="fast")}
+        with patch("strata_cli.heterogeneous.prepare_native",
+                   return_value=(["coordinator"], {}, None, {1})), \
+             patch("strata_cli.heterogeneous.model_template", return_value=None), \
+             patch("strata_cli.heterogeneous._native"):
+            self.assertEqual(prepare_server(cfg)[0].pipeline_mode, "fast")
+            cfg["heterogeneous"]["pipeline_mode"] = "unknown"
+            with self.assertRaisesRegex(ValueError, "heterogeneous.pipeline_mode"):
+                prepare_server(cfg)
+
     def test_server_without_cuda_worker(self):
         cfg = {"heterogeneous": dict(plan=HIP, coordinator=sys.executable,
                    hip_worker=sys.executable, config=["hip0.cfg", "hip1.cfg"],

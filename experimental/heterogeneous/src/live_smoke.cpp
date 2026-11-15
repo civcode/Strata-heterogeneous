@@ -70,6 +70,7 @@ struct Options {
     bool receiver_arm = false;
     bool cuda_mapped_egress = false;
     bool direct_verified = false;
+    std::string pipeline_mode; // empty preserves historical environment-controlled behavior
     hetero::KvMode kv = hetero::default_kv_mode;
     bool kv_explicit = false;
     std::string mtp_probe_rt;
@@ -158,6 +159,7 @@ void usage() {
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
         "  --workload-mode: opt-in grouped or two-HIP-stage resident text, context <=32768, max-new <=4096; experimental.\n"
         "  --long-context: explicit grouped native INT8 resident prefill, aligned context 2048..262144; allocator checks required.\n"
+        "  --pipeline-mode baseline|fast: explicit ordinary grouped resident shared generation; fast enables compact results, 50 us fence polling, fanout and early downstream metadata.\n"
         "  --lookup-draft: verified suffix lookup (buffered only, prompt-chunk 2..8).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -270,6 +272,13 @@ Options parse(int argc, char** argv) {
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--workload-mode") { o.workload_mode = true; generation_arg = true; }
         else if (key == "--long-context") { if (o.long_context) throw std::invalid_argument("duplicate --long-context"); o.long_context = true; generation_arg = true; }
+        else if (key == "--pipeline-mode") {
+            if (!o.pipeline_mode.empty()) throw std::invalid_argument("duplicate --pipeline-mode");
+            o.pipeline_mode = required_value(i,argc,argv,"--pipeline-mode");
+            if (o.pipeline_mode != "baseline" && o.pipeline_mode != "fast")
+                throw std::invalid_argument("--pipeline-mode must be baseline or fast");
+            generation_arg = true;
+        }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
         else if (key == "--lookup-draft") { o.lookup_draft = true; generation_arg = true; }
         else if (key == "--context-limit") {
@@ -519,6 +528,10 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--stream-tokens requires --resident");
     if (o.lookup_draft && (o.stream_tokens || o.prompt_chunk < 2))
         throw std::invalid_argument("--lookup-draft requires buffered generation and chunk >= 2");
+    if (!o.pipeline_mode.empty() && (!o.generate || !o.resident || !o.group_hip || !o.shared ||
+        !o.stream_tokens || o.lookup_draft || o.direct_verified || o.receiver_arm || o.cuda_mapped_egress ||
+        o.hip_split_overlap || !o.capture_prefix.empty() || !o.mtp_probe_rt.empty()))
+        throw std::invalid_argument("pipeline mode requires ordinary grouped shared streamed resident generation");
     if (!o.long_context && o.context_limit > hetero::legacy_workload_context)
         throw std::invalid_argument("context above 32768 requires --long-context");
     if (o.long_context && (!o.workload_mode || !o.resident || !o.group_hip ||
@@ -730,6 +743,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"vocab\":" << common_model->n_vocab
                   << ",\"max_cells\":" << max_cells << ",\"max_t\":" << max_t
                   << ",\"kv\":\"" << hetero::kv_mode_name(o.kv) << "\""
+                  << ",\"pipeline_mode_cap\":1"
                   << ",\"long_context_cap\":" << hetero::max_long_context
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
@@ -990,6 +1004,16 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure explicit mapped CUDA egress mode");
     if (::setenv("STRATA_HETERO_RECEIVER_ARM", o.receiver_arm ? "1" : "0", 1) != 0)
         throw std::runtime_error("cannot configure explicit receiver arm mode");
+    // Explicit mode makes benchmark arms reproducible even if the parent
+    // shell contains historical performance flags. Unspecified mode remains
+    // backwards compatible. Workers keep their own native nonfinite guards.
+    if (!o.pipeline_mode.empty()) {
+        const char* value = o.pipeline_mode == "fast" ? "1" : "0";
+        for (const char* name : {"STRATA_HETERO_COMPACT_RESULT", "STRATA_HETERO_FAST_FENCE",
+                                 "STRATA_HETERO_FANOUT_CONTROL"})
+            if (::setenv(name,value,1) != 0)
+                throw std::runtime_error("cannot configure explicit pipeline mode");
+    }
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
@@ -1022,13 +1046,16 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
     } diagnostic_drain{workers,true,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
-                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation,o.mtp_resident_prompt_rows!=0,o.direct_verified);
+                                         fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation,o.mtp_generation,o.mtp_resident_prompt_rows!=0,o.direct_verified,
+                                         o.pipeline_mode == "fast" && workers.size() == 2);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
               << " hip_split_overlap=" << o.hip_split_overlap << " receiver_arm=" << o.receiver_arm
               << " cuda_mapped_egress=" << o.cuda_mapped_egress
               << " direct_verified_shared=" << o.direct_verified
+              << " pipeline_mode=" << (o.pipeline_mode.empty() ? "legacy" : o.pipeline_mode)
+              << " compact=" << compact << " fanout=" << fanout
               << " kv=" << hetero::kv_mode_name(o.kv) << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;

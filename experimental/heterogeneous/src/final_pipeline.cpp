@@ -277,10 +277,10 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified, bool early_window_spec)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified), early_window_spec_(early_window_spec) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
@@ -292,6 +292,9 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
         throw std::invalid_argument("direct verified mode requires two bounded mixed domains, shared and full logits");
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
+    if (early_window_spec_ && (!resident_ || !group_hip || !shared_memory_ ||
+        fds_.size() != 2 || receiver_arm_ || mtp_relay_ || direct_verified_ || !timeout_ms_))
+        throw std::invalid_argument("early window metadata requires ordinary grouped mixed resident shared transport");
     if (mtp_anchor_only_ && !mtp_relay_) throw std::invalid_argument("anchor-only MTP requires relay");
     if (mtp_resident_ && (!resident_ || !mtp_relay_ || !mtp_anchor_only_))
         throw std::invalid_argument("resident MTP requires explicit resident and anchor-only relay");
@@ -480,6 +483,19 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             initial.kind = Kind::shared_data;
             initial.shared_checksum = shared_->checksum(bytes);
         }
+        if (early_window_spec_) {
+            // Admit downstream metadata while the producer is executing. It is
+            // not an activation or a GPU ready signal: the final worker still
+            // waits for a matching data frame and verifies checksum/finiteness.
+            // On any producer failure, poison() closes both sockets. Do not
+            // arm a GPU wait or read the shared slot before normal publication.
+            PerformanceSpan early("coordinator", "stage_predispatch", endpoints_.back(),
+                                  initial.request_id, initial.window_id, initial.rows);
+            Frame downstream = control(plan_, endpoints_.back(), Kind::window_spec,
+                                       initial.request_id, initial.window_id, initial.rows);
+            downstream.window = spec;
+            send_frame(fds_.back(), downstream, timeout_ms_);
+        }
         if (receiver_arm_) {
             PerformanceSpan arm("coordinator", "receiver_arm_ack", endpoints_.back(), initial.request_id,
                                 initial.window_id, initial.rows);
@@ -502,7 +518,7 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
             {
                 PerformanceSpan send("coordinator", "stage_send_spec", endpoints_[i], initial.request_id,
                                      initial.window_id, initial.rows);
-                if (!receiver_arm_ || i + 1 != fds_.size())
+                if ((!receiver_arm_ && !early_window_spec_) || i + 1 != fds_.size())
                     send_frame(fds_[i], context, timeout_ms_);
             }
             initial.stage_index = static_cast<uint32_t>(endpoints_[i]);

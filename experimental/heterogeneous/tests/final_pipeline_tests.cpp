@@ -367,6 +367,44 @@ void grouped_domain(bool shared, bool fanout) {
         fails([&]{pipe.initialize();},"terminal-only hello must not pass grouped readiness");
     }
 }
+void early_window_protocol() {
+    const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    auto start=[&]{return launch(p,true,false,false,false,false,0.f,true,false,false,true);};
+    {
+        auto w=start();
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,true,true,true,
+                                  false,false,false,false,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        pipe.native_prefill({1,2},2);
+        pipe.execute_discard(input_frame(p,1,2),{2,{3,4,5}});
+        check(pipe.commit(2).predicted_tokens.front()==20,"early metadata native prefill and compact prefix");
+        pipe.execute_discard(input_frame(p,1,3),{4,{5,6,7}});
+        check(pipe.commit(3).predicted_tokens.front()==22,"early metadata continuation");
+        pipe.begin_request(2);
+        pipe.execute_discard(input_frame(p,2,1),{0,{1,2,3}});
+        check(pipe.commit(3).request_id==2,"early metadata reset");
+    }
+    {
+        auto w=launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,0,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,true,true,true,
+                                  false,false,false,false,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        fails([&]{pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});},
+              "nonfinite producer rejected despite early downstream admission");
+        check(pipe.poisoned(),"early metadata failure poisons all peers");
+        fails([&]{(void)pipe.commit(1);},"early metadata failure cannot commit");
+        fails([&]{pipe.begin_request(2);},"early metadata failure cannot reuse session");
+    }
+    {
+        auto w=start();
+        fails([&]{FinalPipelineSession pipe(p,w.sockets,1200,false,true,true,true,true,
+                                           false,false,false,false,false,true);},
+              "early metadata requires shared transport");
+        fails([&]{FinalPipelineSession pipe(p,w.sockets,1200,true,true,true,true,true,
+                                           true,false,false,false,false,true);},
+              "early metadata is independent of prearmed GPU receiver");
+    }
+}
 void hip_only_protocol(bool shared, bool grouped, bool fanout) {
     const Plan p=parse_plan("hip:0:0-5,hip:1:5-10",10,{2,3},3719);
     auto w=launch(p,shared,false,false,false,false,0.f,true,false,false,grouped);
@@ -806,6 +844,7 @@ int main() {
         startup_barrier(false); startup_barrier(true);
         startup_frame_failures();
         direct_verified_protocol();
+        early_window_protocol();
         native_prefill_protocol(false); native_prefill_protocol(true);
         hip_only_local_failure(false); hip_only_local_failure(true);
         receiver_arm_protocol(false); receiver_arm_protocol(true);

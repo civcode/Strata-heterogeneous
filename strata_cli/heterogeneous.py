@@ -36,6 +36,7 @@ def add_arguments(parser):
     parser.add_argument("--prompt-chunk", type=int, default=1, help="1..8; 0 selects largest safe verifier window")
     parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 8192 ordinary / 32768 workload / 262144 explicit long-context")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
+    parser.add_argument("--pipeline-mode", choices=("baseline", "fast"), help="explicit grouped shared resident pipeline profile (opt-in)")
     parser.add_argument("--lookup-draft", action="store_true", help="opt-in verified suffix lookup; buffered mode, chunk >= 2")
     parser.add_argument("--restart-clean", action="store_true", help="opt-in server restart only after verified old process-group exit")
     parser.add_argument("--benchmark-repeat", type=int, default=1, help="repeat resident prompt sequence 1..20 times; JSON includes timing")
@@ -133,6 +134,11 @@ def prepare_native(args):
         raise ValueError("native prefill needs grouped HIP and chunk 1..2048")
     extended = getattr(args, "long_context", False)
     require_mode(extended, workload, kv, group, bulk, getattr(args, "lookup_draft", False))
+    pipeline_mode = getattr(args, "pipeline_mode", None)
+    if pipeline_mode is not None and (pipeline_mode not in ("baseline", "fast") or not group or
+                                      not args.shared or not getattr(args, "stream_tokens", False) or
+                                      getattr(args, "lookup_draft", False)):
+        raise ValueError("pipeline mode requires grouped shared streamed resident generation")
     if workload and not group and planned_backends(args.plan) != ["hip", "hip"]:
         raise ValueError("ungrouped workload mode requires two HIP stages")
     if group:
@@ -142,6 +148,8 @@ def prepare_native(args):
     source = _native(argv + ["--describe-source"], marker="HETERO_SOURCE")
     if source.get("kv") != kv:
         raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
+    if pipeline_mode is not None and source.get("pipeline_mode_cap") != 1:
+        raise ValueError("coordinator lacks explicit pipeline-mode capability; rebuild matching binaries")
     if extended and source.get("long_context_cap") != MAX_LONG_CONTEXT:
         raise ValueError("coordinator does not advertise the long-context capability; rebuild matching binaries")
     gguf = source.get("gguf")
@@ -165,7 +173,7 @@ def prepare_native(args):
                   stream_tokens=getattr(args, "stream_tokens", False),
                   restart_clean=getattr(args, "restart_clean", False), lookup_draft=lookup,
                   group_native_hip=group, native_prefill_chunk=bulk, workload_mode=workload,
-                  long_context=extended)
+                  long_context=extended, pipeline_mode=pipeline_mode or "legacy")
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -190,6 +198,8 @@ def prepare_native(args):
         native.append("--long-context")
     if source["stream_tokens"]:
         native.append("--stream-tokens")
+    if pipeline_mode is not None:
+        native.extend(("--pipeline-mode", pipeline_mode))
     if lookup:
         native.append("--lookup-draft")
     if bulk:
@@ -244,6 +254,8 @@ def write_server_config(args):
                 "restart_clean", "lookup_draft", "group_native_hip", "native_prefill_chunk", "workload_mode")}}
     cfg["heterogeneous"]["kv"] = kv_argument(args)
     cfg["heterogeneous"]["long_context"] = getattr(args, "long_context", False)
+    if getattr(args, "pipeline_mode", None) is not None:
+        cfg["heterogeneous"]["pipeline_mode"] = args.pipeline_mode
     cfg["heterogeneous"]["coordinator"] = _path(args.coordinator, True)
     workers = worker_arguments(args)
     for flag, value in zip(workers[::2], workers[1::2]):
@@ -274,6 +286,8 @@ def run(args):
         raise ValueError("--restart-clean applies only to generated server config")
     if workload and not args.resident:
         raise ValueError("workload mode requires --resident")
+    if getattr(args, "pipeline_mode", None) is not None and not args.resident:
+        raise ValueError("pipeline mode requires --resident")
     if getattr(args, "native_prefill_chunk", 0) and not args.resident:
         raise ValueError("native prefill requires --resident")
     if (args.stream_tokens or args.benchmark_repeat != 1) and not args.resident:

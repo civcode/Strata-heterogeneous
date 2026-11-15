@@ -28,7 +28,7 @@ def prepare_server(cfg):
     required = {"coordinator", "config", "plan", "fingerprint"}
     optional = {"cuda_worker", "hip_worker", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
-                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv"}
+                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv", "pipeline_mode"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     from strata_cli.heterogeneous import planned_backends
@@ -43,7 +43,7 @@ def prepare_server(cfg):
     values = dict(cuda_worker=None, hip_worker=None, layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
                   stream_tokens=False, restart_clean=False, lookup_draft=False,
-                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False, long_context=False, kv="int8")
+                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False, long_context=False, kv="int8", pipeline_mode=None)
     values.update(opts)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
@@ -57,6 +57,8 @@ def prepare_server(cfg):
             raise ValueError(f"heterogeneous.{key} must be boolean")
     if not isinstance(values["kv"], str) or values["kv"] not in ("int8", "f16"):
         raise ValueError("heterogeneous.kv must be int8 or f16")
+    if "pipeline_mode" in opts and opts["pipeline_mode"] not in ("baseline", "fast"):
+        raise ValueError("heterogeneous.pipeline_mode must be baseline or fast")
     args = argparse.Namespace(**values)
     argv, source, tokenizer, stops = prepare_native(args)
     template = model_template(source)
