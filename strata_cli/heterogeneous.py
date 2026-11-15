@@ -11,6 +11,8 @@ import subprocess
 import sys
 import time
 
+from serve.heterogeneous_long_context import MAX_LONG_CONTEXT, LONG_PROMPT_BYTES, require_mode
+
 
 def add_arguments(parser):
     parser.add_argument("--coordinator", required=True, help="built strata_heterogeneous_live_smoke executable")
@@ -24,14 +26,15 @@ def add_arguments(parser):
     parser.add_argument("--n-embd", type=int, default=2560)
     prompt = parser.add_mutually_exclusive_group(required=True)
     prompt.add_argument("--prompt", help="text completion prompt or one chat user message")
-    prompt.add_argument("--prompt-file", type=Path, help="UTF-8 text file, at most 64 KiB (256 KiB in workload mode)")
+    prompt.add_argument("--prompt-file", type=Path, help="UTF-8 text file, at most 64 KiB (256 KiB in workload mode; 4 MiB in long-context mode)")
     prompt.add_argument("--write-server-config", type=Path, help="validate and write a new loopback server JSON; no GPU startup")
     parser.add_argument("--model-name", default="qwen3.8-flash-next", help="served model name for generated config")
     parser.add_argument("--chat", action="store_true", help="render one user message with the exact model chat template")
     parser.add_argument("--max-new-tokens", type=int, default=16, help="1..256; workload mode up to 4096, greedy head")
     parser.add_argument("--workload-mode", action="store_true", help="experimental grouped or two-HIP-stage resident context <=32768 and completion <=4096")
+    parser.add_argument("--long-context", action="store_true", help="opt-in Q8 grouped native prefill, aligned context 2048..262144, full residency and native memory admission")
     parser.add_argument("--prompt-chunk", type=int, default=1, help="1..8; 0 selects largest safe verifier window")
-    parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 2..8192 or 32768 in workload mode; worker capacities apply")
+    parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 8192 ordinary / 32768 workload / 262144 explicit long-context")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
     parser.add_argument("--lookup-draft", action="store_true", help="opt-in verified suffix lookup; buffered mode, chunk >= 2")
     parser.add_argument("--restart-clean", action="store_true", help="opt-in server restart only after verified old process-group exit")
@@ -128,6 +131,8 @@ def prepare_native(args):
     bulk = getattr(args, "native_prefill_chunk", 0)
     if type(group) is not bool or type(bulk) is not int or not 0 <= bulk <= 2048 or (bulk and not group):
         raise ValueError("native prefill needs grouped HIP and chunk 1..2048")
+    extended = getattr(args, "long_context", False)
+    require_mode(extended, workload, kv, group, bulk, getattr(args, "lookup_draft", False))
     if workload and not group and planned_backends(args.plan) != ["hip", "hip"]:
         raise ValueError("ungrouped workload mode requires two HIP stages")
     if group:
@@ -137,6 +142,8 @@ def prepare_native(args):
     source = _native(argv + ["--describe-source"], marker="HETERO_SOURCE")
     if source.get("kv") != kv:
         raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
+    if extended and source.get("long_context_cap") != MAX_LONG_CONTEXT:
+        raise ValueError("coordinator does not advertise the long-context capability; rebuild matching binaries")
     gguf = source.get("gguf")
     index = source.get("pack_index_sha256")
     vocab = source.get("vocab")
@@ -149,7 +156,7 @@ def prepare_native(args):
         raise ValueError("invalid validated model source description")
     context, chunk = generation_limits(cells, max_t, vocab, args.hc, args.n_embd,
                                        getattr(args, "max_context", 4096),
-                                       args.max_new_tokens, args.prompt_chunk, workload)
+                                       args.max_new_tokens, args.prompt_chunk, workload, extended)
     args.prompt_chunk = chunk
     lookup = getattr(args, "lookup_draft", False)
     if lookup and (getattr(args, "stream_tokens", False) or chunk < 2):
@@ -157,7 +164,8 @@ def prepare_native(args):
     source.update(context_limit=context, prompt_chunk=chunk,
                   stream_tokens=getattr(args, "stream_tokens", False),
                   restart_clean=getattr(args, "restart_clean", False), lookup_draft=lookup,
-                  group_native_hip=group, native_prefill_chunk=bulk, workload_mode=workload)
+                  group_native_hip=group, native_prefill_chunk=bulk, workload_mode=workload,
+                  long_context=extended)
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -178,6 +186,8 @@ def prepare_native(args):
                      "--context-limit", str(context)]
     if workload:
         native.append("--workload-mode")
+    if extended:
+        native.append("--long-context")
     if source["stream_tokens"]:
         native.append("--stream-tokens")
     if lookup:
@@ -202,7 +212,7 @@ def model_template(source):
 
 def encode_prompt(tok, source, prompt, chat, max_new, chunk):
     from serve.heterogeneous_contract import MAX_WORKLOAD_PROMPT_BYTES
-    cap = MAX_WORKLOAD_PROMPT_BYTES if source.get("workload_mode") else 65536
+    cap = LONG_PROMPT_BYTES if source.get("long_context") else MAX_WORKLOAD_PROMPT_BYTES if source.get("workload_mode") else 65536
     if len(prompt.encode("utf-8")) > cap:
         raise ValueError("prompt exceeds configured byte cap")
     if chat:
@@ -217,7 +227,8 @@ def encode_prompt(tok, source, prompt, chat, max_new, chunk):
         ids = tok.encode(prompt, parse_special=False)
     from serve.heterogeneous_contract import validate_request
     validate_request(ids, max_new, source["vocab"],
-                     source.get("context_limit", min(source["max_cells"], 4096)))
+                     source.get("context_limit", min(source["max_cells"], 4096)),
+                     source.get("long_context", False))
     if min(len(ids), chunk) > source["max_t"]:
         raise ValueError("prompt chunk exceeds validated worker max_t")
     return ids
@@ -232,6 +243,7 @@ def write_server_config(args):
                 "prompt_chunk", "max_context", "timeout_ms", "shared", "stream_tokens",
                 "restart_clean", "lookup_draft", "group_native_hip", "native_prefill_chunk", "workload_mode")}}
     cfg["heterogeneous"]["kv"] = kv_argument(args)
+    cfg["heterogeneous"]["long_context"] = getattr(args, "long_context", False)
     cfg["heterogeneous"]["coordinator"] = _path(args.coordinator, True)
     workers = worker_arguments(args)
     for flag, value in zip(workers[::2], workers[1::2]):
@@ -267,7 +279,7 @@ def run(args):
     if (args.stream_tokens or args.benchmark_repeat != 1) and not args.resident:
         raise ValueError("stream-tokens and benchmark-repeat require --resident")
     from serve.heterogeneous_contract import MAX_WORKLOAD_PROMPT_BYTES
-    cap = MAX_WORKLOAD_PROMPT_BYTES if workload else 65536
+    cap = LONG_PROMPT_BYTES if getattr(args, "long_context", False) else MAX_WORKLOAD_PROMPT_BYTES if workload else 65536
     if args.prompt_file is not None:
         with args.prompt_file.open("rb") as stream:
             data = stream.read(cap + 1)

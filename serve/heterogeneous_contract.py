@@ -1,5 +1,7 @@
 """CPU-only limits and progress validation for the existing native coordinator."""
 
+from serve.heterogeneous_long_context import MAX_LONG_CONTEXT, command_cap, validate_capacity
+
 MAX_CONTEXT = 8192
 MAX_COMMAND_BYTES = 65536
 MAX_WORKLOAD_CONTEXT = 32768
@@ -9,12 +11,16 @@ MAX_WORKLOAD_PROMPT_BYTES = 256 * 1024
 PAYLOAD_FLOATS = 16 * 1024 * 1024 // 4
 
 
-def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk, workload=False):
+def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk, workload=False, long_context=False):
     if any(type(x) is not int or x <= 0 for x in (cells, max_t, vocab, hc, n_embd, max_new)):
         raise ValueError("invalid model geometry or generation limits")
     if type(workload) is not bool:
         raise ValueError("invalid workload mode")
-    ceiling = MAX_WORKLOAD_CONTEXT if workload else MAX_CONTEXT
+    if type(long_context) is not bool or (long_context and not workload):
+        raise ValueError("long-context requires workload mode")
+    if long_context:
+        validate_capacity(cells, requested)
+    ceiling = MAX_LONG_CONTEXT if long_context else MAX_WORKLOAD_CONTEXT if workload else MAX_CONTEXT
     if type(requested) is not int or not 2 <= requested <= ceiling:
         raise ValueError(f"max-context must be 2..{ceiling}")
     if max_new > (MAX_WORKLOAD_NEW if workload else 256):
@@ -32,14 +38,14 @@ def generation_limits(cells, max_t, vocab, hc, n_embd, requested, max_new, chunk
     return context, chunk or safe
 
 
-def validate_request(ids, max_new, vocab, context):
+def validate_request(ids, max_new, vocab, context, long_context=False):
     if (not ids or type(max_new) is not int or max_new <= 0 or
             len(ids) + max_new > context or
             any(type(t) is not int or not 0 <= t < vocab for t in ids)):
         raise ValueError("prompt/generation budget exceeds validated context or vocabulary")
     # Include the resident request's completion-count prefix. One-shot
     # input is shorter, even with its terminating newline.
-    cap = MAX_WORKLOAD_COMMAND_BYTES if context > MAX_CONTEXT else MAX_COMMAND_BYTES
+    cap = command_cap(context, long_context)
     if len(" ".join(map(str, [max_new, *ids]))) > cap:
         raise ValueError("serialized token request exceeds configured byte cap")
 

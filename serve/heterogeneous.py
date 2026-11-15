@@ -16,6 +16,7 @@ import sys
 import threading
 
 from serve.heterogeneous_contract import validate_request, Progress, timing_record
+from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
 
 
 def prepare_server(cfg):
@@ -27,7 +28,7 @@ def prepare_server(cfg):
     required = {"coordinator", "config", "plan", "fingerprint"}
     optional = {"cuda_worker", "hip_worker", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
-                "group_native_hip", "native_prefill_chunk", "workload_mode", "kv"}
+                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     from strata_cli.heterogeneous import planned_backends
@@ -42,7 +43,7 @@ def prepare_server(cfg):
     values = dict(cuda_worker=None, hip_worker=None, layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
                   stream_tokens=False, restart_clean=False, lookup_draft=False,
-                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False, kv="int8")
+                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False, long_context=False, kv="int8")
     values.update(opts)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
@@ -51,7 +52,7 @@ def prepare_server(cfg):
         raise ValueError("heterogeneous.prompt_chunk must be 0..8")
     if type(values["native_prefill_chunk"]) is not int or not 0 <= values["native_prefill_chunk"] <= 2048:
         raise ValueError("heterogeneous.native_prefill_chunk must be 0..2048")
-    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft", "group_native_hip", "workload_mode"):
+    for key in ("shared", "stream_tokens", "restart_clean", "lookup_draft", "group_native_hip", "workload_mode", "long_context"):
         if type(values[key]) is not bool:
             raise ValueError(f"heterogeneous.{key} must be boolean")
     if not isinstance(values["kv"], str) or values["kv"] not in ("int8", "f16"):
@@ -131,9 +132,9 @@ class ResidentEngine:
         finally:
             self._records.put(None)
 
-    def _receive(self):
+    def _receive(self, timeout=None):
         try:
-            record = self._records.get(timeout=self._deadline)
+            record = self._records.get(timeout=self._deadline if timeout is None else timeout)
         except queue.Empty as exc:
             raise self._died("native resident response timed out; restart required") from exc
         if record is None:
@@ -195,7 +196,8 @@ class ResidentEngine:
     def _validate(self, ids, max_new, sampling, embeddings):
         if embeddings is not None or type(max_new) is not int or not 1 <= max_new <= self.max_new:
             raise ValueError("unsupported resident request or completion budget")
-        validate_request(ids, max_new, self.source["vocab"], self.max_context)
+        validate_request(ids, max_new, self.source["vocab"], self.max_context,
+                         self.source.get("long_context", False))
         sampling = sampling or {}
         allowed = {"temperature": (None, 0), "top_p": (None, 1),
                    "top_k": (None, 0, 1), "min_p": (None, 0),
@@ -260,7 +262,10 @@ class ResidentEngine:
             try:
                 self._send(" ".join(map(str, [max_new, *ids])))
                 while True:
-                    line = self._receive()
+                    if self.source.get("long_context") and progress.window == 0 and len(ids) > 1:
+                        line = self._receive(LONG_PREFILL_TIMEOUT_SECONDS + self._deadline)
+                    else:
+                        line = self._receive()
                     if line.startswith("HETERO_PROGRESS "):
                         try:
                             if cancelled:
