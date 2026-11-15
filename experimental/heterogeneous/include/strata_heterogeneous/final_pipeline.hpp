@@ -103,7 +103,7 @@ private:
     bool early_window_spec_;
     bool guarded_direct_;
     bool mtp_service_;
-    std::optional<MtpRequestPolicy> mtp_service_policy_;
+    std::unique_ptr<const MtpRequestPolicy> mtp_service_policy_;
     uint64_t resident_request_ = 0;
     bool initialized_ = false;
     bool poisoned_ = false;

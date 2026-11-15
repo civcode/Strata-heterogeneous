@@ -1,7 +1,9 @@
 #include "strata_heterogeneous/mtp_request_policy.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <type_traits>
 using strata::heterogeneous::MtpRequestPolicy;
+using strata::heterogeneous::admit_mtp_service_request;
 int main() {
     unsigned checks = 0;
     auto check = [&](bool ok) { ++checks; if (!ok) throw std::runtime_error("MTP request policy"); };
@@ -60,5 +62,37 @@ int main() {
         p.context=cap; check(!p.valid());
     }
     p.context=2048; p.spec=5; check(!p.valid());
+    // Verify the real service admission helper owns an immutable snapshot,
+    // including at positions far beyond the historical 8K limit.
+    {
+        constexpr unsigned cap=262144;
+        MtpRequestPolicy input{cap,256,4,248320,std::vector<int32_t>(cap-256,10),{99}};
+        input.prompt.back()=17;
+        auto admitted=admit_mtp_service_request(input);
+        static_assert(std::is_same_v<decltype(*admitted),const MtpRequestPolicy&>);
+        check(bool(admitted));
+        const auto prompt_size=admitted->prompt.size();
+        input.prompt[0]=-1; input.prompt.back()=19; input.stops[0]=11; input.max_new=1;
+        check(admitted->prompt.front()==10 && admitted->prompt.back()==17 && admitted->max_new==256);
+        check(admitted->prompt_window(prompt_size-1,{17}));
+        check(!admitted->prompt_window(prompt_size-1,{19}));
+        check(!admit_mtp_service_request(input));
+        input.prompt[0]=10; input.spec=3;
+        check(input.valid() && !admit_mtp_service_request(input));
+        for (int64_t pos=prompt_size; pos<admitted->feed_end(); ++pos) {
+            check(admitted->decode_window(pos,11,{11}));
+            check(!admitted->decode_window(pos,99,{99}));
+            if (admitted->can_offer(pos,11)) {
+                const auto ids=admitted->clip_offer(pos,11,{12,13,99,14});
+                check(ids==std::vector<int32_t>({11,12,13}));
+            } else {
+                check(pos>int64_t(cap)-5 && !admitted->decode_window(pos,11,{11,12}));
+            }
+        }
+        admitted.reset();
+        check(!admitted);
+        admitted=admit_mtp_service_request({cap,8,4,248320,{7,8,9},{99}});
+        check(admitted && admitted->prompt==std::vector<int32_t>({7,8,9}) && admitted->max_new==8);
+    }
     std::cout << "PASS " << checks << " request-policy assertions\n";
 }

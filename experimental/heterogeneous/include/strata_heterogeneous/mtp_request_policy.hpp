@@ -5,6 +5,8 @@
 #include "strata_heterogeneous/long_context.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <memory>
+#include <utility>
 #include <stdexcept>
 #include <vector>
 
@@ -87,4 +89,12 @@ struct MtpRequestPolicy {
             std::all_of(ids.begin(), ids.end(), [this](auto id){return token(id) && !stop(id);});
     }
 };
+
+// Service metadata is validated once per endpoint and owned as an immutable
+// snapshot. A null pointer means no admitted request. Never call valid() to
+// rediscover admission in a per-window hot path (it scans the entire prompt).
+inline std::unique_ptr<const MtpRequestPolicy> admit_mtp_service_request(MtpRequestPolicy policy) {
+    if (policy.spec != MtpRequestPolicy::max_candidates || !policy.valid()) return {};
+    return std::make_unique<const MtpRequestPolicy>(std::move(policy));
+}
 } // namespace strata::heterogeneous

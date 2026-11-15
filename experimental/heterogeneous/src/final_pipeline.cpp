@@ -417,20 +417,22 @@ void FinalPipelineSession::begin_request(uint64_t request) {
 
 void FinalPipelineSession::configure_mtp_request(uint64_t request, const MtpRequestPolicy& policy) {
     if (!mtp_service_ || !initialized_ || poisoned_ || pending_ || last_window_ ||
-        !request || request != resident_request_ || mtp_service_policy_ || !policy.valid() || policy.spec != 4)
+        !request || request != resident_request_ || mtp_service_policy_)
         throw std::logic_error("MTP service requires a valid new request after all reset ACKs");
+    auto admitted=admit_mtp_service_request(policy);
+    if (!admitted) throw std::logic_error("MTP service requires a valid new request after all reset ACKs");
     try {
-        Frame meta = control(plan_,endpoints_.back(),Kind::mtp_service_request,request,0,static_cast<uint32_t>(policy.prompt.size()));
-        meta.window=WindowSpec{0,policy.prompt};
-        meta.mtp_max_new=policy.max_new;
+        Frame meta = control(plan_,endpoints_.back(),Kind::mtp_service_request,request,0,static_cast<uint32_t>(admitted->prompt.size()));
+        meta.window=WindowSpec{0,admitted->prompt};
+        meta.mtp_max_new=admitted->max_new;
         send_frame(fds_.back(),meta,timeout_ms_);
         auto ack=receive_frame(fds_.back(),timeout_ms_);
         if (!ack) throw std::runtime_error("terminal closed during MTP service metadata");
         if (ack->kind==Kind::failure) throw std::runtime_error("terminal MTP service metadata: "+ack->error);
         match(*ack,meta,Kind::mtp_service_ready);
-        if (!ack->window || ack->window->pos0!=0 || ack->window->token_ids!=policy.prompt || ack->mtp_max_new!=policy.max_new)
+        if (!ack->window || ack->window->pos0!=0 || ack->window->token_ids!=admitted->prompt || ack->mtp_max_new!=admitted->max_new)
             throw std::runtime_error("MTP service metadata ACK mismatch");
-        mtp_service_policy_=policy;
+        mtp_service_policy_=std::move(admitted);
     } catch (...) { poison(); throw; }
 }
 

@@ -188,13 +188,15 @@ public:
     bool configure_request(const Frame& meta,std::string& error) override {
         if (!service_enabled() || !cursor_ || !drafter_ || !request_ || meta.request_id!=request_ ||
             meta.kind!=Kind::mtp_service_request || !meta.window || meta.window_id || meta.window->pos0 ||
-            committed_ || cursor_->committed_position() || service_policy_.valid() || !resident_kv_supported()) {
+            committed_ || cursor_->committed_position() || service_policy_ || !resident_kv_supported()) {
             error="MTP service request identity or state refused";return false;
         }
         MtpRequestPolicy policy{static_cast<uint32_t>(context_),meta.mtp_max_new,4,static_cast<uint32_t>(n_vocab_),meta.window->token_ids,service_stops_};
-        if (!policy.valid() || meta.rows!=policy.prompt.size()) {error="invalid MTP service prompt or budget";return false;}
-        service_policy_=std::move(policy);
-        drafter_->set_prompt_len(static_cast<int64_t>(service_policy_.prompt.size()));
+        if (meta.rows!=policy.prompt.size()) {error="invalid MTP service prompt or budget";return false;}
+        auto admitted=admit_mtp_service_request(std::move(policy));
+        if (!admitted) {error="invalid MTP service prompt or budget";return false;}
+        service_policy_=std::move(admitted);
+        drafter_->set_prompt_len(static_cast<int64_t>(service_policy_->prompt.size()));
         return true;
     }
     // Called on the worker control thread before any target bulk execution.
@@ -203,10 +205,10 @@ public:
             cmd.kind!=Kind::prefill_spec || cmd.window_id!=1 || !cmd.window || cmd.window->pos0!=0 ||
             cmd.rows!=cmd.window->token_ids.size() || committed_ || bulk_active_ ||
             cursor_->committed_position() || relay_pending_ || verified_next_!=-1 ||
-            !resident_kv_supported() || !service_policy_.bulk_prefix(cmd.window->token_ids,cmd.prefill_chunk)) {
+            !resident_kv_supported() || !service_policy_ || !service_policy_->bulk_prefix(cmd.window->token_ids,cmd.prefill_chunk)) {
             error="MTP bulk prompt metadata or state refused";return false;
         }
-        if (!cursor_->start_bulk_prompt(service_policy_.prompt,error)) return false;
+        if (!cursor_->start_bulk_prompt(service_policy_->prompt,error)) return false;
         bulk_active_=true;
         bulk_chunk_=cmd.prefill_chunk;
         return true;
@@ -216,9 +218,9 @@ public:
     // the native prefill scratch is reused; no residual pointer is retained.
     bool seed_bulk_prompt(const float* rows,int64_t count,int64_t pos,std::string& error) {
         int current=-1;
-        if (!bulk_active_ || !cursor_ || !drafter_ || !rows || !bulk_chunk_ ||
-            pos!=cursor_->committed_position() || pos<0 || pos>=int64_t(service_policy_.prompt.size())-1 ||
-            count!=std::min<int64_t>(bulk_chunk_,int64_t(service_policy_.prompt.size())-1-pos) ||
+        if (!bulk_active_ || !cursor_ || !drafter_ || !service_policy_ || !rows || !bulk_chunk_ ||
+            pos!=cursor_->committed_position() || pos<0 || pos>=int64_t(service_policy_->prompt.size())-1 ||
+            count!=std::min<int64_t>(bulk_chunk_,int64_t(service_policy_->prompt.size())-1-pos) ||
             !ck(cudaGetDevice(&current),error) || current!=device_) {
             if(error.empty()) error="MTP bulk residual owner/state refused";
             return false;
@@ -227,7 +229,7 @@ public:
     }
     bool finish_bulk_prompt(uint64_t request,uint32_t rows,std::string& error) override {
         if (!bulk_active_ || !cursor_ || !drafter_ || request!=request_ || committed_ ||
-            !service_policy_.valid() || rows+1!=service_policy_.prompt.size() ||
+            !service_policy_ || rows+1!=service_policy_->prompt.size() ||
             cursor_->committed_position()!=rows || !ck(cudaSetDevice(device_),error) ||
             !drafter_->idle(error) || !room(0,error)) {
             if(error.empty()) error="MTP bulk prompt drain/adoption refused";
@@ -263,7 +265,7 @@ public:
         committed_=0;
         bulk_active_=false;
         bulk_chunk_=0;
-        service_policy_={};
+        service_policy_.reset();
         verified_next_=-1;
         relay_pending_=false;
         request_=request;
@@ -279,10 +281,10 @@ public:
             return false;
         }
         if (service_enabled()) {
-            if (!service_policy_.valid() || (spec.pos0 < int64_t(service_policy_.prompt.size()) ?
-                !service_policy_.prompt_window(spec.pos0,spec.token_ids) :
-                (!service_policy_.decode_window(spec.pos0,verified_next_,spec.token_ids) ||
-                 (!relay_pending_ && (spec.token_ids.size()!=1 || service_policy_.can_offer(spec.pos0,verified_next_)))))) {
+            if (!service_policy_ || (spec.pos0 < int64_t(service_policy_->prompt.size()) ?
+                !service_policy_->prompt_window(spec.pos0,spec.token_ids) :
+                (!service_policy_->decode_window(spec.pos0,verified_next_,spec.token_ids) ||
+                 (!relay_pending_ && (spec.token_ids.size()!=1 || service_policy_->can_offer(spec.pos0,verified_next_)))))) {
                 error="MTP service window outside admitted prompt or decode policy";return false;
             }
         }
@@ -323,7 +325,7 @@ public:
               keep!=greedy_accepted_prefix(spec.token_ids,predictions)))) {
             error="invalid MTP generation commit"; return false;
         }
-        if (service_enabled() && (!service_policy_.valid() || (spec.pos0 < int64_t(service_policy_.prompt.size()) ?
+        if (service_enabled() && (!service_policy_ || (spec.pos0 < int64_t(service_policy_->prompt.size()) ?
             keep!=spec.token_ids.size() : keep!=greedy_accepted_prefix(spec.token_ids,predictions)))) {
             error="MTP service commit differs from admitted prefix";return false;
         }
@@ -366,7 +368,7 @@ public:
     bool anchor_only_enabled() const noexcept override { return generation_.enabled() || service_enabled(); }
     bool propose(const WindowSpec& anchor, WindowSpec& offer, std::string& error) override {
         if (!relay_enabled() || !request_ || relay_pending_ || committed_<windows_ ||
-            (service_enabled() && (!service_policy_.valid() || !service_policy_.can_offer(anchor.pos0,verified_next_))) ||
+            (service_enabled() && (!service_policy_ || !service_policy_->can_offer(anchor.pos0,verified_next_))) ||
             (!service_enabled() && !generation_.enabled() && committed_>=windows_+relay_rounds_) ||
             (generation_.enabled() && !generation_.can_draft(anchor.pos0)) ||
             !cursor_ || anchor.pos0!=cursor_->committed_position() ||
@@ -396,7 +398,7 @@ public:
                        probs[i]<0.f || probs[i]>1.f) {e="MTP relay invalid candidate";return false;}
                 candidates.assign(tokens.begin(),tokens.begin()+n);
                 if (service_enabled()) {
-                    auto clipped=service_policy_.clip_offer(cell+1,next,candidates);
+                    auto clipped=service_policy_->clip_offer(cell+1,next,candidates);
                     candidates.assign(clipped.begin()+1,clipped.end());
                 }
                 if (generation_.enabled()) {
@@ -451,13 +453,13 @@ private:
     bool resident_generation_=false;
     uint64_t request_=1;
     std::vector<int32_t> service_stops_;
-    MtpRequestPolicy service_policy_;
+    std::unique_ptr<const MtpRequestPolicy> service_policy_;
     bool bulk_active_=false;
     uint32_t bulk_chunk_=0;
     const core::ModelGeometry* geometry_=nullptr;
     int64_t context_=0;
     size_t max_t_=0;
-    unsigned window_limit() const noexcept { return service_enabled() ? (service_policy_.valid()?static_cast<unsigned>(service_policy_.feed_end()):0u) : generation_.enabled()?generation_.feed_end():windows_+relay_rounds_; }
+    unsigned window_limit() const noexcept { return service_enabled() ? (service_policy_?static_cast<unsigned>(service_policy_->feed_end()):0u) : generation_.enabled()?generation_.feed_end():windows_+relay_rounds_; }
     void* front_device_=nullptr;
     std::unique_ptr<MtpStateTrace> trace_;
     int device_=-1;
