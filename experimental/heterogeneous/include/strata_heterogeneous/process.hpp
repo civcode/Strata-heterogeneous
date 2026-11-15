@@ -37,7 +37,8 @@ public:
                                      const std::string& cuda_config_path = {},
                                      const std::vector<std::string>& stage_config_paths = {},
                                      bool group_hip = false, int graceful_only_timeout_ms = -1,
-                                     std::optional<KvMode> kv = std::nullopt);
+                                     std::optional<KvMode> kv = std::nullopt,
+                                     uint32_t long_context_chunk = 0);
     std::vector<int> sockets() const;
     size_t size() const { return children_.size(); }
 

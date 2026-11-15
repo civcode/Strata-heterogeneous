@@ -42,7 +42,7 @@ void check_path(const std::string& path) {
 bool parse_hip_worker_invocation(int argc, const char* const* argv,
                                  HipWorkerInvocation& out, std::string& error) {
     try {
-        if ((argc != 10 && argc != 12 && argc != 14) || !argv)
+        if ((argc != 10 && argc != 12 && argc != 14 && argc != 16) || !argv)
             throw std::invalid_argument("expected HIP worker mode plan layers hc n_embd fingerprint index --config /absolute/path");
         for (int i = 0; i < argc; ++i)
             if (!argv[i]) throw std::invalid_argument("missing HIP worker argument");
@@ -50,13 +50,20 @@ bool parse_hip_worker_invocation(int argc, const char* const* argv,
         const bool grouped = mode == "--worker-hip-domain" || mode == "--worker-hip-domain-shared";
         const int base_argc = grouped ? 12 : 10;
         if ((!grouped && mode != "--worker" && mode != "--worker-shared") ||
-            (argc != base_argc && argc != base_argc + 2) || std::string(argv[8]) != "--config")
+            (argc != base_argc && argc != base_argc + 2 && !(grouped && argc == base_argc + 4)) || std::string(argv[8]) != "--config")
             throw std::invalid_argument("HIP worker mode/config argument mismatch");
         HipWorkerInvocation next;
-        if (argc == base_argc + 2) {
+        if (argc >= base_argc + 2) {
             if (std::string_view(argv[base_argc]) != "--kv")
                 throw std::invalid_argument("expected --kv int8|f16");
             next.kv = parse_kv_mode(argv[base_argc + 1]);
+        }
+        if (argc == base_argc + 4) {
+            if (std::string_view(argv[base_argc + 2]) != "--long-context-chunk")
+                throw std::invalid_argument("expected --long-context-chunk N");
+            next.long_context_chunk = u32(argv[base_argc + 3]);
+            if (next.kv != KvMode::int8 || !next.long_context_chunk || next.long_context_chunk > max_native_prefill_chunk)
+                throw std::invalid_argument("invalid grouped long-context INT8 worker capability");
         }
         next.shared_memory = mode == "--worker-shared" || mode == "--worker-hip-domain-shared";
         next.plan = parse_plan(argv[2], u32(argv[3]),

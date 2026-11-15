@@ -50,6 +50,7 @@ struct Options {
     bool describe_source = false;
     bool resident = false;
     bool workload_mode = false;
+    bool long_context = false;
     bool stream_tokens = false;
     bool lookup_draft = false;
     uint32_t context_limit = 4096;
@@ -156,6 +157,7 @@ void usage() {
         "  --resident: accept repeated local requests (N followed by prompt IDs on one line).\n"
         "  --context-limit N (total tokens, <=8192); --stream-tokens (resident only).\n"
         "  --workload-mode: opt-in grouped or two-HIP-stage resident text, context <=32768, max-new <=4096; experimental.\n"
+        "  --long-context: explicit grouped native INT8 resident prefill, aligned context 2048..262144; allocator checks required.\n"
         "  --lookup-draft: verified suffix lookup (buffered only, prompt-chunk 2..8).\n"
         "Without --run: CPU-only configuration preflight. With --run: start native GPU workers.\n";
 }
@@ -267,13 +269,14 @@ Options parse(int argc, char** argv) {
         else if (key == "--describe-source") o.describe_source = true;
         else if (key == "--resident") { o.resident = true; generation_arg = true; }
         else if (key == "--workload-mode") { o.workload_mode = true; generation_arg = true; }
+        else if (key == "--long-context") { if (o.long_context) throw std::invalid_argument("duplicate --long-context"); o.long_context = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
         else if (key == "--lookup-draft") { o.lookup_draft = true; generation_arg = true; }
         else if (key == "--context-limit") {
             generation_arg = true;
             o.context_limit = u32(required_value(i, argc, argv, "--context-limit"), "context-limit");
-            if (o.context_limit < 2 || o.context_limit > hetero::max_native_prefill_tokens)
-                throw std::invalid_argument("--context-limit must be in 2..32768");
+            if (o.context_limit < 2 || o.context_limit > hetero::max_long_context)
+                throw std::invalid_argument("--context-limit must be in 2..262144");
         }
         else if (key == "--generate") {
             generation_arg = true;
@@ -516,6 +519,13 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("--stream-tokens requires --resident");
     if (o.lookup_draft && (o.stream_tokens || o.prompt_chunk < 2))
         throw std::invalid_argument("--lookup-draft requires buffered generation and chunk >= 2");
+    if (!o.long_context && o.context_limit > hetero::legacy_workload_context)
+        throw std::invalid_argument("context above 32768 requires --long-context");
+    if (o.long_context && (!o.workload_mode || !o.resident || !o.group_hip ||
+        !o.native_prefill_chunk || o.lookup_draft || o.direct_verified || o.receiver_arm ||
+        o.cuda_mapped_egress || o.hip_split_overlap || !o.capture_prefix.empty() ||
+        !hetero::long_context_cells_valid(o.context_limit) || o.kv != hetero::KvMode::int8))
+        throw std::invalid_argument("long-context requires aligned grouped native INT8 resident prefill, no lookup or diagnostic overlap");
     if (!o.workload_mode && (o.context_limit > 8192 || o.generate > 256))
         throw std::invalid_argument("extended context or completion requires --workload-mode");
     if (o.workload_mode && (!o.resident || !o.generate || o.prefill_parity_at ||
@@ -651,6 +661,15 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
         // All stages must use one canonical pack/profile/original GGUF
         // source. Capture metadata is otherwise insufficient to prove that
         // each worker computed against the same source model.
+        if (!o.describe_source && !o.long_context && config.max_cells > hetero::legacy_workload_context)
+            throw std::invalid_argument("worker capacity above 32768 requires explicit long-context mode");
+        if (o.long_context && (config.max_cells != o.context_limit ||
+            config.index_sha256 != hetero::mtp_qualification_index ||
+            config.n_layers != 48 || config.hc != 4 || config.n_embd != 2560 || config.n_vocab != 248320 ||
+            !hetero::long_context_stage_valid(config.max_cells, config.free_reserve_bytes,
+                config.arena_budget_bytes, config.max_t, config.max_cache_slots,
+                config.end_layer-config.first_layer)))
+            throw std::invalid_argument("long-context requires exact Q2_0 stage capacity, full experts, max_t=8 and >=1 GiB reserve");
         if (hip_pair && config.max_cache_slots != uint64_t(config.end_layer-config.first_layer)*512)
             throw std::invalid_argument("HIP-only experiment requires explicit full routed expert residency");
         if (common_model) {
@@ -711,6 +730,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"vocab\":" << common_model->n_vocab
                   << ",\"max_cells\":" << max_cells << ",\"max_t\":" << max_t
                   << ",\"kv\":\"" << hetero::kv_mode_name(o.kv) << "\""
+                  << ",\"long_context_cap\":" << hetero::max_long_context
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
     if (o.run) {
@@ -983,7 +1003,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
         throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
-        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip, o.timeout_ms, o.kv);
+        plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip, o.timeout_ms, o.kv,
+        o.long_context ? o.native_prefill_chunk : 0);
     // For this diagnostic only, drain by EOF even on post-launch exceptions;
     // if a worker cannot exit, report its PID rather than escalating to SIGKILL.
     struct DiagnosticDrain {
@@ -1156,7 +1177,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             const bool trace_prefix=hetero::performance_trace();
             using PrefixClock=std::chrono::steady_clock;
             const auto prefix_start=trace_prefix ? PrefixClock::now() : PrefixClock::time_point{};
-            session.native_prefill(prefix,o.native_prefill_chunk);
+            session.native_prefill(prefix,o.native_prefill_chunk,false,
+                                   o.long_context ? hetero::long_prefill_timeout_ms : 0);
             if (trace_prefix) {
                 const auto prefix_end=PrefixClock::now();
                 const auto start_ns=std::chrono::duration_cast<std::chrono::nanoseconds>(prefix_start.time_since_epoch()).count();
@@ -1328,7 +1350,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         std::cout << std::endl;
         bool first = true;
         std::string line;
-        const size_t command_cap = o.workload_mode && o.context_limit > 8192 ? 384 * 1024 : 65536;
+        const size_t command_cap = hetero::resident_command_cap(o.context_limit, o.workload_mode, o.long_context);
         while (!input_closed && read_command(line, command_cap)) {
             if (line == "quit") { resident_quit=true; break; }
             std::istringstream in(line);

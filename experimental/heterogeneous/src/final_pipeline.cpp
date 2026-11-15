@@ -372,7 +372,10 @@ void FinalPipelineSession::begin_request(uint64_t request) {
     } catch (...) { poison(); throw; }
 }
 
-void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference) {
+void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference, int total_timeout_ms) {
+    if (total_timeout_ms < 0 || total_timeout_ms > long_prefill_timeout_ms ||
+        (total_timeout_ms && isolated_stage_reference))
+        throw std::invalid_argument("invalid extended prefill deadline");
     if (receiver_arm_ || mtp_relay_ || direct_verified_)
         throw std::logic_error("receiver arm/MTP relay/direct verified mode does not support native bulk prefill");
     const bool local = endpoints_.size()==1 && starts_.front()==0 &&
@@ -393,21 +396,29 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
         plan_.stages[2].first_layer!=30 || plan_.stages[2].end_layer!=48 ||
         plan_.geometry.hc!=4 || plan_.geometry.n_embd!=2560))
         throw std::logic_error("isolated stage reference requires bounded A/B/A diagnostic");
+    using Clock = std::chrono::steady_clock;
+    const auto deadline = Clock::now() + std::chrono::milliseconds(total_timeout_ms);
+    auto prefill_wait = [&](bool full_local = false) {
+        if (!total_timeout_ms) return timeout_ms_;
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline-Clock::now()).count();
+        if (remaining <= 0) throw std::runtime_error("native prefill total deadline exceeded");
+        return full_local ? static_cast<int>(remaining) : std::min(timeout_ms_, static_cast<int>(remaining));
+    };
     try {
         Frame spec=control(plan_,endpoints_[0],Kind::prefill_spec,resident_request_,1,static_cast<uint32_t>(tokens.size()));
         spec.window=WindowSpec{0,tokens}; spec.prefill_chunk=chunk;
         validate_wire_frame(spec);
         if (bridge) {
             auto receive_spec=spec; receive_spec.stage_index=static_cast<uint32_t>(endpoints_[1]);
-            send_frame(fds_[1],receive_spec,timeout_ms_);
+            send_frame(fds_[1],receive_spec,prefill_wait());
         }
         // A complete local HIP domain consumes the token spec once. No host R relay.
-        send_frame(fds_[0],spec,timeout_ms_);
+        send_frame(fds_[0],spec,prefill_wait());
         const uint32_t cap=prefill_piece_rows(plan_.geometry);
         size_t offset=0;
         while (bridge && !isolated_stage_reference && offset<tokens.size()) {
             const size_t count=std::min({size_t(cap),size_t(chunk)-offset%chunk,tokens.size()-offset});
-            auto piece=receive_frame(fds_[0],timeout_ms_);
+            auto piece=receive_frame(fds_[0],prefill_wait());
             if (!piece || piece->kind==Kind::failure)
                 throw std::runtime_error(piece ? piece->error : "CUDA closed during native prefill");
             if (piece->kind!=Kind::prefill_rows || piece->stage_index!=endpoints_[0] ||
@@ -417,11 +428,11 @@ void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, ui
                 !activation_finite(reinterpret_cast<const uint8_t*>(piece->payload.data()),piece->payload.size()*sizeof(float)))
                 throw std::runtime_error("native prefill residual identity, order or finite gate failed");
             piece->stage_index=static_cast<uint32_t>(endpoints_[1]);
-            send_frame(fds_[1],*piece,timeout_ms_);
+            send_frame(fds_[1],*piece,prefill_wait());
             offset+=count;
         }
         for (size_t i=0;i<fds_.size();++i) {
-            auto done=receive_frame(fds_[i],timeout_ms_);
+            auto done=receive_frame(fds_[i],prefill_wait(local));
             if (!done || done->kind==Kind::failure)
                 throw std::runtime_error(done ? done->error : "native prefill peer closed before drain");
             const auto expected=control(plan_,endpoints_[i],Kind::prefill_done,resident_request_,1,spec.rows);

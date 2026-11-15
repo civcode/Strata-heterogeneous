@@ -13,6 +13,7 @@ struct CudaWorkerInvocation {
     bool shared_memory = false;
     // Legacy internal argv without --kv retains its historical FP16 contract.
     KvMode kv = KvMode::f16;
+    uint32_t long_context_chunk = 0;
     std::string config_path;
 };
 // Accepts ONLY the WorkerProcessGroup convention with explicit --config:

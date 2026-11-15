@@ -11,6 +11,7 @@ struct HipWorkerInvocation {
     bool shared_memory = false;
     // Legacy internal argv without --kv retains its historical FP16 contract.
     KvMode kv = KvMode::f16;
+    uint32_t long_context_chunk = 0;
     std::string config_path;
     // Ordered physical HIP configs only for the explicit grouped mode.
     std::vector<std::string> domain_configs;
