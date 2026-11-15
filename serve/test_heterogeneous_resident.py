@@ -93,6 +93,16 @@ class TestResident(unittest.TestCase):
         e._send = Mock()
         return e
 
+    def test_tool_declarations_are_service_metadata(self):
+        e = self.engine([])
+        e._validate([1], 1, {"tools": [{"type": "function"}], "tool_choice": "auto"}, None)
+        e._validate([1], 1, {"tool_choice": "none"}, None)
+        for choice in ("required", {"type": "function", "function": {"name": "f"}}):
+            with self.assertRaises(ValueError):
+                e._validate([1], 1, {"tool_choice": choice}, None)
+        with self.assertRaises(ValueError):
+            e._validate([1], 1, {"functions": [{"name": "f"}]}, None)
+
     def test_stream_before_final(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2 10", "HETERO_PROGRESS 1 2 3 11",
                          "HETERO_PROGRESS 1 3 4 -1",

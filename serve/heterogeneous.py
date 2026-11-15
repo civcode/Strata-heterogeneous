@@ -201,8 +201,13 @@ class ResidentEngine:
         for key, values in allowed.items():
             if sampling.get(key) not in values:
                 raise ValueError(f"{key} is not supported by the experimental greedy resident engine")
-        for key in ("logit_bias", "logprobs", "top_logprobs", "tools", "functions",
-                    "tool_choice", "strata_img_keys", "best_of", "mirostat",
+        # Tool declarations are rendered into the prompt and parsed by Service;
+        # they are not native sampler options. Forced tool choice needs separate
+        # qualification because it can alter the generated prompt prefix.
+        if sampling.get("tool_choice") not in (None, "auto", "none"):
+            raise ValueError("forced tool_choice is not supported by the experimental resident engine")
+        for key in ("logit_bias", "logprobs", "top_logprobs", "functions",
+                    "strata_img_keys", "best_of", "mirostat",
                     "typical_p", "response_format"):
             if sampling.get(key):
                 raise ValueError(f"{key} is not supported by the experimental resident engine")
