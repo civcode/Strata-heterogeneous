@@ -2,6 +2,7 @@
 
 #include "strata/core/layer.hpp"
 #include "strata/core/session.hpp"
+#include "strata/core/verify.hpp"
 #include "strata_heterogeneous/kv_mode.hpp"
 #include <cstdio>
 #include <stdexcept>
@@ -55,11 +56,25 @@ inline void strata_heterogeneous_verify_kv(const strata::core::SessionState& s,
             ? st.k_q && st.v_q && st.k_scale && st.v_scale && !st.k_pool && !st.v_pool
             : st.k_pool && st.v_pool && !st.k_q && !st.v_q && !st.k_scale && !st.v_scale;
         if (!correct || st.kv_int8 != q8 || st.kv_q4 || st.kv_hybrid ||
-            st.kv_rot || st.kv_mode != 0 || st.n_slots != st.n_pages ||
+            st.kv_rot || st.kv_mode != 0 || !st.page_table || st.n_pages <= 0 || st.n_slots != st.n_pages ||
             st.kv_elastic != -1 || st.host.present() || st.max_cells != s.max_cells)
             throw std::runtime_error("native KV allocation format/residency mismatch");
     }
     std::fprintf(stderr,"HETERO_KV stage=%zu format=%s cells=%lld qsa_layers=%lld resident=1\n",
         stage, strata::heterogeneous::kv_mode_name(kv),
         static_cast<long long>(s.max_cells), static_cast<long long>(s.qsa_alloc));
+}
+
+// Explicit full-residency admission for every long-context physical owner.
+inline void strata_heterogeneous_verify_full_experts(const strata::core::ModelGeometry& g,
+        const strata::core::SessionState& s, const strata::core::VerifyHits& hits) {
+    if (!hits.h_res || !hits.d_res || !hits.cache_base || hits.n_slots <= 0 ||
+        g.n_expert <= 0 || s.layer_lo < 0 || s.layer_hi > g.n_layers || s.layer_hi <= s.layer_lo)
+        throw std::runtime_error("long-context missing expert residency map");
+    for (int64_t l = s.layer_lo; l < s.layer_hi; ++l)
+        for (int64_t e = 0; e < g.n_expert; ++e) {
+            const int32_t slot = hits.h_res[l*g.n_expert+e];
+            if (slot < 0 || slot >= hits.n_slots)
+                throw std::runtime_error("long-context refuses nonresident expert");
+        }
 }

@@ -32,6 +32,7 @@ struct CudaVerifierBindings {
     int64_t initial_position = 0; // position after caller's stage-local prefill/restore
     // Loader supplies existing native session reset; CPU contract doubles need not.
     void (*zero_session)(core::SessionState&, const core::ModelGeometry&, void*) = nullptr;
+    std::function<bool(const char*, std::string&)> capacity_probe = {};
 };
 
 // Non-final stages only: protocol v4 has no head-output channel. Construct in

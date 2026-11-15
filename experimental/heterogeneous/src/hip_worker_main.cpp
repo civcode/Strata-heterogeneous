@@ -77,9 +77,14 @@ struct LoadedHipStage {
     hetero::NativePrefillExpertView pf_resources;
     explicit LoadedHipStage(uint64_t fingerprint)
         : owner(strata::core::kCompiledGeometry, fingerprint) {}
-    void load(const hetero::Plan& plan, size_t index, const hetero::CudaWorkerConfig& c) {
+    void load(const hetero::Plan& plan, size_t index, const hetero::CudaWorkerConfig& c, bool extended = false) {
         std::string error;
         const auto& geometry = strata::core::kCompiledGeometry;
+        auto capacity = [&](const char* phase) {
+            if (extended && !hetero::sample_native_capacity(static_cast<int>(c.device_ordinal),
+                    index,phase,c.free_reserve_bytes,0,error)) throw std::runtime_error(error);
+        };
+        capacity("before_load");
         hetero::HipStageLoadOptions lo;
         lo.pack_dir = c.pack_dir;
         lo.require_native_stage = true;
@@ -92,12 +97,14 @@ struct LoadedHipStage {
         if (!owner.load(plan,index,lo,error)) throw std::runtime_error("weight/session startup: "+error);
         std::cerr << "HETERO_ARENA stage=" << index << " backend=HIP session_bytes=" << owner.session_bytes()
                   << " weight_bytes=" << owner.weight_bytes() << " reserve_bytes=" << c.free_reserve_bytes << '\n';
+        capacity("weight_session_loaded");
         hetero::HipNativeStageOptions no;
         no.gguf_shards = c.gguf_shards;
         no.ple_gguf_path = c.ple_gguf_path;
         no.free_reserve_bytes = c.free_reserve_bytes;
         no.total_arena_budget_bytes = c.arena_budget_bytes;
         if (!native.open(owner,plan,index,no,error)) throw std::runtime_error("native dense/PLE startup: "+error);
+        capacity("native_dense_ple_loaded");
         auto experts = std::make_unique<hetero::HipFileExperts>();
         hetero::HipFileExpertOptions eo;
         eo.pack_dir = c.pack_dir;
@@ -110,6 +117,7 @@ struct LoadedHipStage {
         pf_resources=experts->native_prefill_resources();
         if (!owner.attach_experts(std::move(experts),error))
             throw std::runtime_error("expert provider startup: "+error);
+        capacity("experts_loaded");
     }
 };
 void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool compact, int startup_wait_ms) {
@@ -117,6 +125,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     const auto domain = hetero::worker_domains(plan,true).back();
     if (invocation.stage_index != domain.terminal_stage() || invocation.domain_configs.size() != domain.size())
         throw std::runtime_error("HIP domain invocation mismatch");
+    const bool extended = invocation.long_context_chunk != 0;
     std::vector<hetero::HipWorkerConfig> configs;
     std::string error;
     for (size_t j = 0; j < domain.size(); ++j) {
@@ -127,6 +136,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
             !check_compiled_geometry(config,plan,i,error))
             throw std::runtime_error("HIP domain config: "+error);
         const auto& c = config.fields;
+        if ((extended && !hetero::long_context_stage_valid(c.max_cells,c.free_reserve_bytes,
+                c.arena_budget_bytes,c.max_t,c.max_cache_slots,c.end_layer-c.first_layer)) ||
+            (!extended && c.max_cells > hetero::legacy_workload_context))
+            throw std::runtime_error("invalid HIP long-context capacity or missing worker capability");
         const uint64_t slots = uint64_t(c.end_layer-c.first_layer)*strata::core::kCompiledGeometry.n_expert;
         if (c.max_cache_slots != slots)
             throw std::runtime_error("initial native HIP domain requires explicit full residency");
@@ -145,12 +158,24 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     std::vector<hetero::NativePrefillStage> pf_stages;
     for (size_t j = 0; j < domain.size(); ++j) {
         auto owner = std::make_unique<LoadedHipStage>(plan.model_fingerprint);
-        owner->load(plan,domain.first_stage+j,configs[j].fields);
-        const auto b=owner->owner.make_bindings();
+        owner->load(plan,domain.first_stage+j,configs[j].fields,extended);
+        auto b=owner->owner.make_bindings();
         strata_heterogeneous_verify_kv(b.session,invocation.kv,domain.first_stage+j);
+        if (extended) {
+            strata_heterogeneous_verify_full_experts(b.geometry,b.session,b.hits);
+            const auto stage = domain.first_stage+j;
+            const int device = static_cast<int>(configs[j].fields.device_ordinal);
+            const auto reserve = configs[j].fields.free_reserve_bytes;
+            const auto chunk = invocation.long_context_chunk;
+            b.capacity_probe = [stage,device,reserve,chunk,&g=b.geometry,&s=b.session](const char* phase,std::string& e) {
+                if (std::string_view(phase) == "verifier_ready")
+                    return hetero::check_native_prefill_capacity(device,stage,phase,g,s,chunk,reserve,e);
+                return hetero::sample_native_capacity(device,stage,phase,reserve,0,e);
+            };
+        }
         bindings.push_back({b,configs[j].fields.free_reserve_bytes});
         pf_stages.push_back({b.weights,b.geometry,b.session,owner->pf_resources,
-            configs[j].fields.free_reserve_bytes,configs[j].fields.arena_budget_bytes});
+            configs[j].fields.free_reserve_bytes,configs[j].fields.arena_budget_bytes,invocation.long_context_chunk});
         owners.push_back(std::move(owner));
     }
     const auto& c = configs.front().fields;
@@ -161,6 +186,8 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     if (direct_verified && (!invocation.shared_memory || !overlap || arm || compact || c.max_t != 8 ||
         !hetero::direct_verified_plan(plan) || std::getenv("STRATA_HETERO_MTP_PROBE_RT")))
         throw std::runtime_error("direct verified HIP requires mixed shared full-logit native overlap with max_t=8");
+    if (extended && (overlap || arm || direct_verified || std::getenv("STRATA_HETERO_MTP_PROBE_RT")))
+        throw std::runtime_error("long-context rejects diagnostic overlap, receiver arm, direct path and MTP");
     if (arm && (!overlap || compact)) throw std::runtime_error("receiver arm requires native HIP overlap and full logits");
     std::unique_ptr<hetero::NativeMtpProbe> mtp;
     if (const char* path = std::getenv("STRATA_HETERO_MTP_PROBE_RT"); path && *path) {
@@ -277,6 +304,8 @@ int main(int argc,char** argv) {
                !check_compiled_geometry(config,plan,index,error))
                 throw std::runtime_error(error);
             const auto& c=config.fields;
+            if (c.max_cells > hetero::legacy_workload_context)
+                throw std::runtime_error("large context requires grouped long-context worker");
             // v1 is still readable for old CPU-only preflight tests, but the
             // production worker must not run its first window without the
             // original GGUF projections and layer-1 PLE table.

@@ -100,10 +100,17 @@ int main(int argc,char** argv) {
                 throw std::runtime_error("CUDA worker needs v2 native GGUF/PLE configuration; v1 is preflight-only");
             // Explicit supervised worker launch is the opt-in for runtime use.
             // There is no second environment-variable approval handshake.
+            const bool extended = invocation.long_context_chunk != 0;
+            if ((extended && !hetero::long_context_stage_valid(config.max_cells, config.free_reserve_bytes,
+                    config.arena_budget_bytes, config.max_t, config.max_cache_slots, config.end_layer-config.first_layer)) ||
+                (!extended && config.max_cells > hetero::legacy_workload_context))
+                throw std::runtime_error("invalid CUDA long-context capacity or missing worker capability");
             const int startup_wait_ms = hetero::worker_startup_wait_ms();
             const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
             const bool mapped_egress = hetero::performance_flag("STRATA_HETERO_CUDA_MAPPED_EGRESS");
             const bool direct_verified = hetero::performance_flag("STRATA_HETERO_DIRECT_VERIFIED");
+            if (extended && (direct_verified || mapped_egress || hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM")))
+                throw std::runtime_error("long-context rejects experimental direct or receiver-arm paths");
             if (direct_verified && (!invocation.shared_memory || index != 0 || compact || mapped_egress ||
                 config.max_t != 8 || !hetero::direct_verified_plan(plan) ||
                 hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM")))
@@ -117,6 +124,12 @@ int main(int argc,char** argv) {
                 throw std::runtime_error("compact result requires native GPU nonfinite guard");
             strata_heterogeneous_native_worker_defaults(invocation.kv);
             const auto& geometry=strata::core::kCompiledGeometry;
+            const int device = static_cast<int>(config.device_ordinal);
+            auto capacity = [&](const char* phase) {
+                if (extended && !hetero::sample_native_capacity(device,index,phase,config.free_reserve_bytes,0,error))
+                    throw std::runtime_error(error);
+            };
+            capacity("before_load");
             hetero::CudaStageResources owner(geometry,plan.model_fingerprint);
             hetero::CudaStageLoadOptions lo;
             lo.pack_dir=config.pack_dir;
@@ -131,6 +144,7 @@ int main(int argc,char** argv) {
             if(!owner.load(plan,index,lo,error))throw std::runtime_error("weight/session startup: "+error);
             std::cerr << "HETERO_ARENA stage=" << index << " backend=CUDA session_bytes=" << owner.session_bytes()
                       << " weight_bytes=" << owner.weight_bytes() << " reserve_bytes=" << config.free_reserve_bytes << '\n';
+            capacity("weight_session_loaded");
             hetero::CudaNativeStage native;
             hetero::CudaNativeStageOptions no;
             no.gguf_shards=config.gguf_shards;
@@ -139,6 +153,7 @@ int main(int argc,char** argv) {
             no.total_arena_budget_bytes=config.arena_budget_bytes;
             if(!native.open(owner,plan,index,no,error))
                 throw std::runtime_error("native dense/PLE startup: "+error);
+            capacity("native_dense_ple_loaded");
             auto experts=std::make_unique<hetero::CudaFileExperts>();
             hetero::CudaFileExpertOptions eo;
             eo.pack_dir=config.pack_dir;
@@ -151,8 +166,18 @@ int main(int argc,char** argv) {
             const auto pf_resources=experts->native_prefill_resources();
             if(!owner.attach_experts(std::move(experts),error))
                 throw std::runtime_error("expert provider startup: "+error);
+            capacity("experts_loaded");
             auto bindings=owner.make_bindings();
             strata_heterogeneous_verify_kv(bindings.session,invocation.kv,index);
+            if (extended) {
+                strata_heterogeneous_verify_full_experts(bindings.geometry,bindings.session,bindings.hits);
+                bindings.capacity_probe = [&](const char* phase, std::string& e) {
+                    if (std::string_view(phase) == "verifier_ready")
+                        return hetero::check_native_prefill_capacity(device,index,phase,bindings.geometry,
+                            bindings.session,invocation.long_context_chunk,config.free_reserve_bytes,e);
+                    return hetero::sample_native_capacity(device,index,phase,config.free_reserve_bytes,0,e);
+                };
+            }
             if (direct_verified) {
                 const auto& hits = bindings.hits;
                 if (!hits.h_res || !hits.d_res || !hits.cache_base || hits.n_slots <= 0)
@@ -211,7 +236,7 @@ int main(int argc,char** argv) {
                         };
                         return hetero::run_native_prefill_domain(cmd,fd,
                             {{bindings.weights,bindings.geometry,bindings.session,pf_resources,
-                              config.free_reserve_bytes,config.arena_budget_bytes}},
+                              config.free_reserve_bytes,config.arena_budget_bytes,invocation.long_context_chunk}},
                             true,bindings.timeout_ms,e,std::move(probe),state,std::move(hc_probe)) &&
                             (!state || state("after_drain",e)) &&
                             driver.adopt_native_prefill(cmd.request_id,cmd.rows,e);

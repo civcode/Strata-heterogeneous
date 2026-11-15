@@ -405,6 +405,11 @@ bool HipFinalVerifierExecutor::commit_prefix(uint64_t request, uint64_t window,
         !observer_->committed(spec_,request,window,n_keep,chain_.last(),observer_predictions_,error) ||
         !select_device(error))) { abort_once(); return false; }
     observer_predictions_.clear();
+    if (window_ <= 2) {
+        for (const auto& stage : chain_stages_)
+            if (stage.bindings.capacity_probe && !stage.bindings.capacity_probe("first_commit",error)) return false;
+        if (!select_device(error)) return false;
+    }
     next_position_ += keep_;
     state_ = State::ready;
     unsafe_result_ = false;

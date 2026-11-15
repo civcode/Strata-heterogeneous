@@ -132,6 +132,8 @@ public:
                     return false;
                 }
             }
+            for (const auto& stage : stages)
+                if (stage.bindings.capacity_probe && !stage.bindings.capacity_probe("verifier_ready",error)) return false;
             // Vanilla run()/commit()/wait_commit() recurse through set_next().
             for (size_t j = 0; j + 1 < nodes_.size(); ++j)
                 nodes_[j].verifier->set_next(nodes_[j+1].verifier.get(), stages[j+1].bindings.pool_user);

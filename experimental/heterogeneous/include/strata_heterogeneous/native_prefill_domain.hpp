@@ -2,6 +2,7 @@
 // Native chunk-major Prefill in each backend. Only the R-only transport is new.
 // The caller owns weights/cache/session, and has completed its resident reset.
 #include "strata_heterogeneous/native_prefill_init.hpp"
+#include "strata_heterogeneous/native_capacity.hpp"
 #include "strata_heterogeneous/prefill_stage_files.hpp"
 #include "strata_heterogeneous/prefill_state_capture.hpp"
 #include "strata_heterogeneous/boundary_capture.hpp"
@@ -23,6 +24,7 @@ struct NativePrefillStage {
     NativePrefillExpertView experts;
     uint64_t reserve_bytes;
     uint64_t arena_budget_bytes;
+    uint32_t long_context_chunk = 0;
 };
 inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         const std::vector<NativePrefillStage>& stages, bool sender,
@@ -96,6 +98,11 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         }
         int64_t lb = stages.front().session.layer_lo;
         for (const auto& s : stages) {
+            if ((!s.long_context_chunk && cmd.rows > legacy_workload_context) ||
+                (s.long_context_chunk && (cmd.prefill_chunk != s.long_context_chunk ||
+                   !long_context_cells_valid(s.session.max_cells) || s.reserve_bytes < long_context_min_reserve))) {
+                error = "native prefill exceeds negotiated context or chunk"; return false;
+            }
             if (!s.experts || s.arena_budget_bytes || s.session.layer_lo != lb ||
                 s.session.layer_hi <= lb || s.session.max_cells <= n ||
                 s.geometry.hc != cmd.geometry.hc || s.geometry.n_embd != cmd.geometry.n_embd ||
@@ -265,9 +272,13 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         // Initialize native owners on their actual devices. No cache loans or recreation.
         for (size_t i=0;i<stages.size();++i) {
             auto& node=owned.nodes[i]; const auto& s=stages[i];
+            if (s.long_context_chunk && !check_native_prefill_capacity(node.device,boundary_stage+i,
+                    "prefill_before",s.geometry,s.session,static_cast<uint32_t>(chunk),s.reserve_bytes,error)) return false;
             if (!check(cudaSetDevice(node.device),"prefill stage device") ||
                 !init_owned_native_prefill(*node.pf,s.weights,s.geometry,s.session,s.experts,
                                            chunk,node.stream,s.reserve_bytes,0,error)) return false;
+            if (s.long_context_chunk && !sample_native_capacity(node.device,boundary_stage+i,
+                    "prefill_allocated",s.reserve_bytes,0,error)) return false;
         }
         if (entry_state && !entry_state("after_init",error)) return false;
         std::vector<int64_t> tokens(cmd.window->token_ids.begin(),cmd.window->token_ids.end());
@@ -279,8 +290,12 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                 !check(cudaSetDevice(owned.nodes[1].device),"isolated HIP1 owner") ||
                 !owned.nodes[1].pf->run_external(tokens.data(),n,0,chunk,n>chunk,error)) return false;
         }
-        for (auto& node:owned.nodes)
+        for (size_t i=0;i<owned.nodes.size();++i) {
+            auto& node = owned.nodes[i];
             if (!check(cudaSetDevice(node.device),"prefill drain device") || !node.pf->idle(error)) return false;
+            if (stages[i].long_context_chunk && !sample_native_capacity(node.device,boundary_stage+i,
+                    "prefill_drained",stages[i].reserve_bytes,0,error)) return false;
+        }
         if (stage_probe) {
             for (size_t i=0;i<stages.size();++i) {
                 PrefillStateCapture state;
