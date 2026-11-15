@@ -32,7 +32,9 @@ The final relative norm uses the predicted delta as denominator: 0.0266%. It is 
 
 ## Remaining numerical-quality failure and policy
 
-Historical cut 2, chunk 1 KL = 0.001896195949946483 (max logit difference 0.2834298611), exceeding the original 0.001 gate. Reset/bridge correctness and the successful local HC attribution do not waive this failure. An independent full original vanilla caller comparison remains unavailable within the approved resource/settings constraints (full resident pack 38 GiB, CUDA card 16 GiB); no speculative OOM attempt, repack, precision or residency change.
+The completed 0027.5 bounded stage-local reference matrix passes interoperability on both transports for all five cases, with exact stage residual/state and continuation replay, but fails the unchanged numerical-quality gate. Both transports yield the same results: cut1/chunk1 KL `1.216527297939482e-10` (PASS); cut2/chunk1 `0.001896195949946483`, cut2/chunk2 `0.0015399210952491622`, cut6/chunk3 `0.03153743887084141` and cut6/chunk6 `0.02454066607661273` (FAIL). Cut6 also changes prediction/top-1 from `2724` to `11991`. Matching uninstrumented A/B/A controls reproduce the captured outputs, excluding completion-marker changes. See [0027.5–6 report](../../../.ai/reports/report-0027-5-6.md) for per-case commands, metrics and scope.
+
+Exact bounded native replay is evidence against a discrepancy introduced by the observed live bulk R forwarding for these cases, not proof of full vanilla arithmetic equivalence or of the cause of serial/native quality differences. The earlier HC attribution is limited to its measured layer-zero operation; it does not prove the cause of later divergence. Reset/bridge correctness and local HC attribution do not waive the quality failures. An independent full original vanilla caller comparison remains unavailable within the approved resource/settings constraints (full resident pack 38 GiB, CUDA card 16 GiB); no speculative OOM attempt, repack, precision or residency change.
 
 Keep independent axes:
 
