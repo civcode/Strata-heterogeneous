@@ -36,11 +36,18 @@ public:
     DirectHandoffRegistration& operator=(const DirectHandoffRegistration&) = delete;
 
     void open(int fd, int owner, DirectHandoffLayout layout) {
-        if (page_ || owner < 0 || !layout.extent) throw std::logic_error("invalid direct edge initialization");
+        open_slot(fd, owner, layout, layout.extent);
+    }
+
+    // The real-model serial qualification registers the layout prefix of
+    // its larger size-sealed slot. Both mappings refer to the same object.
+    void open_slot(int fd, int owner, DirectHandoffLayout layout, size_t backing_bytes) {
+        if (page_ || owner < 0 || !layout.extent || layout.extent > backing_bytes)
+            throw std::logic_error("invalid direct edge initialization");
         struct stat st{};
         constexpr int seals = F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
         const int actual = fcntl(fd, F_GET_SEALS);
-        if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size != static_cast<off_t>(layout.extent) ||
+        if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size != static_cast<off_t>(backing_bytes) ||
             actual < 0 || (actual & seals) != seals)
             throw std::runtime_error("direct handoff requires exact size-sealed memfd");
         owner_ = owner;

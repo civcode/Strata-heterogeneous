@@ -5,6 +5,7 @@
 #include "strata_heterogeneous/cuda_stage_resources.hpp"
 #include "strata_heterogeneous/cuda_native_stage.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
+#include "strata_heterogeneous/direct_verified_registration.hpp"
 #include "strata_heterogeneous/cuda_file_experts.hpp"
 #include "strata_heterogeneous/cuda_verifier.hpp"
 #include "strata_heterogeneous/cuda_final_verifier.hpp"
@@ -102,6 +103,11 @@ int main(int argc,char** argv) {
             const int startup_wait_ms = hetero::worker_startup_wait_ms();
             const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
             const bool mapped_egress = hetero::performance_flag("STRATA_HETERO_CUDA_MAPPED_EGRESS");
+            const bool direct_verified = hetero::performance_flag("STRATA_HETERO_DIRECT_VERIFIED");
+            if (direct_verified && (!invocation.shared_memory || index != 0 || compact || mapped_egress ||
+                config.max_t != 8 || !hetero::direct_verified_plan(plan) ||
+                hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM")))
+                throw std::runtime_error("direct verified CUDA requires mixed shared full-logit entry with max_t=8");
             if (mapped_egress && (index != 0 || index+1==plan.stages.size() || compact ||
                                  !hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM")))
                 throw std::runtime_error("mapped CUDA egress requires entry stage, receiver arm and full logits");
@@ -144,6 +150,17 @@ int main(int argc,char** argv) {
             if(!owner.attach_experts(std::move(experts),error))
                 throw std::runtime_error("expert provider startup: "+error);
             auto bindings=owner.make_bindings();
+            if (direct_verified) {
+                const auto& hits = bindings.hits;
+                if (!hits.h_res || !hits.d_res || !hits.cache_base || hits.n_slots <= 0)
+                    throw std::runtime_error("direct verified CUDA needs full resident map");
+                for (int64_t l = bindings.session.layer_lo; l < bindings.session.layer_hi; ++l)
+                    for (int64_t e = 0; e < bindings.geometry.n_expert; ++e) {
+                        const int32_t slot = hits.h_res[l * bindings.geometry.n_expert + e];
+                        if (slot < 0 || slot >= hits.n_slots)
+                            throw std::runtime_error("direct verified CUDA refuses nonresident expert");
+                    }
+            }
             const hetero::WindowLimits window_limits{
                 0, static_cast<int64_t>(config.max_cells),
                 static_cast<int64_t>(config.n_vocab), config.max_t};
@@ -157,7 +174,13 @@ int main(int argc,char** argv) {
                 hetero::PrefillStateCapture state_capture;
                 if (!state_capture.configure(index, bindings.session, bindings.geometry, error))
                     throw std::runtime_error("prefix state diagnostic: " + error);
+                hetero::DirectHandoffRegistration registration;
                 hetero::CudaVerifierDriver driver(bindings, mapped_egress);
+                hetero::DirectSharedBinder bind_slot;
+                if (direct_verified) bind_slot = [&](const hetero::SharedActivation& slot, std::string& e) {
+                    auto b = hetero::register_verified_slot(registration,slot,static_cast<int>(plan.stages[index].ordinal),plan);
+                    return driver.bind_direct_output(b,e);
+                };
                 std::cerr << "HETERO_CUDA_MAPPED_EGRESS enabled=" << mapped_egress << '\n';
                 if (state_capture.active())
                     driver.set_prefix_observer([&](uint64_t request, int64_t position, std::string& e) {
@@ -166,10 +189,8 @@ int main(int argc,char** argv) {
                         return state_capture.observe(request, position, bindings.session, bindings.geometry, e);
                     });
                 hetero::DeviceStageExecutor executor(driver);
-                hetero::serve_worker_stateful(3,plan,index,executor,
-                    static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
-                    &window_limits, startup_wait_ms,
-                    [&](const hetero::Frame& cmd,int fd,std::string& e) {
+                hetero::NativePrefillHandler prefill;
+                if (!direct_verified) prefill = [&](const hetero::Frame& cmd,int fd,std::string& e) {
                         if (mapped_egress || index!=0) { e="native prefill incompatible with mapped egress or nonentry stage"; return false; }
                         strata::prefill::Prefill::FirstTokenProbe probe;
                         strata::prefill::Prefill::FirstHcProbe hc_probe;
@@ -191,8 +212,18 @@ int main(int argc,char** argv) {
                             true,bindings.timeout_ms,e,std::move(probe),state,std::move(hc_probe)) &&
                             (!state || state("after_drain",e)) &&
                             driver.adopt_native_prefill(cmd.request_id,cmd.rows,e);
-                    });
+                    };
+                try {
+                    hetero::serve_worker_stateful(3,plan,index,executor,
+                        static_cast<int>(config.io_timeout_ms),invocation.shared_memory,
+                        &window_limits,startup_wait_ms,std::move(prefill),std::move(bind_slot));
+                } catch (...) {
+                    executor.shutdown(); driver.shutdown();
+                    if (!registration.release_after_drain()) std::_Exit(70);
+                    throw;
+                }
                 executor.shutdown();driver.shutdown();
+                if (!registration.release_after_drain()) throw std::runtime_error("direct CUDA unregister failed");
             }
             native.shutdown(); // after verifier graphs, before stage weights
             owner.shutdown();

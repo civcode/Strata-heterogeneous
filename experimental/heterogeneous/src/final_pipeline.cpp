@@ -26,7 +26,7 @@ Frame control(const Plan& plan, size_t index, Kind kind, uint64_t request = 1,
     f.rows = rows;
     f.plan_fingerprint = plan.fingerprint();
     f.geometry = plan.geometry;
-    if (kind == Kind::hello_final || kind == Kind::hello_shared_final) {
+    if (kind == Kind::hello_final || kind == Kind::hello_shared_final || kind == Kind::hello_direct_shared_final) {
         const Stage& s = plan.stages.at(index);
         f.identity = {static_cast<uint32_t>(s.backend), s.ordinal, s.first_layer, s.end_layer};
     }
@@ -67,11 +67,12 @@ void failure(int fd, const Frame& frame, std::string error, int timeout_ms) noex
 void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                               FinalStageExecutor& executor, int timeout_ms,
                               bool shared_memory, const WindowLimits* limits, int startup_wait_ms, bool group_hip,
-                              NativePrefillHandler prefill) {
+                              NativePrefillHandler prefill, DirectSharedBinder direct_bind) {
     plan.validate();
     if (index + 1 != plan.stages.size() || timeout_ms < 0)
         throw std::invalid_argument("final worker must own the last stage and a valid deadline");
     Frame hello = control(plan, index,
+        direct_bind ? Kind::hello_direct_shared_final :
         shared_memory ? Kind::hello_shared_final : Kind::hello_final);
     if (group_hip) {
         const auto d = worker_domains(plan, true).back();
@@ -82,6 +83,14 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
     std::unique_ptr<WindowAdmission> gate;
     if (limits) gate = std::make_unique<WindowAdmission>(plan, index, *limits);
     std::string error;
+    SharedActivation shared;
+    if (direct_bind) {
+        if (!shared_memory || !limits || !group_hip || !direct_verified_plan(plan) || prefill ||
+            executor.receiver_arm_enabled() || executor.mtp_relay_enabled())
+            throw std::invalid_argument("direct verified consumer requires bounded grouped HIP without prearm or prefill");
+        shared = SharedActivation::receive(fd, timeout_ms);
+        if (!direct_bind(shared, error)) throw std::runtime_error(error);
+    }
     if (!executor.prepare(plan, index, error)) {
         failure(fd, hello, error.empty() ? "final stage preparation failed" : error, timeout_ms);
         executor.shutdown();
@@ -96,8 +105,7 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
             throw std::runtime_error("resident worker requires native window limits");
         match(*ready, hello, resident ? Kind::ready_resident : Kind::ready);
         uint64_t active_request = 0;
-        SharedActivation shared;
-        if (shared_memory) shared = SharedActivation::receive(fd, timeout_ms);
+        if (shared_memory && !direct_bind) shared = SharedActivation::receive(fd, timeout_ms);
         if (executor.mtp_resident_enabled() && (!resident || !executor.mtp_relay_enabled() || !executor.mtp_anchor_only_enabled()))
             throw std::runtime_error("resident MTP requires explicit resident relay");
         if (executor.mtp_relay_enabled() && ((resident && !executor.mtp_resident_enabled()) || !group_hip || !gate || executor.receiver_arm_enabled()))
@@ -269,16 +277,19 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
 
 FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
                                            int timeout_ms, bool shared_memory, bool resident,
-                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident)
+                                           bool fanout_control, bool require_compact, bool group_hip, bool receiver_arm, bool mtp_relay, bool mtp_anchor_only, bool mtp_resident, bool direct_verified)
     : plan_(std::move(plan)), fds_(std::move(fds)), timeout_ms_(timeout_ms),
       shared_memory_(shared_memory), resident_(resident),
-      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident) {
+      fanout_control_(fanout_control), require_compact_(require_compact), receiver_arm_(receiver_arm), mtp_relay_(mtp_relay), mtp_anchor_only_(mtp_anchor_only), mtp_resident_(mtp_resident), direct_verified_(direct_verified) {
     for (const auto& domain : worker_domains(plan_, group_hip)) {
         starts_.push_back(domain.first_stage);
         endpoints_.push_back(domain.terminal_stage());
     }
     if (fds_.size() != endpoints_.size() || timeout_ms_ < 0)
         throw std::invalid_argument("final pipeline needs one worker per domain and valid timeout");
+    if (direct_verified_ && (!group_hip || !shared_memory_ || !direct_verified_plan(plan_) ||
+        receiver_arm_ || mtp_relay_ || require_compact_ || fds_.size() != 2 || !timeout_ms_))
+        throw std::invalid_argument("direct verified mode requires two bounded mixed domains, shared and full logits");
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
     if (mtp_anchor_only_ && !mtp_relay_) throw std::invalid_argument("anchor-only MTP requires relay");
@@ -301,6 +312,12 @@ void FinalPipelineSession::initialize() {
         // budget for every worker. Workers wait separately for READY.
         using Clock = std::chrono::steady_clock;
         const auto deadline = Clock::now() + std::chrono::milliseconds(timeout_ms_);
+        if (direct_verified_) {
+            // Mode-specific pre-HELLO descriptor transfer. The ordinary
+            // shared slot path and its handshake remain unchanged.
+            shared_ = std::make_unique<SharedActivation>(SharedActivation::create());
+            for (int fd : fds_) shared_->send(fd, timeout_ms_);
+        }
         for (size_t i = 0; i < fds_.size(); ++i) {
             const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
             if (remaining < 0) throw std::runtime_error("final pipeline startup deadline expired");
@@ -308,8 +325,9 @@ void FinalPipelineSession::initialize() {
             if (!hello) throw std::runtime_error("worker closed before final pipeline hello");
             if (hello->kind == Kind::failure) throw std::runtime_error("worker preparation: " + hello->error);
             const bool last = i + 1 == fds_.size();
-            const Kind kind = last ? (shared_memory_ ? Kind::hello_shared_final : Kind::hello_final)
-                                   : (shared_memory_ ? Kind::hello_shared : Kind::hello);
+            const Kind kind = direct_verified_ ? (last ? Kind::hello_direct_shared_final : Kind::hello_direct_shared)
+                          : last ? (shared_memory_ ? Kind::hello_shared_final : Kind::hello_final)
+                                 : (shared_memory_ ? Kind::hello_shared : Kind::hello);
             const Frame expected = control(plan_, endpoints_[i], kind);
             match(*hello, expected, kind);
             if (hello->identity != (std::array<uint32_t,4>{
@@ -317,10 +335,10 @@ void FinalPipelineSession::initialize() {
                 plan_.stages[starts_[i]].first_layer, plan_.stages[endpoints_[i]].end_layer}))
                 throw std::runtime_error("worker backend, ordinal or stage bounds mismatch");
         }
-        if (shared_memory_) shared_ = std::make_unique<SharedActivation>(SharedActivation::create());
+        if (shared_memory_ && !direct_verified_) shared_ = std::make_unique<SharedActivation>(SharedActivation::create());
         for (size_t i = 0; i < fds_.size(); ++i) {
             send_frame(fds_[i], control(plan_, endpoints_[i], resident_ ? Kind::ready_resident : Kind::ready), timeout_ms_);
-            if (shared_memory_) shared_->send(fds_[i], timeout_ms_);
+            if (shared_memory_ && !direct_verified_) shared_->send(fds_[i], timeout_ms_);
         }
         initialized_ = true;
     } catch (...) { poison(); throw; }
@@ -355,7 +373,8 @@ void FinalPipelineSession::begin_request(uint64_t request) {
 }
 
 void FinalPipelineSession::native_prefill(const std::vector<int32_t>& tokens, uint32_t chunk, bool isolated_stage_reference) {
-    if (receiver_arm_ || mtp_relay_) throw std::logic_error("receiver arm/MTP relay does not support native bulk prefill");
+    if (receiver_arm_ || mtp_relay_ || direct_verified_)
+        throw std::logic_error("receiver arm/MTP relay/direct verified mode does not support native bulk prefill");
     const bool local = endpoints_.size()==1 && starts_.front()==0 &&
         endpoints_.front()==1 && plan_.stages.size()==2 &&
         plan_.stages[0].backend==Backend::hip && plan_.stages[1].backend==Backend::hip;
@@ -431,6 +450,8 @@ void FinalPipelineSession::execute_discard(Frame initial, const WindowSpec& spec
         // Same validation as encode, without serializing and hashing a throwaway packet.
         validate_wire_frame(initial);
         spec.validate(initial.rows);
+        if (direct_verified_ && initial.rows > 8)
+            throw std::invalid_argument("direct verified slot supports at most eight rows");
         if (mtp_offer_ && (initial.request_id!=last_request_ || initial.window_id!=last_window_+1 ||
                           spec.pos0!=mtp_offer_->pos0 || spec.token_ids!=mtp_offer_->token_ids))
             throw std::invalid_argument("next window must consume exact MTP offer");

@@ -6,6 +6,7 @@
 #include "strata_heterogeneous/hip_stage_resources.hpp"
 #include "strata_heterogeneous/hip_native_stage.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
+#include "strata_heterogeneous/direct_verified_registration.hpp"
 #include "strata_heterogeneous/hip_file_experts.hpp"
 #include "strata_heterogeneous/hip_verifier.hpp"
 #include "strata_heterogeneous/hip_final_verifier.hpp"
@@ -153,6 +154,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     const hetero::WindowLimits limits{0,static_cast<int64_t>(c.max_cells),static_cast<int64_t>(c.n_vocab),c.max_t};
     const bool overlap = hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP");
     const bool arm = hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM");
+    const bool direct_verified = hetero::performance_flag("STRATA_HETERO_DIRECT_VERIFIED");
+    if (direct_verified && (!invocation.shared_memory || !overlap || arm || compact || c.max_t != 8 ||
+        !hetero::direct_verified_plan(plan) || std::getenv("STRATA_HETERO_MTP_PROBE_RT")))
+        throw std::runtime_error("direct verified HIP requires mixed shared full-logit native overlap with max_t=8");
     if (arm && (!overlap || compact)) throw std::runtime_error("receiver arm requires native HIP overlap and full logits");
     std::unique_ptr<hetero::NativeMtpProbe> mtp;
     if (const char* path = std::getenv("STRATA_HETERO_MTP_PROBE_RT"); path && *path) {
@@ -198,19 +203,33 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
         mtp=std::make_unique<hetero::NativeMtpProbe>(path,last.gguf_shards,last.free_reserve_bytes,
                                                   last.arena_budget_bytes,windows,relay,trace_prefix,reprime,front_trace,repeat_round,fresh_replay,three_round,three_round_variable,std::move(generation),resident_generation);
     }
+    hetero::DirectHandoffRegistration registration;
     hetero::HipFinalVerifierExecutor final(std::move(bindings),{!compact,overlap,arm});
+    hetero::DirectSharedBinder bind_slot;
+    if (direct_verified) bind_slot = [&](const hetero::SharedActivation& slot, std::string& e) {
+        auto b = hetero::register_verified_slot(registration,slot,static_cast<int>(plan.stages[domain.first_stage].ordinal),plan);
+        return final.bind_direct_input(b,e);
+    };
     if (mtp) final.set_observer(mtp.get());
     std::cerr << "HETERO_RECEIVER_ARM enabled=" << arm << '\n';
     std::cerr << "HETERO_HIP_SPLIT_OVERLAP enabled=" << overlap << '\n';
     // Same native final-result handler; one external commit ACK covers the entire HIP chain.
-    hetero::serve_final_stage_worker(3,plan,invocation.stage_index,final,static_cast<int>(c.io_timeout_ms),
-        invocation.shared_memory,&limits,startup_wait_ms,true,
-        [&](const hetero::Frame& cmd,int fd,std::string& e) {
+    hetero::NativePrefillHandler prefill;
+    if (!direct_verified) prefill = [&](const hetero::Frame& cmd,int fd,std::string& e) {
             return hetero::run_native_prefill_domain(cmd,fd,pf_stages,false,
                        static_cast<int>(c.io_timeout_ms),e) &&
                    final.adopt_native_prefill(cmd.request_id,cmd.rows,e);
-        });
+        };
+    try {
+        hetero::serve_final_stage_worker(3,plan,invocation.stage_index,final,static_cast<int>(c.io_timeout_ms),
+            invocation.shared_memory,&limits,startup_wait_ms,true,std::move(prefill),std::move(bind_slot));
+    } catch (...) {
+        final.shutdown();
+        if (!registration.release_after_drain()) std::_Exit(70);
+        throw;
+    }
     final.shutdown();
+    if (!registration.release_after_drain()) throw std::runtime_error("direct HIP unregister failed");
 }
 } // namespace
 
@@ -244,7 +263,8 @@ int main(int argc,char** argv) {
                 serve_native_hip_domain(invocation,compact,startup_wait_ms);
                 return 0;
             }
-            if (hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP") ||
+            if (hetero::performance_flag("STRATA_HETERO_DIRECT_VERIFIED") ||
+                hetero::performance_flag("STRATA_HETERO_HIP_SPLIT_OVERLAP") ||
                 hetero::performance_flag("STRATA_HETERO_RECEIVER_ARM") ||
                 std::getenv("STRATA_HETERO_MTP_PROBE_RT"))
                 throw std::runtime_error("HIP split overlap requires the grouped worker");

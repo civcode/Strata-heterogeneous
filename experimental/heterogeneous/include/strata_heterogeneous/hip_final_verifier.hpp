@@ -4,6 +4,7 @@
 // Requires preloaded worker-owned weights, session and residency state.
 // No HIP/HIP runtime objects cross process boundaries.
 #include "strata_heterogeneous/hip_verifier.hpp"
+#include "strata_heterogeneous/direct_verified_binding.hpp"
 #include "strata_heterogeneous/hip_native_chain.hpp"
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata_heterogeneous/layer_taps.hpp"
@@ -60,6 +61,7 @@ public:
 
     // Observer must outlive this executor, and be attached before prepare.
     void set_observer(HipFinalObserver* observer) { observer_ = observer; }
+    bool bind_direct_input(DirectVerifiedBinding, std::string&);
     bool prepare(const Plan&, size_t stage_index, std::string&) override;
     bool reset_request(uint64_t, std::string&) override;
     bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
@@ -84,6 +86,7 @@ private:
     enum class State { fresh, initializing, ready, begun, provisional, dead };
     HipVerifierBindings bindings_;
     HipFinalVerifierOptions options_;
+    DirectVerifiedBinding direct_{};
     std::unique_ptr<core::Verifier> owned_verifier_;
     core::Verifier* verifier_ = nullptr; // borrowed local chain entry or owned_verifier_
     std::vector<HipNativeChainStage> chain_stages_;

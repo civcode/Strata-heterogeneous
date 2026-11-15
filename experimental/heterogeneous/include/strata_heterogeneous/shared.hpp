@@ -33,6 +33,8 @@ public:
     uint8_t* data() { return bytes_; }
     const uint8_t* data() const { return bytes_; }
     bool valid() const { return fd_ >= 0 && bytes_ != nullptr; }
+    // Borrowed only; the caller must not close this descriptor.
+    int descriptor() const noexcept { return fd_; }
 
 private:
     int fd_ = -1;

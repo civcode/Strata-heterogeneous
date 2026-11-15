@@ -15,6 +15,13 @@ namespace strata::heterogeneous {
 CudaVerifierDriver::CudaVerifierDriver(CudaVerifierBindings bindings, bool mapped_egress)
     : bindings_(bindings), mapped_egress_(mapped_egress) {}
 CudaVerifierDriver::~CudaVerifierDriver() { shutdown(); }
+bool CudaVerifierDriver::bind_direct_output(DirectVerifiedBinding b, std::string& error) {
+    if (state_ != State::fresh || direct_ || mapped_egress_ || !b) {
+        error = "direct CUDA output binding refused"; return false;
+    }
+    direct_ = b;
+    return true;
+}
 bool CudaVerifierDriver::check(cudaError_t code, std::string& error) {
     if (code == cudaSuccess) return true;
     error = std::string("CUDA verifier: ") + cudaGetErrorString(code);
@@ -59,7 +66,7 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
         error = "CUDA verifier requires matching loaded non-final stage, carved session, pool and limits";
         return false;
     }
-    if (mapped_egress_ && (index != 0 || stage.first_layer != 0 ||
+    if ((mapped_egress_ || direct_) && (index != 0 || stage.first_layer != 0 ||
                            plan.stages.size() != 3 ||
                            plan.stages[1].backend != Backend::hip || plan.stages[2].backend != Backend::hip ||
                            std::getenv("STRATA_HETERO_BOUNDARY_CAPTURE_PREFIX"))) {
@@ -78,7 +85,12 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     // Reserve an activation input only for later stages. Keep the output
     // and pinned host staging allocations for every non-final stage.
     if (!check(cudaSetDevice(device_), error)) return false;
-    if (mapped_egress_) {
+    if (direct_) {
+        if (!direct_verified_plan(plan) || bindings_.max_t != 8 || direct_.capacity != capacity) {
+            error = "direct CUDA output capacity/plan mismatch"; return false;
+        }
+        output_ = direct_.device_payload;
+    } else if (mapped_egress_) {
         mapped_output_ = std::make_unique<CudaMappedEgress>();
         if (!mapped_output_->allocate(capacity)) {
             error = "CUDA mapped egress allocation/alias failed"; return false;
@@ -95,8 +107,8 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     verifier_->set_handoff_rows(bindings_.max_t);
     verifier_->set_next(nullptr, nullptr); // no in-process device chain
     verifier_->set_handoff_flags(nullptr, nullptr,
-        mapped_output_ ? mapped_output_->host_flag() : nullptr,
-        mapped_output_ ? mapped_output_->device_flag() : nullptr);
+        direct_ ? direct_.host_ready : mapped_output_ ? mapped_output_->host_flag() : nullptr,
+        direct_ ? direct_.device_ready : mapped_output_ ? mapped_output_->device_flag() : nullptr);
     // Prevent T=1 from committing GDN/indexer state inside run(). Also forces
     // pool publication, so an actual live pool is mandatory even if resident.
     verifier_->set_always_publish(true);
@@ -166,7 +178,9 @@ bool CudaVerifierDriver::begin_window(const WindowSpec& spec, uint64_t request,
 bool CudaVerifierDriver::enqueue_upload(const uint8_t* host, size_t bytes, std::string& error) {
     PerformanceSpan perf("worker", "enqueue_upload", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::begun, error)) return false;
-    if (!host || bytes != bytes_) { error = "CUDA verifier upload shape mismatch"; return false; }
+    if (!host || bytes != bytes_ || (direct_ && !direct_.matches(host, bytes))) {
+        error = "CUDA verifier upload shape or registered slot mismatch"; return false;
+    }
     state_ = State::uploading;
     if (plan_.stages[index_].first_layer == 0) {
         // set_stage(..., nullptr, ...) uses embeddings for layer zero;
@@ -200,6 +214,12 @@ bool CudaVerifierDriver::enqueue_execute(const Frame& frame, std::string& error)
         error = "CUDA verifier execution metadata mismatch"; return false;
     }
     state_ = State::executing;
+    if (direct_) {
+        // Prior commit is drained; the receiver is not armed in this mode.
+        *static_cast<volatile uint32_t*>(direct_.host_ready) = 0;
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        strata_store_fence();
+    }
     if (mapped_egress_ && !mapped_output_->reset()) { error = "CUDA mapped egress reset refused"; return false; }
     int32_t ignored[strata::kernels::kVerifyMaxT] = {};
     return verifier_->run(static_cast<int>(spec_.token_ids.size()), spec_.token_ids.data(),
@@ -220,17 +240,30 @@ bool CudaVerifierDriver::wait_execute(std::string& error) {
 bool CudaVerifierDriver::enqueue_download(uint8_t* host, size_t bytes, std::string& error) {
     PerformanceSpan perf("worker", "enqueue_download", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::executed, error)) return false;
-    if (!host || bytes != bytes_) { error = "CUDA verifier download shape mismatch"; return false; }
+    if (!host || bytes != bytes_ || (direct_ && !direct_.matches(host, bytes))) {
+        error = "CUDA verifier download shape or registered slot mismatch"; return false;
+    }
     download_host_ = host;
     state_ = State::downloading;
     // Native run + wait_execute already drained the publisher. No second DMA
     // or completion event is needed in this explicit local mapped mode.
-    if (mapped_egress_) return true;
+    if (mapped_egress_ || direct_) return true;
     return check(cudaMemcpyAsync(staging_, output_, bytes, cudaMemcpyDeviceToHost, verifier_->stream()), error) && record(error);
 }
 bool CudaVerifierDriver::wait_download(std::string& error) {
     PerformanceSpan perf("worker", "wait_download", index_, request_, window_, spec_.token_ids.size());
     if (!expect(State::downloading, error)) return false;
+    if (direct_) {
+        // Native run and wait_execute drained. The output is already in the
+        // exact shared object; existing server finite/checksum gates still run.
+        strata_load_fence();
+        if (!direct_.matches(download_host_, bytes_) || !direct_.published()) {
+            error = "direct CUDA publication or slot mismatch"; return false;
+        }
+        download_host_ = nullptr;
+        state_ = State::downloaded;
+        return true;
+    }
     if (mapped_egress_) {
         PerformanceSpan copy("worker", "mapped_egress_copy", index_, request_, window_, spec_.token_ids.size());
         if (!mapped_output_->copy_completed(download_host_, bytes_)) {
@@ -292,7 +325,7 @@ void CudaVerifierDriver::shutdown() noexcept {
     verifier_.reset(); // graphs/streams must die BEFORE their captured pointers
     if (fence_) { cudaEventDestroy(fence_); fence_ = nullptr; }
     if (input_) { cudaFree(input_); input_ = nullptr; }
-    if (output_ && !mapped_egress_) cudaFree(output_);
+    if (output_ && !mapped_egress_ && !direct_) cudaFree(output_);
     output_ = nullptr;
     if (mapped_output_ && !mapped_output_->release()) std::_Exit(70);
     mapped_output_.reset();

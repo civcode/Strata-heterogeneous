@@ -15,6 +15,8 @@
 
 namespace strata::heterogeneous {
 struct WindowLimits; // M1.18 optional CPU-only, strictly validated CUDA admission
+class SharedActivation;
+using DirectSharedBinder = std::function<bool(const SharedActivation&, std::string&)>;
 
 enum class Backend : uint8_t { cuda = 1, hip = 2 };
 
@@ -43,6 +45,18 @@ struct Plan {
     uint64_t fingerprint() const;
 };
 
+// Bounded real-model zero-copy admission: only the two established placements.
+inline bool direct_verified_plan(const Plan& p) noexcept {
+    if (p.total_layers != 48 || p.geometry.hc != 4 || p.geometry.n_embd != 2560 ||
+        p.stages.size() != 3) return false;
+    const auto& a = p.stages[0]; const auto& b = p.stages[1]; const auto& c = p.stages[2];
+    return a.backend == Backend::cuda && a.ordinal == 0 && a.first_layer == 0 &&
+           (a.end_layer == 12 || a.end_layer == 15) &&
+           b.backend == Backend::hip && b.ordinal == 0 && b.first_layer == a.end_layer &&
+           b.end_layer == b.first_layer + 18 &&
+           c.backend == Backend::hip && c.ordinal == 1 && c.first_layer == b.end_layer && c.end_layer == 48;
+}
+
 // Example: "cuda:0:0-12,hip:0:12-30,hip:1:30-48".
 // Device ordinals are backend-local. Does NOT discover GPUs.
 Plan parse_plan(const std::string& spec, uint32_t layers, Geometry geometry, uint64_t model_fingerprint);
@@ -59,7 +73,8 @@ enum class Kind : uint16_t {
     ready_resident = 14, begin_request = 15, request_ready = 16,
     prefill_spec = 17, prefill_rows = 18, prefill_done = 19,
     window_armed = 20, // opt-in receiver prelaunch ACK
-    mtp_proposal_request = 21, mtp_proposal = 22 // terminal-only, paired with last committed window
+    mtp_proposal_request = 21, mtp_proposal = 22, // terminal-only, paired with last committed window
+    hello_direct_shared = 23, hello_direct_shared_final = 24 // registration and preparation already completed
 };
 // Input to Strata's Verifier::run(T,tokens,pos0). The number of accepted
 // tokens is NOT known until execution completes and is chosen at commit.
@@ -214,7 +229,7 @@ void serve_worker_stateful(int fd, const Plan& plan, size_t stage_index,
                            StageExecutor& executor, int timeout_ms = default_io_timeout_ms,
                            bool shared_memory = false,
                            const WindowLimits* limits = nullptr, int startup_wait_ms = -1,
-                            NativePrefillHandler prefill = {});
+                            NativePrefillHandler prefill = {}, DirectSharedBinder direct_bind = {});
 // Backwards-compatible CPU-test convenience; now uses the same transactional
 // handshake/commit path as StageExecutor. It is NOT a GPU adapter.
 void serve_worker(int fd, const Plan& plan, size_t stage_index, const Executor& execute);

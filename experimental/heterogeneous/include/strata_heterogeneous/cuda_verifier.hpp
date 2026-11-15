@@ -2,6 +2,7 @@
 
 // CUDA-worker-only header. Never include/link this in a HIP worker or host.
 #include "strata_heterogeneous/device.hpp"
+#include "strata_heterogeneous/direct_verified_binding.hpp"
 #include "strata_heterogeneous/layer_taps.hpp"
 #include "strata_heterogeneous/layer_zero_probe.hpp"
 #include "strata_heterogeneous/stage0_phase_probe.hpp"
@@ -43,6 +44,7 @@ public:
     ~CudaVerifierDriver() override;
     CudaVerifierDriver(const CudaVerifierDriver&) = delete;
     CudaVerifierDriver& operator=(const CudaVerifierDriver&) = delete;
+    bool bind_direct_output(DirectVerifiedBinding, std::string&);
     bool prepare(const Plan&, size_t, std::string&) override;
     bool reset_request(uint64_t, std::string&) override;
     bool adopt_native_prefill(uint64_t request, uint32_t rows, std::string& error);
@@ -67,6 +69,7 @@ private:
                        executed, downloading, downloaded, committing, dead };
     CudaVerifierBindings bindings_;
     bool mapped_egress_ = false;
+    DirectVerifiedBinding direct_{};
     std::unique_ptr<CudaMappedEgress> mapped_output_;
     std::unique_ptr<core::Verifier> verifier_;
     Plan plan_;

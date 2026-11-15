@@ -41,6 +41,13 @@ bool HipFinalVerifierExecutor::wait_fence(std::string& error) {
         std::this_thread::sleep_for(fence_poll_interval());
     }
 }
+bool HipFinalVerifierExecutor::bind_direct_input(DirectVerifiedBinding b, std::string& error) {
+    if (state_ != State::fresh || direct_ || options_.receiver_arm || !b) {
+        error = "direct HIP input binding refused"; return false;
+    }
+    direct_ = b;
+    return true;
+}
 bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
                                          std::string& error) {
     if (state_ != State::fresh) { error = "HIP final verifier already prepared or poisoned"; return false; }
@@ -100,7 +107,16 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     // An unsplit [0,n_layers) reference embeds tokens inside Verifier and
     // has no prior activation handoff; never upload the dummy input.
     if (!select_device(error)) return false;
-    if (options_.receiver_arm) {
+    if (direct_) {
+        if (!direct_verified_plan(plan) || !options_.native_split_overlap || observer_ ||
+            !options_.include_logits || chain_stages_.size() != 2 || bindings_.max_t != 8 ||
+            direct_.capacity != capacity_) {
+            error = "direct HIP input capacity/plan/mode mismatch"; return false;
+        }
+        input_ = direct_.device_payload;
+        input_flag_host_ = direct_.host_ready;
+        input_flag_device_ = direct_.device_ready;
+    } else if (options_.receiver_arm) {
         // This mapping belongs ONLY to HIP. The existing socket/memfd is
         // CPU-visible transport, not registered with either runtime.
         const unsigned flags = cudaHostAllocMapped | cudaHostAllocPortable | hipHostMallocCoherent;
@@ -277,7 +293,14 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         error = "HIP final verifier stage/activation identity mismatch";
         return false;
     }
-    if (options_.receiver_arm) {
+    if (direct_) {
+        // Existing worker gate checked exact checksum and every float after
+        // producer drain. Only now launch the native HIP graph with its wait.
+        strata_load_fence();
+        if (!direct_.matches(input.data(), input.bytes()) || !direct_.published()) {
+            error = "direct HIP input publication or slot mismatch"; return false;
+        }
+    } else if (options_.receiver_arm) {
         if (!armed_ || !input_flag_host_ || *(volatile uint32_t*)input_flag_host_ != 0) {
             error = "HIP receiver not armed for this input"; return false;
         }
@@ -429,11 +452,11 @@ void HipFinalVerifierExecutor::shutdown() noexcept {
     verifier_ = nullptr;
     if (fence_) { if (cudaEventDestroy(fence_) != cudaSuccess) std::_Exit(70); fence_ = nullptr; }
     if (input_) {
-        if (!options_.receiver_arm && cudaFree(input_) != cudaSuccess) std::_Exit(70);
+        if (!options_.receiver_arm && !direct_ && cudaFree(input_) != cudaSuccess) std::_Exit(70);
         input_ = nullptr; // mapped alias is released with staging_, not cudaFree
     }
     if (input_flag_host_) {
-        if (cudaFreeHost(input_flag_host_) != cudaSuccess) std::_Exit(70);
+        if (!direct_ && cudaFreeHost(input_flag_host_) != cudaSuccess) std::_Exit(70);
         input_flag_host_ = input_flag_device_ = nullptr;
     }
     if (staging_) { if (cudaFreeHost(staging_) != cudaSuccess) std::_Exit(70); staging_ = nullptr; }

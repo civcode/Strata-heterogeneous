@@ -163,7 +163,8 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool wrong_mode = false, float unmarked_logit = 0.f,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
-                   bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false) {
+                   bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false,
+                   bool direct_verified = false) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -176,8 +177,15 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
             ::close(fd[0]);
             try {
                 const WindowLimits limits{0, 64, 1000, 8};
+                DirectSharedBinder bind;
+                if (direct_verified) bind=[](const SharedActivation& slot,std::string& error) {
+                    if (!slot.valid() || slot.descriptor()<0) {
+                        error="invalid mock direct descriptor"; return false;
+                    }
+                    return true;
+                };
                 NativePrefillHandler pf;
-                if (grouped) pf=[&,i](const Frame& cmd,int sock,std::string& error) {
+                if (grouped && !direct_verified) pf=[&,i](const Frame& cmd,int sock,std::string& error) {
                     if (plan.stages.size()==2 && domain.first_stage==0 && domain.size()==2) {
                         // A local chain sees one token spec, never receives or emits bridge rows.
                         if (bad_prefill || !cmd.window || cmd.window->token_ids.size()!=cmd.rows) {
@@ -228,12 +236,12 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                     final.fail_commit = fail_commit;
                     final.unmarked_logit = unmarked_logit;
                     final.fail_reset = fail_reset;
-                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, (resident || mtp_mode) ? &limits : nullptr,
-                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf);
+                    serve_final_stage_worker(fd[1], plan, i, final, 1200, shared, (resident || mtp_mode || direct_verified) ? &limits : nullptr,
+                                             delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf, bind);
                 } else {
                     MockStageExecutor intermediate;
-                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, resident ? &limits : nullptr,
-                                          delayed_startup ? 4000 : -1, pf);
+                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, (resident || direct_verified) ? &limits : nullptr,
+                                          delayed_startup ? 4000 : -1, pf, bind);
                 }
                 ::close(fd[1]);
                 ::_exit(0);
@@ -675,6 +683,46 @@ void negative(bool shared, bool fanout) {
         check(pipe.poisoned(), "wrong final capability poisons coordinator");
     }
 }
+void direct_verified_protocol() {
+    const Plan p = parse_plan("cuda:0:0-15,hip:0:15-33,hip:1:33-48",48,{4,2560},3719);
+    check(direct_verified_plan(p),"preferred mixed direct admission");
+    check(direct_verified_plan(parse_plan("cuda:0:0-12,hip:0:12-30,hip:1:30-48",48,{4,2560},3719)),
+          "reference placement direct admission");
+    check(!direct_verified_plan(parse_plan("hip:0:0-24,hip:1:24-48",48,{4,2560},3719)),
+          "direct mode rejects HIP-only plan");
+    auto start=[&] { return launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,0,false,true); };
+    {
+        auto w=start();
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,false,false,false,false,true);
+        pipe.initialize();
+        pipe.begin_request(1);
+        pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});
+        check(pipe.commit(2).predicted_tokens[0]==18,"direct descriptor handshake and partial commit");
+        pipe.execute_discard(input_frame(p,1,2),{2,{4,5,6}});
+        check(pipe.commit(3).predicted_tokens[0]==21,"same slot safely reused after commit");
+        pipe.begin_request(2);
+        pipe.execute_discard(input_frame(p,2,1),{0,{1,2,3}});
+        check(pipe.commit(3).predicted_tokens[0]==18,"direct reset/reuse");
+        fails([&]{ pipe.native_prefill({1,2},1); },"direct mode rejects native bulk");
+    }
+    {
+        auto w=start();
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,false,false,false,false,true);
+        pipe.initialize();
+        pipe.begin_request(1);
+        auto bad=input_frame(p,1,1);
+        bad.payload.back()=std::numeric_limits<float>::quiet_NaN();
+        fails([&]{ pipe.execute_discard(std::move(bad),{0,{1,2,3}}); },"direct shared finite gate rejects malformed input");
+        check(pipe.poisoned(),"nonfinite activation poisons direct session");
+    }
+    {
+        auto w=launch(p,true,false,false,false,false,0.f,true,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,false,false,false,false,true);
+        fails([&]{ pipe.initialize(); },"ordinary shared worker cannot impersonate direct registration");
+        check(pipe.poisoned(),"capability mismatch poisons direct session");
+    }
+}
+
 void startup_barrier(bool shared) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     auto w=launch(p,shared,false,false,false,false,0.f,true,false,true);
@@ -725,6 +773,7 @@ int main() {
     try {
         startup_barrier(false); startup_barrier(true);
         startup_frame_failures();
+        direct_verified_protocol();
         native_prefill_protocol(false); native_prefill_protocol(true);
         hip_only_local_failure(false); hip_only_local_failure(true);
         receiver_arm_protocol(false); receiver_arm_protocol(true);

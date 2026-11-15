@@ -1,4 +1,5 @@
 #include "strata_heterogeneous/process.hpp"
+#include <cstdio>
 #include "strata_heterogeneous/backend_domains.hpp"
 
 #include <cerrno>
@@ -91,11 +92,12 @@ std::string executable_directory() {
 }
 
 WorkerProcessGroup::WorkerProcessGroup(WorkerProcessGroup&& other) noexcept
-    : children_(std::move(other.children_)) { other.children_.clear(); }
+    : children_(std::move(other.children_)), graceful_only_timeout_ms_(other.graceful_only_timeout_ms_) { other.children_.clear(); }
 WorkerProcessGroup& WorkerProcessGroup::operator=(WorkerProcessGroup&& other) noexcept {
     if (this != &other) {
         terminate();
         children_ = std::move(other.children_);
+        graceful_only_timeout_ms_ = other.graceful_only_timeout_ms_;
         other.children_.clear();
     }
     return *this;
@@ -105,7 +107,7 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& cuda_executable,
                                             const std::string& hip_executable, bool shared_memory,
                                             const std::string& cuda_config_path,
-                                            const std::vector<std::string>& stage_config_paths, bool group_hip) {
+                                            const std::vector<std::string>& stage_config_paths, bool group_hip, int graceful_only_timeout_ms) {
     const auto domains = worker_domains(plan, group_hip);
     // An unsplit native reference uses one backend. Only the worker
     // executable(s) named by this plan must exist; mixed plans need both.
@@ -133,6 +135,7 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
     const std::string spec = plan_spec(plan);
     const std::string no_config;
     WorkerProcessGroup group;
+    group.graceful_only_timeout_ms_ = graceful_only_timeout_ms;
     group.children_.reserve(domains.size()); // no allocation after a successful spawn
     for (const auto& domain : domains) {
         const size_t i = domain.terminal_stage();
@@ -197,6 +200,7 @@ std::vector<int> WorkerProcessGroup::sockets() const {
 
 bool WorkerProcessGroup::finish(std::string& error, int grace_ms, bool kill_on_timeout) {
     if (grace_ms < 0) throw std::invalid_argument("negative worker grace timeout");
+    if (graceful_only_timeout_ms_ >= 0) kill_on_timeout = false;
     error.clear();
     for (auto& c : children_) close_fd(c.fd);
     bool ok = true;
@@ -229,6 +233,20 @@ bool WorkerProcessGroup::finish(std::string& error, int grace_ms, bool kill_on_t
 }
 
 void WorkerProcessGroup::terminate() noexcept {
+    if (graceful_only_timeout_ms_ >= 0) {
+        try {
+            std::string error;
+            if (!finish(error,graceful_only_timeout_ms_,false))
+                std::fprintf(stderr,"direct verified worker drain: %s\n",error.c_str());
+        } catch (...) {
+            for (auto& c : children_) {
+                close_fd(c.fd);
+                if (c.pid > 0) std::fprintf(stderr,"UNVERIFIED worker drain; not signalled PID=%ld\n",static_cast<long>(c.pid));
+            }
+            children_.clear();
+        }
+        return;
+    }
     // Do not block forever on a worker that ignores EOF or SIGTERM.
     for (auto& c : children_) close_fd(c.fd);
     for (auto& c : children_) if (c.pid > 0) (void) ::kill(c.pid, SIGKILL);

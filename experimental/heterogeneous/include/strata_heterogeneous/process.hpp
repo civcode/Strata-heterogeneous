@@ -35,7 +35,7 @@ public:
                                      bool shared_memory = false,
                                      const std::string& cuda_config_path = {},
                                      const std::vector<std::string>& stage_config_paths = {},
-                                     bool group_hip = false);
+                                     bool group_hip = false, int graceful_only_timeout_ms = -1);
     std::vector<int> sockets() const;
     size_t size() const { return children_.size(); }
 
@@ -50,6 +50,7 @@ public:
 private:
     struct Child { int fd = -1; pid_t pid = -1; };
     std::vector<Child> children_;
+    int graceful_only_timeout_ms_ = -1;
 };
 
 // Helpers shared with CPU mock worker executables. No GPU discovery.
