@@ -38,8 +38,10 @@ def plan_stages(spec: str, layers: int):
         used.add((backend, ordinal))
         stages.append((backend, ordinal, first, end))
         cursor = end
-    require(cursor == layers and {s[0] for s in stages} == {"cuda", "hip"},
-            "plan must cover all layers and include both CUDA and HIP")
+    backends = {s[0] for s in stages}
+    hip_pair = len(stages) == 2 and backends == {"hip"}
+    require(cursor == layers and (backends == {"cuda", "hip"} or hip_pair),
+            "plan must cover all layers and be mixed CUDA/HIP or a two-stage HIP plan")
     return stages
 
 

@@ -77,6 +77,27 @@ class ReadinessTests(unittest.TestCase):
         return hw.assess(self.plan, 48, self.cfg, self.sys, self.proc,
                          self.bind if bindings is None else bindings, log)
 
+    def test_hip_pair_plan_admission(self):
+        self.assertEqual([('hip', 0, 0, 24), ('hip', 1, 24, 48)],
+                         hw.plan_stages('hip:0:0-24,hip:1:24-48', 48))
+        for plan in ('hip:0:0-48', 'hip:0:0-24,hip:0:24-48',
+                     'cuda:0:0-24,cuda:1:24-48', 'hip:0:0-23,hip:1:24-48'):
+            with self.subTest(plan=plan), self.assertRaises(ValueError):
+                hw.plan_stages(plan, 48)
+        pair = []
+        for index, (first, end) in enumerate(((0, 24), (24, 48))):
+            path = self.root / f'hip-{index}.cfg'
+            fields = hw.config(self.cfg[index])
+            fields.update(stage_index=str(index), device_ordinal=str(index),
+                          first_layer=str(first), end_layer=str(end))
+            path.write_text(''.join(f'{k}={v}\n' for k, v in fields.items()))
+            pair.append(path)
+        doc = hw.assess('hip:0:0-24,hip:1:24-48', 48, pair, self.sys, self.proc,
+                        ['hip:0=0000:41:00.0', 'hip:1=0000:81:00.0'], None)
+        self.assertEqual('UNVERIFIED', doc['readiness'])
+        self.assertEqual([], doc['blockers'])
+        self.assertEqual([0, 1], [s['ordinal'] for s in doc['stage_memory']])
+
     def test_enumeration_and_driver(self):
         pci = hw.gpu_inventory(self.sys)
         self.assertEqual(3, len(pci))
