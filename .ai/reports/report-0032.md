@@ -1,6 +1,6 @@
 # 0032 — real workload qualification (partial)
 
-**Status: NOT QUALIFIED.** Source tested: `02893b678f6419da4185151126e384ce9e90ef54` on `feature/heterogeneous-real-workloads`. This is a partial execution, not completion of the handoff. Ordinary 2K-capacity serial and native-bulk HTTP inference worked on short controls, but coding quality failed and tool requests were refused. Long context, agentic tasks, utilization, peak memory and production readiness are not established. The unchanged numerical diagnostics in reports 0027.15 and 0030 remain FAIL; no thresholds were changed.
+**Status: NOT QUALIFIED.** Initial source tested: `02893b678f6419da4185151126e384ce9e90ef54` on `feature/heterogeneous-real-workloads`. The follow-up below adds tool support and longer-context measurements on source `6648eda744cf5173c1516a89b87ddca7ce4e197e`. Execution remains partial, not completion of the handoff. Ordinary 2K-capacity serial and native-bulk HTTP inference worked on short controls, but coding quality failed and tool requests were refused. Long context, agentic tasks, utilization, peak memory and production readiness are not established. The unchanged numerical diagnostics in reports 0027.15 and 0030 remain FAIL; no thresholds were changed.
 
 ## Milestones
 
@@ -41,4 +41,52 @@ The full serial smoke's tool request was HTTP 400 (`tools is not supported by th
 
 Restricted local evidence: `/home/chris/tmp/strata-heterogeneous/m7-0032/` (build/test logs, generated configs, CLI output, server logs and JSONL). Original smoke SHA-256 `6eab6834a68bfc6f838aec3af430431b4726b5cff61007c05ee94034fa42be4d`; controls subset SHA-256 `93b9a5763714c802919bf5f1baa2b3fca3a343f452e2349bb30266540ce3a883`. Frozen existing replay manifest SHA-256 `9142100d8380d5f32c28e44841f0c427669eb85171a06f5ec27309ce1d7d040c`; it was not run and is not an autonomous task benchmark. The unrelated untracked `tools/heterogeneous_pool_probe.cpp` remains untouched.
 
-Next: investigate the unsupported tool path and safe disconnect/drain synchronization, then repeat full controls including verified next-request reset; complete the missing integrity and raw audits. Qualify actual near-cap contexts with resource checks, passive phase-aligned utilization and peak-memory sampling. Execute frozen replay and real scoped agent tasks with predeclared rubrics and matched serial/bulk budgets, report all failures, then profile before optimizing. Do not interpret the short control rates as real workload qualification.
+The original next steps are partly addressed by the follow-up below. The remaining integrity audits, real autonomous tasks and qualification gates remain open.
+
+## Follow-up: tools, cancellation and longer contexts
+
+Tested source `6648eda744cf5173c1516a89b87ddca7ce4e197e`; the only implementation change permits tool declarations as Service-rendered prompt metadata in the heterogeneous adapter. Service continues to render and parse calls; native inference and integrity checks are unchanged. Forced tool choices and legacy `functions` remain rejected. CPU tests: resident 15/15, heterogeneous tool discovery 318/318, and `serve.test_server` 376/376. The builds and binary identities above are unchanged.
+
+The fixed `lookup_order` client fixture completed a real two-stage call and returned `shipped` **3/3** serial and **3/3** bulk, separately in nonstream and SSE streaming modes. No model-generated tool was executed. This is one fixture, not general tool-use qualification. Serial disconnect test: arithmetic request 7 returned `95`; request 8 was logged `finish=cancelled`; after a two-second drain, request 9 returned `95`, with the same resident coordinator and normal close. This is evidence of recovery for that case, but independent reset/ACK tracing and a fresh-process post-cancel comparison were not performed. Bulk cancellation remains untested.
+
+### Real source and replay observations
+
+All modes use the same original model, vanilla precision and 12/18/18 full-residency plan. Serial uses prompt chunk 1; bulk uses native prefill chunk 128. Per-tier configs differ from the originals only in `max_cells`, with max_t 8, original slots and reserve unchanged. 8K/16K/32K server limits used 1024 max new tokens. Source-bound config preflights and passive readiness inventories passed; the inventory explicitly omits native/session/staging allocations, so it is not a complete prior memory proof. Runtime guards remained enabled. Logs show full residency, zero host misses, subsequent short requests and clean `HETERO_CLOSED` for each observed arm. No spill or fallback was reported. Each tier was exercised after shorter requests; no forced worker kills or device setting changes.
+
+Rates below are host commit-progress proxies (reset and IPC included in prefill; decode includes consumer pacing), not GPU kernel timing. TTFT is client first visible text or tool fragment, not startup. Times are medians when `n=3`; 16K and 32K have only one observation per mode. The 8K replay and host-review runs have no separate warmup exclusion; the 2K review has one disclosed warmup and three measured requests. Arms ran serial then bulk, not balanced across independent launches. Raw task outputs remain local. The replay is scripted history, not an autonomous agent execution; generated tool calls were not executed.
+
+| Capacity / workload | Prompt tokens | Mode | n | TTFT s | Prompt tok/s | Decode feedback tok/s | Result / quality |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 2K / `heterogeneous_contract.py` source review | 1,378 | serial | 3 | 31.88 | 43.2 | 43.6 | natural stop; answer covers requested checks and example but incorrectly states the 384 KiB cap as 384,024 bytes |
+| 2K / same review | 1,378 | bulk | 3 | 2.04 | 674.8 | 43.9 | all hit 512-token cap before completing the example; truncated, not a quality pass |
+| 8K / frozen `expert-cache.0` replay | 2,163 | serial | 3 | 49.94 | 43.4 | 43.2 | tool calls; unscored; identical call arguments within mode |
+| 8K / same replay | 2,163 | bulk | 3 | 3.51 | 641.1 | 43.4 | tool calls; unscored; path differs from serial |
+| 8K / full `host.cpp` review | 6,586 | serial | 3 | 152.38 | 43.2 | 43.2 | all hit 512-token cap; truncated and not a quality pass |
+| 8K / same review | 6,586 | bulk | 3 | 9.44 | 697.9 | 43.3 | all hit 512-token cap; truncated and not a quality pass |
+| 16K / frozen `expert-cache.1` replay | 8,163 | serial | 1 | 188.17 | 43.4 | 43.3 | tool call; unscored |
+| 16K / same replay | 8,163 | bulk | 1 | 12.29 | 664.9 | 43.5 | different tool call; unscored |
+| 32K / frozen `expert-cache.2` replay | 20,748 | serial | 1 | 480.69 | 43.2 | 43.2 | tool call; unscored |
+| 32K / same replay | 20,748 | bulk | 1 | 32.16 | 645.6 | 42.1 | different tool call; unscored |
+
+The 2K serial answer and bulk answer differ in text and termination; their quality cannot be called equivalent. All 8K host-review responses were truncated. The original Python arithmetic/code control still fails in both modes. The 32K-capacity run exercises the extended native prefill wire beyond 8K, but is not a near-32K test or proof of complete protocol coverage. 16K/32K were not repeated or tested near their limits. No supported same-model vanilla comparison was run.
+
+### Phase-aligned passive telemetry
+
+250-ms samples were aligned by per-device sample timestamp with native prefill/decode intervals. Values are per-device mean reported busy and **maximum sampled** used MiB, not occupancy, guaranteed simultaneous work, or instantaneous peak. The 8K host-review rows cover three repeated requests; 16K and 32K each cover one replay. Device order is CUDA0 / HIP0 / HIP1. Memory includes other device allocations, and prefill and decode maxima may occur at different instants.
+
+| Workload / mode | Prefill samples per device | Prefill mean busy % | Prefill max used MiB | Decode samples per device | Decode mean busy % |
+| --- | ---: | --- | --- | ---: | --- |
+| 8K host review / serial | 1,826 | 10.2 / 26.7 / 34.4 | 11,357 / 16,578 / 16,671 | 142 | 10.2 / 26.8 / 34.4 |
+| 8K host review / bulk | 117 | 44.2 / 86.6 / 93.1 | 11,653 / 16,917 / 17,014 | 141 | 10.0 / 27.2 / 34.9 |
+| 16K replay / serial | 753 | 10.0 / 27.0 / 34.5 | 11,411 / 16,648 / 16,757 | 6 | 9.0 / 27.2 / 34.8 |
+| 16K replay / bulk | 49 | 40.2 / 88.0 / 95.9 | 11,707 / 16,991 / 17,102 | 7 | 5.1 / 24.4 / 40.9 |
+| 32K replay / serial | 1,922 | 10.2 / 26.9 / 34.5 | 11,517 / 16,788 / 16,931 | 6 | 10.0 / 27.0 / 34.7 |
+| 32K replay / bulk | 129 | 52.6 / 89.9 / 97.5 | 11,817 / 17,135 / 17,280 | 8 | 5.0 / 26.4 / 35.5 |
+
+These indicate short decode intervals and low sampled CUDA activity in these runs; they do not by themselves identify the performance bottleneck. The 160 accepted tok/s real-agent target remains unproven. No performance optimization was made.
+
+### Follow-up evidence and remaining work
+
+Private evidence is under `/home/chris/tmp/strata-heterogeneous/m7-0032-followup/`, including generated configs, readiness inventories, server logs, benchmark JSONL and telemetry. The 2K review manifest SHA-256 is `2db6ea7bbb3bc1d44da5a3ffd23d25ab73fb06a52567b61f2b19d25f3ed556c0`; 8K host review `bbb83b883d8f0a20fd8057d2dab9c158511150ed67af2ed820b2a8d17fcb2c79`. Frozen-replay subset hashes are `b5e178a7b90eed94d191d3100be2ddbee408d4a0a42efcd2aeb42a65a9190fe9` (8K), `243d63b631cf8d9eadd07ac79570594530609827cf10f8a21e236a35e8b7a1bf` (16K), and `8b54ddd122f4e88f4bf78f3a470d8fbd8256a757d24dddb8fcf809b0c786c938` (32K). They are unchanged selected cases from the previously frozen manifest, not a new autonomous benchmark. Config hashes and complete samples are in the private evidence. No inference worker was left running after these tests; the unrelated untracked probe remains untouched.
+
+Still NOT_RUN or unverified: full no-run negative matrix and explicit 16 MiB/wire CPU audit, original raw asset audit, MTP controls, default capture invariance, bridge same-mode and fresh/resident A/B/A, reset ACK proof after cancellation, bulk cancellation, repeated near-cap 16K/32K tests, full replay, 12-task autonomous coding qualification, representative quality/perplexity and matched vanilla reference. No production admission; previous numerical failures remain unchanged. Next work should complete these checks and investigate incorrect/truncated task responses before claiming quality or optimizing decode throughput.
