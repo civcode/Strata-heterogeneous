@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iostream>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <signal.h>
 #include <stdexcept>
@@ -138,6 +139,26 @@ private:
     uint32_t index_ = 0;
     std::vector<int32_t> tokens_;
 };
+// CPU-only negative fixture: corrupt the producer output after execution,
+// before the real shared-activation provisional gate examines it.
+class NonfiniteProducer final : public StageExecutor {
+    MockStageExecutor inner_;
+public:
+    bool prepare(const Plan& p, size_t i, std::string& e) override { return inner_.prepare(p,i,e); }
+    bool reset_request(uint64_t r, std::string& e) override { return inner_.reset_request(r,e); }
+    bool begin_window(const WindowSpec& s, uint64_t r, uint64_t w, std::string& e) override { return inner_.begin_window(s,r,w,e); }
+    bool run_window(const Frame& i, Frame& o, std::string& e) override { return inner_.run_window(i,o,e); }
+    bool run_staged_window(const Frame& m, ActivationView v, std::string& e) override {
+        if (!inner_.run_staged_window(m,v,e)) return false;
+        const float bad = std::numeric_limits<float>::quiet_NaN();
+        std::memcpy(v.data(), &bad, sizeof(bad));
+        return true;
+    }
+    bool commit_window(uint64_t r, uint64_t w, std::string& e) override { return inner_.commit_window(r,w,e); }
+    bool commit_prefix(uint64_t r, uint64_t w, uint32_t k, std::string& e) override { return inner_.commit_prefix(r,w,k,e); }
+    void abandon_window() noexcept override { inner_.abandon_window(); }
+    void shutdown() noexcept override { inner_.shutdown(); }
+};
 struct WorkerGroup {
     WorkerGroup() = default;
     WorkerGroup(const WorkerGroup&) = delete;
@@ -164,7 +185,7 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                    bool resident = false, bool fail_reset = false,
                    bool delayed_startup = false, bool grouped = false, bool wrong_group_hello = false,
                    bool bad_prefill = false, int arm_mode = 0, int mtp_mode = 0, bool isolated_prefill = false,
-                   bool direct_verified = false) {
+                   bool direct_verified = false, bool bad_producer = false) {
     WorkerGroup group;
     for (const auto& domain : worker_domains(plan,grouped)) {
         const size_t i = domain.terminal_stage();
@@ -240,7 +261,9 @@ WorkerGroup launch(const Plan& plan, bool shared, bool bad = false,
                                              delayed_startup ? 4000 : -1, grouped && !wrong_group_hello, pf, bind);
                 } else {
                     MockStageExecutor intermediate;
-                    serve_worker_stateful(fd[1], plan, i, intermediate, 1200, shared, (resident || direct_verified) ? &limits : nullptr,
+                    NonfiniteProducer corrupt;
+                    StageExecutor& selected = bad_producer ? static_cast<StageExecutor&>(corrupt) : static_cast<StageExecutor&>(intermediate);
+                    serve_worker_stateful(fd[1], plan, i, selected, 1200, shared, (resident || direct_verified) ? &limits : nullptr,
                                           delayed_startup ? 4000 : -1, pf, bind);
                 }
                 ::close(fd[1]);
@@ -714,6 +737,15 @@ void direct_verified_protocol() {
         bad.payload.back()=std::numeric_limits<float>::quiet_NaN();
         fails([&]{ pipe.execute_discard(std::move(bad),{0,{1,2,3}}); },"direct shared finite gate rejects malformed input");
         check(pipe.poisoned(),"nonfinite activation poisons direct session");
+    }
+    {
+        auto w=launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,0,false,true,true);
+        FinalPipelineSession pipe(p,w.sockets,4000,true,true,false,false,true,false,false,false,false,true);
+        pipe.initialize();
+        pipe.begin_request(1);
+        fails([&]{ pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}}); },"direct producer nonfinite output rejected before consumer admission");
+        check(pipe.poisoned(),"nonfinite producer output poisons direct session");
+        fails([&]{ (void)pipe.commit(1); },"nonfinite producer output cannot commit");
     }
     {
         auto w=launch(p,true,false,false,false,false,0.f,true,false,false,true);
