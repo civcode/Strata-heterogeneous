@@ -1,5 +1,7 @@
 # Direct native CUDA → HIP ready-flag path: graph qualification candidate
 
+Hardware update: the bounded model-free graph matrix and a terminal timeout passed on Oberon; see `.ai/reports/report-0037.md` for scope and remaining gaps. Real-model integration and inference performance remain unqualified.
+
 Base inspected: `ff97e6ad694a373c0509478bea33e574a8598109` on `feature/heterogeneous-hip-only`. Handoff 0036 remains outstanding; this patch is prepared separately and does not change its branch or production defaults.
 
 ## Objective and scope
