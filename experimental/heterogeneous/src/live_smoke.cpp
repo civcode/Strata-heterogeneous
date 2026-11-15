@@ -622,6 +622,9 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
             config.max_cache_slots!=uint64_t(config.end_layer-config.first_layer)*512 ||
             config.free_reserve_bytes!=536870912ull || config.arena_budget_bytes))
             throw std::invalid_argument("generation qualification requires the previously approved unchanged model and resource config");
+        if (o.direct_verified && (config.max_cells != 2048 || config.max_t != 8 ||
+            config.max_cache_slots != uint64_t(config.end_layer-config.first_layer)*512))
+            throw std::invalid_argument("direct verified qualification requires 2K context, max_t=8 and full residency");
         const bool invalid_token = o.tokens.empty()
             ? config.n_vocab <= o.token
             : std::any_of(o.tokens.begin(), o.tokens.end(),

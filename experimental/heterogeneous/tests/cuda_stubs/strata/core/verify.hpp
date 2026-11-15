@@ -42,6 +42,7 @@ inline std::vector<int32_t> tokens;
 }
 class Verifier {
 public:
+    int64_t row_floats_ = 11;
     static constexpr int kStage0ProbeLayers = 12;
     static constexpr int kStage0ProbePhases = 4;
     void set_stage_micro_probe(bool) {}
@@ -75,14 +76,15 @@ public:
     void set_handoff_flags(uint32_t*, uint32_t*, uint32_t* host, uint32_t*) { fake_verify::output_flag = host; }
     void set_always_publish(bool b) { fake_verify::publish = b; }
     void set_head_sampling(bool) {}
-    bool init(const WeightTable&, const ModelGeometry&, SessionState&, const VerifyHits&, const void*, int, std::string&) {
+    bool init(const WeightTable&, const ModelGeometry& geometry, SessionState&, const VerifyHits&, const void*, int, std::string&) {
+        row_floats_ = (geometry.hc + 1) * geometry.n_embd + geometry.hc;
         fake_verify::initialized = true; return true;
     }
     void* stream() { return nullptr; }
     bool run(int n, const int32_t* t, int64_t pos, PoolMultiFn pool, void* user, int32_t*, std::string&) {
         ++fake_verify::runs; fake_verify::tokens.assign(t, t+n); fake_verify::pos = pos;
         pool(user, nullptr, nullptr, n, 0, nullptr, fake_verify::begin);
-        for (int i = 0; i < n * 11; ++i)
+        for (int64_t i = 0; i < n * row_floats_; ++i)
             fake_verify::output[i] = fake_verify::input ? fake_verify::input[i] + 1 : 42;
         if (fake_verify::output_flag && !fake_verify::omit_publish && !fake_verify::fail_run)
             *fake_verify::output_flag = 1;

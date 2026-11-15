@@ -185,6 +185,39 @@ int main() {
             executor.shutdown();
             REQUIRE(fake_cuda::allocations==0);
         }
+        // Borrowed direct slot: no DMA, no buffer ownership transfer,
+        // and a missing ready publication must poison before commit.
+        {
+            geometry.n_layers=48; geometry.hc=4; geometry.n_embd=2560;
+            session.layer_lo=0; session.layer_hi=15;
+            const auto direct_plan=parse_plan("cuda:0:0-15,hip:0:15-33,hip:1:33-48",48,{4,2560},123);
+            const auto row_floats=(geometry.hc+1)*geometry.n_embd+geometry.hc;
+            std::vector<float> slot(8*row_floats);
+            uint32_t ready=0;
+            auto* bytes=reinterpret_cast<uint8_t*>(slot.data());
+            DirectVerifiedBinding direct{bytes,slot.data(),&ready,&ready,slot.size()*sizeof(float)};
+            CudaVerifierDriver driver(bindings()); DeviceStageExecutor executor(driver);
+            REQUIRE(driver.bind_direct_output(direct,error));
+            REQUIRE(!driver.bind_direct_output(direct,error));
+            REQUIRE(executor.prepare(direct_plan,0,error));
+            REQUIRE(executor.begin_window({0,{1,2}},1,1,error));
+            Frame meta; meta.stage_index=0; meta.request_id=1; meta.window_id=1;
+            meta.plan_fingerprint=direct_plan.fingerprint(); meta.geometry=direct_plan.geometry; meta.rows=2;
+            ActivationView view(bytes,2*row_floats*sizeof(float),meta.geometry,meta.rows);
+            const int copies=fake_cuda::copies;
+            REQUIRE(executor.run_staged_window(meta,view,error));
+            REQUIRE(ready==1 && fake_cuda::copies==copies);
+            for (int64_t i=0;i<2*row_floats;++i) REQUIRE(slot[i]==42);
+            REQUIRE(executor.commit_prefix(1,1,1,error));
+            REQUIRE(executor.begin_window({1,{2,3}},1,2,error));
+            meta.window_id=2;
+            fv::omit_publish=true;
+            REQUIRE(!executor.run_staged_window(meta,view,error) && executor.poisoned() && ready==0);
+            fv::omit_publish=false;
+            executor.shutdown();
+            REQUIRE(fake_cuda::allocations==0);
+            geometry.n_layers=4; geometry.hc=2; geometry.n_embd=3; session.layer_hi=2;
+        }
         geometry.hc = 1000000000; geometry.n_embd = 1000000000;
         {
             auto huge = plan; huge.geometry = {1000000000,1000000000};
