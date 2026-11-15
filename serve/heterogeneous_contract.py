@@ -51,9 +51,12 @@ def validate_request(ids, max_new, vocab, context, long_context=False):
 
 
 class Progress:
-    def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False, native_prefill=False):
+    def __init__(self, request, prompt, max_new, chunk, vocab, stops, stream, lookup=False, native_prefill=False, *, mtp_spec=0):
         if lookup and (stream or chunk < 2):
             raise ValueError("lookup requires buffered mode and chunk >= 2")
+        if type(mtp_spec) is not int or not 0 <= mtp_spec <= 4 or (mtp_spec and (lookup or stream or native_prefill)):
+            raise ValueError("MTP service progress requires independent buffered mode and spec 1..4")
+        self.mtp_spec = mtp_spec
         self.lookup = lookup
         self.native_prefill = native_prefill
         self.request, self.prompt, self.max_new = request, prompt, max_new
@@ -71,8 +74,9 @@ class Progress:
             expected = self.prompt - 1
         else:
             expected = self.pos + (min(self.chunk, self.prompt - self.pos) if self.pos < self.prompt else 1)
-        valid_position = (expected <= end <= self.pos + self.chunk
-                          if self.lookup and self.pos >= self.prompt else end == expected)
+        max_advance = (self.mtp_spec + 1 if self.mtp_spec else self.chunk if self.lookup else 1)
+        valid_position = (expected <= end <= self.pos + max_advance
+                          if self.pos >= self.prompt else end == expected)
         if (self.terminal or request != self.request or window != self.window + 1 or
                 not valid_position or end > self.prompt + self.max_new - 1):
             raise ValueError("resident progress identity or position mismatch")

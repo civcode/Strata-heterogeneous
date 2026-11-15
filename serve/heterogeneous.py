@@ -28,7 +28,7 @@ def prepare_server(cfg):
     required = {"coordinator", "config", "plan", "fingerprint"}
     optional = {"cuda_worker", "hip_worker", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
-                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv", "pipeline_mode"}
+                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv", "pipeline_mode", "mtp", "spec", "spec_min_p"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     from strata_cli.heterogeneous import planned_backends
@@ -43,7 +43,7 @@ def prepare_server(cfg):
     values = dict(cuda_worker=None, hip_worker=None, layers=48, hc=4, n_embd=2560, max_new_tokens=32,
                   prompt_chunk=1, timeout_ms=120000, shared=False, max_context=4096,
                   stream_tokens=False, restart_clean=False, lookup_draft=False,
-                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False, long_context=False, kv="int8", pipeline_mode=None)
+                  group_native_hip=False, native_prefill_chunk=0, workload_mode=False, long_context=False, kv="int8", pipeline_mode=None, mtp=None, spec=None, spec_min_p=None)
     values.update(opts)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
@@ -78,6 +78,9 @@ class ResidentEngine:
         self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
         self.stream_tokens = source.get("stream_tokens", False)
         self.lookup_draft = source.get("lookup_draft", False)
+        if source.get("mtp") and (self.lookup_draft or self.stream_tokens or source.get("spec") != 4 or
+                                  source.get("spec_min_p") != 0.5 or self.max_context != 2048):
+            raise ValueError("unsupported resident MTP service mode")
         if self.lookup_draft and (self.stream_tokens or chunk < 2):
             raise ValueError("lookup-draft requires buffered generation and chunk >= 2")
         self._restart_clean = source.get("restart_clean", False)
@@ -113,7 +116,8 @@ class ResidentEngine:
                                         name="heterogeneous-native-output")
         self._reader.start()
         try:
-            expected = ("HETERO_READY 1 STREAM" if self.stream_tokens else
+            expected = ("HETERO_READY 1 MTP" if self.source.get("mtp") else
+                        "HETERO_READY 1 STREAM" if self.stream_tokens else
                         "HETERO_READY 1 LOOKUP" if self.lookup_draft else "HETERO_READY 1")
             if self._receive() != expected:
                 raise self._died("native resident readiness not acknowledged")
@@ -264,7 +268,8 @@ class ResidentEngine:
             waiting = completed = cancelled = False
             progress = Progress(self._request, len(ids), max_new, self.chunk,
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
-                                 self.lookup_draft, bool(self.source.get("native_prefill_chunk", 0)))
+                                 self.lookup_draft, bool(self.source.get("native_prefill_chunk", 0)),
+                                mtp_spec=self.source.get("spec", 0) if self.source.get("mtp") else 0)
             start = time.monotonic()
             prefill_end = last_checkpoint = first_output = last_output_checkpoint = None
             emitted = 0

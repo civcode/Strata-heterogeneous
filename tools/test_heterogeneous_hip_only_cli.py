@@ -75,6 +75,26 @@ class HipOnlyCLI(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "heterogeneous.pipeline_mode"):
                 prepare_server(cfg)
 
+    def test_mtp_service_refuses_incompatible_settings_and_stale_coordinator(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as rt:
+            args = Namespace(coordinator=sys.executable, plan="cuda:0:0-15,hip:0:15-33,hip:1:33-48", fingerprint=1,
+                             layers=48, hc=4, n_embd=2560, timeout_ms=1000,
+                             cuda_worker=sys.executable, hip_worker=sys.executable, config=[], shared=True,
+                             max_new_tokens=8, prompt_chunk=1, max_context=2048, group_native_hip=True,
+                             mtp=rt, spec=4, spec_min_p=0.5)
+            with patch("strata_cli.heterogeneous._native",return_value={"kv":"int8"}) as native:
+                with self.assertRaisesRegex(ValueError,"lacks request-local MTP service"):
+                    prepare_native(args)
+                for key,value in (("stream_tokens",True),("max_context",262144),("native_prefill_chunk",128),("spec",3),("spec_min_p",0.1)):
+                    old=getattr(args,key,None)
+                    setattr(args,key,value)
+                    with self.assertRaisesRegex(ValueError,"MTP service candidate"):
+                        prepare_native(args)
+                    if old is None: delattr(args,key)
+                    else: setattr(args,key,old)
+                self.assertEqual(native.call_count,1)
+
     def test_server_without_cuda_worker(self):
         cfg = {"heterogeneous": dict(plan=HIP, coordinator=sys.executable,
                    hip_worker=sys.executable, config=["hip0.cfg", "hip1.cfg"],

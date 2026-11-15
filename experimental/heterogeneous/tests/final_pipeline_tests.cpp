@@ -49,8 +49,13 @@ public:
     }
     int mtp_mode = 0;
     bool mtp_relay_enabled() const noexcept override { return mtp_mode != 0; }
-    bool mtp_anchor_only_enabled() const noexcept override { return mtp_mode == 5 || mtp_mode == 7; }
-    bool mtp_resident_enabled() const noexcept override { return mtp_mode == 7; }
+    bool mtp_anchor_only_enabled() const noexcept override { return mtp_mode == 5 || mtp_mode == 7 || mtp_mode == 8; }
+    bool mtp_resident_enabled() const noexcept override { return mtp_mode == 7 || mtp_mode == 8; }
+    bool mtp_service_enabled() const noexcept override { return mtp_mode == 8; }
+    bool configure_mtp_request(const Frame& meta,std::string& e) override {
+        if (mtp_mode!=8 || !meta.window || !meta.mtp_max_new) {e="mock service metadata refused";return false;}
+        return true;
+    }
     bool propose_mtp(const WindowSpec& anchor, WindowSpec& offer, std::string& e) override {
         if (mtp_mode==2) {e="CPU proposal refusal";return false;}
         offer=anchor;
@@ -850,6 +855,44 @@ void startup_frame_failures() {
     check(!receive_startup_frame(fd[0],20,1000),"supervisor EOF releases prepared worker");
     ::close(fd[0]);
 }
+void mtp_service_protocol() {
+    const auto p=parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
+    auto start=[&](int mode){return launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,mode);};
+    const MtpRequestPolicy a{2048,8,4,248320,{1,2,3},{99}};
+    {
+        auto w=start(8);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+        pipe.initialize(); pipe.begin_request(1); pipe.configure_mtp_request(1,a);
+        fails([&]{pipe.configure_mtp_request(1,a);},"duplicate MTP request metadata refused");
+        check(!pipe.poisoned(),"preflight duplicate metadata does not start work");
+        pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});
+        check(pipe.commit(3).predicted_tokens.back()==20,"MTP service prompt commit");
+        auto offer=pipe.request_mtp_proposal();
+        check(offer.token_ids==std::vector<int32_t>({20,37,0}),"service offer bound to actual target");
+        pipe.execute_discard(input_frame(p,1,2),offer);
+        check(pipe.commit(2).predicted_tokens[1]==54,"service partial accepted prefix");
+        pipe.begin_request(2);
+        const MtpRequestPolicy b{2048,1,4,248320,{7,8,9},{99}};
+        pipe.configure_mtp_request(2,b);
+        pipe.execute_discard(input_frame(p,2,1),{0,{7,8,9}});
+        check(pipe.commit(3).request_id==2,"variable request budget after reset");
+        fails([&]{(void)pipe.request_mtp_proposal();},"terminal service offer refused");
+        check(pipe.poisoned(),"invalid speculative attempt poisons session");
+    }
+    {
+        auto w=start(7);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+        fails([&]{pipe.initialize();},"legacy resident MTP cannot advertise service capability");
+        check(pipe.poisoned(),"stale service handshake poisons session");
+    }
+    {
+        auto w=start(8);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+        pipe.initialize(); pipe.begin_request(1); pipe.configure_mtp_request(1,a);
+        fails([&]{pipe.execute_discard(input_frame(p,1,1),{0,{1,2,4}});},"service cannot change admitted prompt");
+        check(pipe.poisoned(),"wrong prompt poisons service");
+    }
+}
 void compact_and_prefix(bool shared, bool fanout) {
     const Plan p = parse_plan("cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     {
@@ -886,6 +929,7 @@ int main() {
         receiver_arm_protocol(false); receiver_arm_protocol(true);
         mtp_relay_protocol(false); mtp_relay_protocol(true);
         mtp_resident_protocol(false); mtp_resident_protocol(true);
+        mtp_service_protocol();
         for (bool fanout : {false,true}) {
             three_stage(false,fanout); three_stage(true,fanout);
             resident_lifecycle(false,fanout); resident_lifecycle(true,fanout);

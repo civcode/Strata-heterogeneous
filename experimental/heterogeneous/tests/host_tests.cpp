@@ -173,11 +173,26 @@ void test_wire() {
     throws([&] { (void) decode(bad_hello); }, "invalid hello length rejected");
     hello.kind = Kind::hello_shared;
     check(decode(encode(hello)).identity == hello.identity, "shared worker handshake roundtrip");
-    for (auto kind : {Kind::hello_guarded_direct, Kind::hello_guarded_direct_final}) {
+    for (auto kind : {Kind::hello_guarded_direct, Kind::hello_guarded_direct_final, Kind::hello_mtp_service_final}) {
         hello.kind = kind;
         const auto decoded = decode(encode(hello));
         check(decoded.kind == kind && decoded.identity == hello.identity, "guarded capability hello roundtrip");
     }
+    Frame meta = input(p,51,1,3);
+    meta.payload.clear(); meta.kind=Kind::mtp_service_request; meta.window_id=0;
+    meta.window=WindowSpec{0,{1,2,3}}; meta.mtp_max_new=64;
+    for (auto kind : {Kind::mtp_service_request,Kind::mtp_service_ready}) {
+        meta.kind=kind;
+        const auto decoded=decode(encode(meta));
+        check(decoded.kind==kind && decoded.mtp_max_new==64 && decoded.window &&
+              decoded.window->token_ids==meta.window->token_ids, "MTP request policy wire roundtrip");
+    }
+    auto invalid_mtp=meta; invalid_mtp.mtp_max_new=257;
+    throws([&]{(void)encode(invalid_mtp);},"MTP policy budget bounded");
+    invalid_mtp=meta; invalid_mtp.window_id=1;
+    throws([&]{(void)encode(invalid_mtp);},"MTP metadata only at request start");
+    invalid_mtp=meta; invalid_mtp.kind=Kind::window_spec;
+    throws([&]{(void)encode(invalid_mtp);},"MTP metadata not accepted as ordinary window");
     Frame shared = input(p, 52, 901, 2);
     shared.kind = Kind::shared_data; shared.payload.clear();
     shared.shared_checksum = 0xfedcba98;

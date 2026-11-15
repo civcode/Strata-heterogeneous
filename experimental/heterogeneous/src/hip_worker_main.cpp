@@ -128,7 +128,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     const bool extended = invocation.long_context_chunk != 0;
     const bool mtp_service = hetero::performance_flag("STRATA_HETERO_MTP_SERVICE");
     if (mtp_service && (extended || invocation.kv!=hetero::KvMode::int8 || !invocation.shared_memory ||
-        hetero::plan_spec(plan)!="cuda:0:0-15,hip:0:15-33,hip:1:33-48"))
+        (!hetero::direct_verified_plan(plan) || plan.stages.front().end_layer!=15)))
         throw std::runtime_error("MTP service candidate requires shared Q8 mixed 15/18/15");
     std::vector<hetero::HipWorkerConfig> configs;
     std::string error;

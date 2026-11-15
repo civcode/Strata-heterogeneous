@@ -37,6 +37,9 @@ def add_arguments(parser):
     parser.add_argument("--max-context", type=int, default=4096, help="total prompt + completion cap, 8192 ordinary / 32768 workload / 262144 explicit long-context")
     parser.add_argument("--stream-tokens", action="store_true", help="opt-in committed-token resident protocol (CLI still writes final JSON)")
     parser.add_argument("--pipeline-mode", choices=("baseline", "fast"), help="explicit grouped shared resident pipeline profile (opt-in)")
+    parser.add_argument("--mtp", help="experimental local native MTP runtime directory (buffered Q8, 2K mixed profile)")
+    parser.add_argument("--spec", type=int, default=None, help="MTP candidate currently requires 4")
+    parser.add_argument("--spec-min-p", type=float, default=None, help="MTP candidate currently requires 0.5")
     parser.add_argument("--lookup-draft", action="store_true", help="opt-in verified suffix lookup; buffered mode, chunk >= 2")
     parser.add_argument("--restart-clean", action="store_true", help="opt-in server restart only after verified old process-group exit")
     parser.add_argument("--benchmark-repeat", type=int, default=1, help="repeat resident prompt sequence 1..20 times; JSON includes timing")
@@ -134,6 +137,24 @@ def prepare_native(args):
         raise ValueError("native prefill needs grouped HIP and chunk 1..2048")
     extended = getattr(args, "long_context", False)
     require_mode(extended, workload, kv, group, bulk, getattr(args, "lookup_draft", False))
+    mtp = getattr(args, "mtp", None)
+    spec = getattr(args, "spec", None)
+    spec_min_p = getattr(args, "spec_min_p", None)
+    if mtp is None and (spec is not None or spec_min_p is not None):
+        raise ValueError("spec and spec_min_p require explicit mtp runtime")
+    if mtp is not None:
+        if (not isinstance(mtp, str) or not mtp or (spec is not None and (type(spec) is not int or spec != 4)) or
+                (spec_min_p is not None and (type(spec_min_p) not in (int, float) or spec_min_p != 0.5))):
+            raise ValueError("MTP service candidate requires a runtime path, spec 4 and spec_min_p 0.5")
+        if (args.plan != "cuda:0:0-15,hip:0:15-33,hip:1:33-48" or not group or not args.shared or
+                kv != "int8" or args.max_context != 2048 or workload or extended or bulk or
+                getattr(args, "stream_tokens", False) or getattr(args, "lookup_draft", False) or
+                getattr(args, "pipeline_mode", None) is not None or getattr(args, "restart_clean", False)):
+            raise ValueError("MTP service candidate requires buffered shared grouped mixed Q8 2K and serial prefill")
+        mtp_path = Path(mtp).expanduser().resolve(strict=True)
+        if not mtp_path.is_dir():
+            raise ValueError("MTP runtime must be an existing local directory")
+        mtp = str(mtp_path)
     pipeline_mode = getattr(args, "pipeline_mode", None)
     if pipeline_mode is not None and (pipeline_mode not in ("baseline", "fast") or not group or
                                       not args.shared or not getattr(args, "stream_tokens", False) or
@@ -150,6 +171,8 @@ def prepare_native(args):
         raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
     if pipeline_mode is not None and source.get("pipeline_mode_cap") != 1:
         raise ValueError("coordinator lacks explicit pipeline-mode capability; rebuild matching binaries")
+    if mtp is not None and source.get("mtp_service_cap") != 1:
+        raise ValueError("coordinator lacks request-local MTP service capability; rebuild matching binaries")
     if extended and source.get("long_context_cap") != MAX_LONG_CONTEXT:
         raise ValueError("coordinator does not advertise the long-context capability; rebuild matching binaries")
     gguf = source.get("gguf")
@@ -174,6 +197,8 @@ def prepare_native(args):
                   restart_clean=getattr(args, "restart_clean", False), lookup_draft=lookup,
                   group_native_hip=group, native_prefill_chunk=bulk, workload_mode=workload,
                   long_context=extended, pipeline_mode=pipeline_mode or "legacy")
+    if mtp is not None:
+        source.update(mtp=mtp, spec=4, spec_min_p=0.5)
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -200,6 +225,8 @@ def prepare_native(args):
         native.append("--stream-tokens")
     if pipeline_mode is not None:
         native.extend(("--pipeline-mode", pipeline_mode))
+    if mtp is not None:
+        native.extend(("--mtp-resident-service", "--mtp-probe-rt", mtp, "--hip-split-overlap"))
     if lookup:
         native.append("--lookup-draft")
     if bulk:
@@ -256,6 +283,12 @@ def write_server_config(args):
     cfg["heterogeneous"]["long_context"] = getattr(args, "long_context", False)
     if getattr(args, "pipeline_mode", None) is not None:
         cfg["heterogeneous"]["pipeline_mode"] = args.pipeline_mode
+    if getattr(args, "mtp", None) is not None:
+        cfg["heterogeneous"].update(mtp=str(Path(args.mtp).expanduser().resolve(strict=True)),
+                                    spec=args.spec if args.spec is not None else 4,
+                                    spec_min_p=args.spec_min_p if args.spec_min_p is not None else 0.5)
+    elif getattr(args, "spec", None) is not None or getattr(args, "spec_min_p", None) is not None:
+        raise ValueError("spec and spec_min_p require explicit mtp runtime")
     cfg["heterogeneous"]["coordinator"] = _path(args.coordinator, True)
     workers = worker_arguments(args)
     for flag, value in zip(workers[::2], workers[1::2]):
@@ -286,6 +319,8 @@ def run(args):
         raise ValueError("--restart-clean applies only to generated server config")
     if workload and not args.resident:
         raise ValueError("workload mode requires --resident")
+    if getattr(args, "mtp", None) is not None and not args.resident:
+        raise ValueError("MTP service candidate requires --resident")
     if getattr(args, "pipeline_mode", None) is not None and not args.resident:
         raise ValueError("pipeline mode requires --resident")
     if getattr(args, "native_prefill_chunk", 0) and not args.resident:

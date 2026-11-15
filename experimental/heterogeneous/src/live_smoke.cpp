@@ -1201,8 +1201,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         uint64_t window = 0;
         int64_t pos = 0;
         int32_t next = -1;
-        const hetero::MtpRequestPolicy service_policy{2048,max_new,4,limits.vocab,prompt,o.stop_ids};
-        if (o.mtp_service) session.configure_mtp_request(request_id,service_policy);
+        hetero::MtpRequestPolicy service_policy;
+        if (o.mtp_service) {
+            service_policy={2048,max_new,4,limits.vocab,prompt,o.stop_ids};
+            session.configure_mtp_request(request_id,service_policy);
+        }
         const auto mtp_policy=o.mtp_generation ?
             hetero::MtpGenerationPolicy{static_cast<unsigned>(prompt.size()),max_new,o.stop_ids} : hetero::MtpGenerationPolicy{};
         auto capture_generation=[&](const hetero::WindowSpec& spec,const hetero::FinalStageResult& committed,uint32_t keep) {
@@ -1415,6 +1418,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         std::cout << "HETERO_READY " << request_id;
         if (o.stream_tokens) std::cout << " STREAM";
         if (o.lookup_draft) std::cout << " LOOKUP";
+        if (o.mtp_service) std::cout << " MTP";
         std::cout << std::endl;
         bool first = true;
         std::string line;
