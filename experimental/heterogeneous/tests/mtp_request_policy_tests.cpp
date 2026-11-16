@@ -78,7 +78,11 @@ int main() {
         check(!admitted->prompt_window(prompt_size-1,{19}));
         check(!admit_mtp_service_request(input));
         input.prompt[0]=10; input.spec=3;
-        check(input.valid() && !admit_mtp_service_request(input));
+        check(input.valid() && bool(admit_mtp_service_request(input)));
+        const MtpRequestPolicy native{cap,8,3,248320,{7,8,9},{99}};
+        check(native.valid() && bool(admit_mtp_service_request(native)));
+        check(native.decode_window(3,11,{11,12,13,14}));
+        check(!native.decode_window(3,11,{11,12,13,14,15}));
         for (int64_t pos=prompt_size; pos<admitted->feed_end(); ++pos) {
             check(admitted->decode_window(pos,11,{11}));
             check(!admitted->decode_window(pos,99,{99}));

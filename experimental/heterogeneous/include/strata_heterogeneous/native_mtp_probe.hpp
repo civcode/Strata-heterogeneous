@@ -37,6 +37,7 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <cstring>
 
 namespace strata::heterogeneous {
 class NativeMtpProbe final : public HipFinalObserver {
@@ -52,6 +53,15 @@ public:
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
         const auto& g=b.geometry;
         native_window_=performance_flag("STRATA_HETERO_MTP_NATIVE_WINDOW");
+        if (service_enabled()) {
+            const char* width=std::getenv("STRATA_HETERO_MTP_SERVICE_WINDOW");
+            if (width && std::strcmp(width,"0")!=0) {
+                if (std::strcmp(width,"4")==0) service_candidates_=3;
+                else if (std::strcmp(width,"5")==0) service_candidates_=4;
+                else {error="invalid native MTP window";return false;}
+                native_window_=true; // ordinary native confidence window, not a profiling experiment
+            }
+        }
         if (native_window_ && !service_enabled()) {
             error="native confidence window requires resident MTP service";return false;
         }
@@ -156,7 +166,7 @@ public:
             drafter_=std::make_unique<core::MtpDrafter>();
             if (service_enabled()) drafter_->set_embedding_override(embed_.get());
             else core::set_native_embed(embed_.get());
-            drafter_->set_max_drafts(4);
+            drafter_->set_max_drafts(service_enabled() ? service_candidates_ : 4);
             // Separate state on the terminal device. No cross-runtime device
             // address and no mutation of the verified target's head.
             if (!drafter_->load(rt_,g,b.session,b.max_t,error,b.session.max_cells) || !room(0,error)) return false;
@@ -198,7 +208,7 @@ public:
             committed_ || cursor_->committed_position() || service_policy_ || !resident_kv_supported()) {
             error="MTP service request identity or state refused";return false;
         }
-        MtpRequestPolicy policy{static_cast<uint32_t>(context_),meta.mtp_max_new,4,static_cast<uint32_t>(n_vocab_),meta.window->token_ids,service_stops_};
+        MtpRequestPolicy policy{static_cast<uint32_t>(context_),meta.mtp_max_new,service_candidates_,static_cast<uint32_t>(n_vocab_),meta.window->token_ids,service_stops_};
         if (meta.rows!=policy.prompt.size()) {error="invalid MTP service prompt or budget";return false;}
         auto admitted=admit_mtp_service_request(std::move(policy));
         if (!admitted) {error="invalid MTP service prompt or budget";return false;}
@@ -443,7 +453,7 @@ public:
                 // pair with vanilla prefill, keeping the already-made offer.
                 if (reprime_tail_ && (!drafter_->prefill(row,&next,1,cell,e,true) ||
                     !room(0,e) || !capture("reprime_after",row,&next,1,cell,cell+1,e))) return false;
-                if (n<1 || n>4 || result.generated!=n) {e="MTP relay invalid count";return false;}
+                if (n<1 || n>(service_enabled()?static_cast<int>(service_candidates_):4) || result.generated!=n) {e="MTP relay invalid count";return false;}
                 for(int i=0;i<n;++i)
                     if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
                        probs[i]<0.f || probs[i]>1.f) {e="MTP relay invalid candidate";return false;}
@@ -454,7 +464,7 @@ public:
                 // Never add a separate acceptance-history policy.
                 const int submitted=native_window_ ?
                     core::pipeline_window_size(probs.data(),0,n,
-                        static_cast<int>(MtpRequestPolicy::max_candidates)+1,service_min_p_) - 1 : n;
+                        static_cast<int>(service_candidates_)+1,service_min_p_) - 1 : n;
                 candidates.assign(tokens.begin(),tokens.begin()+submitted);
                 if (service_enabled()) {
                     auto clipped=service_policy_->clip_offer(cell+1,next,candidates);
@@ -506,6 +516,7 @@ private:
     int32_t verified_next_=-1;
     bool relay_pending_=false;
     bool native_window_=false;
+    uint32_t service_candidates_=4;
     static constexpr float service_min_p_=0.5f;
     std::string trace_prefix_;
     bool reprime_tail_=false;

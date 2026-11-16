@@ -94,7 +94,8 @@ struct MtpRequestPolicy {
 // snapshot. A null pointer means no admitted request. Never call valid() to
 // rediscover admission in a per-window hot path (it scans the entire prompt).
 inline std::unique_ptr<const MtpRequestPolicy> admit_mtp_service_request(MtpRequestPolicy policy) {
-    if (policy.spec != MtpRequestPolicy::max_candidates || !policy.valid()) return {};
+    // Public --spec 4 (three drafts) and legacy four-draft qualification.
+    if ((policy.spec != 3 && policy.spec != MtpRequestPolicy::max_candidates) || !policy.valid()) return {};
     return std::make_unique<const MtpRequestPolicy>(std::move(policy));
 }
 } // namespace strata::heterogeneous

@@ -83,6 +83,9 @@ struct Options {
     bool mtp_fresh_replay=false, mtp_three_round=false, mtp_three_round_variable=false;
     bool generation_capture=false, mtp_generation=false;
     bool mtp_service=false;
+    // Legacy qualification uses four draft candidates. Public --spec follows
+    // the ordinary Strata total verifier window (anchor included).
+    uint32_t spec_window=0;
     uint32_t mtp_resident_prompt_rows=0;
     bool mtp_state_trace=false, mtp_reprime_tail=false, mtp_front_trace=false, mtp_repeat_native_round=false;
     uint32_t warmup_windows = 0;
@@ -251,6 +254,13 @@ Options parse(int argc, char** argv) {
         else if (key == "--generation-parity-capture") o.generation_capture=true;
         else if (key == "--mtp-generation-qualification") o.mtp_generation=true;
         else if (key == "--mtp-resident-service") { o.mtp_service=true; generation_arg=true; }
+        else if (key == "--spec") {
+            if (o.spec_window) throw std::invalid_argument("duplicate --spec");
+            o.spec_window=u32(required_value(i,argc,argv,"--spec"),"spec");
+            if (o.spec_window!=4 && o.spec_window!=5)
+                throw std::invalid_argument("mixed native MTP supports --spec 4 or 5");
+            generation_arg=true;
+        }
         else if (key == "--mtp-resident-prompt-rows") {
             o.mtp_resident_prompt_rows=u32(required_value(i,argc,argv,"--mtp-resident-prompt-rows"),"mtp-resident-prompt-rows");
             if (!o.mtp_resident_prompt_rows || o.mtp_resident_prompt_rows>hetero::MtpGenerationPolicy::max_prompt)
@@ -467,6 +477,8 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("MTP tail reprime requires explicit state trace and one relay");
     if (o.mtp_relay_rounds && (o.mtp_probe_rt.empty() || o.capture_prefix.empty()))
         throw std::invalid_argument("MTP relay requires explicit MTP probe and full-logit capture prefix");
+    if (o.spec_window && !o.mtp_service)
+        throw std::invalid_argument("--spec requires native resident MTP");
     if (o.mtp_service && (!o.resident || !o.generate || o.generate>256 || !o.shared || !o.group_hip ||
         !o.hip_split_overlap || !hetero::MtpRequestPolicy::capacity_valid(o.context_limit) ||
         (o.context_limit>hetero::MtpRequestPolicy::initial_capacity && !o.native_prefill_chunk) ||
@@ -775,12 +787,15 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
     if (o.describe_source) {
         std::cout << "HETERO_SOURCE {\"gguf\":" << json_string(common_model->gguf_shards.front())
                   << ",\"pack_dir\":" << json_string(common_model->pack_dir)
+                  << ",\"profile_path\":" << json_string(common_model->profile_path)
+                  << ",\"ple_gguf\":" << json_string(common_model->ple_gguf_path)
                   << ",\"pack_index_sha256\":" << json_string(common_model->index_sha256)
                   << ",\"vocab\":" << common_model->n_vocab
                   << ",\"max_cells\":" << max_cells << ",\"max_t\":" << max_t
                   << ",\"kv\":\"" << hetero::kv_mode_name(o.kv) << "\""
                   << ",\"pipeline_mode_cap\":1"
                   << ",\"mtp_service_cap\":1"
+                  << ",\"native_spec_window_cap\":1"
                   << ",\"mtp_hip_pair_cap\":1"
                   << ",\"mtp_stream_cap\":1"
                   << ",\"mtp_context_cap\":" << hetero::MtpRequestPolicy::max_capacity
@@ -1031,7 +1046,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (::setenv("STRATA_HETERO_MTP_GENERATE_MAX_NEW",std::to_string(o.mtp_generation?o.generate:0u).c_str(),1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_GENERATE_STOPS",generation_stops.c_str(),1)!=0 ||
         ::setenv("STRATA_HETERO_MTP_RESIDENT_GENERATION",(o.mtp_resident_prompt_rows || o.mtp_service)?"1":"0",1)!=0 ||
-        ::setenv("STRATA_HETERO_MTP_SERVICE",o.mtp_service?"1":"0",1)!=0)
+        ::setenv("STRATA_HETERO_MTP_SERVICE",o.mtp_service?"1":"0",1)!=0 ||
+        ::setenv("STRATA_HETERO_MTP_SERVICE_WINDOW",std::to_string(o.spec_window).c_str(),1)!=0)
         throw std::runtime_error("cannot configure explicit MTP generation mode");
     if (!o.mtp_probe_rt.empty()) {
         if (::setenv("STRATA_HETERO_MTP_PROBE_RT",o.mtp_probe_rt.c_str(),1)!=0 ||
@@ -1247,7 +1263,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         int32_t next = -1;
         hetero::MtpRequestPolicy service_policy;
         if (o.mtp_service) {
-            service_policy={o.context_limit,max_new,4,limits.vocab,prompt,o.stop_ids};
+            service_policy={o.context_limit,max_new,o.spec_window ? o.spec_window-1 : 4u,
+                            limits.vocab,prompt,o.stop_ids};
             session.configure_mtp_request(request_id,service_policy);
         }
         const auto mtp_policy=o.mtp_generation ?
