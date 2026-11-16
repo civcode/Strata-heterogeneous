@@ -170,7 +170,12 @@ def prepare_native(args):
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
         raise ValueError("run from the Strata source checkout with its existing tokenizer dependencies installed") from exc
-    tok = Tokenizer.from_gguf(gguf)
+    reference = Tokenizer.from_gguf(gguf)
+    pack = source.get("pack_dir")
+    if not isinstance(pack, str) or not Path(pack).is_absolute():
+        raise ValueError("missing validated pack directory for tokenizer")
+    tok, _ = Tokenizer.from_pack(Path(pack) / "tokenizer")
+    tok.require_same_encoding(reference)
     if len(tok.tokens) != vocab or tok.pre != "qwen35":
         raise ValueError("tokenizer vocabulary or family does not match the supported Qwen worker model")
     stop_ids = {tok.special_tokens[marker] for marker in ("<|im_end|>", "<|endoftext|>")

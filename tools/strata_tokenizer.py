@@ -164,6 +164,29 @@ class Tokenizer:
 
     # -------------------------------------------------------------- constructors
     @classmethod
+    def from_pack(cls, path):
+        """Read a pack's tokenizer with the same defaults as the HTTP server."""
+        tpath = pathlib.Path(path)
+        vocab = json.loads((tpath / "vocab.json").read_text(encoding="utf-8"))
+        tokens = [None] * len(vocab)
+        for t, i in vocab.items():
+            tokens[i] = t
+        merges = (tpath / "merges.txt").read_text(encoding="utf-8").split("\n")
+        types = json.loads((tpath / "token_type.json").read_text())
+        tcfg = {}
+        try:
+            tcfg = json.loads((tpath / "tokenizer.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        return cls(tokens, merges, types, tcfg.get("pre") or "qwen35", tcfg.get("special_ids") or None), tcfg
+
+    def require_same_encoding(self, reference):
+        """Reject a pack that does not encode the model's GGUF vocabulary."""
+        for attr in ("tokens", "ranks", "token_types", "pre", "special_ids"):
+            if getattr(self, attr) != getattr(reference, attr):
+                raise ValueError(f"pack tokenizer {attr} does not match the original GGUF")
+
+    @classmethod
     def from_gguf(cls, path) -> "Tokenizer":
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         from gguf_reader import GGUFFile

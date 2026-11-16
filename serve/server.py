@@ -10041,7 +10041,13 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
         if cfg.keys() - allowed:
             ap.error("unsupported heterogeneous server config keys: " + ", ".join(sorted(cfg.keys() - allowed)))
-        if cfg.get("sampling") not in (None, {}, {"temperature": 0}) or cfg.get("mtp") not in (None, False) or cfg.get("drafting") not in (None, "off"):
+        sampling_block = cfg.get("sampling")
+        if sampling_block is not None and not isinstance(sampling_block, dict):
+            ap.error("sampling must be an object")
+        sampling = sampling_defaults_from_config(cfg)
+        if (sampling not in ({}, {"temperature": 0.0}) or
+                (cfg.get("mtp") is not None and cfg["mtp"] is not False) or
+                cfg.get("drafting") not in (None, "off")):
             ap.error("heterogeneous currently requires greedy sampling and drafting off")
         if (a.lazy or a.parallel not in (None, 1) or a.batch_groups is not None or a.gpu is not None or
                 a.replicas is not None or a.split_serve is not None or a.mcp_config or a.before_load or
@@ -10142,17 +10148,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             ap.error(f"the model's tokenizer is missing ({tpath / 'vocab.json'}); run setup again")
         if (tpath / "vocab.json").exists():
             import strata_tokenizer as ST
-            vocab = json.loads((tpath / "vocab.json").read_text(encoding="utf-8"))
-            tokens = [None] * len(vocab)
-            for t, i in vocab.items():
-                tokens[i] = t
-            merges = (tpath / "merges.txt").read_text(encoding="utf-8").split("\n")
-            types = json.loads((tpath / "token_type.json").read_text())
-            try:                                            # the pack's pre-tokenizer name and special ids (DeepSeek's differ)
-                tcfg = json.loads((tpath / "tokenizer.json").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                pass
-            tok = ST.Tokenizer(tokens, merges, types, tcfg.get("pre") or "qwen35", tcfg.get("special_ids") or None)
+            tok, tcfg = ST.Tokenizer.from_pack(tpath)
     if a.engine == "strata" and not cfg.get("arch") and arch_from_tokenizer(None, tcfg.get("pre")):
         cfg["arch"] = arch_from_tokenizer(None, tcfg.get("pre"))
         print(f"[strata] the config names no \"arch\" and this tokenizer is DeepSeek's: serving it as {cfg['arch']} (its end token, DSML tool "
