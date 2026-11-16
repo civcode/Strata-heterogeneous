@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from serve.heterogeneous_config import options, read_args, stage_model_args, verify_model_args
+from serve.heterogeneous_config import options, read_args, stage_model_args, verify_model_args, native_run_config
 import subprocess
 import sys
 import tempfile
@@ -145,9 +145,14 @@ def main():
         cfg = bind(profile, read_json(reference))
         if "args" in cfg:
             cfg["port"] = port
+        # Asset binding, not an alternative server launch implementation.
+        from serve.heterogeneous import prepare_server
+        cfg = native_run_config(cfg, prepare_server(cfg))
+        # A previously built diagnostic-only coordinator must not be mistaken
+        # for the new --serve engine. Test the actual flattened argv on CPU.
+        subprocess.run([cfg["exe"], "--serve-preflight", *cfg["args"]],
+                       cwd=cfg["cwd"], stdin=subprocess.DEVNULL, check=True)
         if a.prepare_only:
-            from serve.heterogeneous import prepare_server
-            prepare_server(cfg)
             print(write_config(root / "launchers", cfg))
             return 0
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -161,7 +166,7 @@ def main():
             os.set_inheritable(lock.fileno(), True)
             os.execv(sys.executable, [sys.executable, "-m", "serve.server", "--engine", "strata",
                                      "--config", str(path), "--port", str(port), "--offline"])
-    except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, ImportError, subprocess.CalledProcessError) as exc:
         p.error(str(exc))
 
 

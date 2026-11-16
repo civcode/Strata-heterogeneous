@@ -10026,10 +10026,10 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         ap.error("--shutdown-timeout must be in 0..300 seconds")
     config_bytes = Path(a.config).read_bytes() if a.config else b""
     cfg = parse_config_text(config_bytes.decode("utf-8-sig"), a.config) if a.config else {}   # Notepad adds a BOM
-    # Same public entry point as vanilla; the topology is an engine config
-    # extension, not a separate HTTP service. Keep the old selector for probes.
+    # Legacy qualification JSON is not an ordinary run config. Never route a
+    # normal launch through the experimental Python resident adapter.
     if a.engine == "strata" and isinstance(cfg, dict) and "heterogeneous" in cfg:
-        a.engine = "heterogeneous"
+        ap.error("bind the topology with the Oberon config preparation tool to obtain native --serve args")
     if a.engine == "heterogeneous":
         # This opt-in uses the ordinary Service and HTTP lifecycle; avoid
         # applying homogeneous GPU flags or unsupported model reload hooks.

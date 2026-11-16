@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools.heterogeneous_oberon_launch import bind, find_reference, guard_engine, read_json, write_config
+from serve.heterogeneous_config import native_run_config
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,6 +53,27 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(read_json(path), cfg)
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_native_run_config(self):
+        cfg = bind(self.profile, self.source)
+        opts = SimpleNamespace(stream_tokens=True, lookup_draft=False, prompt_chunk=1,
+                               restart_clean=False, plan=self.profile["heterogeneous"]["plan"])
+        argv = [cfg["exe"], "--plan", opts.plan, "--fingerprint", "2026111301", "--kv", "int8",
+                "--context-limit", "262144", "--generate", "2048", "--source-gguf", "/unused",
+                "--source-index", "index", "--stop-ids", "99", "--native-prefill-chunk", "128",
+                "--shared", "--group-native-hip", "--workload-mode", "--long-context",
+                "--resident", "--stream-tokens"]
+        result = native_run_config(cfg, (opts, argv, {"context_limit":262144}, None, {99}, None))
+        self.assertNotIn("heterogeneous", result)
+        self.assertNotIn("--resident", result["args"])
+        self.assertNotIn("--context-limit", result["args"])
+        self.assertEqual(result["args"].count("--kv"), 1)
+        self.assertEqual(result["args"][result["args"].index("--layer-split")+1], "15,33")
+        self.assertEqual(result["args"][result["args"].index("--eos-ids")+1], "99")
+        self.assertIn("--hetero-max-new", result["args"])
+        self.assertIn("heterogeneous", cfg)
+        with self.assertRaises(ValueError):
+            native_run_config(cfg, (opts, argv+["--unknown"], {"context_limit":262144}, None, {99}, None))
 
     def test_hip_without_cuda(self):
         profile = read_json(ROOT / "strata-q2_0-hip-only.json")

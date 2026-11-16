@@ -54,7 +54,8 @@ struct Options {
     bool describe_source = false;
     bool resident = false;
     bool vanilla_serve = false;
-    std::string serve_pack, serve_ple, serve_profile;
+    std::string serve_pack, serve_ple, serve_profile, serve_layer_split;
+    std::optional<uint64_t> serve_reserve_mib;
     bool workload_mode = false;
     bool long_context = false;
     bool stream_tokens = false;
@@ -225,6 +226,11 @@ Options parse(int argc, char** argv) {
         else if (o.vanilla_serve && key == "--pack") o.serve_pack = required_value(i,argc,argv,"--pack");
         else if (o.vanilla_serve && key == "--ple-gguf") o.serve_ple = required_value(i,argc,argv,"--ple-gguf");
         else if (o.vanilla_serve && key == "--expert-profile") o.serve_profile = required_value(i,argc,argv,"--expert-profile");
+        else if (o.vanilla_serve && key == "--layer-split") o.serve_layer_split = required_value(i,argc,argv,"--layer-split");
+        else if (o.vanilla_serve && key == "--vram-reserve-mib") {
+            o.serve_reserve_mib = decimal(required_value(i,argc,argv,"--vram-reserve-mib"),"vram-reserve-mib");
+            if (*o.serve_reserve_mib > (UINT64_MAX >> 20)) throw std::invalid_argument("reserve exceeds byte range");
+        }
         else if (key == "--run") {
             if (o.vanilla_serve) throw std::invalid_argument("--serve starts the engine; do not use --run");
             o.run = true;
@@ -297,9 +303,9 @@ Options parse(int argc, char** argv) {
             if (o.context_limit < 2 || o.context_limit > hetero::max_long_context)
                 throw std::invalid_argument("--context-limit must be in 2..262144");
         }
-        else if (key == "--generate") {
+        else if (key == "--generate" || (o.vanilla_serve && key == "--hetero-max-new")) {
             generation_arg = true;
-            o.generate = u32(required_value(i, argc, argv, "--generate"), "generate");
+            o.generate = u32(required_value(i, argc, argv, key.c_str()), "generate");
             if (!o.generate || o.generate > 4096)
                 throw std::invalid_argument("--generate must be in 1..4096");
         } else if (key == "--prompt-chunk") {
@@ -651,6 +657,16 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
             o.micro_probe || o.placement_capture || o.boundary_capture)
             throw std::invalid_argument("grouped HIP currently supports ordinary generation/smoke only");
     }
+    if (o.vanilla_serve) {
+        std::ostringstream split;
+        for (size_t i=1; i<plan.stages.size(); ++i) {
+            if (i>1) split << ',';
+            // The stage configurations below validate the exact layer bounds.
+            split << plan.stages[i].first_layer;
+        }
+        if (o.serve_layer_split != split.str())
+            throw std::invalid_argument("--layer-split differs from the validated mixed-backend topology");
+    }
     if (o.configs.size() != plan.stages.size())
         throw std::invalid_argument("one ordered --config is required per planned stage");
     // The last provisional window, including its discarded suffix, must fit.
@@ -695,6 +711,8 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
             throw std::invalid_argument("long-context requires exact Q2_0 stage capacity, full experts, max_t=8 and >=1 GiB reserve");
         if (hip_pair && config.max_cache_slots != uint64_t(config.end_layer-config.first_layer)*512)
             throw std::invalid_argument("HIP-only experiment requires explicit full routed expert residency");
+        if (o.serve_reserve_mib && config.free_reserve_bytes != (*o.serve_reserve_mib << 20))
+            throw std::invalid_argument("--vram-reserve-mib differs from the bound stage reserve");
         if (common_model) {
             if (config.pack_dir != common_model->pack_dir ||
                 config.profile_path != common_model->profile_path ||
@@ -1669,7 +1687,7 @@ int main(int argc, char** argv) {
         }
         return execute(opts, plan, limits);
     } catch (const std::exception& ex) {
-        std::cerr << "heterogeneous live smoke: " << ex.what() << '\n';
+        std::cerr << (serve_wire ? "strata serve: " : "heterogeneous live smoke: ") << ex.what() << '\n';
         return 1;
     }
 }
