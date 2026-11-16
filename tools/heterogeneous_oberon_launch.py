@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from serve.heterogeneous_config import options, read_args, stage_model_args, verify_model_args
 import subprocess
 import sys
 import tempfile
@@ -60,9 +61,9 @@ def file_path(value, executable=False):
 
 def bind(profile, reference):
     cfg = copy.deepcopy(profile)
-    opts = cfg.get("heterogeneous")
-    source = reference.get("heterogeneous")
-    need(isinstance(opts, dict) and isinstance(source, dict), "expected heterogeneous profile and reference")
+    opts = options(cfg)
+    source = options(reference)
+    bound = cfg["heterogeneous"]
     plan = opts.get("plan")
     need(plan in QUALIFIED and source.get("plan") == plan, "reference topology differs from launch profile")
     need(cfg.get("host") == "127.0.0.1" and cfg.get("max_queue") == 0, "launch profile must be loopback and single-request")
@@ -81,11 +82,26 @@ def bind(profile, reference):
     need(not ({"coordinator", "hip_worker", "cuda_worker", "config"} & opts.keys()),
          "binary and worker config paths are bound from the reference, not the profile")
     for key in keys:
-        opts[key] = file_path(source.get(key), executable=True)
+        value = file_path(source.get(key), executable=True)
+        if key == "coordinator" and "args" in cfg:
+            cfg["exe"] = value
+        else:
+            bound[key] = value
     stages = source.get("config")
     need(isinstance(stages, list) and len(stages) == (3 if plan == MIXED else 2), "wrong number of stage configs")
-    opts["config"] = [file_path(p) for p in stages]
-    need(len(set(opts["config"])) == len(stages), "duplicate stage configs")
+    bound["config"] = [file_path(p) for p in stages]
+    need(len(set(bound["config"])) == len(stages), "duplicate stage configs")
+    if "args" in cfg:
+        cfg.setdefault("cwd", str(Path(__file__).resolve().parents[1]))
+        model = stage_model_args(bound["config"][0])
+        flags = read_args(cfg["args"])
+        # A checked-in profile binds private model paths from the qualified
+        # stage files. Explicit user paths must match; do not override them.
+        for flag, value in zip(model[::2], model[1::2]):
+            if flag not in flags:
+                cfg["args"] += [flag, value]
+        cfg.setdefault("tokenizer", str(Path(read_args(model)["--pack"]) / "tokenizer"))
+        verify_model_args(cfg, options(cfg))
     return cfg
 
 
@@ -114,18 +130,21 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--profile", type=Path, required=True)
     p.add_argument("--reference-config", type=Path, help="explicit matching local server JSON instead of the 0044 reference")
-    p.add_argument("--port", type=int, default=8081)
+    p.add_argument("--port", type=int)
     p.add_argument("--prepare-only", action="store_true", help="bind and run CPU preflight; do not start GPU workers")
     a = p.parse_args()
     os.umask(0o077)
     root = Path.home() / "tmp/strata-heterogeneous"
     try:
-        need(1 <= a.port <= 65535, "port must be 1..65535")
         profile = read_json(a.profile)
+        port = a.port if a.port is not None else profile.get("port", 8081)
+        need(type(port) is int and 1 <= port <= 65535, "port must be 1..65535")
         plan = profile["heterogeneous"]["plan"]
         need(plan in QUALIFIED, "unknown launch topology")
         reference = a.reference_config or find_reference(root / "handoff-0044", QUALIFIED[plan])
         cfg = bind(profile, read_json(reference))
+        if "args" in cfg:
+            cfg["port"] = port
         if a.prepare_only:
             from serve.heterogeneous import prepare_server
             prepare_server(cfg)
@@ -138,10 +157,10 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             guard_engine()
             path = write_config(root / "launchers", cfg)
-            print(f"Launching {plan} with {path} on http://127.0.0.1:{a.port}", flush=True)
+            print(f"Launching {plan} with {path} on http://127.0.0.1:{port}", flush=True)
             os.set_inheritable(lock.fileno(), True)
-            os.execv(sys.executable, [sys.executable, "-m", "serve.server", "--engine", "heterogeneous",
-                                     "--config", str(path), "--host", "127.0.0.1", "--port", str(a.port), "--offline"])
+            os.execv(sys.executable, [sys.executable, "-m", "serve.server", "--engine", "strata",
+                                     "--config", str(path), "--port", str(port), "--offline"])
     except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
         p.error(str(exc))
 

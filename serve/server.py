@@ -10026,15 +10026,23 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         ap.error("--shutdown-timeout must be in 0..300 seconds")
     config_bytes = Path(a.config).read_bytes() if a.config else b""
     cfg = parse_config_text(config_bytes.decode("utf-8-sig"), a.config) if a.config else {}   # Notepad adds a BOM
+    # Same public entry point as vanilla; the topology is an engine config
+    # extension, not a separate HTTP service. Keep the old selector for probes.
+    if a.engine == "strata" and isinstance(cfg, dict) and "heterogeneous" in cfg:
+        a.engine = "heterogeneous"
     if a.engine == "heterogeneous":
         # This opt-in uses the ordinary Service and HTTP lifecycle; avoid
         # applying homogeneous GPU flags or unsupported model reload hooks.
         allowed = {"heterogeneous", "model_name", "host", "api_key", "telemetry_read_key",
-                   "max_queue", "queue_timeout", "aliases", "reasoning_effort"}
+                   "max_queue", "queue_timeout", "aliases", "reasoning_effort",
+                   "exe", "args", "cwd", "tokenizer", "log", "port", "sampling",
+                   "mtp", "drafting", "fit_max_tokens"}
         if not isinstance(cfg, dict) or not isinstance(cfg.get("heterogeneous"), dict):
             ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
         if cfg.keys() - allowed:
             ap.error("unsupported heterogeneous server config keys: " + ", ".join(sorted(cfg.keys() - allowed)))
+        if cfg.get("sampling") not in (None, {}, {"temperature": 0}) or cfg.get("mtp") not in (None, False) or cfg.get("drafting") not in (None, "off"):
+            ap.error("heterogeneous currently requires greedy sampling and drafting off")
         if (a.lazy or a.parallel not in (None, 1) or a.batch_groups is not None or a.gpu is not None or
                 a.replicas is not None or a.split_serve is not None or a.mcp_config or a.before_load or
                 a.slot_save_path or a.idle_unload not in (None, 0) or a.min_free_vram_mib not in (None, 0) or
@@ -10262,8 +10270,11 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         from serve.heterogeneous import ResidentEngine
         import atexit
         opts, native_argv, source, tok, stops, _ = resident_spec
+        from serve.heterogeneous_config import resolve
+        log = str(resolve(cfg, cfg["log"])) if cfg.get("log") else None
         engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
-                                opts.prompt_chunk, opts.timeout_ms, EngineDied)
+                                opts.prompt_chunk, opts.timeout_ms, EngineDied,
+                                log=log, cwd=cfg.get("cwd"))
         vision, effort_end, sampling_defaults = None, None, {"temperature": 0}
         if max_queue is None:
             max_queue = 0

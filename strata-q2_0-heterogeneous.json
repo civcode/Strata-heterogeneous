@@ -1,18 +1,30 @@
 {
   "model_name": "qwen3.8-flash-next-q2_0",
+  "args": [
+    "--max-context",
+    "262144",
+    "--kv",
+    "int8",
+    "--prefill",
+    "128"
+  ],
   "host": "127.0.0.1",
+  "port": 8081,
+  "log": "strata-q2_0-heterogeneous.log",
+  "sampling": {
+    "temperature": 0
+  },
+  "mtp": false,
+  "drafting": "off",
   "max_queue": 0,
   "reasoning_effort": "none",
   "heterogeneous": {
     "plan": "cuda:0:0-15,hip:0:15-33,hip:1:33-48",
     "fingerprint": 2026111301,
-    "max_context": 262144,
     "max_new_tokens": 2048,
-    "kv": "int8",
     "shared": true,
     "stream_tokens": true,
     "group_native_hip": true,
-    "native_prefill_chunk": 128,
     "prompt_chunk": 1,
     "workload_mode": true,
     "long_context": true,

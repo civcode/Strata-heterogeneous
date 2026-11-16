@@ -22,9 +22,8 @@ from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
 def prepare_server(cfg):
     """Validate explicit local configuration and reuse CLI source binding."""
     from strata_cli.heterogeneous import prepare_native, model_template, _native
-    opts = cfg.get("heterogeneous")
-    if not isinstance(opts, dict):
-        raise ValueError("heterogeneous engine needs a heterogeneous config object")
+    from serve.heterogeneous_config import options, verify_model_args
+    opts = options(cfg)
     required = {"coordinator", "config", "plan", "fingerprint"}
     optional = {"cuda_worker", "hip_worker", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
@@ -45,6 +44,7 @@ def prepare_server(cfg):
                   stream_tokens=False, restart_clean=False, lookup_draft=False,
                   group_native_hip=False, native_prefill_chunk=0, workload_mode=False, long_context=False, kv="int8")
     values.update(opts)
+    verify_model_args(cfg, values)
     for key in ("fingerprint", "layers", "hc", "n_embd", "max_new_tokens", "timeout_ms", "max_context"):
         if type(values[key]) is not int or values[key] <= 0:
             raise ValueError(f"heterogeneous.{key} must be a positive integer")
@@ -70,7 +70,8 @@ class ResidentEngine:
     # lock also prevents protocol overlap if invoked outside Service.
     batch = 0
 
-    def __init__(self, argv, source, stop_ids, max_new, chunk, timeout_ms, died):
+    def __init__(self, argv, source, stop_ids, max_new, chunk, timeout_ms, died, *, log=None, cwd=None, env=None):
+        self.log_path, self._cwd, self._env = log, cwd, env
         self.source = source
         self.stop_ids = set(stop_ids)
         self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
@@ -103,10 +104,17 @@ class ResidentEngine:
         self._failed = False
         self.last_completion = self.last_metrics = None
         self.last = None  # existing Service timing record, published only after validated completion
-        self.proc = subprocess.Popen([*self._argv, "--run"], stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=None, text=True,
-                                     encoding="utf-8", errors="replace", bufsize=1,
-                                     start_new_session=True)
+        # Append native stderr to the run config's log, as the vanilla engine does.
+        # The protocol remains on its private stdout pipe.
+        output = open(self.log_path, "a", encoding="utf-8") if self.log_path else None
+        try:
+            self.proc = subprocess.Popen([*self._argv, "--run"], stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=output, text=True,
+                                         encoding="utf-8", errors="replace", bufsize=1,
+                                         cwd=self._cwd, env=self._env, start_new_session=True)
+        finally:
+            if output is not None:
+                output.close()
         self._reader = threading.Thread(target=self._read_records, daemon=True,
                                         name="heterogeneous-native-output")
         self._reader.start()
@@ -115,11 +123,18 @@ class ResidentEngine:
                         "HETERO_READY 1 LOOKUP" if self.lookup_draft else "HETERO_READY 1")
             if self._receive() != expected:
                 raise self._died("native resident readiness not acknowledged")
-            print(f"HETERO_READY coordinator_pid={self.proc.pid}", file=sys.stderr, flush=True)
+            self._diagnostic(f"HETERO_READY coordinator_pid={self.proc.pid}")
         except BaseException:
             self._poison()
             self._wait_exit()
             raise
+
+    def _diagnostic(self, line):
+        if getattr(self, "log_path", None):
+            with open(self.log_path, "a", encoding="utf-8") as log:
+                print(line, file=log, flush=True)
+        else:
+            print(line, file=sys.stderr, flush=True)
 
     def _read_records(self):
         try:
@@ -128,7 +143,7 @@ class ResidentEngine:
                 if line.startswith("HETERO_"):
                     self._records.put(line)
                 else:
-                    print(line, file=sys.stderr, flush=True)
+                    self._diagnostic(line)
         finally:
             self._records.put(None)
 
@@ -328,11 +343,10 @@ class ResidentEngine:
                                              "generated": produced,
                                              "decode_ms": decode_span * 1000 if decode_span and decode_span > 0 else None,
                                              "timing_source": "heterogeneous_host_commit_progress"}
-                            print("HETERO_REQUEST_TIMING " + json.dumps({
+                            self._diagnostic("HETERO_REQUEST_TIMING " + json.dumps({
                                   "request_id": self._request, "finish": reason, **self.last_metrics},
-                                  allow_nan=False), file=sys.stderr, flush=True)
-                        print(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}",
-                              file=sys.stderr, flush=True)
+                                  allow_nan=False))
+                        self._diagnostic(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}")
                         completed = True
                         break
             except GeneratorExit:
@@ -344,8 +358,7 @@ class ResidentEngine:
                         if record["finish_reason"] != "cancelled":
                             raise self._died("resident cancellation not acknowledged")
                         self.last_completion = record
-                        print(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}",
-                              file=sys.stderr, flush=True)
+                        self._diagnostic(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}")
                         completed = True
                         waiting = False
                     except BaseException:
@@ -378,7 +391,7 @@ class ResidentEngine:
                     self._send("quit")
                     if self._receive() != "HETERO_CLOSED":
                         raise self._died("resident shutdown not acknowledged")
-                    print("HETERO_CLOSED", file=sys.stderr, flush=True)
+                    self._diagnostic("HETERO_CLOSED")
                 except BaseException:
                     self._poison()
                     self._wait_exit()

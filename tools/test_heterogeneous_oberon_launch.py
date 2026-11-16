@@ -18,6 +18,13 @@ class LaunchTests(unittest.TestCase):
         self.root = Path(temp.name)
         self.profile = read_json(ROOT / "strata-q2_0-heterogeneous.json")
         self.source = copy.deepcopy(self.profile)
+        model = ["--pack", str(self.root / "pack"), "--native", str(self.root / "first.gguf"),
+                 "--ple-gguf", str(self.root / "second.gguf"), "--expert-profile", str(self.root / "profile")]
+        for target in ("tools.heterogeneous_oberon_launch.stage_model_args",
+                       "serve.heterogeneous_config.stage_model_args"):
+            mock = patch(target, return_value=model)
+            mock.start()
+            self.addCleanup(mock.stop)
         opts = self.source["heterogeneous"]
         opts["max_new_tokens"] = 4
         for name in ("coordinator", "cuda_worker", "hip_worker"):
@@ -36,6 +43,10 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(cfg["heterogeneous"]["max_new_tokens"], 2048)
         self.assertEqual(cfg["heterogeneous"]["config"], self.source["heterogeneous"]["config"])
         self.assertNotIn("config", self.profile["heterogeneous"])
+        self.assertEqual(cfg["exe"], self.source["heterogeneous"]["coordinator"])
+        self.assertNotIn("coordinator", cfg["heterogeneous"])
+        self.assertIn("--pack", cfg["args"])
+        self.assertNotIn("max_context", cfg["heterogeneous"])
         path = write_config(self.root / "runs", cfg)
         self.assertEqual(read_json(path), cfg)
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
