@@ -55,7 +55,7 @@ def distribution(values):
 def stage_summary(group, index, endpoint):
     stages = [w["stages"][index] for w in group]
     result = dict(stage=endpoint, **{k: distribution([s[k] for s in stages]) for k in
-        ("roundtrip_ns", "worker_covered_ns", "not_covered_by_worker_spans_ns")})
+        ("roundtrip_ns", "worker_covered_ns", "not_covered_by_worker_spans_ns", "worker_overlap_prior_stage_ns")})
     for source in ("worker_phase_ns", "coordinator_phase_ns"):
         names = sorted({name for s in stages for name in s[source]})
         result[source] = {name: distribution([s[source][name] for s in stages if name in s[source]])
@@ -71,6 +71,7 @@ def summarize(lines, stage_count, endpoints=None):
     if len(endpoints) != stage_count or any(type(x) is not int or x < 0 for x in endpoints) or sorted(set(endpoints)) != endpoints:
         raise ValueError("endpoints must be distinct ascending nonnegative stage IDs")
     spans, commits, native_prefill, native_timings = defaultdict(dict), {}, [], []
+    auxiliary = defaultdict(dict)
     for line in lines:
         line = line.strip()
         if line.startswith("HETERO_PERF "):
@@ -78,11 +79,15 @@ def summarize(lines, stage_count, endpoints=None):
             key = integer(r, "request", 1), integer(r, "window")
             tag = r["component"], integer(r, "stage"), r["phase"]
             n, a, b = (integer(r, k) for k in ("rows", "start_ns", "end_ns"))
-            if not key[1]:  # reset, not a generation window
-                continue
-            if not n or b < a or tag in spans[key]:
+            if not key[1] or tag[0] == "mtp_proposal":
+                # Request setup/native bulk, or a proposal bound to the
+                # preceding committed anchor. Never mix with verifier rows.
+                dest = auxiliary[key]
+            else:
+                dest = spans[key]
+            if not n or b < a or tag in dest:
                 raise ValueError(f"invalid or duplicate span {key} {tag}")
-            spans[key][tag] = (a, b, n)
+            dest[tag] = (a, b, n)
         elif line.startswith("HETERO_NATIVE_PREFILL_TIMING "):
             r = fields(line, "HETERO_NATIVE_PREFILL_TIMING ")
             native_timings.append(dict(request=integer(r, "request", 1), rows=integer(r, "rows", 1),
@@ -118,11 +123,18 @@ def summarize(lines, stage_count, endpoints=None):
             incomplete.append(dict(request=key[0], window=key[1], reason="overlapping serial coordinator spans"))
             previous.pop(key[0], None)
             continue
-        start, end = ordered[0][0], ordered[-1][1]
+        pre = data.get(("coordinator", endpoints[-1], "stage_predispatch"))
+        if pre and pre[1] > ordered[0][0]:
+            incomplete.append(dict(request=key[0], window=key[1], reason="predispatch overlaps producer dispatch"))
+            previous.pop(key[0], None)
+            continue
+        timeline = ([pre[:2]] if pre else []) + ordered
+        start, end = timeline[0][0], timeline[-1][1]
         item = dict(request=key[0], window=key[1], phase=phase, rows=rows, keep=keep,
                     pos0=pos, start_ns=start, end_ns=end, critical_ns=end-start,
                     commit_ns=ordered[-1][1]-ordered[-1][0],
-                    dispatch_gap_ns=end-start-union(ordered), inter_window_gap_ns=None,
+                    predispatch_ns=pre[1]-pre[0] if pre else 0,
+                    dispatch_gap_ns=end-start-union(timeline), inter_window_gap_ns=None,
                     stages=[])
         prev = previous.get(key[0])
         if prev and key[1] == prev[0] + 1:
@@ -144,7 +156,14 @@ def summarize(lines, stage_count, endpoints=None):
             # Clip to the enclosing round trip and disclose that clipping.
             clipped = [(max(a, x), min(b, y)) for x, y in worker.values() if max(a, x) < min(b, y)]
             covered = union(clipped)
+            # Early downstream admission may execute during an earlier
+            # coordinator roundtrip. Disclose this observed host overlap
+            # separately rather than counting it as GPU utilization.
+            prior = ordered[:endpoints.index(i)]
+            overlap = union([(max(x,c),min(y,d)) for x,y in worker.values()
+                             for c,d in prior if max(x,c)<min(y,d)])
             item["stages"].append(dict(stage=i, roundtrip_ns=b-a,
+                worker_overlap_prior_stage_ns=overlap,
                 worker_covered_ns=covered, not_covered_by_worker_spans_ns=b-a-covered,
                 worker_clipped_spans=sum(x < a or y > b for x, y in worker.values()),
                 worker_phase_ns={name: y-x for name, (x,y) in worker.items()},
@@ -156,18 +175,30 @@ def summarize(lines, stage_count, endpoints=None):
         summaries[phase] = dict(windows=len(group), accepted_rows=sum(w["keep"] for w in group),
             evaluated_rows=sum(w["rows"] for w in group),
             timing={k: distribution([w[k] for w in group if w[k] is not None]) for k in
-                    ("critical_ns", "commit_ns", "dispatch_gap_ns", "inter_window_gap_ns")},
+                    ("critical_ns", "commit_ns", "predispatch_ns", "dispatch_gap_ns", "inter_window_gap_ns")},
             stages=[stage_summary(group, i, endpoint) for i, endpoint in enumerate(endpoints)])
     native_prefill = join_native_prefill(native_prefill, native_timings)
     uncommitted = sorted(set(spans)-set(commits))
+    complete = {(w["request"], w["window"]) for w in windows}
+    complete_requests = {r for r, _ in complete}
+    aux = [dict(request=r, anchor_window=w, committed_request=r in complete_requests,
+                anchor_committed=(r,w) in complete if w else None,
+                next_window_committed=(r,w+1) in complete if w else None,
+                spans=[dict(component=c, stage=i, phase=p, rows=v[2],
+                            start_ns=v[0], end_ns=v[1], duration_ns=v[1]-v[0])
+                       for (c,i,p),v in sorted(values.items())])
+           for (r,w),values in sorted(auxiliary.items())]
     return dict(schema="strata-heterogeneous-critical-path/v1", stages=stage_count, endpoints=endpoints,
         native_prefill_markers=native_prefill,
         native_prefill_roundtrip=distribution([m["roundtrip_ns"] for m in native_prefill if "roundtrip_ns" in m]),
+        auxiliary_spans=aux,
         committed_markers=len(commits), complete_windows=len(windows), incomplete=incomplete,
         uncommitted=[list(k) for k in uncommitted], summaries=summaries, windows=windows,
         notes="Host monotonic spans only; same host/boot. Coverage is a union, not GPU busy time. "
               "Uncovered time is not necessarily IPC. Individual nested phase spans are not additive. "
               "Inter-window gaps exclude phase transitions and missing windows. "
+              "Auxiliary spans include reset, native bulk and proposals (preceding anchor window); "
+              "a recorded span is not proof of successful work. Early admission overlap is host wall-time only. "
               "Native prefix timing is a separate inclusive host round trip, not GPU time or an ordinary window. "
               "Trace overhead is not clean throughput.")
 

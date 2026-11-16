@@ -182,8 +182,11 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                         throw std::runtime_error("MTP proposal anchor differs from committed target");
                     mtp_requested = true;
                     WindowSpec offer;
-                    if (!executor.propose_mtp(*request->window,offer,error))
-                        throw std::runtime_error(error.empty()?"native MTP proposal failed":error);
+                    {
+                        PerformanceSpan span("mtp_proposal", "native_offer", index, request->request_id, request->window_id, 1);
+                        if (!executor.propose_mtp(*request->window,offer,error))
+                            throw std::runtime_error(error.empty()?"native MTP proposal failed":error);
+                    }
                     if (offer.pos0 != request->window->pos0 || offer.token_ids.size()<(executor.mtp_anchor_only_enabled()?1u:2u) ||
                         offer.token_ids.size()>5 || offer.token_ids.front()!=request->window->token_ids.front())
                         throw std::runtime_error("invalid native MTP offer");
@@ -207,9 +210,13 @@ void serve_final_stage_worker(int fd, const Plan& plan, size_t index,
                                          request->window_id, error))
                     throw std::runtime_error(error);
                 trace_window(gate.get(), "admitted");
-                if (!executor.begin_window(*request->window,
-                                           request->request_id, request->window_id, error))
-                    throw std::runtime_error(error.empty() ? "final window admission failed" : error);
+                {
+                    PerformanceSpan span("worker", "final_window_admission", index, request->request_id,
+                                         request->window_id, request->rows);
+                    if (!executor.begin_window(*request->window,
+                                               request->request_id, request->window_id, error))
+                        throw std::runtime_error(error.empty() ? "final window admission failed" : error);
+                }
                 if (executor.receiver_arm_enabled()) {
                     if (!group_hip || !gate || !executor.arm_window(error))
                         throw std::runtime_error(error.empty() ? "receiver arm admission failed" : error);
@@ -696,6 +703,7 @@ WindowSpec FinalPipelineSession::request_mtp_proposal() {
     try {
         if (mtp_service_ && (!mtp_service_policy_ || !mtp_service_policy_->can_offer(mtp_anchor_->pos0,mtp_anchor_->token_ids.front())))
             throw std::invalid_argument("MTP service proposal outside safe request budget");
+        PerformanceSpan span("mtp_proposal", "roundtrip", endpoints_.back(), last_request_, last_window_, 1);
         mtp_requested_=true;
         Frame request=control(plan_,endpoints_.back(),Kind::mtp_proposal_request,last_request_,last_window_,1);
         request.window=*mtp_anchor_;

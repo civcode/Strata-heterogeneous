@@ -94,6 +94,25 @@ class CriticalPathTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarize(data[:-2] + [data[-1]], 2)
 
+    def test_predispatch_auxiliary_and_overlap(self):
+        data = trace(offset=20)
+        data += [span("coordinator", "stage_predispatch", 1, 10, 19),
+                 span("worker", "final_window_admission", 1, 30, 90),
+                 span("coordinator", "reset_barrier", 2, 0, 8, 0, 1),
+                 span("prefill", "native_init", 1, 5, 7, 0, 3),
+                 span("mtp_proposal", "roundtrip", 1, 321, 340, 1, 1)]
+        result = summarize(data, 2)
+        w = result["windows"][0]
+        self.assertEqual(w["start_ns"], 10)
+        self.assertEqual(w["predispatch_ns"], 9)
+        self.assertEqual(w["stages"][1]["worker_overlap_prior_stage_ns"], 60)
+        self.assertEqual(len(result["auxiliary_spans"]), 2)
+        self.assertTrue(result["auxiliary_spans"][1]["anchor_committed"])
+        self.assertFalse(result["auxiliary_spans"][1]["next_window_committed"])
+        self.assertEqual(result["uncommitted"], [])
+        with self.assertRaises(ValueError):
+            summarize(data+[data[-1]], 2)
+
     def test_bad_sequence(self):
         with self.assertRaises(ValueError):
             summarize(trace()+trace(2, 350, "decode", 1, 9), 2)

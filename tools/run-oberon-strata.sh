@@ -10,7 +10,29 @@ export STRATA_NO_PRESET=1
 export STRATA_NO_HANDOVER=1
 export ROCM_PATH=/opt/rocm/core-10.1
 export LD_LIBRARY_PATH="$ROCM_PATH/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-# Normal chat, not the original diagnostic trace run.
-unset STRATA_TRANSFER_TRACE STRATA_HETERO_WINDOW_TRACE STRATA_HETERO_PERF_TRACE STRATA_VERIFY_TRACE
+# Explicit profiling mode preserves approved native traces. Normally retain
+# the historical launch behavior. Presence-based native flags need unset,
+# not "=0", to turn them off.
+case "${STRATA_HETERO_PROFILE:-0}" in
+    0)
+        unset STRATA_TRANSFER_TRACE STRATA_HETERO_WINDOW_TRACE STRATA_HETERO_PERF_TRACE STRATA_VERIFY_TRACE
+        ;;
+    1)
+        export STRATA_HETERO_PERF_TRACE=1
+        printf 'HETERO_PROFILE enabled STRATA_HETERO_PERF_TRACE=1' >&2
+        for name in STRATA_TRANSFER_TRACE STRATA_HETERO_WINDOW_TRACE STRATA_VERIFY_TRACE \
+                    STRATA_HETERO_OVERLAP_TRACE STRATA_VERIFY_PROFILE STRATA_COMMIT_TIMING \
+                    STRATA_PREFILL_TIMING STRATA_MTP_PROFILE STRATA_DRAFT_TIMING STRATA_HETERO_MTP_BULK_TRACE; do
+            value=$(printenv "$name" || :)
+            case "$value" in
+                ''|0) unset "$name" ;;
+                1) printf ' %s=1' "$name" >&2 ;;
+                *) printf '\n%s must be 0 or 1 in profiling mode\n' "$name" >&2; exit 2 ;;
+            esac
+        done
+        printf '\n' >&2
+        ;;
+    *) printf 'STRATA_HETERO_PROFILE must be 0 or 1\n' >&2; exit 2 ;;
+esac
 PY=${STRATA_PYTHON:-"$ROOT/.venv/bin/python"}
 exec "$PY" -m tools.heterogeneous_oberon_launch --profile "$ROOT/$PROFILE" "$@"
