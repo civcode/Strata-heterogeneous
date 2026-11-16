@@ -25,13 +25,19 @@ The target design and the plan are in `.ai/SEAM.md` and the roadmap referenced f
 | Vanilla reference and base of this branch | `c77572806996349b49995e4f98d41b5294d36a21` (0.2.15) |
 | Working branch | `feature/mixed-native` |
 | Frozen earlier adapter (not developed, kept as fallback) | branch `feature/heterogeneous-hip-only`, archived as `archive/heterogeneous-adapter-0062` at `0dca627f` |
-| Earlier local vanilla pin on Oberon | `8db7ddc4` (to be pushed as an archive ref by handoff 0063) |
+| Earlier local vanilla pin on Oberon | `8db7ddc4`: a private work-in-progress branch, not pushed (report 0063) |
 
-Handoff and report numbers continue from the earlier branch: the next handoff is `0063`.
+Handoff and report numbers continue from the earlier branch (0062 was its last).
 
 ## Environment (Oberon)
 
-- Cards: one NVIDIA RTX 5080 (16 GB, CUDA) and two AMD Radeon AI PRO R9700 (HIP, gfx1201).
+- Cards: one NVIDIA RTX 4070 Ti SUPER (16 GB, CUDA, sm_89) and two AMD Radeon AI PRO R9700 (HIP, gfx1201).
+- HIP toolchain: ROCm at `/opt/rocm/core-10.1` (`ROCM_PATH`, `HIP_PLATFORM=amd`), Ninja, `-DCMAKE_HIP_ARCHITECTURES=gfx1201
+  -DSTRATA_PREFILL_MMQ=ON -DCMAKE_BUILD_RPATH=/opt/rocm/lib`.
+- CUDA toolchain: vanilla 0.2.15 is built with CUDA 13.0 (12.9 for older cards). The installed nvcc 12.0 cannot
+  compile it (report 0063). Do not change vanilla sources to fit an older toolkit.
+- Known-good vanilla run config: `/home/chris/workspace/Strata/strata-q2_0.json` (context 196608), started by
+  `run-q2_0.sh` in that checkout.
 - Use the same build toolchain as vanilla Strata and the same checkout-local `.venv` setup. Do not use a system or
   global Python for project commands.
 - Build with 28 jobs.
