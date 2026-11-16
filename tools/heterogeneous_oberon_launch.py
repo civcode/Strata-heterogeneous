@@ -167,7 +167,7 @@ def main():
         split_joined_args(profile)
         port = a.port if a.port is not None else profile.get("port", 8081)
         need(type(port) is int and 1 <= port <= 65535, "port must be 1..65535")
-        plan = profile["heterogeneous"]["plan"]
+        plan = resolve(profile)["plan"]
         need(plan in QUALIFIED, "unknown launch topology")
         reference = a.reference_config or find_reference(root / "handoff-0044", QUALIFIED[plan])
         cfg = bind(profile, read_json(reference))

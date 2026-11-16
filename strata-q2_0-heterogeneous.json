@@ -6,7 +6,6 @@
   "max_queue": 0,
   "reasoning_effort": "none",
   "heterogeneous": {
-    "plan": "cuda:0:0-15,hip:0:15-33,hip:1:33-48",
     "fingerprint": 2026111301,
     "max_new_tokens": 256,
     "shared": true,
@@ -33,7 +32,11 @@
     "--spec-min-p",
     "0.5",
     "--prefill",
-    "32"
+    "32",
+    "--layer-split",
+    "15,33",
+    "--hetero-devices",
+    "cuda:0,hip:0,hip:1"
   ],
   "args_written": [
     "--max-context",
@@ -49,6 +52,10 @@
     "--spec-min-p",
     "0.5",
     "--prefill",
-    "32"
+    "32",
+    "--layer-split",
+    "15,33",
+    "--hetero-devices",
+    "cuda:0,hip:0,hip:1"
   ]
 }

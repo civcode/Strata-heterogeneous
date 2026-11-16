@@ -26,6 +26,24 @@ class NativeConfigTests(unittest.TestCase):
         opts = resolve(self.cfg)
         self.assertEqual((opts["native_prefill_chunk"], opts["native_spec_window"], opts["kv"]), (64, 5, "f16"))
 
+    def test_native_placement_preserves_existing_mtp_policy(self):
+        self.cfg["heterogeneous"].pop("plan")
+        self.cfg["args"] += ["--layer-split", "15,33", "--hetero-devices", "cuda:0,hip:0,hip:1"]
+        before = copy.deepcopy(self.cfg)
+        opts = resolve(self.cfg)
+        self.assertEqual(opts["plan"], "cuda:0:0-15,hip:0:15-33,hip:1:33-48")
+        self.assertEqual((opts["spec"], opts["native_spec_window"]), (4, 4))
+        self.assertEqual(self.cfg, before)
+        self.cfg["user_args"] = ["--layer-split", "16,32"]
+        self.assertEqual(resolve(self.cfg)["plan"], "cuda:0:0-16,hip:0:16-32,hip:1:32-48")
+        self.cfg["heterogeneous"]["plan"] = "fixture"
+        with self.assertRaisesRegex(ValueError, "heterogeneous.plan"):
+            resolve(self.cfg)
+        self.cfg["heterogeneous"].pop("plan")
+        self.cfg["args"] = self.cfg["args"][:-2]
+        with self.assertRaisesRegex(ValueError, "together"):
+            resolve(self.cfg)
+
     def test_unsupported_never_ignored(self):
         for args in (["--vision"], ["--prefill", "auto"], ["--kv-resident", "1"], ["--spec", "8"], ["--spec-min-p", "0.6"]):
             with self.subTest(args=args):

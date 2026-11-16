@@ -6,7 +6,6 @@
   "max_queue": 0,
   "reasoning_effort": "none",
   "heterogeneous": {
-    "plan": "hip:0:0-24,hip:1:24-48",
     "fingerprint": 2026111301,
     "max_new_tokens": 2048,
     "shared": true,
@@ -27,7 +26,11 @@
     "--kv-resident",
     "0",
     "--prefill",
-    "128"
+    "128",
+    "--layer-split",
+    "24",
+    "--hetero-devices",
+    "hip:0,hip:1"
   ],
   "args_written": [
     "--max-context",
@@ -37,6 +40,10 @@
     "--kv-resident",
     "0",
     "--prefill",
-    "128"
+    "128",
+    "--layer-split",
+    "24",
+    "--hetero-devices",
+    "hip:0,hip:1"
   ]
 }

@@ -60,7 +60,7 @@ class LaunchTests(unittest.TestCase):
     def test_hip_without_cuda(self):
         profile = read_json(ROOT / "strata-q2_0-hip-only.json")
         src = self.source["heterogeneous"]
-        src["plan"] = profile["heterogeneous"]["plan"]
+        src["plan"] = resolve(profile)["plan"]
         src["config"] = src["config"][1:]
         del src["cuda_worker"]
         self.assertNotIn("cuda_worker", bind(profile, self.source)["heterogeneous"])

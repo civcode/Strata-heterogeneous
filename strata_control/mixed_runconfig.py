@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from strata_control import user_args
+from strata_control.mixed_placement import layer_plan
 
 MOVED = {"max_context", "kv", "mtp", "spec", "spec_min_p", "native_spec_window", "native_prefill_chunk"}
 FLAGS = {"--max-context", "--kv", "--kv-resident", "--mtp", "--spec", "--spec-min-p",
-         "--pack", "--native", "--ple-gguf", "--expert-profile", "--prefill"}
+         "--pack", "--native", "--ple-gguf", "--expert-profile", "--prefill",
+         "--layer-split", "--hetero-devices"}
 
 
 def _one_value_args(cfg):
@@ -46,6 +48,12 @@ def resolve(cfg):
     if duplicated:
         raise ValueError("native args must not be duplicated in heterogeneous: " + ", ".join(sorted(duplicated)))
     args = _one_value_args(cfg)
+    placement = {"--layer-split", "--hetero-devices"} & args.keys()
+    if placement:
+        if len(placement) != 2 or "plan" in options:
+            raise ValueError("use --layer-split and --hetero-devices together, not heterogeneous.plan")
+        options["plan"] = layer_plan(args["--hetero-devices"], args["--layer-split"],
+                                     options.get("layers", 48))
     if not {"--max-context", "--kv"} <= args.keys():
         raise ValueError("mixed admission currently requires explicit --max-context and --kv")
     context = args["--max-context"]
