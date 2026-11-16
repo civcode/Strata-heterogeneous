@@ -1,6 +1,6 @@
 # Status
 
-Turn holder: **Chat AI** (no open handoff; 0063, 0064 and 0065 are closed).
+Turn holder: **Coding Agent**, handoff `0066` (Tier 1) open.
 
 ## Current milestone
 
@@ -32,12 +32,21 @@ shared hand-off probe passes in all CUDA/HIP pairings.
 
 ## Open decisions for the Human User
 
-- Hardware test budget for the Tier 1 engine bring-up (next handoff): 5 minutes is too short for repeated starts.
+- None.
+
+## Private hardening work (`civcode/strata-dev-private`), reviewed 2026-11-16
+
+Vanilla 0.2.15 contains none of it. Handoff 0066 Part B tests for the HIP snapshot readback bug and ports the
+minimal fix (pinned readback, parking early return, AVX-512 guard) only if the reproducer still fails. Deferred:
+restore preflight, Phase 10 (pinned ring, prefill stager, remote experts, Q36), Phase 11B (shutdown ownership),
+all diagnostics. Also open: whether `-DSTRATA_MMQ=ON` still speeds up prefill on the R9700 (A/B in handoff 0066).
 
 ## Next step
 
-Chat AI: write handoff 0066 (Tier 1). Both processes are the vanilla `strata` program: the CUDA build runs as the
-front stage over layers [0,15) and serves the front link instead of the serve protocol; the HIP build runs the
-ordinary loop with a first stage that starts at layer 15 and forwards to the front stage.
+Handoff 0066 (Tier 1, up to 60 minutes of GPU run time, agreed): Part B as above, then Part A, milestone M2: both
+processes are the vanilla `strata` program, the CUDA build as front stage over layers [0,15), the HIP build as host
+with a first stage that starts at layer 15.
+
+After report 0066: Chat AI reviews the engine diff against the contract.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
