@@ -298,6 +298,10 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
 
 int main(int argc,char** argv) {
     try {
+        if(argc==2&&std::string(argv[1])=="--native-spec-window-cap") {
+            std::cout<<"HETERO_WORKER_CAP {\"native_spec_window_cap\":1}\n";
+            return 0;  // CPU-only; do not initialize HIP
+        }
         if(argc==3&&std::string(argv[1])=="--check-config") {
             hetero::HipWorkerConfig c; std::string err;
             if(!hetero::read_hip_worker_config(argv[2],c,err)||

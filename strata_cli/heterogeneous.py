@@ -179,8 +179,13 @@ def prepare_native(args, *, native=None):
         raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
     if pipeline_mode is not None and source.get("pipeline_mode_cap") != 1:
         raise ValueError("coordinator lacks explicit pipeline-mode capability; rebuild matching binaries")
-    if native_spec_window is not None and source.get("native_spec_window_cap") != 1:
-        raise ValueError("coordinator lacks native --spec window capability; rebuild matching coordinator and workers")
+    if native_spec_window is not None:
+        if source.get("native_spec_window_cap") != 1:
+            raise ValueError("coordinator lacks native --spec window capability; rebuild matching coordinator and workers")
+        cap = native_call([_path(args.hip_worker, True), "--native-spec-window-cap"],
+                          marker="HETERO_WORKER_CAP")
+        if cap != {"native_spec_window_cap": 1}:
+            raise ValueError("HIP worker lacks native --spec window capability; rebuild matching worker")
     if mtp is not None and source.get("mtp_service_cap") != 1:
         raise ValueError("coordinator lacks request-local MTP service capability; rebuild matching binaries")
     if mtp is not None and args.plan == "hip:0:0-24,hip:1:24-48" and source.get("mtp_hip_pair_cap") != 1:
@@ -227,11 +232,16 @@ def prepare_native(args, *, native=None):
     tok = Tokenizer.from_gguf(gguf)
     if len(tok.tokens) != vocab or tok.pre != "qwen35":
         raise ValueError("tokenizer vocabulary or family does not match the supported Qwen worker model")
-    stop_ids = {tok.special_tokens[marker] for marker in ("<|im_end|>", "<|endoftext|>")
-                if marker in tok.special_tokens}
-    for key in ("tokenizer.ggml.eos_token_id", "tokenizer.ggml.eot_token_id"):
-        if key in tok.special_ids:
-            stop_ids.add(tok.special_ids[key])
+    if getattr(args, "native_run_config", False):
+        from serve.tokenizers import verify_pack_tokenizer, end_token_ids
+        tok = verify_pack_tokenizer(source["pack_dir"], tok)
+        stop_ids = end_token_ids(tok)
+    else:
+        stop_ids = {tok.special_tokens[marker] for marker in ("<|im_end|>", "<|endoftext|>")
+                    if marker in tok.special_tokens}
+        for key in ("tokenizer.ggml.eos_token_id", "tokenizer.ggml.eot_token_id"):
+            if key in tok.special_ids:
+                stop_ids.add(tok.special_ids[key])
     if not stop_ids or any(type(t) is not int or not 0 <= t < vocab for t in stop_ids):
         raise ValueError("no valid model end-of-generation token IDs")
     native = argv + ["--generate", str(args.max_new_tokens), "--prompt-chunk", str(args.prompt_chunk),

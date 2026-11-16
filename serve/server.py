@@ -4594,23 +4594,7 @@ class ByteTokenizer:
 
 
 # ------------------------------------------------------------------------------------------------ end tokens
-def end_token_ids(tokenizer) -> set[int]:
-    """The ids that end a reply for a tokenizer whose family was not named (Service.set_family sets them for DeepSeek).
-
-    Qwen's <|im_end|> and <|endoftext|> end a reply only where each is ONE token.  A tokenizer without them (DeepSeek-V4.1's
-    splits "<|im_end|>" into '<', '|', 'im', '_end', '|', '>') would make every piece of them a stop id: the reply ended in front
-    of the first "|", ">", "end", "of", "text" or "im" it wrote, so "Nerazim" came out as "Neraz" (#4576, and a table's first
-    "|" in #4137).  Those ids are left out, and the end token the tokenizer names (special_ids "eos") ends the reply instead."""
-    ids: set[int] = set()
-    for marker in (IM_END, "<|endoftext|>"):
-        got = tokenizer.encode(marker, parse_special=True)
-        if len(got) == 1:
-            ids.add(int(got[0]))
-    if not ids:
-        eos = (getattr(tokenizer, "special_ids", None) or {}).get("eos")
-        if eos is not None:
-            ids.add(int(eos))
-    return ids
+from serve.tokenizers import end_token_ids, load_pack_tokenizer
 
 
 # ------------------------------------------------------------------------------------------------ core
@@ -10094,7 +10078,14 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         allowed = {"heterogeneous", "model_name", "host", "api_key", "telemetry_read_key",
                    "max_queue", "queue_timeout", "aliases", "reasoning_effort",
                    "log", "port", "parallel", "open_browser", "cwd", "env", "lib_dirs",
-                   "args", "args_written", "user_args", "exe", "tokenizer"}
+                   "args", "args_written", "user_args", "exe", "tokenizer",
+                   # These are implemented by the ordinary HTTP Service, not
+                   # by a particular engine backend.
+                   "fit_max_tokens", "api_monitor", "answer_room", "reasoning_close_retry",
+                   "cors_origins", "trusted_origins", "allowed_hosts", "anthropic_thinking",
+                   "repeat_stop_tokens", "env_to_user", "tool_call_recovery", "undeclared_tool_calls",
+                   "reasoning_budget_tokens", "reasoning_loop_recovery", "prevent_sleep",
+                   "codex_thread_titles", "codex_compaction_cache"}
         if not isinstance(cfg, dict) or not isinstance(cfg.get("heterogeneous"), dict):
             ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
         if cfg.keys() - allowed:
@@ -10216,18 +10207,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         if a.engine == "strata" and not (tpath / "vocab.json").exists():
             ap.error(f"the model's tokenizer is missing ({tpath / 'vocab.json'}); run setup again")
         if (tpath / "vocab.json").exists():
-            import strata_tokenizer as ST
-            vocab = json.loads((tpath / "vocab.json").read_text(encoding="utf-8"))
-            tokens = [None] * len(vocab)
-            for t, i in vocab.items():
-                tokens[i] = t
-            merges = (tpath / "merges.txt").read_text(encoding="utf-8").split("\n")
-            types = json.loads((tpath / "token_type.json").read_text())
-            try:                                            # the pack's pre-tokenizer name and special ids (DeepSeek's differ)
-                tcfg = json.loads((tpath / "tokenizer.json").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                pass
-            tok = ST.Tokenizer(tokens, merges, types, tcfg.get("pre") or "qwen35", tcfg.get("special_ids") or None)
+            tok, tcfg = load_pack_tokenizer(tpath)
     if a.engine == "strata" and not cfg.get("arch") and arch_from_tokenizer(None, tcfg.get("pre")):
         cfg["arch"] = arch_from_tokenizer(None, tcfg.get("pre"))
         print(f"[strata] the config names no \"arch\" and this tokenizer is DeepSeek's: serving it as {cfg['arch']} (its end token, DSML tool "
@@ -10402,7 +10382,12 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
                   fit_max_tokens=a.fit_max_tokens or (not a.no_fit_max_tokens and cfg.get("fit_max_tokens") is not False))
     svc.launch_attestation = launch_attestation
     if a.engine == "heterogeneous":
-        svc.stop_ids = engine.stop_ids
+        if "args" in cfg:
+            if svc.stop_ids != engine.stop_ids:
+                engine.close()
+                ap.error("native HTTP and coordinator stop token identities differ")
+        else:
+            svc.stop_ids = engine.stop_ids  # legacy qualification only
         svc.requested_slots = 1
     if (cfg.get("arch") or "") == "deepseek41" and vision is None and a.engine == "strata":
         # DeepSeek-V4.1 reads pictures with the engine's own tower (--vision on, the default): no separate reader process.

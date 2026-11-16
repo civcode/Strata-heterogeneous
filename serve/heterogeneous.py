@@ -63,6 +63,8 @@ def prepare_server(cfg, *, env=None):
     if "pipeline_mode" in opts and opts["pipeline_mode"] not in ("baseline", "fast"):
         raise ValueError("heterogeneous.pipeline_mode must be baseline or fast")
     args = argparse.Namespace(**values)
+    if "args" in cfg:
+        args.native_run_config = True
     log_path = cfg.get("log")
     if log_path or env is not None or cfg.get("cwd"):
         with (open(log_path, "a", encoding="utf-8") if log_path else nullcontext(None)) as log:

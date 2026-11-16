@@ -90,7 +90,7 @@ class LaunchCompatibilityTests(unittest.TestCase):
     def test_unimplemented_engine_args_are_not_silently_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "server.json"
-            config.write_text(json.dumps({"heterogeneous": {}, "args": ["--spec", "4"]}))
+            config.write_text(json.dumps({"heterogeneous": {}, "args": ["--max-context", "262144", "--kv", "int8", "--vision"]}))
             with patch.object(server.lifeline, "install_stop_handlers"), \
                     patch.object(server, "rttime_limit_note", return_value=None), \
                     patch("serve.heterogeneous.prepare_server", wraps=__import__("serve.heterogeneous", fromlist=["prepare_server"]).prepare_server) as preflight, \
@@ -98,7 +98,7 @@ class LaunchCompatibilityTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as error:
                     server.main(["--engine", "strata", "--config", str(config)])
                 self.assertEqual(error.exception.code, 2)
-                self.assertIn("requires explicit --max-context and --kv", stderr.getvalue())
+                self.assertIn("native option not implemented for mixed workers: --vision", stderr.getvalue())
                 preflight.assert_called_once()
 
 

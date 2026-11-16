@@ -162,6 +162,9 @@ def main():
     root = Path.home() / "tmp/strata-heterogeneous"
     try:
         profile = read_json(a.profile)
+        # Same normalization as the native server, before binding.
+        from serve.server import split_joined_args
+        split_joined_args(profile)
         port = a.port if a.port is not None else profile.get("port", 8081)
         need(type(port) is int and 1 <= port <= 65535, "port must be 1..65535")
         plan = profile["heterogeneous"]["plan"]
