@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools.heterogeneous_oberon_launch import bind, find_reference, guard_engine, read_json, write_config
-from serve.heterogeneous_config import native_run_config
+from serve.heterogeneous_config import native_run_config, profile_binding
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,7 +19,7 @@ class LaunchTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.profile = read_json(ROOT / "strata-q2_0-heterogeneous.json")
-        self.source = copy.deepcopy(self.profile)
+        self.source = profile_binding(self.profile)
         model = ["--pack", str(self.root / "pack"), "--native", str(self.root / "first.gguf"),
                  "--ple-gguf", str(self.root / "second.gguf"), "--expert-profile", str(self.root / "profile")]
         for target in ("tools.heterogeneous_oberon_launch.stage_model_args",
@@ -44,7 +44,7 @@ class LaunchTests(unittest.TestCase):
         cfg = bind(self.profile, self.source)
         self.assertEqual(cfg["heterogeneous"]["max_new_tokens"], 2048)
         self.assertEqual(cfg["heterogeneous"]["config"], self.source["heterogeneous"]["config"])
-        self.assertNotIn("config", self.profile["heterogeneous"])
+        self.assertNotIn("heterogeneous", self.profile)
         self.assertEqual(cfg["exe"], self.source["heterogeneous"]["coordinator"])
         self.assertNotIn("coordinator", cfg["heterogeneous"])
         self.assertIn("--pack", cfg["args"])
@@ -57,7 +57,7 @@ class LaunchTests(unittest.TestCase):
     def test_native_run_config(self):
         cfg = bind(self.profile, self.source)
         opts = SimpleNamespace(stream_tokens=True, lookup_draft=False, prompt_chunk=1,
-                               restart_clean=False, plan=self.profile["heterogeneous"]["plan"])
+                               restart_clean=False, plan=profile_binding(self.profile)["heterogeneous"]["plan"])
         argv = [cfg["exe"], "--plan", opts.plan, "--fingerprint", "2026111301", "--kv", "int8",
                 "--context-limit", "262144", "--generate", "2048", "--source-gguf", "/unused",
                 "--source-index", "index", "--stop-ids", "99", "--native-prefill-chunk", "128",
@@ -71,6 +71,8 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(result["args"][result["args"].index("--layer-split")+1], "15,33")
         self.assertEqual(result["args"][result["args"].index("--eos-ids")+1], "99")
         self.assertIn("--hetero-max-new", result["args"])
+        self.assertNotIn("--plan", result["args"])
+        self.assertEqual(result["args"][result["args"].index("--hetero-devices")+1], "cuda:0,hip:0,hip:1")
         self.assertIn("heterogeneous", cfg)
         with self.assertRaises(ValueError):
             native_run_config(cfg, (opts, argv+["--unknown"], {"context_limit":262144}, None, {99}, None))
@@ -78,7 +80,7 @@ class LaunchTests(unittest.TestCase):
     def test_hip_without_cuda(self):
         profile = read_json(ROOT / "strata-q2_0-hip-only.json")
         src = self.source["heterogeneous"]
-        src["plan"] = profile["heterogeneous"]["plan"]
+        src["plan"] = profile_binding(profile)["heterogeneous"]["plan"]
         src["config"] = src["config"][1:]
         del src["cuda_worker"]
         self.assertNotIn("cuda_worker", bind(profile, self.source)["heterogeneous"])

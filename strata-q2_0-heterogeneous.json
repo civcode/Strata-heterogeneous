@@ -6,7 +6,23 @@
     "--kv",
     "int8",
     "--prefill",
-    "128"
+    "128",
+    "--layer-split",
+    "15,33",
+    "--hetero-devices",
+    "cuda:0,hip:0,hip:1",
+    "--fingerprint",
+    "2026111301",
+    "--hetero-max-new",
+    "2048",
+    "--timeout-ms",
+    "120000",
+    "--prompt-chunk",
+    "1",
+    "--shared",
+    "--group-native-hip",
+    "--workload-mode",
+    "--long-context"
   ],
   "host": "127.0.0.1",
   "port": 8081,
@@ -18,18 +34,5 @@
   "drafting": "off",
   "max_queue": 0,
   "reasoning_effort": "none",
-  "heterogeneous": {
-    "plan": "cuda:0:0-15,hip:0:15-33,hip:1:33-48",
-    "fingerprint": 2026111301,
-    "max_new_tokens": 2048,
-    "shared": true,
-    "stream_tokens": true,
-    "group_native_hip": true,
-    "prompt_chunk": 1,
-    "workload_mode": true,
-    "long_context": true,
-    "lookup_draft": false,
-    "restart_clean": false,
-    "timeout_ms": 120000
-  }
+  "engine_silence_s": 1800
 }

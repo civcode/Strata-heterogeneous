@@ -77,6 +77,64 @@ def verify_model_args(cfg, opts):
     if "tokenizer" not in cfg or resolve(cfg, cfg["tokenizer"]) != expected.resolve():
         raise ValueError("tokenizer does not match the bound native pack")
 
+
+# Public launch profiles use the ordinary args list, not a second JSON
+# schema. Only preparation of historical qualification files uses a binding.
+def profile_binding(profile):
+    from copy import deepcopy
+    if "heterogeneous" in profile:
+        return deepcopy(profile)  # historical, not emitted by current launchers
+    cfg = deepcopy(profile)
+    args = cfg.get("args")
+    if not isinstance(args, list) or not all(isinstance(a, str) and a for a in args):
+        raise ValueError("profile args must be a list of strings")
+    values = {"--hetero-devices": "devices", "--layer-split": "split",
+              "--fingerprint": "fingerprint", "--hetero-max-new": "max_new_tokens",
+              "--timeout-ms": "timeout_ms", "--prompt-chunk": "prompt_chunk"}
+    switches = {"--shared": "shared", "--group-native-hip": "group_native_hip",
+                "--workload-mode": "workload_mode", "--long-context": "long_context"}
+    binding = {"stream_tokens": True, "lookup_draft": False, "restart_clean": False}
+    ordinary = []
+    seen = set()
+    i = 0
+    while i < len(args):
+        flag = args[i]
+        if flag in seen:
+            raise ValueError(f"duplicate profile argument: {flag}")
+        seen.add(flag)
+        if flag in switches:
+            binding[switches[flag]] = True
+            i += 1
+            continue
+        if flag not in values and flag not in _COMMON.keys() | _MODEL:
+            raise ValueError(f"unsupported profile argument: {flag}")
+        if i + 1 >= len(args) or args[i+1].startswith("--"):
+            raise ValueError(f"missing value for {flag}")
+        value = args[i+1]
+        if flag in values:
+            key = values[flag]
+            if key not in ("devices", "split"):
+                if not value.isascii() or not value.isdecimal():
+                    raise ValueError(f"{flag} requires an integer")
+                value = int(value)
+            binding[key] = value
+        else:
+            ordinary += [flag, value]
+        i += 2
+    devices = binding.pop("devices", "").split(",")
+    split = binding.pop("split", "").split(",")
+    if (len(devices) < 2 or len(split) != len(devices)-1 or
+            any(not n.isascii() or not n.isdecimal() for n in split)):
+        raise ValueError("--layer-split requires one boundary per later device")
+    bounds = [0, *map(int, split), binding.get("layers", 48)]
+    if any(a >= b for a,b in zip(bounds,bounds[1:])):
+        raise ValueError("--layer-split boundaries must increase within the model")
+    binding["plan"] = ",".join(f"{device}:{a}-{b}" for device,a,b in zip(devices,bounds,bounds[1:]))
+    cfg["args"] = ordinary
+    cfg["heterogeneous"] = binding
+    return cfg
+
+
 def native_run_config(cfg, prepared):
     """Translate a local qualification binding into an ordinary Strata run config.
 
@@ -101,15 +159,17 @@ def native_run_config(cfg, prepared):
     out["tokenizer"] = str(resolve(cfg, out["tokenizer"]))
     if out.get("log"):
         out["log"] = str(resolve(cfg, out["log"]))
+    topology = opts.plan.split(",")
     out["args"] += ["--layer-split", ",".join(
-        item.rsplit(":", 1)[1].split("-", 1)[0] for item in opts.plan.split(",")[1:])]
+        item.rsplit(":", 1)[1].split("-", 1)[0] for item in topology[1:]),
+        "--hetero-devices", ",".join(item.rsplit(":", 1)[0] for item in topology)]
     # The coordinator validates the declared model identity and ordered stage
     # files again before initializing any GPU. No legacy JSON is used at run time.
     out["args"] += ["--eos-ids", ",".join(str(t) for t in sorted(stops))]
-    skip_values = {"--kv", "--source-gguf", "--context-limit", "--stop-ids",
+    skip_values = {"--plan", "--kv", "--source-gguf", "--context-limit", "--stop-ids",
                    "--native-prefill-chunk"}
     switches = {"--shared", "--group-native-hip", "--long-context", "--workload-mode"}
-    values = {"--plan", "--fingerprint", "--layers", "--hc", "--n-embd", "--timeout-ms",
+    values = {"--fingerprint", "--layers", "--hc", "--n-embd", "--timeout-ms",
               "--cuda-worker", "--hip-worker", "--config", "--source-index",
               "--generate", "--prompt-chunk"}
     i = 1

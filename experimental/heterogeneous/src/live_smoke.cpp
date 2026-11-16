@@ -54,7 +54,7 @@ struct Options {
     bool describe_source = false;
     bool resident = false;
     bool vanilla_serve = false;
-    std::string serve_pack, serve_ple, serve_profile, serve_layer_split;
+    std::string serve_pack, serve_ple, serve_profile, serve_layer_split, serve_devices;
     std::optional<uint64_t> serve_reserve_mib;
     bool workload_mode = false;
     bool long_context = false;
@@ -227,6 +227,7 @@ Options parse(int argc, char** argv) {
         else if (o.vanilla_serve && key == "--ple-gguf") o.serve_ple = required_value(i,argc,argv,"--ple-gguf");
         else if (o.vanilla_serve && key == "--expert-profile") o.serve_profile = required_value(i,argc,argv,"--expert-profile");
         else if (o.vanilla_serve && key == "--layer-split") o.serve_layer_split = required_value(i,argc,argv,"--layer-split");
+        else if (o.vanilla_serve && key == "--hetero-devices") o.serve_devices = required_value(i,argc,argv,"--hetero-devices");
         else if (o.vanilla_serve && key == "--vram-reserve-mib") {
             o.serve_reserve_mib = decimal(required_value(i,argc,argv,"--vram-reserve-mib"),"vram-reserve-mib");
             if (*o.serve_reserve_mib > (UINT64_MAX >> 20)) throw std::invalid_argument("reserve exceeds byte range");
@@ -381,6 +382,26 @@ Options parse(int argc, char** argv) {
             usage();
             throw std::invalid_argument("help requested");
         } else throw std::invalid_argument("unknown option: " + key);
+    }
+    if (o.vanilla_serve && !o.serve_devices.empty()) {
+        if (!o.plan.empty()) throw std::invalid_argument("use --hetero-devices and --layer-split, not a second --plan");
+        std::vector<std::string> devices;
+        std::vector<uint32_t> bounds{0};
+        std::istringstream dev(o.serve_devices), split(o.serve_layer_split);
+        std::string item;
+        while (std::getline(dev,item,',')) devices.push_back(item);
+        while (std::getline(split,item,',')) bounds.push_back(u32(item,"layer-split"));
+        bounds.push_back(o.layers);
+        if (devices.size()<2 || bounds.size()!=devices.size()+1 ||
+            o.serve_devices.back()==',' || o.serve_layer_split.empty() || o.serve_layer_split.back()==',')
+            throw std::invalid_argument("--layer-split needs one boundary per later device");
+        std::ostringstream plan;
+        for (size_t i=0;i<devices.size();++i) {
+            if (bounds[i]>=bounds[i+1]) throw std::invalid_argument("--layer-split boundaries must increase");
+            if (i) plan << ',';
+            plan << devices[i] << ':' << bounds[i] << '-' << bounds[i+1];
+        }
+        o.plan=plan.str();
     }
     if (o.vanilla_serve && (o.serve_pack.empty() || o.serve_profile.empty() || o.serve_ple.empty() ||
         o.prompt_chunk != 1 || o.lookup_draft || o.mtp_generation || o.generation_capture ||

@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from serve.heterogeneous_config import options, read_args, stage_model_args, verify_model_args, native_run_config
+from serve.heterogeneous_config import options, read_args, stage_model_args, verify_model_args, native_run_config, profile_binding
 import subprocess
 import sys
 import tempfile
@@ -60,7 +60,7 @@ def file_path(value, executable=False):
 
 
 def bind(profile, reference):
-    cfg = copy.deepcopy(profile)
+    cfg = profile_binding(profile)
     opts = options(cfg)
     source = options(reference)
     bound = cfg["heterogeneous"]
@@ -139,7 +139,7 @@ def main():
         profile = read_json(a.profile)
         port = a.port if a.port is not None else profile.get("port", 8081)
         need(type(port) is int and 1 <= port <= 65535, "port must be 1..65535")
-        plan = profile["heterogeneous"]["plan"]
+        plan = profile_binding(profile)["heterogeneous"]["plan"]
         need(plan in QUALIFIED, "unknown launch topology")
         reference = a.reference_config or find_reference(root / "handoff-0044", QUALIFIED[plan])
         cfg = bind(profile, read_json(reference))
