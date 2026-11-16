@@ -9,9 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 from strata_control import user_args
 
-MOVED = {"max_context", "kv", "mtp", "spec", "spec_min_p", "native_spec_window"}
+MOVED = {"max_context", "kv", "mtp", "spec", "spec_min_p", "native_spec_window", "native_prefill_chunk"}
 FLAGS = {"--max-context", "--kv", "--kv-resident", "--mtp", "--spec", "--spec-min-p",
-         "--pack", "--native", "--ple-gguf", "--expert-profile"}
+         "--pack", "--native", "--ple-gguf", "--expert-profile", "--prefill"}
 
 
 def _one_value_args(cfg):
@@ -58,6 +58,12 @@ def resolve(cfg):
     options["kv"] = "f16" if kv == "fp16" else kv
     if args.get("--kv-resident", "0") != "0":
         raise ValueError("mixed workers currently require --kv-resident 0")
+    if "--prefill" not in args:
+        raise ValueError("mixed admission currently requires explicit --prefill chunk")
+    prefill = args["--prefill"]
+    if not prefill.isascii() or not prefill.isdecimal() or int(prefill) <= 0:
+        raise ValueError("mixed workers currently require a positive explicit --prefill chunk; auto is not implemented")
+    options["native_prefill_chunk"] = int(prefill)
     if "--mtp" in args:
         if args.get("--spec") not in ("4", "5"):
             raise ValueError("mixed native MTP currently requires explicit --spec 4 or 5")

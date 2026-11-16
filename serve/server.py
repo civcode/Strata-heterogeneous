@@ -88,7 +88,7 @@ from serve import responses as responses_api  # noqa: E402
 from serve.responses import ResponsesError, error_body as responses_error_body  # noqa: E402
 from serve import images as images_api  # noqa: E402
 
-IM_END = "<|im_end|>"
+from serve.tokenizers import IM_END, end_token_ids, load_pack_tokenizer  # noqa: E402
 IMAGE_PAD = "<|image_pad|>"
 
 
@@ -4594,7 +4594,6 @@ class ByteTokenizer:
 
 
 # ------------------------------------------------------------------------------------------------ end tokens
-from serve.tokenizers import end_token_ids, load_pack_tokenizer
 
 
 # ------------------------------------------------------------------------------------------------ core

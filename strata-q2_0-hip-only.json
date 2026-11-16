@@ -12,7 +12,6 @@
     "shared": true,
     "stream_tokens": true,
     "group_native_hip": true,
-    "native_prefill_chunk": 128,
     "prompt_chunk": 1,
     "workload_mode": true,
     "long_context": true,
@@ -26,7 +25,9 @@
     "--kv",
     "int8",
     "--kv-resident",
-    "0"
+    "0",
+    "--prefill",
+    "128"
   ],
   "args_written": [
     "--max-context",
@@ -34,6 +35,8 @@
     "--kv",
     "int8",
     "--kv-resident",
-    "0"
+    "0",
+    "--prefill",
+    "128"
   ]
 }

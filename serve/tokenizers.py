@@ -1,7 +1,7 @@
 """Native pack tokenizer construction and end-of-reply policy."""
 import json
 from pathlib import Path
-from serve.frontend import IM_END
+IM_END = "<|im_end|>"
 
 
 def load_pack_tokenizer(tpath: Path):

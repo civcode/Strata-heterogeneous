@@ -12,7 +12,6 @@
     "shared": true,
     "stream_tokens": true,
     "group_native_hip": true,
-    "native_prefill_chunk": 32,
     "prompt_chunk": 1,
     "workload_mode": true,
     "long_context": true,
@@ -32,7 +31,9 @@
     "--spec",
     "4",
     "--spec-min-p",
-    "0.5"
+    "0.5",
+    "--prefill",
+    "32"
   ],
   "args_written": [
     "--max-context",
@@ -46,6 +47,8 @@
     "--spec",
     "4",
     "--spec-min-p",
-    "0.5"
+    "0.5",
+    "--prefill",
+    "32"
   ]
 }
