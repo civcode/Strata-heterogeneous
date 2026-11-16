@@ -27,6 +27,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <set>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -216,8 +217,18 @@ Options parse(int argc, char** argv) {
     // --serve is first in the ordinary StrataEngine argv. Detect before reading aliases.
     for (int i=1; i<argc; ++i)
         if (std::string(argv[i]) == "--serve" || std::string(argv[i]) == "--serve-preflight") o.vanilla_serve = true;
+    std::set<std::string> serve_seen;
+    const std::set<std::string> serve_flags = {"--serve", "--serve-preflight", "--pack", "--ple-gguf", "--expert-profile",
+        "--layer-split", "--hetero-devices", "--vram-reserve-mib", "--shared", "--group-native-hip", "--kv",
+        "--workload-mode", "--long-context", "--max-context", "--hetero-max-new", "--prompt-chunk", "--prefill",
+        "--native", "--source-index", "--eos-ids", "--cuda-worker", "--hip-worker", "--config", "--fingerprint",
+        "--layers", "--hc", "--n-embd", "--timeout-ms"};
     for (int i = 1; i < argc; ++i) {
         const std::string key = argv[i];
+        if (o.vanilla_serve && (!serve_flags.count(key) || (key != "--config" && !serve_seen.insert(key).second)))
+            throw std::invalid_argument("unsupported or duplicate serving option: " + key);
+        if (o.vanilla_serve && serve_seen.count("--serve") && serve_seen.count("--serve-preflight"))
+            throw std::invalid_argument("--serve and --serve-preflight are mutually exclusive");
         if (key == "--token" || key == "--tokens" || key == "--rows" ||
             key == "--keep" || key == "--windows") smoke_shape = true;
         if (key == "--serve" || key == "--serve-preflight") {
@@ -805,7 +816,7 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                   << ",\"long_context_cap\":" << hetero::max_long_context
                   << ",\"plan_fingerprint\":" << plan.fingerprint() << "}\n";
     }
-    if (o.run) {
+    if (o.run || o.vanilla_serve) {
         for (const auto& stage : plan.stages) {
             if (stage.backend == hetero::Backend::cuda)
                 require_executable(o.cuda_worker, "CUDA worker");
@@ -1076,7 +1087,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         throw std::runtime_error("cannot configure worker startup wait");
     auto workers = hetero::WorkerProcessGroup::launch(
         plan, o.cuda_worker, o.hip_worker, o.shared, {}, o.configs, o.group_hip, o.timeout_ms, o.kv,
-        o.long_context ? o.native_prefill_chunk : 0);
+        o.long_context ? o.native_prefill_chunk : 0, o.vanilla_serve);
     // For this diagnostic only, drain by EOF even on post-launch exceptions;
     // if a worker cannot exit, report its PID rather than escalating to SIGKILL.
     struct DiagnosticDrain {

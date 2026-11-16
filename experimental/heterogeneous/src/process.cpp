@@ -108,7 +108,7 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
                                             const std::string& hip_executable, bool shared_memory,
                                             const std::string& cuda_config_path,
                                             const std::vector<std::string>& stage_config_paths, bool group_hip, int graceful_only_timeout_ms,
-                                            std::optional<KvMode> kv, uint32_t long_context_chunk) {
+                                            std::optional<KvMode> kv, uint32_t long_context_chunk, bool bind_parent_lifetime) {
     const auto domains = worker_domains(plan, group_hip);
     // An unsplit native reference uses one backend. Only the worker
     // executable(s) named by this plan must exist; mixed plans need both.
@@ -186,6 +186,7 @@ WorkerProcessGroup WorkerProcessGroup::launch(const Plan& plan,
             // launch instead of silently running their old FP16 default.
             if (kv) { args.push_back("--kv"); args.push_back(kv_mode_name(*kv)); }
             if (long_context_chunk) { args.push_back("--long-context-chunk"); args.push_back(std::to_string(long_context_chunk)); }
+            if (bind_parent_lifetime) { args.push_back("--coordinator-pid"); args.push_back(std::to_string(::getpid())); }
             std::vector<char*> argv;
             for (auto& a : args) argv.push_back(a.data());
             argv.push_back(nullptr);

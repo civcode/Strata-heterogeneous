@@ -14,6 +14,7 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata/core/geometry.hpp"
 #include "native_worker_defaults.hpp"
+#include "strata_heterogeneous/parent_lifetime.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/native_prefill_domain.hpp"
 #include "strata_heterogeneous/native_mtp_probe.hpp"
@@ -265,6 +266,7 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
 
 int main(int argc,char** argv) {
     try {
+        hetero::consume_worker_lifetime_arg(argc, argv);
         if(argc==3&&std::string(argv[1])=="--check-config") {
             hetero::HipWorkerConfig c; std::string err;
             if(!hetero::read_hip_worker_config(argv[2],c,err)||

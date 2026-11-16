@@ -13,6 +13,7 @@
 #include "strata_heterogeneous/final_pipeline.hpp"
 #include "strata/core/geometry.hpp"
 #include "native_worker_defaults.hpp"
+#include "strata_heterogeneous/parent_lifetime.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/native_prefill_domain.hpp"
 #include "strata_heterogeneous/prefill_state_capture.hpp"
@@ -71,6 +72,7 @@ bool check_compiled_geometry(const hetero::CudaWorkerConfig& c,const hetero::Pla
 
 int main(int argc,char** argv) {
     try {
+        hetero::consume_worker_lifetime_arg(argc, argv);
         if(argc==3&&std::string(argv[1])=="--check-config") {
             hetero::CudaWorkerConfig c; std::string err;
             if(!hetero::read_cuda_worker_config(argv[2],c,err)||
