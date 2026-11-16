@@ -93,6 +93,7 @@ public:
         return !fake_verify::fail_run;
     }
     bool commit(int keep, std::string&) { ++fake_verify::commits; fake_verify::keep = keep; return !fake_verify::fail_commit; }
+    bool wait_commit(std::string&) { return true; }  // native async-commit completion (test double: already complete)
     bool release_gpu_waits(int) { ++fake_verify::aborted; return true; }
 };
 }
