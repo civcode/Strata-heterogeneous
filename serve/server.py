@@ -10189,7 +10189,10 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     tcfg = {}
     if a.engine == "heterogeneous":
         from serve.heterogeneous import prepare_server
+        from serve.heterogeneous_sampling import validate_greedy_sampling
         try:
+            resident_sampling_defaults = {"temperature": 0, **sampling_defaults_from_config(cfg)}
+            validate_greedy_sampling(resident_sampling_defaults)
             resident_env = child_env(cfg, offline=a.offline, mixed_runtime=True)
             resident_spec = prepare_server(cfg, env=resident_env)
         except (OSError, ValueError, ImportError) as e:
@@ -10349,7 +10352,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             loading.set()
             if narrator is not None:
                 narrator.join(timeout=1)
-        vision, effort_end, sampling_defaults = None, None, {"temperature": 0}
+        vision, effort_end, sampling_defaults = None, None, resident_sampling_defaults
         if max_queue is None:
             max_queue = 0
 

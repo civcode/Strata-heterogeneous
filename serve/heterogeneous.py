@@ -21,6 +21,7 @@ from serve.heterogeneous_contract import (validate_request, Progress, timing_rec
     mtp_context_capable, mtp_bulk_capable)
 from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
 from serve.heterogeneous_retirement import retire_process
+from serve.heterogeneous_sampling import validate_greedy_sampling
 
 
 def prepare_server(cfg, *, env=None):
@@ -266,15 +267,7 @@ class ResidentEngine:
                          self.source.get("long_context", False),
                          mtp_bulk=bool(self.source.get("mtp") and self.source.get("native_prefill_chunk")))
         sampling = sampling or {}
-        allowed = {"temperature": (None, 0), "top_p": (None, 1),
-                   "top_k": (None, 0, 1), "min_p": (None, 0),
-                   "presence_penalty": (None, 0), "frequency_penalty": (None, 0),
-                   "repetition_penalty": (None, 1), "repeat_penalty": (None, 1),
-                   "penalty_last_n": (None, 0), "repeat_last_n": (None, 0),
-                   "seed": (None, 0)}
-        for key, values in allowed.items():
-            if sampling.get(key) not in values:
-                raise ValueError(f"{key} is not supported by the experimental greedy resident engine")
+        validate_greedy_sampling(sampling)
         # Tool declarations are rendered into the prompt and parsed by Service;
         # they are not native sampler options. Forced tool choice needs separate
         # qualification because it can alter the generated prompt prefix.

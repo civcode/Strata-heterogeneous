@@ -150,6 +150,15 @@ class TestResident(unittest.TestCase):
         e._send = Mock()
         return e
 
+    def test_greedy_filter_admission_preserves_request_identity(self):
+        e = self.engine([])
+        e._validate([1], 1, {"temperature": 0, "top_p": 0.95,
+                             "min_p": 0.05, "top_k": 20, "seed": (1 << 64) - 1}, None)
+        with self.assertRaisesRegex(ValueError, "temperature"):
+            list(e.generate([1], 1, {"temperature": 0.7}, Event()))
+        self.assertEqual(e._request, 0)
+        e._send.assert_not_called()
+
     def test_tool_declarations_are_service_metadata(self):
         e = self.engine([])
         e._validate([1], 1, {"tools": [{"type": "function"}], "tool_choice": "auto"}, None)
