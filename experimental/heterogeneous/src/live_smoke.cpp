@@ -15,6 +15,8 @@
 #include "strata_heterogeneous/process.hpp"
 #include "strata_heterogeneous/kv_mode.hpp"
 #include "strata/core/serve_request_summary.hpp"
+#include "strata_heterogeneous/vanilla_serve.hpp"
+#include <fcntl.h>
 
 #include <algorithm>
 #include <charconv>
@@ -38,6 +40,7 @@
 
 namespace hetero = strata::heterogeneous;
 namespace {
+std::FILE* serve_wire = nullptr;
 struct Options {
     std::string plan;
     std::string cuda_worker;
@@ -50,6 +53,8 @@ struct Options {
     uint32_t generate = 0, prompt_chunk = 1, native_prefill_chunk = 0;
     bool describe_source = false;
     bool resident = false;
+    bool vanilla_serve = false;
+    std::string serve_pack, serve_ple, serve_profile;
     bool workload_mode = false;
     bool long_context = false;
     bool stream_tokens = false;
@@ -207,11 +212,23 @@ std::vector<int32_t> prompt_from_stdin(uint32_t limit) {
 Options parse(int argc, char** argv) {
     Options o;
     bool smoke_shape = false, generation_arg = false;
+    // --serve is first in the ordinary StrataEngine argv. Detect before reading aliases.
+    for (int i=1; i<argc; ++i)
+        if (std::string(argv[i]) == "--serve" || std::string(argv[i]) == "--serve-preflight") o.vanilla_serve = true;
     for (int i = 1; i < argc; ++i) {
         const std::string key = argv[i];
         if (key == "--token" || key == "--tokens" || key == "--rows" ||
             key == "--keep" || key == "--windows") smoke_shape = true;
-        if (key == "--run") o.run = true;
+        if (key == "--serve" || key == "--serve-preflight") {
+            o.resident = true; o.stream_tokens = true; o.run = key == "--serve"; generation_arg = true;
+        }
+        else if (o.vanilla_serve && key == "--pack") o.serve_pack = required_value(i,argc,argv,"--pack");
+        else if (o.vanilla_serve && key == "--ple-gguf") o.serve_ple = required_value(i,argc,argv,"--ple-gguf");
+        else if (o.vanilla_serve && key == "--expert-profile") o.serve_profile = required_value(i,argc,argv,"--expert-profile");
+        else if (key == "--run") {
+            if (o.vanilla_serve) throw std::invalid_argument("--serve starts the engine; do not use --run");
+            o.run = true;
+        }
         else if (key == "--layer-taps") o.layer_taps = true;
         else if (key == "--layer0-probe") o.layer_zero_probe = true;
         else if (key == "--stage0-phases") o.stage0_phases = true;
@@ -230,7 +247,8 @@ Options parse(int argc, char** argv) {
         else if (key == "--direct-verified-shared") o.direct_verified = true;
         else if (key == "--kv") {
             if (o.kv_explicit) throw std::invalid_argument("duplicate --kv");
-            o.kv = hetero::parse_kv_mode(required_value(i,argc,argv,"--kv"));
+            const auto kv = required_value(i,argc,argv,"--kv");
+            o.kv = hetero::parse_kv_mode(o.vanilla_serve && kv == "fp16" ? "f16" : kv);
             o.kv_explicit = true;
         }
         else if (key == "--mtp-repeat-native-round") o.mtp_repeat_native_round=true;
@@ -273,9 +291,9 @@ Options parse(int argc, char** argv) {
         else if (key == "--long-context") { if (o.long_context) throw std::invalid_argument("duplicate --long-context"); o.long_context = true; generation_arg = true; }
         else if (key == "--stream-tokens") { o.stream_tokens = true; generation_arg = true; }
         else if (key == "--lookup-draft") { o.lookup_draft = true; generation_arg = true; }
-        else if (key == "--context-limit") {
+        else if (key == "--context-limit" || (o.vanilla_serve && key == "--max-context")) {
             generation_arg = true;
-            o.context_limit = u32(required_value(i, argc, argv, "--context-limit"), "context-limit");
+            o.context_limit = u32(required_value(i, argc, argv, key.c_str()), "max-context");
             if (o.context_limit < 2 || o.context_limit > hetero::max_long_context)
                 throw std::invalid_argument("--context-limit must be in 2..262144");
         }
@@ -289,24 +307,24 @@ Options parse(int argc, char** argv) {
             o.prompt_chunk = u32(required_value(i, argc, argv, "--prompt-chunk"), "prompt-chunk");
             if (!o.prompt_chunk || o.prompt_chunk > 8)
                 throw std::invalid_argument("--prompt-chunk must be in 1..8");
-        } else if (key == "--native-prefill-chunk") {
+        } else if (key == "--native-prefill-chunk" || (o.vanilla_serve && key == "--prefill")) {
             generation_arg = true;
-            o.native_prefill_chunk=u32(required_value(i,argc,argv,"--native-prefill-chunk"),"native-prefill-chunk");
+            o.native_prefill_chunk=u32(required_value(i,argc,argv,key.c_str()),"prefill");
             if (!o.native_prefill_chunk || o.native_prefill_chunk>hetero::max_native_prefill_chunk)
                 throw std::invalid_argument("native prefill chunk outside bounded range");
         } else if (key == "--prefill-parity-at") {
             generation_arg = true;
             o.prefill_parity_at = u32(required_value(i, argc, argv, "--prefill-parity-at"), "prefill-parity-at");
             if (!o.prefill_parity_at) throw std::invalid_argument("prefill-parity-at must be positive");
-        } else if (key == "--source-gguf") {
+        } else if (key == "--source-gguf" || (o.vanilla_serve && key == "--native")) {
             generation_arg = true;
-            o.source_gguf = required_value(i, argc, argv, "--source-gguf");
+            o.source_gguf = required_value(i, argc, argv, key.c_str());
         } else if (key == "--source-index") {
             generation_arg = true;
             o.source_index = required_value(i, argc, argv, "--source-index");
-        } else if (key == "--stop-ids") {
+        } else if (key == "--stop-ids" || (o.vanilla_serve && key == "--eos-ids")) {
             generation_arg = true;
-            const std::string value = required_value(i, argc, argv, "--stop-ids");
+            const std::string value = required_value(i, argc, argv, key.c_str());
             std::istringstream in(value);
             std::string item;
             while (std::getline(in, item, ',')) {
@@ -358,6 +376,10 @@ Options parse(int argc, char** argv) {
             throw std::invalid_argument("help requested");
         } else throw std::invalid_argument("unknown option: " + key);
     }
+    if (o.vanilla_serve && (o.serve_pack.empty() || o.serve_profile.empty() || o.serve_ple.empty() ||
+        o.prompt_chunk != 1 || o.lookup_draft || o.mtp_generation || o.generation_capture ||
+        !o.capture_prefix.empty() || o.describe_source || smoke_shape))
+        throw std::invalid_argument("--serve requires bound model paths and the ordinary one-row greedy execution mode");
     if (o.plan.empty() || !o.fingerprint || o.rows == 0 || o.rows > 8 ||
         o.windows == 0 || o.windows > ((o.placement_capture || o.warmup_windows) ? 128u : (o.mtp_fresh_replay ? hetero::mtp_fresh_replay_max : 8u)) || o.token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
         !o.layers || !o.hc || !o.n_embd)
@@ -681,7 +703,17 @@ GenerationLimits preflight(const Options& o, const hetero::Plan& plan) {
                 config.n_vocab != common_model->n_vocab ||
                 config.model_fingerprint != common_model->model_fingerprint)
                 throw std::invalid_argument("cross-stage Q2_0 model source identity mismatch");
-        } else common_model = config;
+        } else {
+            if (o.vanilla_serve) {
+                auto same = [](const std::string& a, const std::string& b) {
+                    return std::filesystem::canonical(a) == std::filesystem::canonical(b);
+                };
+                if (!same(o.serve_pack, config.pack_dir) || !same(o.serve_profile, config.profile_path) ||
+                    !same(o.serve_ple, config.ple_gguf_path))
+                    throw std::invalid_argument("engine model flags differ from validated stage configuration");
+            }
+            common_model = config;
+        }
         if ((o.generation_capture || reverse) && (config.index_sha256!=hetero::mtp_qualification_index ||
             config.max_cells!=2048 || config.max_t!=8 || config.n_vocab!=248320 ||
             config.max_cache_slots!=uint64_t(config.end_layer-config.first_layer)*512 ||
@@ -1133,6 +1165,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     bool stopped = false, cancelled = false, input_closed = false;
     int32_t stop_token = -1;
     strata::core::ServeRequestSummary request_summary;
+    hetero::vanilla::Input serve_input(hetero::resident_command_cap(o.context_limit, o.workload_mode, o.long_context) + 4096);
+    bool serve_quit = false;
     auto generate = [&](const std::vector<int32_t>& prompt, uint32_t max_new) {
         request_summary = {};
         request_summary.prompt_tokens = static_cast<int64_t>(prompt.size());
@@ -1174,6 +1208,28 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             // every owner has acknowledged this committed window.
             if (pos >= request_summary.prompt_tokens)
                 request_summary.generated = static_cast<int64_t>(generated.size()) + 1;
+            if (o.vanilla_serve) {
+                if (pos < static_cast<int64_t>(prompt.size())) {
+                    hetero::vanilla::print_progress(serve_wire, pos, static_cast<int64_t>(prompt.size())-1,
+                                                    request_summary.prompt_ms);
+                } else {
+                    // All stages acknowledged the prediction. EOS is a T line too, as in vanilla.
+                    std::fprintf(serve_wire, "T %d\n", static_cast<int>(next));
+                    std::fflush(serve_wire);
+                }
+                const auto action = serve_input.checkpoint();
+                using Control = hetero::vanilla::Input::Control;
+                active_since = RequestClock::now();
+                if (action == Control::quit || action == Control::eof) {
+                    serve_quit = true; input_closed = action == Control::eof;
+                }
+                // A late STOP cannot turn an already emitted terminal token into a cancellation.
+                const bool terminal = pos >= static_cast<int64_t>(prompt.size()) &&
+                    (request_summary.generated >= max_new ||
+                     std::find(o.stop_ids.begin(), o.stop_ids.end(), next) != o.stop_ids.end());
+                if (action != Control::proceed && !terminal) { cancelled = true; return false; }
+                return true;
+            }
             std::cout << "HETERO_PROGRESS " << request_id << ' ' << window
                       << ' ' << pos;
             if (o.stream_tokens) {
@@ -1220,6 +1276,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             if (o.resident && offset + count == prompt.size()) {
                 account_active();
                 decode_phase = true;
+                if (o.vanilla_serve) {
+                    std::fprintf(serve_wire, "REUSED 0\n");
+                    std::fflush(serve_wire);
+                    active_since = RequestClock::now();
+                }
             }
             hetero::WindowSpec spec;
             spec.pos0 = pos;
@@ -1383,20 +1444,45 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     if (o.resident) {
         // Negotiate actual reset support before announcing readiness.
         session.begin_request(request_id);
-        std::cout << "HETERO_READY " << request_id;
-        if (o.stream_tokens) std::cout << " STREAM";
-        if (o.lookup_draft) std::cout << " LOOKUP";
-        std::cout << std::endl;
+        if (o.vanilla_serve) {
+            std::fprintf(serve_wire, "INFO kv=%s\nREADY %u stop\n", o.kv == hetero::KvMode::f16 ? "fp16" : "int8", o.context_limit);
+            std::fflush(serve_wire);
+        } else {
+            std::cout << "HETERO_READY " << request_id;
+            if (o.stream_tokens) std::cout << " STREAM";
+            if (o.lookup_draft) std::cout << " LOOKUP";
+            std::cout << std::endl;
+        }
         bool first = true;
         std::string line;
         const size_t command_cap = hetero::resident_command_cap(o.context_limit, o.workload_mode, o.long_context);
-        while (!input_closed && read_command(line, command_cap)) {
-            if (line == "quit") { resident_quit=true; break; }
-            std::istringstream in(line);
-            std::string count;
-            in >> count;
-            const uint32_t max_new = u32(count, "resident max-new-tokens");
-            const auto prompt = prompt_ids(in, o.context_limit);
+        while (!input_closed && !serve_quit) {
+            if (o.vanilla_serve) {
+                auto cmd = serve_input.line(true);
+                if (!cmd || *cmd == "QUIT") { resident_quit=true; break; }
+                if (*cmd == "STOP") continue; // a late cancellation for the completed request
+                line = std::move(*cmd);
+            } else if (!read_command(line, command_cap)) break;
+            if (!o.vanilla_serve && line == "quit") { resident_quit=true; break; }
+            uint32_t max_new = 0;
+            std::vector<int32_t> prompt;
+            if (o.vanilla_serve) {
+                try {
+                    auto request = hetero::vanilla::parse_gen(line, std::min(o.context_limit,limits.max_cells), limits.vocab, o.generate);
+                    max_new = request.max_new;
+                    prompt = std::move(request.ids);
+                } catch (const std::logic_error& ex) {
+                    std::fprintf(serve_wire, "ERR %s\n", ex.what());
+                    std::fflush(serve_wire);
+                    continue;
+                }
+            } else {
+                std::istringstream in(line);
+                std::string count;
+                in >> count;
+                max_new = u32(count, "resident max-new-tokens");
+                prompt = prompt_ids(in, o.context_limit);
+            }
             if (!max_new || max_new > o.generate ||
                 uint64_t(prompt.size()) + max_new > limits.max_cells ||
                 uint64_t(prompt.size()) + max_new > o.context_limit ||
@@ -1421,8 +1507,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                     complete_generation(prompt,max_new);
                     ++completed_requests;
                 }
-                publish(prompt.size());
                 request_summary.cancelled = cancelled;
+                if (o.vanilla_serve)
+                    hetero::vanilla::print_done(serve_wire, request_summary, cancelled ? "cancel" : stopped ? "stop" : "length");
+                else publish(prompt.size());
                 strata::core::print_serve_request_summary(stderr, request_summary);
             }
         }
@@ -1495,7 +1583,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             marker.flush();
             if (!marker) throw std::runtime_error("resident MTP session completion write failed");
         }
-        std::cout << "HETERO_CLOSED\n" << std::flush;
+        if (!o.vanilla_serve) std::cout << "HETERO_CLOSED\n" << std::flush;
         return 0;
     }
     if (o.generate) {
@@ -1559,6 +1647,18 @@ int main(int argc, char** argv) {
             return 0;
         }
         const Options opts = parse(argc, argv);
+        // Keep a private CLOEXEC handle for the application protocol. Every
+        // diagnostic, including child-process stdout, follows native stderr.
+        std::unique_ptr<std::FILE, decltype(&std::fclose)> wire(nullptr, &std::fclose);
+        if (opts.vanilla_serve) {
+            std::cout.flush(); std::fflush(stdout);
+            const int fd = ::fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 3);
+            if (fd < 0) throw std::runtime_error("cannot duplicate serve output");
+            wire.reset(::fdopen(fd, "w"));
+            if (!wire) { ::close(fd); throw std::runtime_error("cannot open serve output"); }
+            if (::dup2(STDERR_FILENO, STDOUT_FILENO) < 0) throw std::runtime_error("cannot route diagnostics");
+            serve_wire = wire.get();
+        }
         const hetero::Plan plan = hetero::parse_plan(
             opts.plan, opts.layers, {opts.hc, opts.n_embd}, opts.fingerprint);
         const auto limits = preflight(opts, plan); // always CPU-only; no runtime in coordinator.
