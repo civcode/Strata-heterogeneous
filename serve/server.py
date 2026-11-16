@@ -10093,7 +10093,8 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         # applying homogeneous GPU flags or unsupported model reload hooks.
         allowed = {"heterogeneous", "model_name", "host", "api_key", "telemetry_read_key",
                    "max_queue", "queue_timeout", "aliases", "reasoning_effort",
-                   "log", "port", "parallel", "open_browser", "cwd", "env", "lib_dirs"}
+                   "log", "port", "parallel", "open_browser", "cwd", "env", "lib_dirs",
+                   "args", "args_written", "user_args", "exe", "tokenizer"}
         if not isinstance(cfg, dict) or not isinstance(cfg.get("heterogeneous"), dict):
             ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
         if cfg.keys() - allowed:

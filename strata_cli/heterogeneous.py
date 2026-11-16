@@ -143,6 +143,9 @@ def prepare_native(args, *, native=None):
     mtp = getattr(args, "mtp", None)
     spec = getattr(args, "spec", None)
     spec_min_p = getattr(args, "spec_min_p", None)
+    native_spec_window = getattr(args, "native_spec_window", None)
+    if native_spec_window is not None and (type(native_spec_window) is not int or native_spec_window not in (4, 5) or mtp is None):
+        raise ValueError("unsupported native MTP verifier window")
     if mtp is None and (spec is not None or spec_min_p is not None):
         raise ValueError("spec and spec_min_p require explicit mtp runtime")
     if mtp is not None:
@@ -176,6 +179,8 @@ def prepare_native(args, *, native=None):
         raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
     if pipeline_mode is not None and source.get("pipeline_mode_cap") != 1:
         raise ValueError("coordinator lacks explicit pipeline-mode capability; rebuild matching binaries")
+    if native_spec_window is not None and source.get("native_spec_window_cap") != 1:
+        raise ValueError("coordinator lacks native --spec window capability; rebuild matching coordinator and workers")
     if mtp is not None and source.get("mtp_service_cap") != 1:
         raise ValueError("coordinator lacks request-local MTP service capability; rebuild matching binaries")
     if mtp is not None and args.plan == "hip:0:0-24,hip:1:24-48" and source.get("mtp_hip_pair_cap") != 1:
@@ -213,7 +218,8 @@ def prepare_native(args, *, native=None):
                   group_native_hip=group, native_prefill_chunk=bulk, workload_mode=workload,
                   long_context=extended, pipeline_mode=pipeline_mode or "legacy")
     if mtp is not None:
-        source.update(mtp=mtp, spec=4, spec_min_p=0.5)
+        source.update(mtp=mtp, spec=native_spec_window-1 if native_spec_window is not None else 4,
+                      spec_min_p=0.5)
     try:
         from tools.strata_tokenizer import Tokenizer
     except ImportError as exc:
@@ -242,6 +248,8 @@ def prepare_native(args, *, native=None):
         native.extend(("--pipeline-mode", pipeline_mode))
     if mtp is not None:
         native.extend(("--mtp-resident-service", "--mtp-probe-rt", mtp, "--hip-split-overlap"))
+        if native_spec_window is not None:
+            native.extend(("--spec", str(native_spec_window)))
     if lookup:
         native.append("--lookup-draft")
     if bulk:

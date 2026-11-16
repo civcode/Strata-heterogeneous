@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools.heterogeneous_oberon_launch import bind, find_reference, guard_engine, read_json, write_config
+from strata_control.mixed_runconfig import resolve
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,7 +17,12 @@ class LaunchTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.profile = read_json(ROOT / "strata-q2_0-heterogeneous.json")
+        self.public_profile = read_json(ROOT / "strata-q2_0-heterogeneous.json")
+        self.profile = copy.deepcopy(self.public_profile)
+        self.profile["heterogeneous"] = resolve(self.profile)
+        self.profile["heterogeneous"].pop("native_spec_window", None)
+        self.profile.pop("args")
+        self.profile.pop("args_written")
         self.source = copy.deepcopy(self.profile)
         opts = self.source["heterogeneous"]
         # The original 0044 reference predates MTP; it retains chunk 128.
@@ -102,6 +108,14 @@ class LaunchTests(unittest.TestCase):
         self.source["heterogeneous"]["config"][0] = "relative.cfg"
         with self.assertRaises(ValueError):
             bind(self.profile, self.source)
+
+    def test_native_profile_binding_keeps_public_args(self):
+        cfg = bind(self.public_profile, self.source)
+        self.assertEqual(cfg["args"], self.public_profile["args"])
+        self.assertEqual(cfg["exe"], self.source["heterogeneous"]["coordinator"])
+        self.assertNotIn("coordinator", cfg["heterogeneous"])
+        self.assertNotIn("spec", cfg["heterogeneous"])
+        self.assertEqual(resolve(cfg)["native_spec_window"], 4)
 
     def test_hash_discovery(self):
         path = self.root / "some-server.json"

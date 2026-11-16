@@ -26,13 +26,12 @@ from serve.heterogeneous_retirement import retire_process
 def prepare_server(cfg, *, env=None):
     """Validate explicit local configuration and reuse CLI source binding."""
     from strata_cli.heterogeneous import prepare_native, model_template, _native
-    opts = cfg.get("heterogeneous")
-    if not isinstance(opts, dict):
-        raise ValueError("heterogeneous engine needs a heterogeneous config object")
+    from strata_control.mixed_runconfig import resolve, verify_source
+    opts = resolve(cfg)
     required = {"coordinator", "config", "plan", "fingerprint"}
     optional = {"cuda_worker", "hip_worker", "layers", "hc", "n_embd", "max_new_tokens", "prompt_chunk", "timeout_ms", "shared",
                 "max_context", "stream_tokens", "restart_clean", "lookup_draft",
-                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv", "pipeline_mode", "mtp", "spec", "spec_min_p"}
+                "group_native_hip", "native_prefill_chunk", "workload_mode", "long_context", "kv", "pipeline_mode", "mtp", "spec", "spec_min_p", "native_spec_window"}
     if not required <= opts.keys() or opts.keys() - required - optional:
         raise ValueError("missing or unknown heterogeneous config keys")
     from strata_cli.heterogeneous import planned_backends
@@ -69,11 +68,13 @@ def prepare_server(cfg, *, env=None):
         with (open(log_path, "a", encoding="utf-8") if log_path else nullcontext(None)) as log:
             native = partial(_native, diagnostic=log, env=env, cwd=cfg.get("cwd"))
             argv, source, tokenizer, stops = prepare_native(args, native=native)
+            verify_source(cfg, source)
             template = model_template(source)
             argv += ["--resident"]
             native(argv)
     else:
         argv, source, tokenizer, stops = prepare_native(args)
+        verify_source(cfg, source)
         template = model_template(source)
         argv += ["--resident"]
         _native(argv)
@@ -94,7 +95,7 @@ class ResidentEngine:
         self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
         self.stream_tokens = source.get("stream_tokens", False)
         self.lookup_draft = source.get("lookup_draft", False)
-        if source.get("mtp") and (self.lookup_draft or source.get("spec") != 4 or
+        if source.get("mtp") and (self.lookup_draft or source.get("spec") not in (3, 4) or
                                   source.get("spec_min_p") != 0.5 or not mtp_context_valid(self.max_context) or
                                   source["max_cells"] != self.max_context or not 1 <= max_new <= 256 or
                                   bool(source.get("long_context")) != (self.max_context > MTP_STANDARD_CONTEXT) or

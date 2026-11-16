@@ -13,6 +13,7 @@ import sys
 import tempfile
 
 from strata_control.server_launch import server_command
+from strata_control.mixed_runconfig import resolve, bind_standard_fields
 
 MIXED = "cuda:0:0-15,hip:0:15-33,hip:1:33-48"
 HIP = "hip:0:0-24,hip:1:24-48"
@@ -65,7 +66,8 @@ def file_path(value, executable=False):
 
 def bind(profile, reference):
     cfg = copy.deepcopy(profile)
-    opts = cfg.get("heterogeneous")
+    public_opts = cfg.get("heterogeneous")
+    opts = resolve(cfg)
     source = reference.get("heterogeneous")
     need(isinstance(opts, dict) and isinstance(source, dict), "expected heterogeneous profile and reference")
     plan = opts.get("plan")
@@ -114,11 +116,15 @@ def bind(profile, reference):
     need(not ({"coordinator", "hip_worker", "cuda_worker", "config"} & opts.keys()),
          "binary and worker config paths are bound from the reference, not the profile")
     for key in keys:
-        opts[key] = file_path(source.get(key), executable=True)
+        path = file_path(source.get(key), executable=True)
+        if "args" in cfg and key == "coordinator":
+            cfg["exe"] = path
+        else:
+            public_opts[key] = path
     stages = source.get("config")
     need(isinstance(stages, list) and len(stages) == (3 if plan == MIXED else 2), "wrong number of stage configs")
-    opts["config"] = [file_path(p) for p in stages]
-    need(len(set(opts["config"])) == len(stages), "duplicate stage configs")
+    public_opts["config"] = [file_path(p) for p in stages]
+    need(len(set(public_opts["config"])) == len(stages), "duplicate stage configs")
     return cfg
 
 
@@ -165,7 +171,8 @@ def main():
         if a.prepare_only:
             from serve.heterogeneous import prepare_server
             from serve.server import child_env
-            prepare_server(cfg, env=child_env(cfg, offline=True, mixed_runtime=True))
+            _, _, source, _, _, _ = prepare_server(cfg, env=child_env(cfg, offline=True, mixed_runtime=True))
+            bind_standard_fields(cfg, source)
             print(write_config(root / "launchers", cfg))
             return 0
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -180,6 +187,11 @@ def main():
             if os.environ.get("STRATA_HETERO_PROFILE") != "1":
                 cfg.setdefault("log", str(root / (a.profile.stem + ".log")))
             cfg["port"] = port
+            if "args" in cfg:
+                from serve.heterogeneous import prepare_server
+                from serve.server import child_env
+                _, _, source, _, _, _ = prepare_server(cfg, env=child_env(cfg, offline=True, mixed_runtime=True))
+                bind_standard_fields(cfg, source)
             path = write_config(root / "launchers", cfg)
             os.set_inheritable(lock.fileno(), True)
             cmd = server_command(Path(__file__).resolve().parents[1], path, port, a.open)
