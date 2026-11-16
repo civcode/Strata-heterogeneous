@@ -10085,7 +10085,8 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     # Public launches use the ordinary Strata entry point. The explicit mixed
     # runtime extension selects the resident adapter internally. Keep the old
     # engine spelling for existing qualification scripts, not as a new UI.
-    if a.engine == "strata" and isinstance(cfg, dict) and "heterogeneous" in cfg:
+    public_mixed_launch = a.engine == "strata" and isinstance(cfg, dict) and "heterogeneous" in cfg
+    if public_mixed_launch:
         a.engine = "heterogeneous"
     if a.engine == "heterogeneous":
         # This opt-in uses the ordinary Service and HTTP lifecycle; avoid
@@ -10097,6 +10098,8 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
         if cfg.keys() - allowed:
             ap.error("unsupported heterogeneous server config keys: " + ", ".join(sorted(cfg.keys() - allowed)))
+        if public_mixed_launch and "log" not in cfg and os.environ.get("STRATA_HETERO_PROFILE") != "1":
+            cfg["log"] = str(Path(a.config).with_suffix(".log"))
         if "log" in cfg and (not isinstance(cfg["log"], str) or not cfg["log"]):
             ap.error("log must be a nonempty path")
         if "cwd" in cfg and (not isinstance(cfg["cwd"], str) or not cfg["cwd"] or not Path(cfg["cwd"]).is_dir()):
@@ -10354,6 +10357,10 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
                                     opts.prompt_chunk, opts.timeout_ms, EngineDied, log=log_path,
                                     env=resident_env, cwd=cfg.get("cwd"))
+        except (EngineDied, OSError, ValueError):
+            if log_path:
+                print(f"[strata] engine log: {log_path}", file=sys.stderr, flush=True)
+            raise
         finally:
             loading.set()
             if narrator is not None:

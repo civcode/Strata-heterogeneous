@@ -35,7 +35,10 @@ avoidable divergence. Do not revert qualified correctness gates blindly.
   (~/tmp/strata-heterogeneous/<profile-stem>.log); raw preflight, worker,
   timing, readiness and retirement diagnostics remain available. Existing
   explicit STRATA_HETERO_PROFILE=1 terminal capture remains when no log is
-  specified. Do not use logs with tracing enabled as a speed measurement.
+  specified. A direct ordinary --engine strata launch with mixed metadata
+  and no log key uses the config's sibling .log (unless explicit profiling).
+  --no-open is available on the binder for headless runs. Do not use logs
+  with tracing enabled as a speed measurement.
   Protocol stdout stays separate and validated. The shared native model
   loading and startup narrator are reused; no fabricated expert loading
   or placement facts. The shared Service continues progress and completion

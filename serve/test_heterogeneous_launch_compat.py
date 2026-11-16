@@ -81,6 +81,11 @@ class LaunchCompatibilityTests(unittest.TestCase):
                     self.assertEqual(error.exception.code, 2)
                     self.assertIn("fixture reached preflight", stderr.getvalue())
                     preflight.assert_called_once()
+                    effective = preflight.call_args.args[0]
+                    if name == "strata":
+                        self.assertEqual(effective["log"], str(config.with_suffix(".log")))
+                    else:
+                        self.assertNotIn("log", effective)
 
     def test_unimplemented_engine_args_are_not_silently_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
