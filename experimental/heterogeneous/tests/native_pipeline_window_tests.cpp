@@ -27,6 +27,16 @@ int main() {
                         int expected = old_size(op, from, avail, spec, min);
                         check(pipeline_window_size(op, from, avail, spec, min)==expected,"window size parity");
                     }
+        // Native producer can generate the low-confidence row that ends its
+        // chain. Resident service counts one anchor plus at most four drafts.
+        const float low_first[4]={.49f,.9f,.9f,.9f};
+        const float low_last[4]={.9f,.6f,.5f,.49f};
+        const float all_high[4]={.9f,.6f,.5f,.8f};
+        check(pipeline_window_size(low_first,0,1,5,.5)==1,"native confidence admits anchor only");
+        check(pipeline_window_size(low_last,0,4,5,.5)==4,"native confidence excludes final low row");
+        check(pipeline_window_size(all_high,0,4,5,.5)==5,"native confidence admits four drafts");
+        check(pipeline_window_size(all_high,0,2,5,.5)==3,"native confidence respects generated count");
+        check(pipeline_window_size(all_high,0,0,5,.5)==1,"native confidence empty producer");
         PipelineWindow A;
         A.T=4; A.seq=7; A.p=100;
         A.tok[0]=1; A.tok[1]=2; A.tok[2]=3; A.tok[3]=4;

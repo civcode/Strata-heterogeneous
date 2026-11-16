@@ -139,8 +139,6 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         const size_t boundary_stage = cmd.stage_index - (stages.size() - 1);
         const char* capture_prefix = std::getenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX");
         const bool capture_bridge = capture_prefix && *capture_prefix;
-        const bool overlap_upload = !sender && !local && !isolated && !stage_probe && !capture_bridge &&
-            stages.size()==2 && terminal_chunk && performance_flag("STRATA_HETERO_MTP_PREFILL_UPLOAD");
         if (local && capture_bridge) {
             error = "cross-runtime prefill capture is not valid on a full local domain"; return false;
         }
@@ -234,23 +232,12 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                             err="native prefill residual identity or finite gate failed"; return false;
                         }
                         std::memcpy(owned.pinned+off*stride,f->payload.data(),count*stride*sizeof(float));
-                        if (overlap_upload &&
-                            !check(cudaMemcpyAsync(dst+off*stride,owned.pinned+off*stride,count*stride*sizeof(float),
-                                                   cudaMemcpyHostToDevice,static_cast<cudaStream_t>(stream)),
-                                   "native prefill piece upload")) return false;
                         off+=count;
                     }
                     auto cs=static_cast<cudaStream_t>(stream);
-                    // Every queued piece has a disjoint pinned slice. Native
-                    // run_impl orders its kernels behind the uploads on cs;
-                    // the native successor handoff waits for chunk compute
-                    // before the next external_input callback may reuse the
-                    // slot (hand_done event or stream sync). Failure cleanup
-                    // still drains all devices before releasing pinned memory.
-                    if (!overlap_upload &&
-                        (!check(cudaMemcpyAsync(dst,owned.pinned,size_t(rows)*stride*sizeof(float),
+                    if (!check(cudaMemcpyAsync(dst,owned.pinned,size_t(rows)*stride*sizeof(float),
                                                cudaMemcpyHostToDevice,cs),"prefill residual H2D") ||
-                         !check(cudaStreamSynchronize(cs),"prefill staging lifetime fence"))) return false;
+                        !check(cudaStreamSynchronize(cs),"prefill staging lifetime fence")) return false;
                     for (size_t off = 0; capture_bridge && off < size_t(rows);) {
                         const size_t count = std::min(cap, size_t(rows) - off);
                         if (!verify_piece(dst, off, count, pos, "in", cs, err)) return false;

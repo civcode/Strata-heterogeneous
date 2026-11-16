@@ -6,7 +6,6 @@
 #include "strata_heterogeneous/hip_final_verifier.hpp"
 #include "strata_heterogeneous/mtp_prefix_cursor.hpp"
 #include "strata_heterogeneous/mtp_bulk_seed_stats.hpp"
-#include "strata_heterogeneous/mtp_adaptive_width.hpp"
 #include "strata_heterogeneous/performance.hpp"
 #include "strata_heterogeneous/mtp_fresh_replay.hpp"
 #include "strata_heterogeneous/mtp_three_round.hpp"
@@ -52,8 +51,10 @@ public:
 
     bool prepare(const HipVerifierBindings& b, core::Verifier& terminal, std::string& error) override {
         const auto& g=b.geometry;
-        adaptive_enabled_=performance_flag("STRATA_HETERO_MTP_ADAPTIVE");
-        if (adaptive_enabled_ && !service_enabled()) {error="adaptive MTP requires resident service";return false;}
+        native_window_=performance_flag("STRATA_HETERO_MTP_NATIVE_WINDOW");
+        if (native_window_ && !service_enabled()) {
+            error="native confidence window requires resident MTP service";return false;
+        }
         // Fresh-prefix qualification found divergent subsequent native offers
         // after rejection. Do not reuse speculative draft state until fixed.
         if (!trace_prefix_.empty() && (std::getenv("STRATA_PARK_ASYNC") || std::getenv("STRATA_PARK_VRAM_MIB"))) {
@@ -316,10 +317,6 @@ public:
         bulk_stats_={};
         bulk_detail_=false;
         service_policy_.reset();
-        adaptive_width_={};
-        adaptive_round_limit_=-1;
-        adaptive_generated_=0;
-        if (adaptive_enabled_) drafter_->set_max_drafts(4);
         verified_next_=-1;
         relay_pending_=false;
         request_=request;
@@ -384,17 +381,6 @@ public:
             error="MTP service commit differs from admitted prefix";return false;
         }
         if (!cursor_->committed(terminal.final_R_all(),keep,prime(),error)) return false;
-        if (adaptive_enabled_ && adaptive_round_limit_>=0) {
-            const unsigned offered=static_cast<unsigned>(spec.token_ids.size()-1);
-            if (!adaptive_width_.observe(static_cast<unsigned>(adaptive_round_limit_),offered,keep-1)) {
-                error="adaptive MTP feedback exceeds admitted offer";return false;
-            }
-            std::fprintf(stderr,"HETERO_MTP_ADAPT request=%llu window=%llu limit=%d generated=%d offered=%u accepted=%u next_limit=%u\n",
-                         static_cast<unsigned long long>(request),static_cast<unsigned long long>(window),
-                         adaptive_round_limit_,adaptive_generated_,offered,keep-1,adaptive_width_.width());
-            adaptive_round_limit_=-1;
-            adaptive_generated_=0;
-        }
         ++committed_;
         verified_next_=predictions[keep-1];
         if (generation_.enabled() || service_enabled()) return true; // service has no terminal diagnostic draft
@@ -443,20 +429,8 @@ public:
             return false;
         }
         offer.pos0=anchor.pos0;
-        if (adaptive_enabled_ && adaptive_round_limit_>=0) {
-            error="adaptive MTP offer still awaiting commit";return false;
-        }
-        // The wire policy remains spec=4. Reduce actual native chain work,
-        // and always consume the exact returned offer, even at zero width.
-        const unsigned limit=adaptive_enabled_ ?
-            adaptive_width_.limit(service_policy_->feed_end()-anchor.pos0-1) : 4u;
-        int native_generated=0;
         const bool ok=cursor_->offer(verified_next_,offer.token_ids,
-            [this,limit,&native_generated](const float* row,int32_t next,int64_t cell,std::vector<int32_t>& candidates,std::string& e) {
-                // max_drafts=0 would not run the native draft graph; preserve
-                // the accepted tail R/successor pairing using native prefill.
-                if (adaptive_enabled_ && !limit) return prime()(row,&next,1,cell,e);
-                if (adaptive_enabled_) drafter_->set_max_drafts(static_cast<int>(limit));
+            [this](const float* row,int32_t next,int64_t cell,std::vector<int32_t>& candidates,std::string& e) {
                 std::array<int32_t,8> tokens{};
                 std::array<float,8> probs{};
                 int n=0;
@@ -469,13 +443,19 @@ public:
                 // pair with vanilla prefill, keeping the already-made offer.
                 if (reprime_tail_ && (!drafter_->prefill(row,&next,1,cell,e,true) ||
                     !room(0,e) || !capture("reprime_after",row,&next,1,cell,cell+1,e))) return false;
-                if (n<1 || n>static_cast<int>(limit) || result.generated!=n ||
-                    (adaptive_enabled_ && result.budget!=static_cast<int>(limit))) {e="MTP relay invalid count";return false;}
-                native_generated=n;
+                if (n<1 || n>4 || result.generated!=n) {e="MTP relay invalid count";return false;}
                 for(int i=0;i<n;++i)
                     if(tokens[i]<0 || tokens[i]>=n_vocab_ || !std::isfinite(probs[i]) ||
                        probs[i]<0.f || probs[i]>1.f) {e="MTP relay invalid candidate";return false;}
-                candidates.assign(tokens.begin(),tokens.begin()+n);
+                // Native draft() reports generated rows, including the row
+                // that ended a confidence-gated chain. Native window sizing
+                // decides which rows to actually submit; the wire adapter
+                // then clips only for request context/stop/length admission.
+                // Never add a separate acceptance-history policy.
+                const int submitted=native_window_ ?
+                    core::pipeline_window_size(probs.data(),0,n,
+                        static_cast<int>(MtpRequestPolicy::max_candidates)+1,service_min_p_) - 1 : n;
+                candidates.assign(tokens.begin(),tokens.begin()+submitted);
                 if (service_enabled()) {
                     auto clipped=service_policy_->clip_offer(cell+1,next,candidates);
                     candidates.assign(clipped.begin()+1,clipped.end());
@@ -493,13 +473,13 @@ public:
                 }
                 std::fprintf(stderr,"HETERO_MTP_RELAY_OFFER cell=%lld anchor=%d count=%d\n",
                              static_cast<long long>(cell),next,n);
+                if (native_window_ && performance_trace())
+                    std::fprintf(stderr,"HETERO_MTP_NATIVE_WINDOW request=%llu cell=%lld generated=%d confidence_admitted=%d submitted=%zu\n",
+                                 static_cast<unsigned long long>(request_),static_cast<long long>(cell),
+                                 n,submitted,candidates.size());
                 return true;
             },error,generation_.enabled() || service_enabled());
         relay_pending_=ok;
-        if (ok && adaptive_enabled_) {
-            adaptive_round_limit_=static_cast<int>(limit);
-            adaptive_generated_=native_generated;
-        }
         return ok;
     }
     void shutdown() noexcept override {
@@ -525,9 +505,8 @@ private:
     unsigned windows_,relay_rounds_=0,committed_=0;
     int32_t verified_next_=-1;
     bool relay_pending_=false;
-    bool adaptive_enabled_=false;
-    MtpAdaptiveWidth adaptive_width_;
-    int adaptive_round_limit_=-1, adaptive_generated_=0;
+    bool native_window_=false;
+    static constexpr float service_min_p_=0.5f;
     std::string trace_prefix_;
     bool reprime_tail_=false;
     bool front_trace_=false;
@@ -584,7 +563,7 @@ private:
             ~ClearSource() { d.set_source_R(nullptr); }
         } clear{*drafter_};
         drafter_->set_source_R(row);
-        return drafter_->draft(1,&next,cell,0,tokens,e,probs,service_enabled()?0.5f:0.f,&n,&result);
+        return drafter_->draft(1,&next,cell,0,tokens,e,probs,service_enabled()?service_min_p_:0.f,&n,&result);
     }
     bool ck(cudaError_t rc,std::string& e) const {
         if(rc==cudaSuccess) return true;
