@@ -6841,7 +6841,6 @@ def request_timings(prompt_tokens: int, generated: int, last: dict) -> dict | No
             "predicted_n": generated, "predicted_ms": round(decode_ms, 1) if decode_ms is not None else None,
             "predicted_per_token_ms": round(decode_ms / decoded, 3) if decoded and decode_ms is not None else None,
             "predicted_per_second": round(decoded / (decode_ms / 1000), 1) if decoded and decode_ms and decode_ms > 0 else None,
-            **({"timing_source": last["timing_source"]} if last.get("timing_source") else {}),
             # the speculative drafts, as llama.cpp names them (from PR #83, @mikicvi): only when the engine reported them
             **({"draft_n": int(last["drafts_offered"]), "draft_n_accepted": int(last["drafts_accepted"])}
                if last.get("drafts_offered") is not None else {})}
@@ -9919,7 +9918,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             event_sink = None
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--engine", choices=["mock", "strata", "heterogeneous"], default="mock")
+    ap.add_argument("--engine", choices=["mock", "strata"], default="mock")
     ap.add_argument("--config", help="strata engine config (JSON: exe, args, cwd, tokenizer, model_name), "
                                      "written by setup.py")
     ap.add_argument("--host", default=None,
@@ -10026,34 +10025,6 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         ap.error("--shutdown-timeout must be in 0..300 seconds")
     config_bytes = Path(a.config).read_bytes() if a.config else b""
     cfg = parse_config_text(config_bytes.decode("utf-8-sig"), a.config) if a.config else {}   # Notepad adds a BOM
-    # Legacy qualification JSON is not an ordinary run config. Never route a
-    # normal launch through the experimental Python resident adapter.
-    if a.engine == "strata" and isinstance(cfg, dict) and "heterogeneous" in cfg:
-        ap.error("bind the topology with the Oberon config preparation tool to obtain native --serve args")
-    if a.engine == "heterogeneous":
-        # This opt-in uses the ordinary Service and HTTP lifecycle; avoid
-        # applying homogeneous GPU flags or unsupported model reload hooks.
-        allowed = {"heterogeneous", "model_name", "host", "api_key", "telemetry_read_key",
-                   "max_queue", "queue_timeout", "aliases", "reasoning_effort",
-                   "exe", "args", "cwd", "tokenizer", "log", "port", "sampling",
-                   "mtp", "drafting", "fit_max_tokens"}
-        if not isinstance(cfg, dict) or not isinstance(cfg.get("heterogeneous"), dict):
-            ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
-        if cfg.keys() - allowed:
-            ap.error("unsupported heterogeneous server config keys: " + ", ".join(sorted(cfg.keys() - allowed)))
-        sampling_block = cfg.get("sampling")
-        if sampling_block is not None and not isinstance(sampling_block, dict):
-            ap.error("sampling must be an object")
-        sampling = sampling_defaults_from_config(cfg)
-        if (sampling not in ({}, {"temperature": 0.0}) or
-                (cfg.get("mtp") is not None and cfg["mtp"] is not False) or
-                cfg.get("drafting") not in (None, "off")):
-            ap.error("heterogeneous currently requires greedy sampling and drafting off")
-        if (a.lazy or a.parallel not in (None, 1) or a.batch_groups is not None or a.gpu is not None or
-                a.replicas is not None or a.split_serve is not None or a.mcp_config or a.before_load or
-                a.slot_save_path or a.idle_unload not in (None, 0) or a.min_free_vram_mib not in (None, 0) or
-                a.batch_telemetry or a.open):
-            ap.error("heterogeneous server supports only explicit resident single-request text mode")
     split_joined_args(cfg)
     if a.config and a.engine == "strata":
         cfg = apply_saved_tuning(cfg)
@@ -10106,8 +10077,6 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     if a.gpu is not None:
         cfg["gpu"] = int(a.gpu) if a.gpu.strip().isdigit() else a.gpu
     a.host = a.host or cfg.get("host") or "127.0.0.1"   # issue #26: the run scripts pass no --host, the config can
-    if a.engine == "heterogeneous" and a.host not in ("127.0.0.1", "::1", "localhost"):
-        ap.error("experimental heterogeneous serving is loopback-only")
     supplied_args = argv if argv is not None else sys.argv[1:]
     if ("STRATA_API_KEY" in os.environ and not os.environ["STRATA_API_KEY"].strip()) or \
             any((x == "--api-key" and i + 1 < len(supplied_args) and not supplied_args[i + 1].strip()) or
@@ -10128,27 +10097,26 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         Server((a.host, a.port), BaseHTTPRequestHandler).server_close()
     except OSError as e:
         ap.error(listen_problem(a.host, a.port, e))
-    resident_spec = None
+    if cfg.get("tokenizer"):
+        a.tokenizer = cfg["tokenizer"]
+    tok = ByteTokenizer()
     tcfg = {}
-    if a.engine == "heterogeneous":
-        from serve.heterogeneous import prepare_server
-        try:
-            resident_spec = prepare_server(cfg)
-        except (OSError, ValueError, ImportError) as e:
-            ap.error(str(e))
-        _, _, source, tok, _, _ = resident_spec
-        tpath = Path(source["pack_dir"]) / "tokenizer"
-    else:
-        if cfg.get("tokenizer"):
-            a.tokenizer = cfg["tokenizer"]
-        tok = ByteTokenizer()
-        tcfg = {}
-        tpath = Path(a.tokenizer)
-        if a.engine == "strata" and not (tpath / "vocab.json").exists():
-            ap.error(f"the model's tokenizer is missing ({tpath / 'vocab.json'}); run setup again")
-        if (tpath / "vocab.json").exists():
-            import strata_tokenizer as ST
-            tok, tcfg = ST.Tokenizer.from_pack(tpath)
+    tpath = Path(a.tokenizer)
+    if a.engine == "strata" and not (tpath / "vocab.json").exists():
+        ap.error(f"the model's tokenizer is missing ({tpath / 'vocab.json'}); run setup again")
+    if (tpath / "vocab.json").exists():
+        import strata_tokenizer as ST
+        vocab = json.loads((tpath / "vocab.json").read_text(encoding="utf-8"))
+        tokens = [None] * len(vocab)
+        for t, i in vocab.items():
+            tokens[i] = t
+        merges = (tpath / "merges.txt").read_text(encoding="utf-8").split("\n")
+        types = json.loads((tpath / "token_type.json").read_text())
+        try:                                            # the pack's pre-tokenizer name and special ids (DeepSeek's differ)
+            tcfg = json.loads((tpath / "tokenizer.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        tok = ST.Tokenizer(tokens, merges, types, tcfg.get("pre") or "qwen35", tcfg.get("special_ids") or None)
     if a.engine == "strata" and not cfg.get("arch") and arch_from_tokenizer(None, tcfg.get("pre")):
         cfg["arch"] = arch_from_tokenizer(None, tcfg.get("pre"))
         print(f"[strata] the config names no \"arch\" and this tokenizer is DeepSeek's: serving it as {cfg['arch']} (its end token, DSML tool "
@@ -10262,31 +10230,6 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
                                  linux_desktop()) if not groups and not split else None
         if note:                                        # #560 #516: before --open starts a browser on that card
             print(note, flush=True)
-    elif a.engine == "heterogeneous":
-        from serve.heterogeneous import ResidentEngine
-        import atexit
-        opts, native_argv, source, tok, stops, _ = resident_spec
-        from serve.heterogeneous_config import resolve
-        log = str(resolve(cfg, cfg["log"])) if cfg.get("log") else None
-        if log and os.environ.get("STRATA_REQUEST_LINES") and os.path.abspath(log) not in _echoing:
-            with open(log, "a", encoding="utf-8"):
-                pass
-            _echoing.add(os.path.abspath(log))
-            threading.Thread(target=echo_requests, args=(log, os.path.getsize(log)), daemon=True).start()
-        engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
-                                opts.prompt_chunk, opts.timeout_ms, EngineDied,
-                                log=log, cwd=cfg.get("cwd"))
-        vision, effort_end, sampling_defaults = None, None, {"temperature": 0}
-        if max_queue is None:
-            max_queue = 0
-
-        def close_resident_on_exit():
-            # Also cover a failure between model readiness and HTTP binding.
-            try:
-                engine.close()
-            except Exception as exc:
-                print(f"[strata] resident cleanup: {exc}", file=sys.stderr, flush=True)
-        atexit.register(close_resident_on_exit)
     else:
         effort_end = None
         engine, vision, sampling_defaults = MockEngine(tok, a.script or [
@@ -10301,15 +10244,11 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         if swapped:
             print("[strata] this pack's chat template spells the tool-call block differently from the V4.1 model's; "
                   "using the V4.1 template so tool calls come back as real calls", flush=True)
-    template = resident_spec[-1] if resident_spec else ChatTemplate(tpl if tpl.exists() else ROOT / "serve/chat_template.jinja")
-    svc = Service(engine, tok, template,
+    svc = Service(engine, tok, ChatTemplate(tpl if tpl.exists() else ROOT / "serve/chat_template.jinja"),
                   model_name=default_model_name(cfg), vision=vision,
                   sampling_defaults=sampling_defaults,
                   fit_max_tokens=a.fit_max_tokens or (not a.no_fit_max_tokens and cfg.get("fit_max_tokens") is not False))
     svc.launch_attestation = launch_attestation
-    if a.engine == "heterogeneous":
-        svc.stop_ids = engine.stop_ids
-        svc.requested_slots = 1
     if (cfg.get("arch") or "") == "deepseek41" and vision is None and a.engine == "strata":
         # DeepSeek-V4.1 reads pictures with the engine's own tower (--vision on, the default): no separate reader process.
         # `--vision off` in the config's args, or a pack without a tower, leaves svc.vision None: pictures are refused with the 400 as before.
@@ -10468,8 +10407,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     svc.terminal_topology_mode = ("replicas (configured)" if a.engine == "strata" and groups
                                   else "split serve (configured)" if a.engine == "strata" and split
                                   else "layer split (configured)" if a.engine == "strata" and layer_split_of(cfg)
-                                  else "single GPU or CPU" if a.engine == "strata"
-                                   else "heterogeneous resident (experimental)" if a.engine == "heterogeneous" else "mock")
+                                  else "single GPU or CPU" if a.engine == "strata" else "mock")
     svc.terminal_configured_split = (layer_split_value(cfg) if a.engine == "strata" and layer_split_of(cfg)
                                      else None)
     svc.backend = cfg.get("backend")                    # "hip": the AMD cards' readings come from sysfs (#301)
