@@ -62,17 +62,18 @@ def _path(value, executable=False):
     return str(path)
 
 
-def _native(argv, *, text=None, marker=None):
+def _native(argv, *, text=None, marker=None, diagnostic=None, env=None, cwd=None):
     # Keep the native worker diagnostics off the CLI's machine-output stream.
     # No shell; subprocess stdin is closed before the coordinator launches GPUs.
     result = subprocess.run(argv, input=text if text is not None else "",
-                            stdout=subprocess.PIPE, encoding="utf-8", errors="replace", check=False)
+                            stdout=subprocess.PIPE, stderr=diagnostic, encoding="utf-8", errors="replace",
+                            check=False, env=env, cwd=cwd)
     records = []
     for line in result.stdout.splitlines():
         if marker and line.startswith(marker + " "):
             records.append(line[len(marker) + 1:])
         else:
-            print(line, file=sys.stderr)
+            print(line, file=diagnostic if diagnostic is not None else sys.stderr, flush=True)
     if result.returncode:
         raise ValueError(f"heterogeneous coordinator failed (exit {result.returncode}); see native diagnostics")
     if marker:
@@ -115,8 +116,9 @@ def kv_argument(args):
     return mode
 
 
-def prepare_native(args):
+def prepare_native(args, *, native=None):
     """CPU-only source/identity and tokenizer loading for the CLI and server."""
+    native_call = _native if native is None else native
     from serve.heterogeneous_contract import generation_limits
     from serve.heterogeneous_contract import (MAX_WORKLOAD_NEW, MAX_MTP_BULK_CHUNK,
         MTP_CONTEXT_CAPACITY, MTP_STANDARD_CONTEXT, mtp_context_valid, mtp_context_capable, mtp_bulk_capable)
@@ -169,7 +171,7 @@ def prepare_native(args):
         argv.append("--group-native-hip")
     # The native config parser determines the authorized tokenizer source;
     # never accept an independently supplied tokenizer or ByteTokenizer.
-    source = _native(argv + ["--describe-source"], marker="HETERO_SOURCE")
+    source = native_call(argv + ["--describe-source"], marker="HETERO_SOURCE")
     if source.get("kv") != kv:
         raise ValueError("native coordinator did not attest the requested KV mode; rebuild matching binaries")
     if pipeline_mode is not None and source.get("pipeline_mode_cap") != 1:

@@ -818,18 +818,23 @@ def deepseek_restore_points(ids, user_id, system_id=None, tail=512, least=RESTOR
     return out
 
 
-def narrate_start(log_path: str, offset: int, args: list, done: threading.Event, heartbeat=20.0) -> None:
+def narrate_model_loading(lazy=False):
+    print("model unloaded; the first request loads it ..." if lazy else
+          "loading the model (the first start takes a minute or two) ...", flush=True)
+
+
+def narrate_start(log_path: str, offset: int, args: list | None, done: threading.Event, heartbeat=20.0) -> None:
     """While the engine starts, say in the server window what it is doing, from its log: the start reads tens of GB
     into RAM and locks part of it for the GPU, and on many PCs everything is slow or frozen for a minute or more -
     people closed the window thinking it had hung.  The warning comes at that step, not after it."""
     gb = 0.0
-    if "--native" in args:                              # about the size of the experts it will read
+    if args is not None and "--native" in args:         # about the size of the experts it will read
         try:
             gb = os.path.getsize(args[args.index("--native") + 1]) / 1e9
         except (OSError, IndexError):
             pass
     size = f"about {gb:.0f} GB" if gb >= 1 else "tens of GB"
-    loading = experts_loading_words(args, size)
+    loading = experts_loading_words(args, size) if args is not None else None
     t0 = last = time.time()
     said = set()
 
@@ -853,7 +858,7 @@ def narrate_start(log_path: str, offset: int, args: list, done: threading.Event,
             cut = chunk.rfind(b"\n") + 1
             pos += cut
             for line in chunk[:cut].decode("utf-8", "replace").splitlines():
-                if "PLE on" in line or "expert arena:" in line or "experts via mmap" in line:   # #505: mapped
+                if loading is not None and ("PLE on" in line or "expert arena:" in line or "experts via mmap" in line):
                     say("arena", f"[strata] {loading}\n"
                                  "         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.\n"
                                  "         Please wait and don't close this window"
@@ -4341,11 +4346,15 @@ def gdn_stack_env(env: dict, cfg: dict, archs: dict | None = None) -> None:
             env.setdefault(k, v)
 
 
-def child_env(cfg: dict, *, offline: bool = False) -> dict:
+def child_env(cfg: dict, *, offline: bool = False, mixed_runtime: bool = False) -> dict:
     """The engine's environment: the CUDA libraries setup installed (pip's nvidia packages, or the toolkit that
     compiled it) first on the library search path."""
     env = dict(os.environ)
-    if gpu_all_off(cfg):                             # every card Off: the engine sees none (a CPU engine runs; the others say so at start)
+    if mixed_runtime:
+        # Workers own backend-local ordinals and qualified kernel selection.
+        # Never reinterpret the mixed plan as one homogeneous GPU list.
+        pass
+    elif gpu_all_off(cfg):                         # every card Off: the engine sees none (a CPU engine runs; the others say so at start)
         env["CUDA_VISIBLE_DEVICES"] = ""
         env["HIP_VISIBLE_DEVICES"] = ""
     elif hip_visible(cfg) and cfg.get("backend") == "hip":   # AMD: numbered as HIP numbers them (hip_visible)
@@ -4357,8 +4366,9 @@ def child_env(cfg: dict, *, offline: bool = False) -> dict:
         env[str(k)] = str(v)
     if (cfg.get("arch") or "") == "deepseek41":      # (only this engine reads these; Qwen's environment is untouched)
         deepseek_slot_env(env, cfg)
-    parallel_stack_env(env, cfg)
-    gdn_stack_env(env, cfg)
+    if not mixed_runtime:
+        parallel_stack_env(env, cfg)
+        gdn_stack_env(env, cfg)
     # Strict offline reaches children through the environment, because a tool subprocess or a model
     # loader is code this server does not own. Applied last so a profile's own `env` cannot remove
     # the policy by naming the same variable.
@@ -4376,7 +4386,7 @@ def child_env(cfg: dict, *, offline: bool = False) -> dict:
     if dirs:
         var = "PATH" if os.name == "nt" else "LD_LIBRARY_PATH"
         env[var] = os.pathsep.join(dirs + ([env[var]] if env.get(var) else []))
-    if cfg.get("backend") == "hip":
+    if not mixed_runtime and cfg.get("backend") == "hip":
         hip_env_guard(env, cfg)
         note = sh_stream_warning(env, cfg)
         if note:
@@ -10072,19 +10082,40 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         ap.error("--shutdown-timeout must be in 0..300 seconds")
     config_bytes = Path(a.config).read_bytes() if a.config else b""
     cfg = parse_config_text(config_bytes.decode("utf-8-sig"), a.config) if a.config else {}   # Notepad adds a BOM
+    # Public launches use the ordinary Strata entry point. The explicit mixed
+    # runtime extension selects the resident adapter internally. Keep the old
+    # engine spelling for existing qualification scripts, not as a new UI.
+    if a.engine == "strata" and isinstance(cfg, dict) and "heterogeneous" in cfg:
+        a.engine = "heterogeneous"
     if a.engine == "heterogeneous":
         # This opt-in uses the ordinary Service and HTTP lifecycle; avoid
         # applying homogeneous GPU flags or unsupported model reload hooks.
         allowed = {"heterogeneous", "model_name", "host", "api_key", "telemetry_read_key",
-                   "max_queue", "queue_timeout", "aliases", "reasoning_effort"}
+                   "max_queue", "queue_timeout", "aliases", "reasoning_effort",
+                   "log", "port", "parallel", "open_browser", "cwd", "env", "lib_dirs"}
         if not isinstance(cfg, dict) or not isinstance(cfg.get("heterogeneous"), dict):
             ap.error("--engine heterogeneous requires a dedicated --config with a heterogeneous object")
         if cfg.keys() - allowed:
             ap.error("unsupported heterogeneous server config keys: " + ", ".join(sorted(cfg.keys() - allowed)))
+        if "log" in cfg and (not isinstance(cfg["log"], str) or not cfg["log"]):
+            ap.error("log must be a nonempty path")
+        if "cwd" in cfg and (not isinstance(cfg["cwd"], str) or not cfg["cwd"] or not Path(cfg["cwd"]).is_dir()):
+            ap.error("cwd must name an existing directory")
+        if "env" in cfg and not isinstance(cfg["env"], dict):
+            ap.error("env must be an object")
+        if "lib_dirs" in cfg and (not isinstance(cfg["lib_dirs"], list) or
+                                  not all(isinstance(d, str) for d in cfg["lib_dirs"])):
+            ap.error("lib_dirs must be an array of directory paths")
+        if "port" in cfg and (type(cfg["port"]) is not int or not 1 <= cfg["port"] <= 65535):
+            ap.error("port must be in 1..65535")
+        if "parallel" in cfg and (type(cfg["parallel"]) is not int or cfg["parallel"] != 1):
+            ap.error("heterogeneous serving currently supports parallel=1 only")
+        if "open_browser" in cfg and type(cfg["open_browser"]) is not bool:
+            ap.error("open_browser must be true or false")
         if (a.lazy or a.parallel not in (None, 1) or a.batch_groups is not None or a.gpu is not None or
                 a.replicas is not None or a.split_serve is not None or a.mcp_config or a.before_load or
                 a.slot_save_path or a.idle_unload not in (None, 0) or a.min_free_vram_mib not in (None, 0) or
-                a.batch_telemetry or a.open):
+                a.batch_telemetry):
             ap.error("heterogeneous server supports only explicit resident single-request text mode")
     split_joined_args(cfg)
     if a.config and a.engine == "strata":
@@ -10165,9 +10196,11 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     if a.engine == "heterogeneous":
         from serve.heterogeneous import prepare_server
         try:
-            resident_spec = prepare_server(cfg)
+            resident_env = child_env(cfg, offline=a.offline, mixed_runtime=True)
+            resident_spec = prepare_server(cfg, env=resident_env)
         except (OSError, ValueError, ImportError) as e:
-            ap.error(str(e))
+            log_hint = f" (engine log: {cfg['log']})" if cfg.get("log") else ""
+            ap.error(str(e) + log_hint)
         _, _, source, tok, _, _ = resident_spec
         tpath = Path(source["pack_dir"]) / "tokenizer"
     else:
@@ -10244,8 +10277,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
                       "encoder's GPU, or the first picture may not get it", flush=True)
             vision = Vision(vcfg, log=open(cfg["log"], "a", encoding="utf-8") if cfg.get("log") else None,
                             env=vision_env(cfg, env), lazy=lazy)
-        print("model unloaded; the first request loads it ..." if lazy else
-              "loading the model (the first start takes a minute or two) ...", flush=True)
+        narrate_model_loading(lazy)
         warn_budget_over_ram(engine_args(cfg, announce=False) if "args" in cfg else [])      # #1080
         note = card_note(cfg, env)
         if note:
@@ -10308,8 +10340,24 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         from serve.heterogeneous import ResidentEngine
         import atexit
         opts, native_argv, source, tok, stops, _ = resident_spec
-        engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
-                                opts.prompt_chunk, opts.timeout_ms, EngineDied)
+        narrate_model_loading()
+        loading = threading.Event()
+        log_path = cfg.get("log")
+        narrator = None
+        if log_path:
+            # Use the same narrator, without inventing homogeneous expert
+            # policy facts. The actual staged loader must publish those first.
+            narrator = threading.Thread(target=narrate_start,
+                args=(log_path, os.path.getsize(log_path), None, loading), daemon=True)
+            narrator.start()
+        try:
+            engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
+                                    opts.prompt_chunk, opts.timeout_ms, EngineDied, log=log_path,
+                                    env=resident_env, cwd=cfg.get("cwd"))
+        finally:
+            loading.set()
+            if narrator is not None:
+                narrator.join(timeout=1)
         vision, effort_end, sampling_defaults = None, None, {"temperature": 0}
         if max_queue is None:
             max_queue = 0
@@ -10582,7 +10630,10 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     except KeyboardInterrupt:
         interrupted = True
         notify_lifecycle("stopping", {"reason": termination, "instance_id": svc.instance_id})
-        print("\n[strata] stopping (Ctrl+C again to end the engine at once) ...", flush=True)
+        if a.engine == "heterogeneous":
+            print("\n[strata] stopping ...", flush=True)
+        else:
+            print("\n[strata] stopping (Ctrl+C again to end the engine at once) ...", flush=True)
     finally:
         cancelled = 0
         if a.shutdown_timeout is not None:
@@ -10606,6 +10657,11 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
                 try:
                     close()
                 except KeyboardInterrupt:               # a second Ctrl+C: don't wait for the engine to free its memory
+                    if a.engine == "heterogeneous":
+                        # Do not strand runtime owners by killing their coordinator.
+                        # The existing cooperative retirement gate is authoritative.
+                        print("[strata] resident shutdown interrupted; inspect the process group before restarting", file=sys.stderr, flush=True)
+                        raise
                     if getattr(engine, "proc", None):
                         engine.proc.kill()
                         try:

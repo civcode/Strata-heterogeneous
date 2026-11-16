@@ -145,21 +145,25 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--profile", type=Path, required=True)
     p.add_argument("--reference-config", type=Path, help="explicit matching local server JSON instead of the 0044 reference")
-    p.add_argument("--port", type=int, default=8081)
+    p.add_argument("--port", type=int)
+    p.add_argument("--open", action=argparse.BooleanOptionalAction, default=True,
+                   help="open the native chat page on readiness (default); --no-open for headless runs")
     p.add_argument("--prepare-only", action="store_true", help="bind and run CPU preflight; do not start GPU workers")
     a = p.parse_args()
     os.umask(0o077)
     root = Path.home() / "tmp/strata-heterogeneous"
     try:
-        need(1 <= a.port <= 65535, "port must be 1..65535")
         profile = read_json(a.profile)
+        port = a.port if a.port is not None else profile.get("port", 8081)
+        need(type(port) is int and 1 <= port <= 65535, "port must be 1..65535")
         plan = profile["heterogeneous"]["plan"]
         need(plan in QUALIFIED, "unknown launch topology")
         reference = a.reference_config or find_reference(root / "handoff-0044", QUALIFIED[plan])
         cfg = bind(profile, read_json(reference))
         if a.prepare_only:
             from serve.heterogeneous import prepare_server
-            prepare_server(cfg)
+            from serve.server import child_env
+            prepare_server(cfg, env=child_env(cfg, offline=True, mixed_runtime=True))
             print(write_config(root / "launchers", cfg))
             return 0
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -168,11 +172,18 @@ def main():
         with (root / "oberon-launch.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             guard_engine()
+            # Ordinary runs keep worker diagnostics in the native-style log.
+            # Existing explicit profiling runs retain their terminal capture
+            # unless the operator supplied a log path.
+            if os.environ.get("STRATA_HETERO_PROFILE") != "1":
+                cfg.setdefault("log", str(root / (a.profile.stem + ".log")))
+            cfg["port"] = port
             path = write_config(root / "launchers", cfg)
-            print(f"Launching {plan} with {path} on http://127.0.0.1:{a.port}", flush=True)
             os.set_inheritable(lock.fileno(), True)
-            os.execv(sys.executable, [sys.executable, "-m", "serve.server", "--engine", "heterogeneous",
-                                     "--config", str(path), "--host", "127.0.0.1", "--port", str(a.port), "--offline"])
+            server = Path(__file__).resolve().parents[1] / "serve" / "server.py"
+            os.execv(sys.executable, [sys.executable, str(server), "--engine", "strata",
+                                     "--config", str(path), "--port", str(port), "--offline",
+                                     *(["--open"] if a.open else [])])
     except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
         p.error(str(exc))
 

@@ -7,6 +7,8 @@ generator interface. No alternative inference or HTTP implementation.
 from __future__ import annotations
 
 import argparse
+from functools import partial
+from contextlib import nullcontext
 import json
 import time
 import queue
@@ -21,7 +23,7 @@ from serve.heterogeneous_long_context import LONG_PREFILL_TIMEOUT_SECONDS
 from serve.heterogeneous_retirement import retire_process
 
 
-def prepare_server(cfg):
+def prepare_server(cfg, *, env=None):
     """Validate explicit local configuration and reuse CLI source binding."""
     from strata_cli.heterogeneous import prepare_native, model_template, _native
     opts = cfg.get("heterogeneous")
@@ -62,10 +64,19 @@ def prepare_server(cfg):
     if "pipeline_mode" in opts and opts["pipeline_mode"] not in ("baseline", "fast"):
         raise ValueError("heterogeneous.pipeline_mode must be baseline or fast")
     args = argparse.Namespace(**values)
-    argv, source, tokenizer, stops = prepare_native(args)
-    template = model_template(source)
-    argv += ["--resident"]
-    _native(argv)
+    log_path = cfg.get("log")
+    if log_path or env is not None or cfg.get("cwd"):
+        with (open(log_path, "a", encoding="utf-8") if log_path else nullcontext(None)) as log:
+            native = partial(_native, diagnostic=log, env=env, cwd=cfg.get("cwd"))
+            argv, source, tokenizer, stops = prepare_native(args, native=native)
+            template = model_template(source)
+            argv += ["--resident"]
+            native(argv)
+    else:
+        argv, source, tokenizer, stops = prepare_native(args)
+        template = model_template(source)
+        argv += ["--resident"]
+        _native(argv)
     return args, argv, source, tokenizer, stops, template
 
 
@@ -74,8 +85,11 @@ class ResidentEngine:
     # lock also prevents protocol overlap if invoked outside Service.
     batch = 0
 
-    def __init__(self, argv, source, stop_ids, max_new, chunk, timeout_ms, died):
+    def __init__(self, argv, source, stop_ids, max_new, chunk, timeout_ms, died, *, log=None, env=None, cwd=None):
         self.source = source
+        self.log_path = log
+        self._env = env
+        self._cwd = cwd
         self.stop_ids = set(stop_ids)
         self.max_context = min(source["max_cells"], source.get("context_limit", 4096))
         self.stream_tokens = source.get("stream_tokens", False)
@@ -117,10 +131,17 @@ class ResidentEngine:
         self._failed = False
         self.last_completion = self.last_metrics = None
         self.last = None  # existing Service timing record, published only after validated completion
-        self.proc = subprocess.Popen([*self._argv, "--run"], stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=None, text=True,
-                                     encoding="utf-8", errors="replace", bufsize=1,
-                                     start_new_session=True)
+        # Native diagnostics belong in the ordinary engine log. Protocol stdout
+        # stays a separate pipe; never redirect or filter acknowledgements.
+        log = open(self.log_path, "a", encoding="utf-8") if self.log_path else None
+        try:
+            self.proc = subprocess.Popen([*self._argv, "--run"], stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=log, text=True,
+                                         encoding="utf-8", errors="replace", bufsize=1,
+                                         start_new_session=True, env=self._env, cwd=self._cwd)
+        finally:
+            if log is not None:
+                log.close()  # the child owns its inherited descriptor
         self._reader = threading.Thread(target=self._read_records, daemon=True,
                                         name="heterogeneous-native-output")
         self._reader.start()
@@ -130,10 +151,23 @@ class ResidentEngine:
                         "HETERO_READY 1 LOOKUP" if self.lookup_draft else "HETERO_READY 1")
             if self._receive() != expected:
                 raise self._failure("native resident readiness not acknowledged")
-            print(f"HETERO_READY coordinator_pid={self.proc.pid}", file=sys.stderr, flush=True)
+            self._diagnostic(f"HETERO_READY coordinator_pid={self.proc.pid}")
         except BaseException:
             self._retire()
             raise
+
+    def _diagnostic(self, line):
+        # Per-record append is independent of the coordinator's inherited fd.
+        # Without a log (legacy qualification CLI), preserve terminal diagnostics.
+        path = getattr(self, "log_path", None)
+        if path:
+            try:
+                with open(path, "a", encoding="utf-8") as log:
+                    print(line, file=log, flush=True)
+                return
+            except OSError as exc:
+                print(f"[strata] could not write engine log: {exc}", file=sys.stderr, flush=True)
+        print(line, file=sys.stderr, flush=True)
 
     def _read_records(self):
         try:
@@ -142,7 +176,7 @@ class ResidentEngine:
                 if line.startswith("HETERO_"):
                     self._records.put(line)
                 else:
-                    print(line, file=sys.stderr, flush=True)
+                    self._diagnostic(line)
         finally:
             self._records.put(None)
 
@@ -370,11 +404,10 @@ class ResidentEngine:
                                              "generated": produced,
                                              "decode_ms": decode_span * 1000 if decode_span and decode_span > 0 else None,
                                              "timing_source": "heterogeneous_host_commit_progress"}
-                            print("HETERO_REQUEST_TIMING " + json.dumps({
+                            self._diagnostic("HETERO_REQUEST_TIMING " + json.dumps({
                                   "request_id": self._request, "finish": reason, **self.last_metrics},
-                                  allow_nan=False), file=sys.stderr, flush=True)
-                        print(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}",
-                              file=sys.stderr, flush=True)
+                                  allow_nan=False))
+                        self._diagnostic(f"HETERO_REQUEST_DONE request={self._request} finish={reason} next={progress.pos}")
                         completed = True
                         break
             except GeneratorExit:
@@ -386,8 +419,7 @@ class ResidentEngine:
                         if record["finish_reason"] != "cancelled":
                             raise self._failure("resident cancellation not acknowledged")
                         self.last_completion = record
-                        print(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}",
-                              file=sys.stderr, flush=True)
+                        self._diagnostic(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}")
                         completed = True
                         waiting = False
                     except BaseException:
@@ -433,6 +465,6 @@ class ResidentEngine:
             if code:
                 raise self._failure(f"native resident coordinator exited with status {code}")
             if acknowledged:
-                print("HETERO_CLOSED", file=sys.stderr, flush=True)
+                self._diagnostic("HETERO_CLOSED")
         finally:
             self._lock.release()
