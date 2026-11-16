@@ -21,6 +21,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>

@@ -243,7 +243,7 @@ public:
         }();
         return bulk_stats_.seed(*cursor_,pos,rows,size_t(count),prime(bulk_detail_),
             [&](const float* r,const int32_t* next,size_t n,int64_t cell,std::string& e) {
-                if (!batch_enabled || n<32 || trace_ || front_trace_)
+                if (!batch_enabled || n<64 || trace_ || front_trace_)
                     return MtpBulkSeedResult::declined;
                 if (!embed_ || !resident_kv_supported() || !room(MtpRequestPolicy::prime_headroom_bytes,e)) {
                     if(e.empty()) e="local MTP batch lacks admitted embedding or resident cache";

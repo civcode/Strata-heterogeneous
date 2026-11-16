@@ -61,8 +61,8 @@ public:
     /// device, too little scratch; STRATA_MTP_BATCH=0), the caller runs the drafter's own pass.  Not bit-identical to
     /// that pass (FP16 GEMMs instead of Q8_1 activations): the drafts may differ, never the target's tokens' logits.
     /// `why` (optional): on a decline (false, `err` empty) the reason, a static string.
-    /// A non-null local_embedding opts a fully resident heterogeneous drafter
-    /// into bounded batches of >=32 rows and uses its device-local embedding
+    /// A non-null local_embedding permits a bounded fully resident drafter
+    /// to use its device-local embedding with the native 64-row minimum
     /// instead of the process-global target embedding. The caller owns it.
     bool draft_kv(core::MtpDrafter& mtp, const float* R_rows, const int32_t* next_tokens, int64_t n, int64_t cell0,
                   std::string& err, const char** why = nullptr, const core::NativeEmbed* local_embedding = nullptr);
