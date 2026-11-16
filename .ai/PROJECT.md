@@ -38,12 +38,16 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   Configure the CUDA tree with `-DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=89`.
   `/usr/local/cuda` still points at CUDA 12.0, which the frozen branch was built with: leave it. nvcc 12.0 cannot
   compile vanilla 0.2.15 (report 0063). Do not change vanilla sources to fit a toolkit.
-- Known-good vanilla run config: `/home/chris/workspace/Strata/strata-q2_0.json` (context 196608), started by
-  `run-q2_0.sh` in that checkout.
+- Known-good vanilla run config: `/home/chris/workspace/Strata/strata-q2_0.json`, started by `run-q2_0.sh` in that
+  checkout (port 8081, `HSA_ENABLE_SDMA=0`). Model: Qwen3.8-Flash-Next GSQ-RCO Q2_0, context 196608, `--kv int8`,
+  MTP with `--spec 4 --spec-min-p 0.5`, `--prefill auto`, `layer_split: auto`, vision on, and a scaled control
+  vector over layers 4 to 44. Its engine arguments are listed in report 0064.
 - Use the same build toolchain as vanilla Strata and the same checkout-local `.venv` setup. Do not use a system or
   global Python for project commands.
 - Build with 28 jobs.
-- The local vanilla checkout is read-only reference material. Do not modify it.
+- The local vanilla checkout (`/home/chris/workspace/Strata`) is reference material: do not change its files or
+  write new ones into it. A run config copied from it must have every path it writes to (for example `log`)
+  redirected into the working checkout before a server is started with it.
 - Never terminate a GPU process by force. Shut down cooperatively and wait for the drain.
 - Do not dispatch, enable or add GitHub Actions.
 

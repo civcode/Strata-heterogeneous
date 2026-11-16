@@ -1,6 +1,6 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0064` (Tier 2) open.
+Turn holder: **Coding Agent**, handoff `0065` (Tier 2) open.
 
 ## Current milestone
 
@@ -17,8 +17,8 @@ Chat AI turn 1 is finished:
 
 Report 0063 (Partial): host and HIP trees build; seam CPU tests pass; the shared hand-off probe passed in all three
 CUDA/HIP pairings, so one shared mapping works for both runtimes. The CUDA engine needs CUDA 13.0 (now installed at
-`/usr/local/cuda-13.0`). `8db7ddc4` is private work in progress and stays unpushed. Handoff 0064 finishes the CUDA
-build and the vanilla HIP-only baseline.
+`/usr/local/cuda-13.0`). `8db7ddc4` is private work in progress and stays unpushed. Report 0064 (Partial): the CUDA tree builds with CUDA 13.0 and the probe passes with it. The baseline was not started
+because the copied config logs into the vanilla checkout. Handoff 0065 runs the baseline with that redirected.
 
 ## Decisions taken by the Human User (2026-11-16)
 
@@ -34,8 +34,8 @@ build and the vanilla HIP-only baseline.
 
 ## Next step
 
-After report 0064: Chat AI turn 2. Write the `FrontBackend` over vanilla's first-stage objects and the engine
+After report 0065: Chat AI turn 2. Write the `FrontBackend` over vanilla's first-stage objects and the engine
 hook as far as it can be checked without a GPU build, using the probe result and the baseline numbers; then
-handoff 0065 (Tier 1): the engine runs with a first local stage that starts at layer 15 and a remote front stage.
+handoff 0066 (Tier 1): the engine runs with a first local stage that starts at layer 15 and a remote front stage.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
