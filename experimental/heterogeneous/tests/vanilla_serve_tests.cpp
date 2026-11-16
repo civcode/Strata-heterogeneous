@@ -15,5 +15,14 @@ int main() {
     assert(in.checkpoint()==Input::Control::stop); assert(in.checkpoint()==Input::Control::quit);
     close(f[1]); assert(in.checkpoint()==Input::Control::eof); close(f[0]);
     auto out=std::tmpfile(); assert(out); print_done(out,{3,0,3,2,12,17,0,0,0,false},"length");
-    std::rewind(out); char line[128]; assert(std::fgets(line,sizeof line,out)); assert(std::string(line)=="DONE 2 3 12.0 17.0 length 0 0 0\n"); std::fclose(out);
+    strata::core::print_serve_ready(out, 4096);
+    strata::core::print_serve_reused(out, 0);
+    strata::core::print_serve_token(out, 42);
+    print_progress(out, 2, 3, 20);
+    strata::core::print_serve_progress(out, 5, 8, 3, 20);
+    std::rewind(out); char line[128]; assert(std::fgets(line,sizeof line,out)); assert(std::string(line)=="DONE 2 3 12.0 17.0 length 0 0 0\n");
+    for (const char* expected : {"READY 4096 stop\n", "REUSED 0\n", "T 42\n", "PP 2 3 20 100.0\n", "PP 5 8 20 100.0\n"}) {
+        assert(std::fgets(line,sizeof line,out)); assert(std::string(line)==expected);
+    }
+    std::fclose(out);
 }

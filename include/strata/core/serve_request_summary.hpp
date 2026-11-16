@@ -14,6 +14,27 @@ struct ServeRequestSummary {
     bool cancelled = false;
 };
 
+// Shared application wire records. The caller controls flushing, preserving
+// batch emission and the optional vanilla DONE telemetry suffix.
+inline void print_serve_ready(std::FILE* out, int64_t context) {
+    std::fprintf(out, "READY %lld stop\n", (long long)context);
+}
+inline void print_serve_reused(std::FILE* out, int64_t reused) {
+    std::fprintf(out, "REUSED %lld\n", (long long)reused);
+}
+inline void print_serve_token(std::FILE* out, int32_t token) {
+    std::fprintf(out, "T %d\n", (int)token);
+}
+inline void print_serve_progress(std::FILE* out, int64_t done, int64_t total, int64_t from, double ms) {
+    std::fprintf(out, "PP %lld %lld %.0f %.1f\n", (long long)done, (long long)total, ms,
+                 ms > 0.0 ? 1000.0 * (double)(done - from) / ms : 0.0);
+}
+inline void print_serve_done_prefix(std::FILE* out, const ServeRequestSummary& s, const char* finish) {
+    std::fprintf(out, "DONE %lld %lld %.1f %.1f %s %lld %lld %lld",
+                 (long long)s.generated, (long long)s.prompt_tokens, s.prompt_ms, s.decode_ms, finish,
+                 (long long)s.drafts_accepted, (long long)s.drafts_offered, (long long)s.reused);
+}
+
 // This is the public request-summary line, also consumed by serve/server.py's
 // ENGINE_REQUEST parser and STRATA_REQUEST_LINES log follower.
 inline void print_serve_request_summary(std::FILE* out, const ServeRequestSummary& s) {

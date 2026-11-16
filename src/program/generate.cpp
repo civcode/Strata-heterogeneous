@@ -12560,8 +12560,7 @@ int main(int argc, char** argv) {
             const int64_t done = p0 + T;
             pp_reached = done;
             const double ms = std::chrono::duration<double, std::milli>(Clock::now() - pp_t0).count();
-            std::printf("PP %lld %lld %.0f %.1f\n", (long long) done, (long long) pp_total, ms,
-                        ms > 0.0 ? 1000.0 * (double) (done - pp_from) / ms : 0.0);
+            strata::core::print_serve_progress(stdout, done, pp_total, pp_from, ms);
             strata::core::progress_at("reading the prompt (batched), done up to token", done);
             strata::core::progress_beat();
             std::fflush(stdout);
@@ -13992,7 +13991,7 @@ int main(int argc, char** argv) {
         strata::core::pin_sim_report("at READY");
         strata::core::pin_reserve_release_hard();   // the load is over: nothing else needs the headroom
         strata::core::manifest::instance().write("ready");   // STRATA_MANIFEST (a no-op unless it is set)
-        std::printf("READY %lld stop\n", (long long) o.max_context);   // "stop": this engine honours STOP
+        strata::core::print_serve_ready(stdout, o.max_context);   // "stop": this engine honours STOP
         std::fflush(stdout);
         std::string line;
         int64_t rounds = 0;
@@ -16854,8 +16853,7 @@ int main(int argc, char** argv) {
                 pl_drain();   // nothing in flight: both stages' commits and the drafter's rows have landed
                 pl_mtp_live[0] = pl_mtp_live[1] = false;
                 const double ms = std::chrono::duration<double, std::milli>(Clock::now() - pp_t0).count();
-                std::printf("PP %lld %lld %.0f %.1f\n", (long long) b, (long long) pp_total, ms,
-                            ms > 0.0 ? 1000.0 * (double) (b - pp_from) / ms : 0.0);
+                strata::core::print_serve_progress(stdout, b, pp_total, pp_from, ms);
                 strata::core::progress_beat();
                 std::fflush(stdout);
                 return true;
@@ -16928,8 +16926,7 @@ int main(int argc, char** argv) {
                 // the batched prompt path (other streams), checkpoints and snapshots may follow: the last commit first
                 if (!ver.wait_commit(e)) return false;
                 const double ms = std::chrono::duration<double, std::milli>(Clock::now() - pp_t0).count();
-                std::printf("PP %lld %lld %.0f %.1f\n", (long long) b, (long long) pp_total, ms,
-                            ms > 0.0 ? 1000.0 * (double) (b - pp_from) / ms : 0.0);
+                strata::core::print_serve_progress(stdout, b, pp_total, pp_from, ms);
                 strata::core::progress_beat();
                 std::fflush(stdout);
                 return true;
@@ -17960,8 +17957,7 @@ int main(int argc, char** argv) {
                 }
                 if (sp_ok && merge_at >= 0) {   // the server's progress reaches the prompt's end, as after its last window
                     const double ms = std::chrono::duration<double, std::milli>(Clock::now() - pp_t0).count();
-                    std::printf("PP %lld %lld %.0f %.1f\n", (long long) to, (long long) pp_total, ms,
-                                ms > 0.0 ? 1000.0 * (double) (to - pp_from) / ms : 0.0);
+                    strata::core::print_serve_progress(stdout, to, pp_total, pp_from, ms);
                     std::fflush(stdout);
                 }
                 if (!sp_ok) {
@@ -18007,7 +18003,7 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "strata batch: the prompt was read in %lld parts, the slots decoding %.0f ms between "
                                      "them\n", (long long) il_parts + 1, il_ms);
             const double prompt_ms = std::chrono::duration<double, std::milli>(Clock::now() - r0).count();
-            std::printf("REUSED %lld\n", (long long) resume);   // the prompt is read; the first window comes next
+            strata::core::print_serve_reused(stdout, resume);   // the prompt is read; the first window comes next
             std::fflush(stdout);
             // the verify windows: the first holds the last prompt token alone (STRATA_ADMIT_MERGE_FIRST: the prompt
             // tokens from merge_at on, the last one's output its first token)
@@ -18621,7 +18617,7 @@ int main(int argc, char** argv) {
                     const bool nf = nonfinite_hit(V1(A), "decode");   // #879: none of its tokens goes out
                     bool eos = false;
                     for (int i = 0; !nf && i <= a && produced_n < max_new && !eos; ++i) {
-                        std::printf("T %d\n", (int) outp[(size_t) i]);
+                        strata::core::print_serve_token(stdout, outp[(size_t) i]);
                         if (req_logprobs >= 0) emit_lp_line(V1(A), i, outp[(size_t) i], req_logprobs, req_allowed);
                         strata::core::progress_beat();
                         ++produced_n;
@@ -19216,7 +19212,7 @@ int main(int argc, char** argv) {
                 first_window = false;
                 bool eos = false;
                 for (int i = merged ? a : 0; i <= a && produced_n < max_new && !eos; ++i) {   // (merged: row T-1 only)
-                    std::printf("T %d\n", (int) outv[(size_t) i]);
+                    strata::core::print_serve_token(stdout, outv[(size_t) i]);
                     if (req_logprobs >= 0) emit_lp_line(ver, i, outv[(size_t) i], req_logprobs, req_allowed);
                     strata::core::progress_beat();
                     ++produced_n;
@@ -19554,11 +19550,11 @@ int main(int argc, char** argv) {
                 std::snprintf(chain_txt, sizeof(chain_txt), " %lld %lld %lld %lld %lld", (long long) chain_ok,
                               (long long) chain_drafts, (long long) sfx_ok, (long long) sfx_drafts, (long long) dec_windows);
             if (yielded_at >= 0) std::printf("YIELDED %d %lld\n", yielded_slot, (long long) yielded_at);
-            std::printf("DONE %lld %lld %.1f %.1f %s %lld %lld %lld %lld %lld %lld %lld %.1f %lld %lld%s chunk=%lld "
+            strata::core::print_serve_done_prefix(stdout,
+                {n, resume, read_n, produced_n, prompt_ms, decode_ms, draft_accepted, draft_offered, 0, cancelled}, finish);
+            std::printf(" %lld %lld %lld %lld %.1f %lld %lld%s chunk=%lld "
                         "experts_streamed=%lld\n",
-                        (long long) produced_n,
-                        (long long) n, prompt_ms, decode_ms, finish, (long long) draft_accepted, (long long) draft_offered,
-                        (long long) resume, (long long) req_hits, (long long) req_look,
+                        (long long) req_hits, (long long) req_look,
                         (long long) (src.ram_reads() - ram0), (long long) (src.file_reads() - files0),
                         (double) (src.file_read_bytes() - file_bytes0) / 1e6, (long long) read_n,
                         (long long) req_offload, chain_txt, (long long) req_chunk,

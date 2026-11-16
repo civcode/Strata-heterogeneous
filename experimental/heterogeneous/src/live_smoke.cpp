@@ -1260,11 +1260,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 request_summary.generated = static_cast<int64_t>(generated.size()) + 1;
             if (o.vanilla_serve) {
                 if (pos < static_cast<int64_t>(prompt.size())) {
-                    hetero::vanilla::print_progress(serve_wire, pos, static_cast<int64_t>(prompt.size())-1,
+                    hetero::vanilla::print_progress(serve_wire, pos, static_cast<int64_t>(prompt.size()),
                                                     request_summary.prompt_ms);
                 } else {
                     // All stages acknowledged the prediction. EOS is a T line too, as in vanilla.
-                    std::fprintf(serve_wire, "T %d\n", static_cast<int>(next));
+                    strata::core::print_serve_token(serve_wire, next);
                     std::fflush(serve_wire);
                 }
                 const auto action = serve_input.checkpoint();
@@ -1327,7 +1327,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 account_active();
                 decode_phase = true;
                 if (o.vanilla_serve) {
-                    std::fprintf(serve_wire, "REUSED 0\n");
+                    strata::core::print_serve_reused(serve_wire, 0);
                     std::fflush(serve_wire);
                     active_since = RequestClock::now();
                 }
@@ -1495,7 +1495,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         // Negotiate actual reset support before announcing readiness.
         session.begin_request(request_id);
         if (o.vanilla_serve) {
-            std::fprintf(serve_wire, "INFO kv=%s\nREADY %u stop\n", o.kv == hetero::KvMode::f16 ? "fp16" : "int8", o.context_limit);
+            std::fprintf(serve_wire, "INFO kv=%s\n", o.kv == hetero::KvMode::f16 ? "fp16" : "int8");
+            strata::core::print_serve_ready(serve_wire, o.context_limit);
             std::fflush(serve_wire);
         } else {
             std::cout << "HETERO_READY " << request_id;

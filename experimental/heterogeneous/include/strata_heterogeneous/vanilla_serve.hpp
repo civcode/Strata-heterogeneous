@@ -131,17 +131,15 @@ private:
 };
 
 inline void print_progress(std::FILE* out, int64_t read, int64_t total, double ms) {
-    std::fprintf(out, "PP %lld %lld %.0f %.1f\n", (long long)read, (long long)total, ms,
-                 ms > 0 ? 1000.0 * read / ms : 0.0);
+    strata::core::print_serve_progress(out, read, total, 0, ms);
     std::fflush(out);
 }
 
 inline void print_done(std::FILE* out, const strata::core::ServeRequestSummary& s, const char* finish) {
     // Vanilla's backwards-compatible DONE prefix: later cache/IO counters
     // are omitted because STFR does not carry those counters across owners.
-    std::fprintf(out, "DONE %lld %lld %.1f %.1f %s %lld %lld %lld\n",
-                 (long long)s.generated, (long long)s.prompt_tokens, s.prompt_ms, s.decode_ms, finish,
-                 (long long)s.drafts_accepted, (long long)s.drafts_offered, (long long)s.reused);
+    strata::core::print_serve_done_prefix(out, s, finish);
+    std::fputc('\n', out);
     std::fflush(out);
 }
 
