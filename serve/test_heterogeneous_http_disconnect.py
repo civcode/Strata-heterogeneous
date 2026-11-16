@@ -9,12 +9,13 @@ import threading
 import time
 import unittest
 import urllib.request
+import urllib.error
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from serve.frontend import ChatTemplate
 from serve.heterogeneous import ResidentEngine
-from serve.server import ByteTokenizer, EngineDied, Service, openai_chunks, serve
+from serve.server import ByteTokenizer, EngineDied, Service, died_note, openai_chunks, serve
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -156,6 +157,67 @@ class TestResidentHTTPDisconnect(unittest.TestCase):
                 sock.close()
             if waiter is not None:
                 waiter.join(15)
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_failed_resident_refuses_reload_before_hook(self):
+        engine = ScriptedResident()
+        svc = Service(engine, ByteTokenizer(), ChatTemplate(ROOT / "serve/chat_template.jinja"))
+        self.assertIsNone(svc.ensure_loaded())  # healthy MTP still admits work
+        engine._failed = True
+        engine.restart = Mock()
+        svc.before_load = ["fixture-load-hook"]
+        with patch("serve.server.subprocess.run") as hook:
+            with self.assertRaises(EngineDied) as raised:
+                svc.ensure_loaded()
+        hook.assert_not_called()
+        engine.restart.assert_not_called()
+        self.assertFalse(raised.exception.restarts)
+        self.assertIn("restart the server explicitly", died_note(raised.exception))
+        self.assertNotIn("next request restarts", died_note(raised.exception))
+        with patch("builtins.print") as report:
+            svc._say_died(raised.exception)
+        self.assertNotIn("next request starts", str(report.call_args))
+
+    def test_mtp_failed_stream_and_later_http_refusal(self):
+        engine = ScriptedResident()
+        # A malformed native record fails through the REAL adapter, not
+        # a mock EngineDied that skips the transport's poison/error policy.
+        engine._receive = Mock(return_value="HETERO_UNEXPECTED")
+        engine.restart = Mock()
+        svc = Service(engine, ByteTokenizer(), ChatTemplate(ROOT / "serve/chat_template.jinja"))
+        svc.start_telemetry = lambda: None
+        httpd = serve(svc, port=0)
+        base = f"http://127.0.0.1:{httpd.server_address[1]}/v1/chat/completions"
+
+        def req(stream):
+            body = json.dumps(dict(model="x", messages=[dict(role="user", content="hi")],
+                                   stream=stream, max_tokens=2, temperature=0)).encode()
+            return urllib.request.Request(base, data=body, headers={"Content-Type": "application/json"})
+
+        try:
+            with urllib.request.urlopen(req(True), timeout=10) as response:
+                wire = response.read()
+            self.assertIn(b'"error":', wire)
+            self.assertIn(b"unexpected native resident completion", wire)
+            self.assertIn(b"restart the server explicitly", wire)
+            self.assertNotIn(b"next request restarts", wire)
+            self.assertIn(b"data: [DONE]", wire)
+            self.assertFalse(engine.alive())
+            commands = list(engine.commands)
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(req(False), timeout=10)
+            with raised.exception as error:
+                self.assertEqual(error.code, 503)
+                body = error.read()
+            self.assertIn(b"automatic restart is disabled", body)
+            self.assertIn(b"restart the server explicitly", body)
+            self.assertNotIn(b"next request restarts", body)
+            self.assertEqual(engine.commands, commands)
+            engine.restart.assert_not_called()
+            self.wait_for(lambda: svc.admission_reserved == 0 and not svc.status.get("busy"),
+                          "failed HTTP admission was not released")
+        finally:
             httpd.shutdown()
             httpd.server_close()
 

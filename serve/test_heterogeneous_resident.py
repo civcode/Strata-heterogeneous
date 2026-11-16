@@ -143,7 +143,7 @@ class TestResident(unittest.TestCase):
         e._died = RuntimeError
         e._lock = threading.Lock()
         e._request = 0
-        e._closed = e._failed = False
+        e._closed = e._failed = e._restart_clean = False
         e.proc = Mock()
         e.proc.poll.return_value = None
         e._receive = Mock(side_effect=records)
@@ -329,6 +329,43 @@ class TestResident(unittest.TestCase):
             e.close()
         self.assertTrue(e._closed)
         e._send.assert_called_once_with("quit")
+
+    def test_restart_policy_and_errors(self):
+        for mtp, opt_in, closed, allowed in (
+                (False, False, False, False), (False, True, False, True),
+                (True, False, False, False), (True, True, False, False),
+                (False, True, True, False)):
+            with self.subTest(mtp=mtp, opt_in=opt_in, closed=closed):
+                e = self.engine([])
+                if mtp:
+                    e.source["mtp"] = "/fixture"
+                e._restart_clean, e._closed = opt_in, closed
+                e._launch = Mock()
+                e._retire = Mock()
+                self.assertIs(e.restart_allowed, allowed)
+                error = e._failure("test transport failure")
+                self.assertIs(error.restarts, allowed)
+                self.assertEqual("restart the server explicitly" in str(error), not allowed)
+                if not allowed:
+                    with self.assertRaises(RuntimeError) as raised:
+                        e.restart()
+                    self.assertFalse(raised.exception.restarts)
+                    e._launch.assert_not_called()
+                    e._retire.assert_not_called()
+
+    def test_mtp_transport_failure_never_promises_restart(self):
+        e = self.engine(["HETERO_UNEXPECTED"])
+        e.source.update(mtp="/fixture", spec=4, spec_min_p=0.5)
+        e.max_context = 2048
+        # Even a corrupt/stale opt-in cannot allow MTP restart.
+        e._restart_clean = True
+        with self.assertRaisesRegex(RuntimeError, "unexpected native resident completion") as raised:
+            list(e.generate([1, 2], 2, {}, Event()))
+        self.assertFalse(raised.exception.restarts)
+        self.assertIn("restart the server explicitly", str(raised.exception))
+        self.assertFalse(e.alive())
+        self.assertIsNone(e.last_completion)
+        self.assertIsNone(e.last_metrics)
 
     def test_restart_refuses_live_group(self):
         e = self.engine([])

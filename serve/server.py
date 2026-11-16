@@ -431,11 +431,11 @@ class MockEngine:
 
 class EngineDied(RuntimeError):
     """The engine process ended in the middle of a request (issue #27: on Linux, the out-of-memory killer)."""
-    restarts = True        # the engine is gone, so the next request starts it again; False for an error raised while the engine is left running (#3961)
+    restarts = True        # the next request attempts restart; False for an engine left running or one requiring explicit operator restart
 
 
 def died_note(e: Exception) -> str:
-    """What an API error says about an EngineDied: the cause, and that the next request restarts the engine - only where it really is ended."""
+    """Report the cause and mention automatic restart only for engines that permit it."""
     return f"{e}; the next request restarts it" if getattr(e, "restarts", True) else str(e)
 
 
@@ -5302,8 +5302,18 @@ class Service:
     def ensure_loaded(self):
         """Start the engine if it is not running (unloaded, or it died - issue #27), after the before_load hook and
         the free-VRAM check.  The caller holds self.fifo."""
-        if self.loaded() and not self._vision_down():
+        loaded = self.loaded()
+        if loaded and not self._vision_down():
             return
+        # A fail-stopped resident service must not run load hooks, start
+        # auxiliary engines, or attempt replacement before an operator has
+        # verified retirement. Engines without this opt-in gate keep the
+        # existing ordinary reload behavior.
+        if not loaded and getattr(self.engine, "restart_allowed", True) is False:
+            error = EngineDied("the engine is unavailable and automatic restart is disabled; "
+                               "restart the server explicitly after verifying the previous engine processes have retired")
+            error.restarts = False
+            raise error
         hook_failed = None
         if self.before_load:
             cmd = self.before_load
@@ -5431,7 +5441,8 @@ class Service:
         """The server window's line for an engine that died (or was ended, #481) in the middle of a request."""
         note = self.engine.death_note() if hasattr(self.engine, "death_note") else ""
         log = getattr(self.engine, "log_path", None)
-        print(f"[strata] {e}. {note} The next request starts the engine again."
+        retry = " The next request starts the engine again." if getattr(e, "restarts", True) else ""
+        print(f"[strata] {e}. {note}{retry}"
               f"{' Its log: ' + log if log else ''}", flush=True)
 
     def load(self):

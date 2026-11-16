@@ -129,7 +129,7 @@ class ResidentEngine:
                         "HETERO_READY 1 STREAM" if self.stream_tokens else
                         "HETERO_READY 1 LOOKUP" if self.lookup_draft else "HETERO_READY 1")
             if self._receive() != expected:
-                raise self._died("native resident readiness not acknowledged")
+                raise self._failure("native resident readiness not acknowledged")
             print(f"HETERO_READY coordinator_pid={self.proc.pid}", file=sys.stderr, flush=True)
         except BaseException:
             self._retire()
@@ -150,9 +150,9 @@ class ResidentEngine:
         try:
             record = self._records.get(timeout=self._deadline if timeout is None else timeout)
         except queue.Empty as exc:
-            raise self._died("native resident response timed out; restart required") from exc
+            raise self._failure("native resident response timed out; restart required") from exc
         if record is None:
-            raise self._died("native resident coordinator exited; restart required")
+            raise self._failure("native resident coordinator exited; restart required")
         return record
 
     def _send(self, command):
@@ -160,7 +160,7 @@ class ResidentEngine:
             self.proc.stdin.write(command + "\n")
             self.proc.stdin.flush()
         except (OSError, ValueError) as exc:
-            raise self._died("native resident input closed; restart required") from exc
+            raise self._failure("native resident input closed; restart required") from exc
 
     def _poison(self):
         self._failed = True
@@ -176,19 +176,35 @@ class ResidentEngine:
         try:
             return retire_process(self.proc, self._reader, self._deadline)
         except RuntimeError as exc:
-            raise self._died(str(exc)) from exc
+            raise self._failure(str(exc)) from exc
 
     def alive(self):
         return not self._closed and not self._failed and self.proc.poll() is None
 
+    @property
+    def restart_allowed(self):
+        """Service's automatic reload gate; MTP always requires an operator restart."""
+        return bool(self._restart_clean and not self._closed and not self.source.get("mtp"))
+
+    def _failure(self, message):
+        # Keep the injected exception type (EngineDied in the HTTP server).
+        # The generic EngineDied defaults to automatic restart, which is
+        # false for MTP, closed sessions and ordinary non-opt-in sessions.
+        allowed = self.restart_allowed
+        if not allowed and "restart the server explicitly" not in message:
+            message += "; restart the server explicitly after verifying the previous process group has retired"
+        error = self._died(message)
+        error.restarts = allowed
+        return error
+
     def restart(self):
         # Opt-in only; never replay a failed request or overlap worker sets.
         # Native children inherit the coordinator's new process group.
-        if not self._restart_clean or self._closed or self.source.get("mtp"):
-            raise self._died("heterogeneous resident engine stopped; restart the server explicitly")
+        if not self.restart_allowed:
+            raise self._failure("heterogeneous resident engine stopped")
         with self._lock:
-            if self._closed:
-                raise self._died("heterogeneous resident engine closed; restart the server explicitly")
+            if not self.restart_allowed:
+                raise self._failure("heterogeneous resident engine cannot restart")
             if self.alive():
                 return
             self._retire()
@@ -235,7 +251,7 @@ class ResidentEngine:
 
     def _result(self, line, ids, max_new):
         if not line.startswith("HETERO_GENERATION "):
-            raise self._died("unexpected native resident completion")
+            raise self._failure("unexpected native resident completion")
         try:
             record = json.loads(line[len("HETERO_GENERATION "):])
             tokens = record["token_ids"]
@@ -251,7 +267,7 @@ class ResidentEngine:
                          (reason == "cancelled" and not tokens and stop == -1))):
                 raise ValueError("inconsistent completion metadata")
         except (ValueError, KeyError, TypeError) as exc:
-            raise self._died("invalid native resident completion") from exc
+            raise self._failure("invalid native resident completion") from exc
         return record
 
     def generate(self, ids, max_new, sampling, cancel, embeddings=None, prefill_only=False):
@@ -262,7 +278,7 @@ class ResidentEngine:
             if cancel.is_set():
                 return
             if not self.alive():
-                raise self._died("resident engine unavailable; restart required")
+                raise self._failure("resident engine unavailable; restart required")
             # Build the local progress validator before consuming a request ID.
             # An invalid local policy cannot desynchronize the next request.
             waiting = completed = cancelled = False
@@ -289,7 +305,7 @@ class ResidentEngine:
                                 raise ValueError("progress after cancellation")
                             token = progress.accept(line)
                         except ValueError as exc:
-                            raise self._died("invalid resident progress") from exc
+                            raise self._failure("invalid resident progress") from exc
                         last_checkpoint = time.monotonic()
                         batch = token if isinstance(token, tuple) else () if token is None else (token,)
                         if batch:
@@ -327,7 +343,7 @@ class ResidentEngine:
                                 (self.stream_tokens and not cancelled and
                                  (progress.tokens != record["token_ids"] or
                                   progress.terminal != (reason == "stop")))):
-                            raise self._died("resident completion disagrees with committed positions or streamed tokens")
+                            raise self._failure("resident completion disagrees with committed positions or streamed tokens")
                         self.last_completion = record
                         end = time.monotonic()
                         if first_output is None and record["token_ids"]:
@@ -368,7 +384,7 @@ class ResidentEngine:
                         self._send("cancel")
                         record = self._result(self._receive(), ids, max_new)
                         if record["finish_reason"] != "cancelled":
-                            raise self._died("resident cancellation not acknowledged")
+                            raise self._failure("resident cancellation not acknowledged")
                         self.last_completion = record
                         print(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}",
                               file=sys.stderr, flush=True)
@@ -398,7 +414,7 @@ class ResidentEngine:
         if self._closed:
             return
         if not self._lock.acquire(timeout=self._deadline):
-            raise self._died("resident request still active; operator inspection required")
+            raise self._failure("resident request still active; operator inspection required")
         try:
             if self._closed:
                 return
@@ -407,7 +423,7 @@ class ResidentEngine:
                 try:
                     self._send("quit")
                     if self._receive() != "HETERO_CLOSED":
-                        raise self._died("resident shutdown not acknowledged")
+                        raise self._failure("resident shutdown not acknowledged")
                     acknowledged = True
                 except BaseException:
                     self._retire()
@@ -415,7 +431,7 @@ class ResidentEngine:
             code = self._retire()
             self._closed = True
             if code:
-                raise self._died(f"native resident coordinator exited with status {code}")
+                raise self._failure(f"native resident coordinator exited with status {code}")
             if acknowledged:
                 print("HETERO_CLOSED", file=sys.stderr, flush=True)
         finally:
