@@ -1061,6 +1061,13 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     const bool mtp_early = hetero::performance_flag("STRATA_HETERO_MTP_EARLY_METADATA");
     const bool mtp_adaptive = hetero::performance_flag("STRATA_HETERO_MTP_ADAPTIVE");
+    const bool mtp_native_completion = hetero::performance_flag("STRATA_HETERO_MTP_NATIVE_COMPLETION");
+    const bool mtp_reset_overlap = hetero::performance_flag("STRATA_HETERO_MTP_RESET_OVERLAP");
+    const bool mtp_prefill_upload = hetero::performance_flag("STRATA_HETERO_MTP_PREFILL_UPLOAD");
+    if ((mtp_native_completion || mtp_reset_overlap || mtp_prefill_upload) && !o.mtp_service)
+        throw std::invalid_argument("native MTP performance switches require resident MTP service");
+    if (mtp_prefill_upload && (!o.native_prefill_chunk || plan.stages.front().backend != hetero::Backend::cuda))
+        throw std::invalid_argument("MTP prefill upload overlap requires mixed native prefill");
     if (mtp_adaptive && !o.mtp_service)
         throw std::invalid_argument("adaptive MTP requires resident MTP service");
     if (mtp_early && (!o.mtp_service || plan.stages.front().backend != hetero::Backend::cuda))
@@ -1107,6 +1114,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
               << " pipeline_mode=" << (o.pipeline_mode.empty() ? "legacy" : o.pipeline_mode)
               << " compact=" << compact << " fanout=" << fanout << " mtp_early_metadata=" << mtp_early
               << " mtp_adaptive=" << mtp_adaptive
+              << " mtp_native_completion=" << mtp_native_completion
+              << " mtp_reset_overlap=" << mtp_reset_overlap
+              << " mtp_prefill_upload=" << mtp_prefill_upload
               << " kv=" << hetero::kv_mode_name(o.kv) << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;

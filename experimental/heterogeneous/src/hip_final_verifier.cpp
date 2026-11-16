@@ -165,6 +165,7 @@ bool HipFinalVerifierExecutor::prepare(const Plan& plan, size_t index,
     return true;
 }
 bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& error) {
+    PerformanceSpan perf("worker", "reset_local", index_, request, 0, 1);
     if (observer_ && (!observer_->resident_relay_enabled() || chain_stages_.empty())) { error="one-shot terminal observer cannot reset"; return false; }
     if (state_ != State::ready || !select_device(error) ||
         !request || request <= request_ || bindings_.initial_position != 0 ||
@@ -172,6 +173,7 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
         if (error.empty()) error = "resident reset refused by native verifier";
         return false;
     }
+    const bool overlap_reset = mtp_service_enabled() && performance_flag("STRATA_HETERO_MTP_RESET_OVERLAP");
     // All prior commits were fenced. Reuse native session_zero, including
     // stage-local GDN/QSA/PLE state, on the same verifier stream. Weights,
     // experts, device allocations and graphs remain resident.
@@ -184,12 +186,27 @@ bool HipFinalVerifierExecutor::reset_request(uint64_t request, std::string& erro
             const auto& b = chain_stages_[j].bindings;
             auto& v = chain_.at(j);
             if (!b.zero_session || !check(cudaSetDevice(v.device()), error)) return false;
-            b.zero_session(b.session, b.geometry, v.stream());
-            if (!check(cudaStreamSynchronize(v.stream()), error)) return false;
+            {
+                PerformanceSpan enqueue("worker", "reset_enqueue", input_index_+j, request, 0, 1);
+                b.zero_session(b.session, b.geometry, v.stream());
+                if (overlap_reset && !check(cudaGetLastError(), error)) return false;
+            }
+            if (!overlap_reset && !check(cudaStreamSynchronize(v.stream()), error)) return false;
+        }
+        // The two stage-local sessions are independent. Let vanilla's async
+        // zeroing run on both existing verifier streams before joining them.
+        // Do not reset the terminal observer or ACK until every owner drains.
+        if (overlap_reset) {
+            for (size_t j = 0; j < chain_stages_.size(); ++j) {
+                auto& v = chain_.at(j);
+                PerformanceSpan join("worker", "reset_join", input_index_+j, request, 0, 1);
+                if (!check(cudaSetDevice(v.device()), error) ||
+                    !check(cudaStreamSynchronize(v.stream()), error)) return false;
+            }
         }
         if (!select_device(error)) return false;
     }
-    if (!fence(error) || !wait_fence(error)) return false;
+    if (!overlap_reset && (!fence(error) || !wait_fence(error))) return false;
     if (observer_ && (!check(cudaSetDevice(chain_.last().device()),error) ||
         !observer_->reset_request(request,error) || !select_device(error))) {abort_once();return false;}
     observer_predictions_.clear();
@@ -339,7 +356,7 @@ bool HipFinalVerifierExecutor::run_final_window(const Frame& metadata,
         if (!verifier_->run(static_cast<int>(predictions.size()), spec_.token_ids.data(),
                             spec_.pos0, bindings_.pool, bindings_.pool_user,
                             predictions.data(), error) ||
-            !fence(error) || !wait_fence(error)) return false;
+            (!native_mtp_completion() && (!fence(error) || !wait_fence(error)))) return false;
     }
     armed_ = false; // run consumed the prelaunch; all stages have drained
     if (options_.native_split_overlap && !chain_stages_.empty() &&
@@ -405,7 +422,7 @@ bool HipFinalVerifierExecutor::commit_prefix(uint64_t request, uint64_t window,
     keep_ = n_keep;
     if (!verifier_->commit(static_cast<int>(n_keep), error) ||
         !verifier_->wait_commit(error) ||
-        !fence(error) || !wait_fence(error)) return false;
+        (!native_mtp_completion() && (!fence(error) || !wait_fence(error)))) return false;
     // Native verifier commit is drained. The terminal observer runs before
     // the domain ACK; failure poisons the session, never retries a commit.
     if (observer_ && (!check(cudaSetDevice(chain_.last().device()),error) ||

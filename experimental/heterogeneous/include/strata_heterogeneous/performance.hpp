@@ -18,6 +18,13 @@ inline bool performance_flag(const char* name) {
     if (std::strcmp(value, "1") == 0) return true;
     throw std::invalid_argument(std::string(name) + " must be 0 or 1");
 }
+// Native completion removes only adapter events after an already completed
+// native run/commit. Worker-local admission excludes all diagnostic paths.
+inline bool native_mtp_completion() {
+    static const bool enabled = performance_flag("STRATA_HETERO_MTP_NATIVE_COMPLETION") &&
+                                performance_flag("STRATA_HETERO_MTP_SERVICE");
+    return enabled;
+}
 // Set by the native coordinator; leave ordinary worker frame/GPU timeouts intact.
 inline int worker_startup_wait_ms() {
     const char* value = std::getenv("STRATA_HETERO_STARTUP_WAIT_MS");

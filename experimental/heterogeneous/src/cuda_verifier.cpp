@@ -127,6 +127,7 @@ bool CudaVerifierDriver::prepare(const Plan& plan, size_t index, std::string& er
     return true;
 }
 bool CudaVerifierDriver::reset_request(uint64_t request, std::string& error) {
+    PerformanceSpan perf("worker", "reset_local", index_, request, 0, 1);
     if (!expect(State::ready, error) ||
         !request || request <= request_ || bindings_.initial_position != 0 ||
         !bindings_.zero_session || !verifier_) {
@@ -226,11 +227,14 @@ bool CudaVerifierDriver::enqueue_execute(const Frame& frame, std::string& error)
     if (mapped_egress_ && !mapped_output_->reset()) { error = "CUDA mapped egress reset refused"; return false; }
     int32_t ignored[strata::kernels::kVerifyMaxT] = {};
     return verifier_->run(static_cast<int>(spec_.token_ids.size()), spec_.token_ids.data(),
-                          spec_.pos0, bindings_.pool, bindings_.pool_user, ignored, error) && record(error);
+                          spec_.pos0, bindings_.pool, bindings_.pool_user, ignored, error) &&
+           (native_mtp_completion() || record(error));
 }
 bool CudaVerifierDriver::wait_execute(std::string& error) {
     PerformanceSpan perf("worker", "wait_execute", index_, request_, window_, spec_.token_ids.size());
-    if (!expect(State::executing, error) || !wait(error)) return false;
+    // Native Verifier::run synchronizes its compute/copy work on success.
+    // Retain adapter DMA fences; only the redundant post-run event is optional.
+    if (!expect(State::executing, error) || (!native_mtp_completion() && !wait(error))) return false;
     // The compute stream completed. Gather post-layer diagnostics before
     // an accepted-prefix commit can overwrite the verifier's tap buffers.
     if (!taps_.record(*verifier_, plan_, spec_, request_, window_, error)) return false;
@@ -302,11 +306,13 @@ bool CudaVerifierDriver::enqueue_commit_prefix(uint64_t request, uint64_t window
     }
     keep_ = keep;
     state_ = State::committing;
-    return verifier_->commit(static_cast<int>(keep), error) && record(error);
+    return verifier_->commit(static_cast<int>(keep), error) &&
+           (native_mtp_completion() || record(error));
 }
 bool CudaVerifierDriver::wait_commit(std::string& error) {
     PerformanceSpan perf("worker", "wait_commit", index_, request_, window_, spec_.token_ids.size());
-    if (!expect(State::committing, error) || !wait(error)) return false;
+    if (!expect(State::committing, error) ||
+        !(native_mtp_completion() ? verifier_->wait_commit(error) : wait(error))) return false;
     const int64_t committed = next_position_ + keep_;
     if (window_ <= 3 && bindings_.capacity_probe && !bindings_.capacity_probe("early_commit",error)) return false;
     if (prefix_observer_ && !prefix_observer_(request_, committed, error)) return false;

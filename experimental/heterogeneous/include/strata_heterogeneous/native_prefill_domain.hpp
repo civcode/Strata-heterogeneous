@@ -9,6 +9,7 @@
 #include "strata_heterogeneous/host.hpp"
 #include "strata_heterogeneous/window_admission.hpp"
 #include "strata_heterogeneous/mtp_request_policy.hpp"
+#include "strata_heterogeneous/performance.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -138,6 +139,8 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
         const size_t boundary_stage = cmd.stage_index - (stages.size() - 1);
         const char* capture_prefix = std::getenv("STRATA_HETERO_PREFILL_CAPTURE_PREFIX");
         const bool capture_bridge = capture_prefix && *capture_prefix;
+        const bool overlap_upload = !sender && !local && !isolated && !stage_probe && !capture_bridge &&
+            stages.size()==2 && terminal_chunk && performance_flag("STRATA_HETERO_MTP_PREFILL_UPLOAD");
         if (local && capture_bridge) {
             error = "cross-runtime prefill capture is not valid on a full local domain"; return false;
         }
@@ -231,12 +234,23 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
                             err="native prefill residual identity or finite gate failed"; return false;
                         }
                         std::memcpy(owned.pinned+off*stride,f->payload.data(),count*stride*sizeof(float));
+                        if (overlap_upload &&
+                            !check(cudaMemcpyAsync(dst+off*stride,owned.pinned+off*stride,count*stride*sizeof(float),
+                                                   cudaMemcpyHostToDevice,static_cast<cudaStream_t>(stream)),
+                                   "native prefill piece upload")) return false;
                         off+=count;
                     }
                     auto cs=static_cast<cudaStream_t>(stream);
-                    if (!check(cudaMemcpyAsync(dst,owned.pinned,size_t(rows)*stride*sizeof(float),
+                    // Every queued piece has a disjoint pinned slice. Native
+                    // run_impl orders its kernels behind the uploads on cs;
+                    // the native successor handoff waits for chunk compute
+                    // before the next external_input callback may reuse the
+                    // slot (hand_done event or stream sync). Failure cleanup
+                    // still drains all devices before releasing pinned memory.
+                    if (!overlap_upload &&
+                        (!check(cudaMemcpyAsync(dst,owned.pinned,size_t(rows)*stride*sizeof(float),
                                                cudaMemcpyHostToDevice,cs),"prefill residual H2D") ||
-                        !check(cudaStreamSynchronize(cs),"prefill staging lifetime fence")) return false;
+                         !check(cudaStreamSynchronize(cs),"prefill staging lifetime fence"))) return false;
                     for (size_t off = 0; capture_bridge && off < size_t(rows);) {
                         const size_t count = std::min(cap, size_t(rows) - off);
                         if (!verify_piece(dst, off, count, pos, "in", cs, err)) return false;
@@ -297,16 +311,22 @@ inline bool run_native_prefill_domain(const Frame& cmd, int fd,
             const uint64_t reserve=s.reserve_bytes+extra;
             if ((s.long_context_chunk || mtp_bulk) && !check_native_prefill_capacity(node.device,boundary_stage+i,
                     "prefill_before",s.geometry,s.session,static_cast<uint32_t>(chunk),reserve,error)) return false;
-            if (!check(cudaSetDevice(node.device),"prefill stage device") ||
-                !init_owned_native_prefill(*node.pf,s.weights,s.geometry,s.session,s.experts,
-                                           chunk,node.stream,reserve,0,error)) return false;
+            {
+                PerformanceSpan span("prefill", "native_init", boundary_stage+i, cmd.request_id, 0, cmd.rows);
+                if (!check(cudaSetDevice(node.device),"prefill stage device") ||
+                    !init_owned_native_prefill(*node.pf,s.weights,s.geometry,s.session,s.experts,
+                                               chunk,node.stream,reserve,0,error)) return false;
+            }
             if ((s.long_context_chunk || mtp_bulk) && !sample_native_capacity(node.device,boundary_stage+i,
                     "prefill_allocated",reserve,0,error)) return false;
         }
         if (entry_state && !entry_state("after_init",error)) return false;
         std::vector<int64_t> tokens(cmd.window->token_ids.begin(),cmd.window->token_ids.end());
-        if (!check(cudaSetDevice(first.device),"prefill entry device") ||
-            !first.pf->run_external(tokens.data(),n,0,chunk,n>chunk,error,local)) return false;
+        {
+            PerformanceSpan span("prefill", "native_domain_run", cmd.stage_index, cmd.request_id, 0, cmd.rows);
+            if (!check(cudaSetDevice(first.device),"prefill entry device") ||
+                !first.pf->run_external(tokens.data(),n,0,chunk,n>chunk,error,local)) return false;
+        }
         if (!local && offset!=n) { error="native prefill boundary did not transfer entire prompt"; return false; }
         if (isolated && !sender) {
             if (!check(cudaSetDevice(first.device),"isolated HIP0 drain owner") || !first.pf->idle(error) ||
