@@ -4,7 +4,9 @@ using namespace strata::heterogeneous::vanilla;
 int main() {
     auto r = parse_gen("GEN 3 ckpt=0 top_k=1 12,13,14", 100, 100, 4);
     assert(r.max_new==3 && r.ids==std::vector<int32_t>({12,13,14}));
-    for (const char* s : {"GEN 3 temperature=0.8 1", "GEN 3 1,", "GEN 3 1,,2", "GEN 5 1", "GEN 3 100", "GEN 3 1 2", "GEN 3 ckpt=0 ckpt=0 1"}) {
+    auto greedy = parse_gen("GEN 3 temperature=0 top_p=0.95 min_p=0.05 top_k=20 seed=18446744073709551615 12,13,14", 100, 100, 4);
+    assert(greedy.ids==r.ids);
+    for (const char* s : {"GEN 3 temperature=0.8 1", "GEN 3 penalty_repeat=1.2 1", "GEN 3 top_p=2 1", "GEN 3 seed=18446744073709551616 1", "GEN 3 1,", "GEN 3 1,,2", "GEN 5 1", "GEN 3 100", "GEN 3 1 2", "GEN 3 ckpt=0 ckpt=0 1"}) {
         bool rejected=false; try { (void)parse_gen(s,100,100,4); } catch (const std::invalid_argument&) { rejected=true; } assert(rejected);
     }
     int f[2]; assert(pipe(f)==0); Input in(128,f[0]);

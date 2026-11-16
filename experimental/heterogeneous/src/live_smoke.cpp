@@ -1498,7 +1498,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         // Negotiate actual reset support before announcing readiness.
         session.begin_request(request_id);
         if (o.vanilla_serve) {
-            std::fprintf(serve_wire, "INFO kv=%s\n", o.kv == hetero::KvMode::f16 ? "fp16" : "int8");
+            std::fprintf(stderr, "strata serve: session is up\n");
+            std::fprintf(serve_wire, "INFO logit_bias=0 context=%u kv=%s spec=1 mtp_max=0 lookup=0 conversation_cache_mib=0 conversation_cache_slots=0 vram_elastic=0 batch_slots=0\n",
+                         o.context_limit, o.kv == hetero::KvMode::f16 ? "fp16" : "int8");
             strata::core::print_serve_ready(serve_wire, o.context_limit);
             std::fflush(serve_wire);
         } else {

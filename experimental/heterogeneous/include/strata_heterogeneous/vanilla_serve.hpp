@@ -30,19 +30,27 @@ inline uint32_t number(const std::string& s) {
 struct Request { uint32_t max_new = 0; std::vector<int32_t> ids; };
 
 inline void check_key(const std::string& key, const std::string& value) {
-    // Greedy generation: seed and penalty anchor cannot affect argmax when
-    // penalties are disabled. ckpt=0 requests the already uncached behavior.
-    if (key == "seed" || key == "pen_from" || key == "penalty_last_n") {
+    // Vanilla sends sampling filters even with temperature=0. They have no
+    // effect on greedy, unpenalized generation; accept their valid values.
+    if (key == "seed") {
+        uint64_t seed = 0;
+        auto r = std::from_chars(value.data(), value.data()+value.size(), seed);
+        if (!value.empty() && r.ec == std::errc{} && r.ptr == value.data()+value.size()) return;
+    }
+    if (key == "pen_from" || key == "penalty_last_n" || key == "top_k") {
         (void)number(value); return;
     }
     if (key == "ckpt" && value == "0") return;
-    if (key == "top_k" && (value == "1" || value == "64" || value == "0")) return;
     if (key == "temperature" || key == "min_p" || key == "top_p" ||
         key == "penalty_repeat" || key == "penalty_freq" || key == "penalty_present") {
         size_t used = 0;
         double v = std::stod(value, &used);
-        const double neutral = (key == "top_p" || key == "penalty_repeat") ? 1.0 : 0.0;
-        if (used == value.size() && std::isfinite(v) && v == neutral) return;
+        if (used == value.size() && std::isfinite(v)) {
+            if (key == "temperature" && v <= 0.0) return;
+            if ((key == "top_p" || key == "min_p") && v >= 0.0 && v <= 1.0) return;
+            if (key == "penalty_repeat" && v == 1.0) return;
+            if ((key == "penalty_freq" || key == "penalty_present") && v == 0.0) return;
+        }
     }
     throw std::invalid_argument("GEN: unsupported key or value " + key);
 }
