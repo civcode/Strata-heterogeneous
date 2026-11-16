@@ -89,11 +89,14 @@ def profile_binding(profile):
     if not isinstance(args, list) or not all(isinstance(a, str) and a for a in args):
         raise ValueError("profile args must be a list of strings")
     values = {"--hetero-devices": "devices", "--layer-split": "split",
-              "--fingerprint": "fingerprint", "--hetero-max-new": "max_new_tokens",
+              "--fingerprint": "fingerprint",
               "--timeout-ms": "timeout_ms", "--prompt-chunk": "prompt_chunk"}
     switches = {"--shared": "shared", "--group-native-hip": "group_native_hip",
                 "--workload-mode": "workload_mode", "--long-context": "long_context"}
-    binding = {"stream_tokens": True, "lookup_draft": False, "restart_clean": False}
+    # Legacy source preflight needs a bounded diagnostic generation budget.
+    # The application engine takes its output budget from GEN, not this value.
+    binding = {"stream_tokens": True, "lookup_draft": False, "restart_clean": False,
+               "max_new_tokens": 1}
     ordinary = []
     seen = set()
     i = 0
@@ -167,11 +170,11 @@ def native_run_config(cfg, prepared):
     # files again before initializing any GPU. No legacy JSON is used at run time.
     out["args"] += ["--eos-ids", ",".join(str(t) for t in sorted(stops))]
     skip_values = {"--plan", "--kv", "--source-gguf", "--context-limit", "--stop-ids",
-                   "--native-prefill-chunk"}
+                   "--native-prefill-chunk", "--generate"}
     switches = {"--shared", "--group-native-hip", "--long-context", "--workload-mode"}
     values = {"--fingerprint", "--layers", "--hc", "--n-embd", "--timeout-ms",
               "--cuda-worker", "--hip-worker", "--config", "--source-index",
-              "--generate", "--prompt-chunk"}
+              "--prompt-chunk"}
     i = 1
     while i < len(argv):
         flag = argv[i]
@@ -184,7 +187,7 @@ def native_run_config(cfg, prepared):
             if i + 1 >= len(argv):
                 raise ValueError(f"missing native value for {flag}")
             if flag in values:
-                out["args"] += ["--hetero-max-new" if flag == "--generate" else flag, argv[i+1]]
+                out["args"] += [flag, argv[i+1]]
             i += 2
         else:
             raise ValueError(f"unexpected native option in serve binding: {flag}")

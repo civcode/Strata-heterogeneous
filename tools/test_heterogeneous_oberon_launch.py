@@ -42,7 +42,7 @@ class LaunchTests(unittest.TestCase):
 
     def test_bind_mixed(self):
         cfg = bind(self.profile, self.source)
-        self.assertEqual(cfg["heterogeneous"]["max_new_tokens"], 2048)
+        self.assertEqual(cfg["heterogeneous"]["max_new_tokens"], 1)
         self.assertEqual(cfg["heterogeneous"]["config"], self.source["heterogeneous"]["config"])
         self.assertNotIn("heterogeneous", self.profile)
         self.assertEqual(cfg["exe"], self.source["heterogeneous"]["coordinator"])
@@ -70,7 +70,8 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(result["args"].count("--kv"), 1)
         self.assertEqual(result["args"][result["args"].index("--layer-split")+1], "15,33")
         self.assertEqual(result["args"][result["args"].index("--eos-ids")+1], "99")
-        self.assertIn("--hetero-max-new", result["args"])
+        self.assertNotIn("--hetero-max-new", result["args"])
+        self.assertNotIn("--generate", result["args"])
         self.assertNotIn("--plan", result["args"])
         self.assertEqual(result["args"][result["args"].index("--hetero-devices")+1], "cuda:0,hip:0,hip:1")
         self.assertIn("heterogeneous", cfg)

@@ -13,8 +13,6 @@
     "hip:0,hip:1",
     "--fingerprint",
     "2026111301",
-    "--hetero-max-new",
-    "2048",
     "--timeout-ms",
     "120000",
     "--prompt-chunk",

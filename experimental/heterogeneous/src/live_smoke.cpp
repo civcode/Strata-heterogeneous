@@ -220,7 +220,7 @@ Options parse(int argc, char** argv) {
     std::set<std::string> serve_seen;
     const std::set<std::string> serve_flags = {"--serve", "--serve-preflight", "--pack", "--ple-gguf", "--expert-profile",
         "--layer-split", "--hetero-devices", "--vram-reserve-mib", "--shared", "--group-native-hip", "--kv",
-        "--workload-mode", "--long-context", "--max-context", "--hetero-max-new", "--prompt-chunk", "--prefill",
+        "--workload-mode", "--long-context", "--max-context", "--prompt-chunk", "--prefill",
         "--native", "--source-index", "--eos-ids", "--cuda-worker", "--hip-worker", "--config", "--fingerprint",
         "--layers", "--hc", "--n-embd", "--timeout-ms"};
     for (int i = 1; i < argc; ++i) {
@@ -315,7 +315,7 @@ Options parse(int argc, char** argv) {
             if (o.context_limit < 2 || o.context_limit > hetero::max_long_context)
                 throw std::invalid_argument("--context-limit must be in 2..262144");
         }
-        else if (key == "--generate" || (o.vanilla_serve && key == "--hetero-max-new")) {
+        else if (key == "--generate") {
             generation_arg = true;
             o.generate = u32(required_value(i, argc, argv, key.c_str()), "generate");
             if (!o.generate || o.generate > 4096)
@@ -394,6 +394,9 @@ Options parse(int argc, char** argv) {
             throw std::invalid_argument("help requested");
         } else throw std::invalid_argument("unknown option: " + key);
     }
+    // In vanilla --serve the GEN request specifies the completion length.
+    // Use the physical context bound, not a diagnostic generation cap.
+    if (o.vanilla_serve) o.generate = o.context_limit - 1;
     if (o.vanilla_serve && !o.serve_devices.empty()) {
         if (!o.plan.empty()) throw std::invalid_argument("use --hetero-devices and --layer-split, not a second --plan");
         std::vector<std::string> devices;
@@ -587,7 +590,7 @@ Options parse(int argc, char** argv) {
         o.cuda_mapped_egress || o.hip_split_overlap || !o.capture_prefix.empty() ||
         !hetero::long_context_cells_valid(o.context_limit) || o.kv != hetero::KvMode::int8))
         throw std::invalid_argument("long-context requires aligned grouped native INT8 resident prefill, no lookup or diagnostic overlap");
-    if (!o.workload_mode && (o.context_limit > 8192 || o.generate > 256))
+    if (!o.workload_mode && (o.context_limit > 8192 || (!o.vanilla_serve && o.generate > 256)))
         throw std::invalid_argument("extended context or completion requires --workload-mode");
     if (o.workload_mode && (!o.resident || !o.generate || o.prefill_parity_at ||
         o.generation_capture || !o.mtp_probe_rt.empty() || o.receiver_arm || o.hip_split_overlap))
