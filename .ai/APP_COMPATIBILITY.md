@@ -49,6 +49,35 @@ avoidable divergence. Do not revert qualified correctness gates blindly.
   cache capacity, sampling policy, or topology change in this increment.
   Full pinned checkout/runtime parity is NOT established.
 
+## Direct implementation increment (0062)
+
+The ordinary args array now owns context, KV format, fully resident KV,
+explicit prefill chunk, MTP path, speculative window and threshold. The
+binder fills exe, tokenizer and attested pack/GGUF/PLE/profile arguments,
+preserving args_written and native user_args merge precedence. Private
+placement and qualified resource metadata are still required. The public
+mixed profile now uses native --spec 4 (three drafts plus anchor), with an
+explicit coordinator and HIP-worker capability gate. Only explicit legacy
+qualification retains four candidates plus anchor. The native confidence
+window selector is used for the public mode; GPU evidence is pending.
+
+The vanilla generate.cpp request-summary formatting was extracted into
+include/strata/program/request_log.hpp and used by both binaries. Mixed
+summary numbers derive from committed work, with zero reuse/checkpoints;
+elapsed coordinator timing includes transport/control overhead. The native
+request log follower, Service progress fields, pack tokenizer loader and
+end-token policy are shared. Canonical mixed startup verifies the pack
+tokenizer against GGUF. More ordinary HTTP configuration keys are passed
+to the existing Service, not reimplemented.
+
+Local CPU checks: exact Git-blob-matched C++ headers and request-policy
+suite passed 86,274 assertions; shared formatter matched normal and
+cancelled fixtures byte-for-byte. Four Python config tests passed against
+the exact mixed_runconfig module with extracted native user_args helpers.
+No complete checkout/build or GPU/HTTP qualification was possible in this
+environment. See reports/report-0062-chat.md. These changes narrow the gap,
+not a completed application compatibility gate.
+
 ## Native public config contract still blocking
 
 The known-good reference JSON contains these native top-level fields:
@@ -76,7 +105,7 @@ ancestor generate.cpp parser; confirm pinned parser and execution):
 | --expert-cache | auto | Native actual allocation and admission |
 | --mmap-experts | flag | Native provider selection |
 | --prefill | auto | Native auto selection and pipeline |
-| --spec | 4 | Native entire window incl anchor (legacy 4 means 4 drafts) |
+| --spec | 4 | Public total window implemented; confirm GPU operation, complete native parser/caller |
 | --spec-min-p | 0.5 | Native threshold, no fixed-value replacement |
 | --mtp | directory | Native request/catch-up/rollback caller |
 | --max-context | 262144 | Native context capacity/limits |
@@ -98,7 +127,7 @@ Environment: HSA_ENABLE_SDMA=0, STRATA_KEEP_LEFTOVERS=1,
 STRATA_NO_PRESET=1, STRATA_SPLIT_OVERLAP=1, STRATA_PIPELINE_AUTO=0,
 STRATA_TRANSFER_TRACE=1. Confirm actual pinned owners, per-backend
 dispatch, effective values and precedence. Trace flags are not production
-defaults. Native `--spec 4` and old service `spec=4` are NOT comparable.
+defaults. Public native `--spec 4` and old service `spec=4` are NOT comparable; the latter remains only for legacy qualification.
 
 ## Remaining terminal and HTTP gates
 
