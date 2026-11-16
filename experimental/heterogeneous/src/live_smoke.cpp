@@ -1060,6 +1060,9 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
     const bool mtp_early = hetero::performance_flag("STRATA_HETERO_MTP_EARLY_METADATA");
+    const bool mtp_adaptive = hetero::performance_flag("STRATA_HETERO_MTP_ADAPTIVE");
+    if (mtp_adaptive && !o.mtp_service)
+        throw std::invalid_argument("adaptive MTP requires resident MTP service");
     if (mtp_early && (!o.mtp_service || plan.stages.front().backend != hetero::Backend::cuda))
         throw std::invalid_argument("MTP early metadata requires mixed resident MTP service");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
@@ -1103,6 +1106,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
               << " direct_verified_shared=" << o.direct_verified
               << " pipeline_mode=" << (o.pipeline_mode.empty() ? "legacy" : o.pipeline_mode)
               << " compact=" << compact << " fanout=" << fanout << " mtp_early_metadata=" << mtp_early
+              << " mtp_adaptive=" << mtp_adaptive
               << " kv=" << hetero::kv_mode_name(o.kv) << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
