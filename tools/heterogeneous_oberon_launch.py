@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 
+from strata_control.server_launch import server_command
+
 MIXED = "cuda:0:0-15,hip:0:15-33,hip:1:33-48"
 HIP = "hip:0:0-24,hip:1:24-48"
 QUALIFIED = {
@@ -180,10 +182,8 @@ def main():
             cfg["port"] = port
             path = write_config(root / "launchers", cfg)
             os.set_inheritable(lock.fileno(), True)
-            server = Path(__file__).resolve().parents[1] / "serve" / "server.py"
-            os.execv(sys.executable, [sys.executable, str(server), "--engine", "strata",
-                                     "--config", str(path), "--port", str(port), "--offline",
-                                     *(["--open"] if a.open else [])])
+            cmd = server_command(Path(__file__).resolve().parents[1], path, port, a.open)
+            os.execv(sys.executable, [*cmd, "--offline"])
     except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
         p.error(str(exc))
 

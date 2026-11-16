@@ -41,3 +41,20 @@ not permission to invent an unproven alternative.
 See [performance roadmap](PERFORMANCE_ROADMAP.md),
 [divergence audit](VANILLA_DIVERGENCE_AUDIT.md), and
 [implementation contract](../experimental/heterogeneous/docs/IMPLEMENTATION_CONTRACT.md).
+
+## Application compatibility is mandatory
+
+The public application is Strata, not a second inference product. Preserve the
+pinned native JSON run-config schema, ordinary argument spellings/arity/types,
+units, defaults, precedence, native parser semantics and effective execution;
+reuse the ordinary launch command, Python lifecycle, HTTP handlers, frontend,
+tokenizer, sampler, caching, progress and error/reporting functions. An
+identical string or accepted key is not sufficient if its behavior differs.
+Use the native code as the reference, not independently reconstructed
+lookalikes. Mixed-runtime placement, worker identity, transport and safety
+coordination are the only allowed extensions. Never silently ignore an
+unimplemented native option or advertise unsupported features. Existing
+qualified private profiles are transitional until native option extraction,
+dispatch, API behavior and hardware are validated. No default debug flood;
+retain raw diagnostics in the engine log and explicit trace modes. See
+[application compatibility gate](APP_COMPATIBILITY.md).

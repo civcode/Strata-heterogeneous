@@ -73,6 +73,7 @@ from strata_control import engine_component
 from strata_control import sysinfo
 from strata_control.discovery import in_trash
 from strata_control import user_args
+from strata_control.server_launch import server_command
 
 ROOT = Path(__file__).resolve().parent
 # The desktop app runs this installer under Strata Control (its bundled Python, STRATA_CONTROL_INSTALL=1). The source
@@ -7637,8 +7638,7 @@ def _start(cfg_path: Path, port: int | None, gpu: int | list | None = None, open
         refresh_draft_vocab(Path(cfg["args"][cfg["args"].index("--mtp") + 1]), cfg.get("draft_vocab", "cjk"))
         from strata_control import drafting
         refresh_dflash2_vocab(drafting.data_dir_of(cfg["args"]), cfg.get("draft_vocab", "cjk"))
-    cmd = [sys.executable, str(ROOT / "serve" / "server.py"), "--engine", "strata", "--config", str(cfg_path),
-           "--port", str(port or cfg.get("port", 8080))]
+    cmd = server_command(ROOT, cfg_path, port or cfg.get("port", 8080))
     if cfg.get("backend") == "hip":                    # AMD, numbered as HIP numbers them (setup's KFD order)
         if WIN and not component:
             hip_runtime_beside_exe(Path(cfg["exe"]).parent)   # #468 #461: also fixes a 0.1.34 install
@@ -8176,8 +8176,7 @@ def use_cuda12(cards, cfg_path: Path, cfg: dict, yes: bool) -> dict:
 
 def write_run_script(model, cfg_path, port, open_browser=True):
     """run-<model>.bat / .sh: the server with this config; `open_browser` False (#609: --no-browser) leaves --open out."""
-    serve = [sys.executable, str(ROOT / "serve" / "server.py"), "--engine", "strata", "--config", str(cfg_path),
-             "--port", str(port)] + (["--open"] if open_browser else [])
+    serve = server_command(ROOT, cfg_path, port, open_browser)
     if WIN:
         script = home() / f"run-{model.lower()}.bat"
         script.write_text("@echo off\r\ntitle Strata " + model + "\r\ncd /d \"" + str(ROOT) + "\"\r\n" +

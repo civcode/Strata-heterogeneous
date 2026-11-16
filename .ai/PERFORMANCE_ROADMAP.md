@@ -223,3 +223,16 @@ and final performance qualification remain open. Local exact shared policy test
 86271/1040444/42 pass. Full integrated host/native build, new protocol and
 profiling integration, native pinned source comparison, and GPU testing pending.
 See revised handoff 0060 and divergence audit.
+
+## Mandatory application compatibility gate (before further optimization)
+
+Owner direction: eliminate avoidable divergence in run-config syntax/names/
+semantics, Python launch and lifecycle, normal terminal output, and HTTP/web
+integration. The [application compatibility gate](APP_COMPATIBILITY.md) is
+blocking, not a new competing engine roadmap. Native argument extraction,
+ordinary generation/cache integration and exact pinned comparison take
+precedence over performance experiments. Preserve existing qualified worker
+safety checks and the 160 tok/s end goal. A source-identical frontend does not
+establish end-to-end feature parity. Do not qualify speed at mismatched
+`--spec` semantics. See handoff 0061; the incomplete 0060 qualification is
+not superseded by a pass.
