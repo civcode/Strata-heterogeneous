@@ -14,6 +14,7 @@
 #include "strata/prefill/hc_experiment.hpp"
 #include "strata_heterogeneous/process.hpp"
 #include "strata_heterogeneous/kv_mode.hpp"
+#include "strata/core/serve_request_summary.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -1131,7 +1132,19 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     int64_t generation_fed=0;
     bool stopped = false, cancelled = false, input_closed = false;
     int32_t stop_token = -1;
+    strata::core::ServeRequestSummary request_summary;
     auto generate = [&](const std::vector<int32_t>& prompt, uint32_t max_new) {
+        request_summary = {};
+        request_summary.prompt_tokens = static_cast<int64_t>(prompt.size());
+        using RequestClock = std::chrono::steady_clock;
+        auto active_since = RequestClock::now();
+        bool decode_phase = false;
+        auto account_active = [&]() {
+            const auto now = RequestClock::now();
+            (decode_phase ? request_summary.decode_ms : request_summary.prompt_ms) +=
+                std::chrono::duration<double, std::milli>(now - active_since).count();
+            active_since = now;
+        };
         generated.clear();
         final_mtp_offer.clear();
         generation_windows=0; generation_next=-1; generation_fed=0;
@@ -1155,6 +1168,12 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         // commit. EOF/cancel here cannot leave a provisional GPU window.
         auto checkpoint = [&]() {
             if (!o.resident) return true;
+            account_active();
+            request_summary.prompt_read = std::min(pos, request_summary.prompt_tokens);
+            // The final prediction (including EOS) is available only after
+            // every owner has acknowledged this committed window.
+            if (pos >= request_summary.prompt_tokens)
+                request_summary.generated = static_cast<int64_t>(generated.size()) + 1;
             std::cout << "HETERO_PROGRESS " << request_id << ' ' << window
                       << ' ' << pos;
             if (o.stream_tokens) {
@@ -1165,7 +1184,10 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             }
             std::cout << std::endl;
             std::string command;
-            if (!read_command(command)) { input_closed = true; cancelled = true; return false; }
+            const bool received = read_command(command);
+            // Do not charge the HTTP consumer's pacing or ACK wait to engine work.
+            active_since = RequestClock::now();
+            if (!received) { input_closed = true; cancelled = true; return false; }
             if (command == "cancel") { cancelled = true; return false; }
             if (command != "continue") throw std::invalid_argument("expected continue or cancel");
             return true;
@@ -1194,6 +1216,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         }
         for (size_t offset = prompt_offset; offset < prompt.size();) {
             const size_t count = std::min<size_t>(o.prompt_chunk, prompt.size() - offset);
+            // As in vanilla, the first verifier/head window belongs to decode.
+            if (o.resident && offset + count == prompt.size()) {
+                account_active();
+                decode_phase = true;
+            }
             hetero::WindowSpec spec;
             spec.pos0 = pos;
             spec.token_ids.assign(prompt.begin() + offset, prompt.begin() + offset + count);
@@ -1267,6 +1294,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 generated.insert(generated.end(), spec.token_ids.begin() + 1,
                                  spec.token_ids.begin() + keep);
                 accepted += keep - 1;
+                request_summary.drafts_accepted = static_cast<int64_t>(accepted);
+                request_summary.drafts_offered = static_cast<int64_t>(proposed);
                 capture_generation(spec,committed,keep);
                 if (o.mtp_generation) std::cout << "HETERO_MTP_GENERATION_COMMITTED window=" << window
                     << " pos0=" << pos << " proposed=" << spec.token_ids.size()-1 << " accepted=" << keep-1
@@ -1294,6 +1323,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             std::cerr << "HETERO_MTP_GENERATION_SUMMARY proposed=" << proposed << " accepted=" << accepted << '\n';
         }
         report_lookup();
+        if (o.resident) account_active();
     };
     auto publish = [&](size_t prompt_size) {
         std::ostringstream out;
@@ -1383,6 +1413,8 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                     ++completed_requests;
                 }
                 publish(prompt.size());
+                request_summary.cancelled = cancelled;
+                strata::core::print_serve_request_summary(stderr, request_summary);
             }
         }
     } else if (o.generate) {

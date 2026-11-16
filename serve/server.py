@@ -10272,6 +10272,11 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         opts, native_argv, source, tok, stops, _ = resident_spec
         from serve.heterogeneous_config import resolve
         log = str(resolve(cfg, cfg["log"])) if cfg.get("log") else None
+        if log and os.environ.get("STRATA_REQUEST_LINES") and os.path.abspath(log) not in _echoing:
+            with open(log, "a", encoding="utf-8"):
+                pass
+            _echoing.add(os.path.abspath(log))
+            threading.Thread(target=echo_requests, args=(log, os.path.getsize(log)), daemon=True).start()
         engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
                                 opts.prompt_chunk, opts.timeout_ms, EngineDied,
                                 log=log, cwd=cfg.get("cwd"))

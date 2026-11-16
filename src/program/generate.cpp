@@ -1,4 +1,5 @@
 #include "strata/core/logit_bias.hpp"
+#include "strata/core/serve_request_summary.hpp"
 // src/program/generate.cpp - P2.S6: `strata generate`.
 //
 // THE DRIVER, and the first program in this project that answers a question.  Everything below it is a
@@ -19694,17 +19695,8 @@ int main(int argc, char** argv) {
             }
             if (drive.routing != nullptr) std::fflush(drive.routing);   // the routing trace survives a crash and is watchable mid-session
             // "12288 of 98179" when cancelled mid-read (#471), the rate from what was read
-            char read_txt[64];
-            if (cancelled)
-                std::snprintf(read_txt, sizeof(read_txt), "%lld of %lld", (long long) read_n, (long long) fresh);
-            else
-                std::snprintf(read_txt, sizeof(read_txt), "%lld", (long long) fresh);
-            std::fprintf(stderr, "strata serve: prompt %lld tokens = %lld reused + %s read in %.0f ms (%.1f tok/s), "
-                                 "%lld generated in %.0f ms (%.1f tok/s), drafts accepted %lld of %lld, %zu checkpoints%s\n",
-                         (long long) n, (long long) resume, read_txt, prompt_ms,
-                         prompt_ms > 0 ? 1000.0 * read_n / prompt_ms : 0.0, (long long) produced_n, decode_ms,
-                         decode_ms > 0 ? 1000.0 * produced_n / decode_ms : 0.0, (long long) draft_accepted,
-                         (long long) draft_offered, checks.size(), cancelled ? " (cancelled)" : "");
+            strata::core::print_serve_request_summary(stderr, {n, resume, read_n, produced_n,
+                prompt_ms, decode_ms, draft_accepted, draft_offered, checks.size(), cancelled});
             if (serve_adapt_drain_ms >= 1.0)
                 std::fprintf(stderr, "strata serve: the request first waited %.0f ms for the adaptive tier's round in flight\n",
                              serve_adapt_drain_ms);
