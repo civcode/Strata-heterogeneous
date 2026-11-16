@@ -211,7 +211,8 @@ void serve_native_hip_domain(const hetero::HipWorkerInvocation& invocation, bool
     if (arm && (!overlap || compact)) throw std::runtime_error("receiver arm requires native HIP overlap and full logits");
     std::unique_ptr<hetero::NativeMtpProbe> mtp;
     if (const char* path = std::getenv("STRATA_HETERO_MTP_PROBE_RT"); path && *path) {
-        if (compact || !overlap || arm) throw std::runtime_error("one-shot MTP probe requires HIP overlap without external arm");
+        if ((compact && !mtp_service) || !overlap || arm)
+            throw std::runtime_error("MTP requires HIP overlap without external arm; diagnostics require full logits");
         const char* count = std::getenv("STRATA_HETERO_MTP_PROBE_WINDOWS");
         const auto n = count ? std::string(count) : std::string();
         const unsigned windows=hetero::mtp_probe_parse_windows(n);

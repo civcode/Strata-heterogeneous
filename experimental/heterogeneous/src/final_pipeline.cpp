@@ -324,19 +324,19 @@ FinalPipelineSession::FinalPipelineSession(Plan plan, std::vector<int> fds,
     if (receiver_arm_ && (!group_hip || fds_.size() != 2 || !timeout_ms_))
         throw std::invalid_argument("receiver arm requires two backend domains and a bounded deadline");
     if (early_window_spec_ && (!resident_ || !group_hip || !shared_memory_ ||
-        fds_.size() != 2 || receiver_arm_ || mtp_relay_ || direct_verified_ || !timeout_ms_))
-        throw std::invalid_argument("early window metadata requires ordinary grouped mixed resident shared transport");
+        fds_.size() != 2 || receiver_arm_ || (mtp_relay_ && !mtp_service_) || direct_verified_ || !timeout_ms_))
+        throw std::invalid_argument("early window metadata requires grouped mixed resident shared transport");
     const bool local_mtp_domain = mtp_service_ && group_hip && fds_.size()==1 &&
         plan_.stages.size()==2 && plan_.stages.front().backend==Backend::hip &&
         plan_.stages.back().backend==Backend::hip;
     if (mtp_service_ && (!mtp_resident_ || !shared_memory_ || !mtp_relay_ || !mtp_anchor_only_ ||
-                         (fds_.size()!=2 && !local_mtp_domain) || !group_hip || require_compact_ || receiver_arm_ || direct_verified_))
-        throw std::invalid_argument("MTP service requires grouped resident shared HIP pair, optional CUDA front and full logits");
+                         (fds_.size()!=2 && !local_mtp_domain) || !group_hip || receiver_arm_ || direct_verified_))
+        throw std::invalid_argument("MTP service requires grouped resident shared HIP pair with optional CUDA front");
     if (mtp_anchor_only_ && !mtp_relay_) throw std::invalid_argument("anchor-only MTP requires relay");
     if (mtp_resident_ && (!resident_ || !mtp_relay_ || !mtp_anchor_only_))
         throw std::invalid_argument("resident MTP requires explicit resident and anchor-only relay");
-    if (mtp_relay_ && (!group_hip || (resident_ && !mtp_resident_) || receiver_arm_ || require_compact_ || (fds_.size()!=2 && !local_mtp_domain) || !timeout_ms_))
-        throw std::invalid_argument("MTP relay requires explicitly admitted full-logit grouped HIP");
+    if (mtp_relay_ && (!group_hip || (resident_ && !mtp_resident_) || receiver_arm_ || (require_compact_ && !mtp_service_) || (fds_.size()!=2 && !local_mtp_domain) || !timeout_ms_))
+        throw std::invalid_argument("MTP relay requires explicitly admitted grouped HIP; diagnostic relay requires full logits");
 }
 FinalPipelineSession::~FinalPipelineSession() = default;
 void FinalPipelineSession::poison() noexcept {

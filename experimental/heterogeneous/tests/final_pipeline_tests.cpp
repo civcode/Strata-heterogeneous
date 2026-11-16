@@ -862,13 +862,13 @@ void startup_frame_failures() {
     check(!receive_startup_frame(fd[0],20,1000),"supervisor EOF releases prepared worker");
     ::close(fd[0]);
 }
-void mtp_service_protocol(bool hip_only) {
+void mtp_service_protocol(bool hip_only, bool optimized=false) {
     const auto p=parse_plan(hip_only ? "hip:0:0-5,hip:1:5-10" : "cuda:0:0-3,hip:0:3-7,hip:1:7-10",10,{2,3},3719);
     auto start=[&](int mode){return launch(p,true,false,false,false,false,0.f,true,false,false,true,false,false,0,mode);};
     const MtpRequestPolicy a{2048,8,4,248320,{1,2,3},{99}};
     {
         auto w=start(8);
-        FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,optimized,optimized,true,false,true,true,true,false,optimized&&!hip_only,false,true);
         pipe.initialize(); pipe.begin_request(1); pipe.configure_mtp_request(1,a);
         fails([&]{pipe.configure_mtp_request(1,a);},"duplicate MTP request metadata refused");
         check(!pipe.poisoned(),"preflight duplicate metadata does not start work");
@@ -886,15 +886,33 @@ void mtp_service_protocol(bool hip_only) {
         fails([&]{(void)pipe.request_mtp_proposal();},"terminal service offer refused");
         check(pipe.poisoned(),"invalid speculative attempt poisons session");
     }
+    if (optimized) {
+        auto w=start(8);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,true,true,true,false,true,true,true,false,!hip_only,false,true);
+        pipe.initialize(); pipe.begin_request(1);
+        const MtpRequestPolicy bad{2048,8,4,248320,{9,2,3},{99}};
+        pipe.configure_mtp_request(1,bad);
+        fails([&]{pipe.execute_discard(input_frame(p,1,1),{0,{9,2,3}});},
+              "compact MTP rejects full-logit reply");
+        check(pipe.poisoned(),"unexpected diagnostic logits poison compact service");
+    }
+    if (optimized) {
+        auto w=launch(p,true,false,true,false,false,0.f,true,false,false,true,false,false,0,8);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,true,true,true,false,true,true,true,false,!hip_only,false,true);
+        pipe.initialize(); pipe.begin_request(1); pipe.configure_mtp_request(1,a);
+        pipe.execute_discard(input_frame(p,1,1),{0,{1,2,3}});
+        fails([&]{(void)pipe.commit(3);},"compact MTP nonfinite refuses all prefix commits");
+        check(pipe.poisoned(),"compact MTP nonfinite poisons session");
+    }
     {
         auto w=start(7);
-        FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,optimized,optimized,true,false,true,true,true,false,optimized&&!hip_only,false,true);
         fails([&]{pipe.initialize();},"legacy resident MTP cannot advertise service capability");
         check(pipe.poisoned(),"stale service handshake poisons session");
     }
     {
         auto w=start(8);
-        FinalPipelineSession pipe(p,w.sockets,1200,true,true,false,false,true,false,true,true,true,false,false,false,true);
+        FinalPipelineSession pipe(p,w.sockets,1200,true,true,optimized,optimized,true,false,true,true,true,false,optimized&&!hip_only,false,true);
         pipe.initialize(); pipe.begin_request(1); pipe.configure_mtp_request(1,a);
         fails([&]{pipe.execute_discard(input_frame(p,1,1),{0,{1,2,4}});},"service cannot change admitted prompt");
         check(pipe.poisoned(),"wrong prompt poisons service");
@@ -1029,6 +1047,7 @@ int main() {
         mtp_relay_protocol(false); mtp_relay_protocol(true);
         mtp_resident_protocol(false); mtp_resident_protocol(true);
         mtp_service_protocol(false); mtp_service_protocol(true);
+        mtp_service_protocol(false,true); mtp_service_protocol(true,true);
         mtp_long_context_protocol();
         mtp_failure_retirement(false); mtp_failure_retirement(true);
         mtp_zero_tail_commit_retirement();

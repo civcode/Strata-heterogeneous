@@ -1059,12 +1059,15 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     }
     const bool compact = hetero::performance_flag("STRATA_HETERO_COMPACT_RESULT");
     const bool fanout = hetero::performance_flag("STRATA_HETERO_FANOUT_CONTROL");
+    const bool mtp_early = hetero::performance_flag("STRATA_HETERO_MTP_EARLY_METADATA");
+    if (mtp_early && (!o.mtp_service || plan.stages.front().backend != hetero::Backend::cuda))
+        throw std::invalid_argument("MTP early metadata requires mixed resident MTP service");
     (void)hetero::performance_flag("STRATA_HETERO_FAST_FENCE");
     (void)hetero::performance_flag("STRATA_HETERO_PERF_TRACE");
     if (o.warmup_windows && (hetero::performance_trace() || hetero::performance_flag("STRATA_HETERO_OVERLAP_TRACE") ||
         hetero::performance_flag("STRATA_HETERO_WINDOW_TRACE") || std::getenv("STRATA_VERIFY_TRACE")))
         throw std::invalid_argument("timed smoke requires tracing disabled (unset STRATA_VERIFY_TRACE)");
-    if (compact && (!o.generate || o.prefill_parity_at || o.generation_capture || o.receiver_arm || o.direct_verified || !o.mtp_probe_rt.empty()))
+    if (compact && (!o.generate || o.prefill_parity_at || o.generation_capture || o.receiver_arm || o.direct_verified || (!o.mtp_probe_rt.empty() && !o.mtp_service)))
         throw std::invalid_argument("compact head results are not supported in diagnostic modes");
     // Separate readiness-barrier wait from worker I/O and GPU fence deadlines.
     if (::setenv("STRATA_HETERO_STARTUP_WAIT_MS", std::to_string(o.timeout_ms).c_str(), 1) != 0)
@@ -1090,7 +1093,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     } diagnostic_drain{workers,true,o.timeout_ms};
     hetero::FinalPipelineSession session(plan, workers.sockets(), o.timeout_ms, o.shared, o.resident || o.prefill_parity_at,
                                          fanout, compact, o.group_hip, o.receiver_arm, o.mtp_relay_rounds!=0 || o.mtp_generation || o.mtp_service,o.mtp_generation || o.mtp_service,o.mtp_resident_prompt_rows!=0 || o.mtp_service,o.direct_verified,
-                                         o.pipeline_mode == "fast" && workers.size() == 2,o.guarded_direct,o.mtp_service);
+                                         (o.pipeline_mode == "fast" || mtp_early) && workers.size() == 2,o.guarded_direct,o.mtp_service);
     session.initialize(); // Native children initialize their own CUDA/HIP runtimes.
     std::cout << "LIVE workers ready, mode=" << (o.shared ? "shared" : "socket")
               << " processes=" << workers.size() << " grouped_hip=" << o.group_hip
@@ -1099,7 +1102,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
               << " guarded_direct_prelaunch=" << o.guarded_direct
               << " direct_verified_shared=" << o.direct_verified
               << " pipeline_mode=" << (o.pipeline_mode.empty() ? "legacy" : o.pipeline_mode)
-              << " compact=" << compact << " fanout=" << fanout
+              << " compact=" << compact << " fanout=" << fanout << " mtp_early_metadata=" << mtp_early
               << " kv=" << hetero::kv_mode_name(o.kv) << '\n';
     // Both smoke and generation use the exact same committed real-worker path.
     uint64_t request_id = 1;
