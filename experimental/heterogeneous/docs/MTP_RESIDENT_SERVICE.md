@@ -145,20 +145,35 @@ Standalone C++17 exact-blob tests: 42 new accounting assertions, 1,040,444 bulk 
 
 The resident adapter reports whether automatic restart is permitted. Every native adapter-generated transport/protocol/shutdown error carries the corresponding restart flag and, for fail-stopped sessions, explicit operator guidance. MTP never permits automatic restart, even if the source accidentally requests restart_clean. Ordinary non-opt-in and closed sessions also refuse it. The Service checks the declared engine policy before reload hooks, free-memory admission, vision startup or restart. The HTTP and server-console error messages no longer promise automatic recovery for these sessions. Existing opt-in ordinary restart still verifies complete previous process-group retirement before replacement; no new termination or GPU recovery mechanism is introduced. Integrated HTTP failure/refusal tests use simulated transport and real loopback HTTP, not a GPU fault. Chat AI isolated policy snippets 4/4 and existing retirement/stream contracts 10/10 passed; full HTTP integration pending due to checkout DNS restrictions.
 
-## Experimental parallel-performance switches (0060; not yet GPU-qualified)
+## Revised vanilla-first 0060 candidate (not GPU-qualified)
 
-Set independently to 1; unset or 0 retains the baseline. Keep the resident MTP service flag and existing model/placement admission. Ordinary pipeline-mode=fast is not a substitute for these flags.
+See [project-wide rule](../../../.ai/VANILLA_FIRST.md) and [source audit](../../../.ai/VANILLA_DIVERGENCE_AUDIT.md).
+Existing native MTP and its native confidence-gated producer remain unchanged by
+default. No independent adaptive controller. 0057/0058 32-row batch measurements
+above are historical: restored native E-9 >=64-row threshold and scratch rule,
+retaining necessary private device-local embedding binding. At chunk32 native
+narrow prime is used even with STRATA_HETERO_MTP_BATCH=1. Native 64-row option
+remains bounded and opt-in, not newly GPU-qualified.
 
 | Environment | Effect |
 | --- | --- |
-| STRATA_HETERO_COMPACT_RESULT | Reuse compact verifier result (native nonfinite guard required); no full-vocabulary logit payload. Diagnostics requiring full logits remain excluded. |
-| STRATA_HETERO_FANOUT_CONTROL | Existing independent control/ACK fanout. |
-| STRATA_HETERO_MTP_EARLY_METADATA | Mixed grouped resident service only: send downstream window metadata before producer work; no speculative activation read or new GPU wait. |
-| STRATA_HETERO_MTP_NATIVE_COMPLETION | Rely on existing successful native Verifier::run and wait_commit completion; skip redundant adapter post-run/commit event polling, not DMA lifetime fences. |
-| STRATA_HETERO_MTP_RESET_OVERLAP | Enqueue native session_zero on independent HIP owner streams before joining all; terminal draft reset still follows complete target drain. |
-| STRATA_HETERO_MTP_PREFILL_UPLOAD | Mixed native bulk MTP only, no capture/isolated paths: upload each checked wire piece on the native receiver stream using disjoint pinned slices. Native same-stream compute/handoff completion protects reuse; failure cleanup still drains devices. |
-| STRATA_HETERO_MTP_ADAPTIVE | Native draft cap follows verified committed acceptance; start 4, two poor (<50%) nonempty full-budget offers reduce by one, two fully accepted full-cap offers increase by one, two zero-width rounds probe at 1. Clip to request budget; zero uses native prime, not zero-step draft. No wire-spec change. HETERO_MTP_ADAPT logs terminal local commit feedback; global ACK remains necessary before another offer. |
+| STRATA_HETERO_COMPACT_RESULT | Existing compact response with native GPU nonfinite guard; diagnostic full logits excluded. |
+| STRATA_HETERO_FANOUT_CONTROL | Existing all-owner control fanout. |
+| STRATA_HETERO_MTP_EARLY_METADATA | Mixed resident MTP only; earlier downstream admission without reading unpublished activation. |
+| STRATA_HETERO_MTP_NATIVE_COMPLETION | Existing Verifier::run and wait_commit completion; omit duplicate post-run/commit adapter events, not DMA fences. |
+| STRATA_HETERO_MTP_NATIVE_WINDOW | Reuse shared native pipeline_window_size on generated probabilities and existing min_p0.5; then clip only stop/length/context. Target remains authoritative. Native producer may generate the low-confidence row that ends the chain; selector omits it from the target window. Zero candidates still submits the anchor via standard relay; no artificial zero-draft policy. |
 
-Profiling: STRATA_HETERO_PROFILE=1 on the Oberon wrapper retains explicitly chosen supported diagnostic flags (presence-based native flags unset when supplied as 0); it sets STRATA_HETERO_PERF_TRACE=1. Trace separate from timing runs. The critical-path tool reports predispatch wall time, worker-span overlap before the downstream domain roundtrip, and auxiliary reset/prefill/proposal spans. Auxiliary spans may describe failed work and must not be counted as throughput or GPU occupancy. Native profiling/toolchain support and actual dispatch must be checked on Oberon.
+All candidates opt-in, current production profile unchanged. Enabled
+STRATA_HETERO_MTP_ADAPTIVE, STRATA_HETERO_MTP_RESET_OVERLAP and
+STRATA_HETERO_MTP_PREFILL_UPLOAD are retired and refused. Native cost-aware
+STRATA_SPEC_COST requires actual vanilla callback integration, not an env
+switch; nonzero resident service use is refused until shared native caller
+is wired. No new policy. Trace HETERO_MTP_NATIVE_WINDOW includes generated/
+confidence-admitted/submitted counts when profiling. Keep full logits for
+diagnostics and preserve all-owner commit.
 
-These are source candidates, not a new recommended profile. The exact pinned upstream checkout and integrated native build were inaccessible to Chat AI; source completion/ordering was audited in the current shared native core. No prompt-cache reuse, relaxed capacity/commit rule, direct CUDA-HIP GPU event, or unqualified numerical/performance guarantee was introduced.
+Profiling mode STRATA_HETERO_PROFILE=1 retains existing selected native trace
+flags; critical path reports auxiliary spans and host overlap, not GPU busy
+time. Reset stage, prefill init/domain run and proposal timings retained.
+Native reset and bridge lifetime fence restored to baseline. Qualification
+pending on Oberon; no measured new performance or high-position GPU claim.

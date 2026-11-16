@@ -5,6 +5,8 @@ These instructions apply to this directory. Also follow
 This is an experimental, opt-in research feature; do not change the behavior
 of existing CUDA-only or HIP-only inference.
 
+**Mandatory project-wide vanilla-first rule:** [VANILLA_FIRST.md](../../.ai/VANILLA_FIRST.md) and the [current performance roadmap](../../.ai/PERFORMANCE_ROADMAP.md) govern all changes and supersede conflicting historical experiments. Do not invent adaptive MTP, cache, prefill, attention or synchronization algorithms. Reuse the exact native implementation, extracting only necessary mixed-runtime seams. See the [source divergence audit](../../.ai/VANILLA_DIVERGENCE_AUDIT.md). The previous 0060 custom adaptive/reset/piece-upload switches are retired.
+
 **Authoritative implementation contract:**
 [docs/IMPLEMENTATION_CONTRACT.md](docs/IMPLEMENTATION_CONTRACT.md).
 Manual GPU validation and reported Oberon results:

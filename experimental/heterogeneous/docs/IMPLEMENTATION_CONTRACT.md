@@ -2,6 +2,8 @@
 
 **Status:** Active project implementation and validation contract for `experimental/heterogeneous/`. It supersedes M2.10–M2.17 instructions about the *next* investigation and about accepting the heterogeneous architecture. Their actual measurements and original numerical-parity criteria are retained as historical evidence; no prior KL test is retroactively declared passed.
 
+**Project-wide mandatory rule:** [Vanilla-first development](../../../.ai/VANILLA_FIRST.md), [performance roadmap](../../../.ai/PERFORMANCE_ROADMAP.md) and [divergence audit](../../../.ai/VANILLA_DIVERGENCE_AUDIT.md) refine the existing native-reuse contract. No independently invented inference algorithms, including behind experimental flags. Extract proven native behavior from the exact source; report blockers rather than approximate it. Historical diagnostics remain historical.
+
 ## Objective and implementation boundary
 
 **M7 supersedes the one-worker-per-GPU topology.** One native execution process per contiguous backend domain is mandatory. CUDA→HIP is the only added activation/notification boundary on Oberon; AMD0→AMD1 uses native same-runtime Strata. Retain the original physical stage plan/fingerprint and per-device resource admission. Per-GPU workers are legacy regression controls, not the production target. Grouping must be explicitly qualified before activation. No duplicate homogeneous scheduler or inference implementation.
