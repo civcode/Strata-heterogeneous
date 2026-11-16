@@ -1,0 +1,101 @@
+#pragma once
+
+// The wire between the host process and the front stage worker of a mixed CUDA/HIP split (.ai/SEAM.md).
+//
+// One AF_UNIX stream socket.  The host sends one request at a time and waits for its reply; the worker serves them
+// in order.  Residual rows do not travel here: they go through the shared hand-off memory (shared_region.hpp).
+// Host-only code: nothing here touches CUDA or HIP.
+
+#include "strata/hetero/front_stage.hpp"
+#include "strata/hetero/shared_region.hpp"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace strata::hetero {
+
+constexpr uint32_t kLinkProtocol = 1;
+constexpr uint32_t kLinkMagic = 0x314c4653;          // "SFL1"
+constexpr size_t kLinkMaxPayload = size_t(16) << 20; // tokens of one prompt chunk, with room to spare
+
+/// What both processes must agree on before the first window.  The worker compares it with what it loaded.
+struct LinkIdentity {
+    uint32_t protocol = kLinkProtocol;
+    uint64_t model_fingerprint = 0;   ///< of the model files both processes read
+    int32_t n_layers = 0;
+    int32_t front_end = 0;            ///< the front stage runs layers [0, front_end)
+    int32_t hc = 0;
+    int32_t n_embd = 0;
+    int32_t max_rows = 0;             ///< rows a hand-off buffer holds
+    int64_t max_context = 0;
+    bool operator==(const LinkIdentity& o) const {
+        return protocol == o.protocol && model_fingerprint == o.model_fingerprint && n_layers == o.n_layers &&
+               front_end == o.front_end && hc == o.hc && n_embd == o.n_embd && max_rows == o.max_rows &&
+               max_context == o.max_context;
+    }
+    bool operator!=(const LinkIdentity& o) const { return !(*this == o); }
+    /// Plausible on its own (ranges only); `why` says what is not.
+    bool valid(std::string& why) const;
+};
+
+enum class Op : uint16_t { Hello = 1, Run = 2, Commit = 3, Prefill = 4, Session = 5, Shutdown = 6, Reply = 100 };
+
+struct Frame {
+    Op op = Op::Reply;
+    uint64_t seq = 0;
+    int64_t a = 0, b = 0, c = 0;
+    std::vector<uint8_t> payload;
+};
+
+enum class Recv { Ok, Eof, Error };
+
+/// Send one frame; `pass_fd` >= 0 travels with it (SCM_RIGHTS).  `timeout_ms` < 0 waits without a limit.
+bool send_frame(int fd, const Frame& f, int pass_fd, int timeout_ms, std::string& err);
+/// Receive one frame.  `got_fd` (may be null) receives a passed descriptor or -1; the caller owns it.
+/// Eof: the peer closed the socket before the first byte of a frame.
+Recv recv_frame(int fd, Frame& f, int* got_fd, int timeout_ms, std::string& err);
+
+/// The worker's side of the front stage: the forwarded operations, plus the hand-off memory it is given.
+class FrontBackend : public FrontStage {
+public:
+    /// Called once, before any other operation.  Refuse (false, `err`) when `id` is not what this worker loaded.
+    virtual bool attach(const LinkIdentity& id, SharedRegion&& region, std::string& err) = 0;
+};
+
+/// Serve the host's requests on `fd` until it closes the socket or sends Shutdown.  Returns 0 after such a clean
+/// end and 1 on a protocol or transport error (`err` says which).  An operation the backend refuses is answered
+/// with its error and serving goes on: the host decides what follows.
+int serve_front(int fd, FrontBackend& backend, std::string& err);
+
+/// The host's side: a FrontStage whose calls travel to the worker.
+class RemoteFrontStage final : public FrontStage {
+public:
+    /// `fd` is borrowed.  `timeout_ms` bounds every wait for a reply (< 0: no limit).
+    RemoteFrontStage(int fd, int timeout_ms) : fd_(fd), timeout_ms_(timeout_ms) {}
+
+    /// Identity and hand-off memory; must succeed before any other call.
+    bool hello(const LinkIdentity& id, const SharedRegion& region, std::string& err);
+
+    bool run(int T, const int32_t* tokens, int64_t pos0, std::string& err) override;
+    bool commit(int n_keep, std::string& err) override;
+    bool prefill(const int32_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) override;
+    bool session(SessionOp op, int64_t a, int64_t b, std::string& err) override;
+
+    /// Ask the worker to end its serve loop.  After this (or any transport error) the link is closed for calls.
+    bool shutdown(std::string& err);
+
+    /// A transport or protocol error has closed the link; every later call fails with the same message.
+    bool broken() const { return broken_; }
+
+private:
+    int fd_;
+    int timeout_ms_;
+    uint64_t seq_ = 0;
+    bool greeted_ = false;
+    bool broken_ = false;
+    std::string broken_why_;
+    bool call(Frame& req, int pass_fd, std::string& err);
+};
+
+} // namespace strata::hetero

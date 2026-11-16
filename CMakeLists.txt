@@ -798,6 +798,13 @@ if(STRATA_BUILD_SPLIT)
   add_subdirectory(src/split)
 endif()
 
+# ---- mixed NVIDIA + AMD layer split: the host-only seam between the two processes (hetero/, .ai/SEAM.md) ----
+# OFF by default, Linux only, no GPU runtime is linked; no other target depends on it.
+option(STRATA_HETERO "Build the CUDA/HIP mixed-split seam library and its CPU tests (hetero/)" OFF)
+if(STRATA_HETERO)
+  add_subdirectory(hetero)
+endif()
+
 # What this configure registered, so a missing capability is a stated skip (tools/check prints this line too).
 if(STRATA_BUILD_TESTS)
   set(_strata_test_kinds "cpu")

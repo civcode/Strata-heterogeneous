@@ -58,10 +58,30 @@ loop:
    embedding step). This is the part inside `generate.cpp` and is the Tier 1 work of handoff 0064.
 5. Transport, identity checks, all-owner commit acknowledgement and cooperative supervision of the worker.
 
+## What exists so far (`hetero/`, host-only, CPU-tested)
+
+| File | What it is |
+| --- | --- |
+| `include/strata/hetero/front_stage.hpp` | `FrontStage`: the calls the first local stage forwards (run, commit, prefill, session) |
+| `shared_region.hpp` | one memfd mapping with page-aligned slots for the hand-off buffers and ready words |
+| `front_link.hpp` | the socket protocol: `RemoteFrontStage` (host side), `serve_front` and `FrontBackend` (worker side), identity check |
+| `worker_process.hpp` | start the worker with its socket on descriptor 3; end it by closing the socket, never by a signal |
+| `probe/shared_handoff_probe.cu` | GPU probe for open point 2 below; unverified until handoff 0063 has built and run it |
+
+Not written yet: the `FrontBackend` that drives vanilla's first-stage objects on the CUDA card, and the hook that
+makes the engine call a `FrontStage`.
+
+## Not the same thing: vanilla's own split engines
+
+Vanilla 0.2.15 has `strata-split` (every card gets a share of every layer, `docs/SPLIT_ENGINE.md`) and split serving
+(a prefill engine and a decode engine exchange session files, `docs/SPLIT_SERVE.md`). Both need cards of one make;
+`docs/MULTI_GPU.md` says an engine drives one make of card. Neither is used here.
+
 ## Open points for handoff 0064 (need a real build and run)
 
 - Where the PLE history lives: layer 1 is on the front stage, and the loop passes `ple_prev` from the first
   stage's session.
 - Whether each runtime accepts a mapped registration of the same shared mapping for the device-side wait and
-  write (vanilla uses `cudaHostAlloc`; the frozen adapter did this for bounded cases, report 0047).
+  write. Vanilla uses `cudaHostAlloc` for the hand-off, and `cudaHostRegister(Mapped | Portable)` on mapped memory
+  elsewhere (`src/core/layer.cpp`, the expert arena). The probe of handoff 0063 answers this.
 - How many places in `generate.cpp` assume the first stage starts at layer 0.
