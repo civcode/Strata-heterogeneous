@@ -10353,6 +10353,10 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
             narrator = threading.Thread(target=narrate_start,
                 args=(log_path, os.path.getsize(log_path), None, loading), daemon=True)
             narrator.start()
+            if os.environ.get("STRATA_REQUEST_LINES") and os.path.abspath(log_path) not in _echoing:
+                _echoing.add(os.path.abspath(log_path))
+                threading.Thread(target=echo_requests, args=(log_path, os.path.getsize(log_path)),
+                                 daemon=True).start()
         try:
             engine = ResidentEngine(native_argv, source, stops, opts.max_new_tokens,
                                     opts.prompt_chunk, opts.timeout_ms, EngineDied, log=log_path,

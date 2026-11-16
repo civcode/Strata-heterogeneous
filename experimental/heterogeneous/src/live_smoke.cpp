@@ -13,6 +13,7 @@
 #include "strata_heterogeneous/mtp_request_policy.hpp"
 #include "strata_heterogeneous/mtp_stream_batch.hpp"
 #include "strata/spec/suffix_drafter.hpp"
+#include "strata/program/request_log.hpp"
 #include "strata/prefill/hc_experiment.hpp"
 #include "strata_heterogeneous/process.hpp"
 #include "strata_heterogeneous/kv_mode.hpp"
@@ -1225,7 +1226,17 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     int64_t generation_fed=0;
     bool stopped = false, cancelled = false, input_closed = false;
     int32_t stop_token = -1;
+    // Native request log: commit timestamps and counts, not estimates from
+    // Py/HTTP arrival times. No cache reuse/checkpoints are claimed.
+    using RequestClock = std::chrono::steady_clock;
+    auto request_start = RequestClock::time_point{}, prompt_end = RequestClock::time_point{};
+    int64_t logged_read = 0, logged_output = 0;
+    uint64_t proposed = 0, accepted = 0;
     auto generate = [&](const std::vector<int32_t>& prompt, uint32_t max_new) {
+        request_start = RequestClock::now();
+        prompt_end = RequestClock::time_point{};
+        logged_read = logged_output = 0;
+        proposed = accepted = 0;
         generated.clear();
         final_mtp_offer.clear();
         generation_windows=0; generation_next=-1; generation_fed=0;
@@ -1254,6 +1265,11 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
         // The coordinator only yields control after all stages acknowledged
         // commit. EOF/cancel here cannot leave a provisional GPU window.
         auto checkpoint = [&]() {
+            const auto now = RequestClock::now();
+            logged_read = std::min<int64_t>(pos, static_cast<int64_t>(prompt.size()));
+            if (logged_read == static_cast<int64_t>(prompt.size())) {
+                if (prompt_end == RequestClock::time_point{}) prompt_end = now;
+            }
             if (!o.resident) return true;
             std::cout << "HETERO_PROGRESS " << request_id << ' ' << window
                       << ' ' << pos;
@@ -1265,11 +1281,13 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
                 const auto batch=stream_cursor.advance(prompt.size(),max_new,pos,generated,next,o.stop_ids);
                 std::cout << " BATCH " << (batch.terminal?1:0) << ' ' << batch.tokens.size();
                 for (auto token:batch.tokens) std::cout << ' ' << token;
+                logged_output += static_cast<int64_t>(batch.tokens.size());
             } else if (o.stream_tokens) {
                 // Only committed predictions, never intermediate prompt rows or stop IDs.
                 const bool available = pos >= static_cast<int64_t>(prompt.size()) &&
                     std::find(o.stop_ids.begin(), o.stop_ids.end(), next) == o.stop_ids.end();
                 std::cout << ' ' << (available ? next : -1);
+                if (available) ++logged_output;
             }
             std::cout << std::endl;
             std::string command;
@@ -1321,7 +1339,7 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             lookup = std::make_unique<strata::spec::SuffixDrafter>(3, 32, o.context_limit);
             lookup->append(prompt.data(), prompt.size());
         }
-        uint64_t proposed = 0, accepted = 0, lookup_windows = 0;
+        uint64_t lookup_windows = 0;
         auto is_stop = [&](int32_t token) {
             return std::find(o.stop_ids.begin(), o.stop_ids.end(), token) != o.stop_ids.end();
         };
@@ -1493,6 +1511,17 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
             if (o.mtp_resident_prompt_rows)
                 std::cout << "HETERO_MTP_RESIDENT_REQUEST request=" << request_id << std::endl;
             generate(prompt, max_new);
+            // Only after the actual all-owner checkpoints (including a
+            // cancellation acknowledgement path) may the engine describe
+            // this request. For buffered output, publish counts at completion.
+            const auto now = RequestClock::now();
+            const auto pp_end = prompt_end == RequestClock::time_point{} ? now : prompt_end;
+            const double pp_ms = std::chrono::duration<double,std::milli>(pp_end-request_start).count();
+            const double tg_ms = prompt_end == RequestClock::time_point{} ? 0.0 :
+                std::chrono::duration<double,std::milli>(now-prompt_end).count();
+            const int64_t actual_output = cancelled ? logged_output : static_cast<int64_t>(generated.size());
+            strata::program::log_request_summary(prompt.size(),0,logged_read,prompt.size(),
+                pp_ms,actual_output,tg_ms,accepted,proposed,0,cancelled);
             if (!input_closed) {
                 if (o.mtp_resident_prompt_rows) {
                     complete_generation(prompt,max_new);

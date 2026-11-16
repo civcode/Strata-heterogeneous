@@ -130,6 +130,8 @@ class ResidentEngine:
         self._request = 0
         self._failed = False
         self.last_completion = self.last_metrics = None
+        self.progress, self.progress_ms, self.reused = None, 0, 0
+        self.prefill_tok_s_mean = None
         self.last = None  # existing Service timing record, published only after validated completion
         # Native diagnostics belong in the ordinary engine log. Protocol stdout
         # stays a separate pipe; never redirect or filter acknowledgements.
@@ -323,6 +325,8 @@ class ResidentEngine:
                                 mtp_context=self.max_context)
             self._request += 1
             self.last_completion = self.last_metrics = self.last = None
+            self.progress, self.progress_ms, self.reused = None, 0, 0
+            self.prefill_tok_s_mean = None
             start = time.monotonic()
             prefill_end = last_checkpoint = first_output = last_output_checkpoint = None
             emitted = 0
@@ -341,6 +345,11 @@ class ResidentEngine:
                         except ValueError as exc:
                             raise self._failure("invalid resident progress") from exc
                         last_checkpoint = time.monotonic()
+                        if prefill_end is None:
+                            read = min(progress.pos, len(ids))
+                            self.progress = (read, len(ids))
+                            self.progress_ms = (last_checkpoint-start)*1000
+                            self.prefill_tok_s_mean = read*1000/self.progress_ms if self.progress_ms > 0 else None
                         batch = token if isinstance(token, tuple) else () if token is None else (token,)
                         if batch:
                             last_output_checkpoint = last_checkpoint
