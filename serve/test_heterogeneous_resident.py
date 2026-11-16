@@ -151,6 +151,33 @@ class TestResident(unittest.TestCase):
             self.assertEqual(e.last["decode_ms"], 1000 if stream else None)
             self.assertEqual(e.last["timing_source"], "heterogeneous_host_commit_progress")
 
+    def test_native_summary_shared_with_http(self):
+        import json
+        for reason, stop, ids in (("stop", 99, [10]), ("length", -1, [10, 11])):
+            summary = {"prompt_read": 2, "generated": 2, "reused": 0,
+                       "prompt_ms": 3.5, "decode_ms": 7.25,
+                       "drafts_accepted": 0, "drafts_offered": 0}
+            record = {"request_id": 1, "prompt_tokens": 2, "token_ids": ids,
+                      "finish_reason": reason, "stop_token": stop, "native_summary": summary}
+            e = self.engine(["HETERO_PROGRESS 1 1 2 10",
+                             "HETERO_PROGRESS 1 2 3 " + ("-1" if reason == "stop" else "11"),
+                             "HETERO_GENERATION " + json.dumps(record)])
+            list(e.generate([1, 2], 2, {}, Event()))
+            self.assertEqual(e.last, {**summary, "prompt_tokens": 2, "finish": reason})
+
+    def test_native_summary_rejects_wrong_counts(self):
+        import json
+        summary = {"prompt_read": 2, "generated": 1, "reused": 0,
+                   "prompt_ms": 3.5, "decode_ms": 7.25,
+                   "drafts_accepted": 0, "drafts_offered": 0}
+        record = {"request_id": 1, "prompt_tokens": 2, "token_ids": [10, 11],
+                  "finish_reason": "length", "stop_token": -1, "native_summary": summary}
+        e = self.engine(["HETERO_PROGRESS 1 1 2 10", "HETERO_PROGRESS 1 2 3 11",
+                         "HETERO_GENERATION " + json.dumps(record)])
+        with self.assertRaisesRegex(RuntimeError, "summary disagrees"):
+            list(e.generate([1, 2], 2, {}, Event()))
+        self.assertFalse(e.alive())
+
     def test_buffered_compatibility(self):
         e = self.engine(["HETERO_PROGRESS 1 1 2", "HETERO_PROGRESS 1 2 3",
                          'HETERO_GENERATION {"request_id":1,"prompt_tokens":2,"token_ids":[10,11],"finish_reason":"length","stop_token":-1}'], False)

@@ -1328,7 +1328,16 @@ int execute(const Options& o, const hetero::Plan& plan, GenerationLimits limits)
     auto publish = [&](size_t prompt_size) {
         std::ostringstream out;
         out << "HETERO_GENERATION {\"prompt_tokens\":" << prompt_size;
-        if (o.resident) out << ",\"request_id\":" << request_id << ",\"stop_token\":" << stop_token;
+        if (o.resident) {
+            out << ",\"request_id\":" << request_id << ",\"stop_token\":" << stop_token
+                << ",\"native_summary\":{\"prompt_read\":" << request_summary.prompt_read
+                << ",\"generated\":" << request_summary.generated
+                << ",\"reused\":" << request_summary.reused
+                << ",\"prompt_ms\":" << std::setprecision(17) << request_summary.prompt_ms
+                << ",\"decode_ms\":" << request_summary.decode_ms
+                << ",\"drafts_accepted\":" << request_summary.drafts_accepted
+                << ",\"drafts_offered\":" << request_summary.drafts_offered << '}';
+        }
         out << ",\"finish_reason\":\"" << (cancelled ? "cancelled" : stopped ? "stop" : "length")
             << "\",\"token_ids\":[";
         for (size_t i = 0; i < generated.size(); ++i) {

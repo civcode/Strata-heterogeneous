@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 import queue
@@ -256,6 +257,26 @@ class ResidentEngine:
             raise self._died("invalid native resident completion") from exc
         return record
 
+    def _native_stats(self, record, progress, max_new):
+        """Use the same native counts/timings for HTTP and the engine summary log."""
+        if "native_summary" not in record:
+            return None  # older diagnostic coordinators retain their host-timing path
+        stats = record["native_summary"]
+        counts = ("prompt_read", "generated", "reused", "drafts_accepted", "drafts_offered")
+        times = ("prompt_ms", "decode_ms")
+        if (not isinstance(stats, dict) or set(stats) != set(counts + times) or
+                any(type(stats[k]) is not int or stats[k] < 0 for k in counts) or
+                any(type(stats[k]) not in (int, float) or not math.isfinite(stats[k]) or stats[k] < 0
+                    for k in times)):
+            raise self._died("invalid native request summary")
+        prompt = record["prompt_tokens"]
+        if (stats["reused"] != 0 or stats["prompt_read"] != min(progress.pos, prompt) or
+                stats["generated"] != max(0, min(max_new, progress.pos - prompt + 1)) or
+                stats["drafts_accepted"] > stats["drafts_offered"]):
+            raise self._died("native request summary disagrees with committed positions")
+        return {**stats, "prompt_tokens": prompt,
+                "finish": "cancel" if record["finish_reason"] == "cancelled" else record["finish_reason"]}
+
     def generate(self, ids, max_new, sampling, cancel, embeddings=None, prefill_only=False):
         if prefill_only:
             raise ValueError("resident prefill-only requests are unsupported")
@@ -266,7 +287,7 @@ class ResidentEngine:
             if not self.alive():
                 raise self._died("resident engine unavailable; restart required")
             self._request += 1
-            self.last_completion = self.last_metrics = None
+            self.last_completion = self.last_metrics = self.last = None
             waiting = completed = cancelled = False
             progress = Progress(self._request, len(ids), max_new, self.chunk,
                                 self.source["vocab"], self.stop_ids, self.stream_tokens,
@@ -317,6 +338,7 @@ class ResidentEngine:
                                  (progress.tokens != record["token_ids"] or
                                   progress.terminal != (reason == "stop")))):
                             raise self._died("resident completion disagrees with committed positions or streamed tokens")
+                        native_stats = self._native_stats(record, progress, max_new)
                         self.last_completion = record
                         end = time.monotonic()
                         if first_output is None and record["token_ids"]:
@@ -328,11 +350,13 @@ class ResidentEngine:
                             "request_start": start, "prefill_end": prefill_end,
                             "decode_end": last_checkpoint if prefill_end is not None else None,
                             "request_end": end}
+                        if native_stats is not None:
+                            self.last = native_stats
                         if self.source.get("workload_mode"):
-                            # Only a fully validated, non-cancelled request contributes to
-                            # the existing Service's timing summary. Buffered output does not
-                            # establish first-to-last token timestamps.
-                            if not cancelled and not cancel.is_set():
+                            # Older coordinators do not report native timing. Keep their
+                            # host observation explicitly labelled rather than inventing
+                            # a native first-to-last token interval for buffered output.
+                            if native_stats is None and not cancelled and not cancel.is_set():
                                 produced = len(record["token_ids"])
                                 decode_span = (last_output_checkpoint - prefill_end
                                     if self.stream_tokens and produced >= 2 and
@@ -357,6 +381,7 @@ class ResidentEngine:
                         record = self._result(self._receive(), ids, max_new)
                         if record["finish_reason"] != "cancelled":
                             raise self._died("resident cancellation not acknowledged")
+                        self.last = self._native_stats(record, progress, max_new)
                         self.last_completion = record
                         self._diagnostic(f"HETERO_REQUEST_DONE request={self._request} finish=cancelled next={progress.pos}")
                         completed = True
