@@ -144,3 +144,21 @@ Standalone C++17 exact-blob tests: 42 new accounting assertions, 1,040,444 bulk 
 ## Explicit restart policy (0059)
 
 The resident adapter reports whether automatic restart is permitted. Every native adapter-generated transport/protocol/shutdown error carries the corresponding restart flag and, for fail-stopped sessions, explicit operator guidance. MTP never permits automatic restart, even if the source accidentally requests restart_clean. Ordinary non-opt-in and closed sessions also refuse it. The Service checks the declared engine policy before reload hooks, free-memory admission, vision startup or restart. The HTTP and server-console error messages no longer promise automatic recovery for these sessions. Existing opt-in ordinary restart still verifies complete previous process-group retirement before replacement; no new termination or GPU recovery mechanism is introduced. Integrated HTTP failure/refusal tests use simulated transport and real loopback HTTP, not a GPU fault. Chat AI isolated policy snippets 4/4 and existing retirement/stream contracts 10/10 passed; full HTTP integration pending due to checkout DNS restrictions.
+
+## Experimental parallel-performance switches (0060; not yet GPU-qualified)
+
+Set independently to 1; unset or 0 retains the baseline. Keep the resident MTP service flag and existing model/placement admission. Ordinary pipeline-mode=fast is not a substitute for these flags.
+
+| Environment | Effect |
+| --- | --- |
+| STRATA_HETERO_COMPACT_RESULT | Reuse compact verifier result (native nonfinite guard required); no full-vocabulary logit payload. Diagnostics requiring full logits remain excluded. |
+| STRATA_HETERO_FANOUT_CONTROL | Existing independent control/ACK fanout. |
+| STRATA_HETERO_MTP_EARLY_METADATA | Mixed grouped resident service only: send downstream window metadata before producer work; no speculative activation read or new GPU wait. |
+| STRATA_HETERO_MTP_NATIVE_COMPLETION | Rely on existing successful native Verifier::run and wait_commit completion; skip redundant adapter post-run/commit event polling, not DMA lifetime fences. |
+| STRATA_HETERO_MTP_RESET_OVERLAP | Enqueue native session_zero on independent HIP owner streams before joining all; terminal draft reset still follows complete target drain. |
+| STRATA_HETERO_MTP_PREFILL_UPLOAD | Mixed native bulk MTP only, no capture/isolated paths: upload each checked wire piece on the native receiver stream using disjoint pinned slices. Native same-stream compute/handoff completion protects reuse; failure cleanup still drains devices. |
+| STRATA_HETERO_MTP_ADAPTIVE | Native draft cap follows verified committed acceptance; start 4, two poor (<50%) nonempty full-budget offers reduce by one, two fully accepted full-cap offers increase by one, two zero-width rounds probe at 1. Clip to request budget; zero uses native prime, not zero-step draft. No wire-spec change. HETERO_MTP_ADAPT logs terminal local commit feedback; global ACK remains necessary before another offer. |
+
+Profiling: STRATA_HETERO_PROFILE=1 on the Oberon wrapper retains explicitly chosen supported diagnostic flags (presence-based native flags unset when supplied as 0); it sets STRATA_HETERO_PERF_TRACE=1. Trace separate from timing runs. The critical-path tool reports predispatch wall time, worker-span overlap before the downstream domain roundtrip, and auxiliary reset/prefill/proposal spans. Auxiliary spans may describe failed work and must not be counted as throughput or GPU occupancy. Native profiling/toolchain support and actual dispatch must be checked on Oberon.
+
+These are source candidates, not a new recommended profile. The exact pinned upstream checkout and integrated native build were inaccessible to Chat AI; source completion/ordering was audited in the current shared native core. No prompt-cache reuse, relaxed capacity/commit rule, direct CUDA-HIP GPU event, or unqualified numerical/performance guarantee was introduced.

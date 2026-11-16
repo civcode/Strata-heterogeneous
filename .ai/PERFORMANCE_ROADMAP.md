@@ -99,3 +99,15 @@ Follow the established M5/M6 targets and the M6 agentic coding qualification pro
 ## Execution order and working discipline
 
 P0 first. Then P1–P3 driven by the measured critical path, potentially interleaved conceptually but implemented in isolated cohesive changes with serial Chat AI/Coding Agent ownership. P4 starts once native reset/cache inventory is clear; P5 after verifier/draft cost breakdown and stable native state. P6/P7 only when earlier results justify them. This roadmap supersedes further blind batch-seeding tuning and serial-only optimization as the performance direction; it does not override current safety/capacity gates. Specific handoffs are created only when real local work is needed. CPU tests first, existing matching toolchain/venv and 28 jobs; short bounded GPU qualification only while idle, ordinarily within five minutes per batch, cooperative drain, no forced GPU termination and no GitHub Actions. Each change needs actual measured benefit, attributable mechanism, tested invariants, clear scope/limits and an opt-out until justified. Avoid repeated benchmark matrices or unproductive parity investigations.
+
+## 0060 — Combined implementation candidate (source-side)
+
+- P0: profile launcher opt-in; reset/native-prefill/proposal spans and critical-path attribution of early metadata/host overlap; added analyzer fixture.
+- P1: opt-in native verifier completion and early mixed-domain metadata, plus existing independent commit fanout. Metadata overlap is not cross-runtime GPU graph prelaunch; actual direct GPU handoff remains gated.
+- P2: existing compact-result path admitted for greedy resident MTP with the native terminal finite guard. No new attention math; measure native QSA/GDN and split/pipeline dispatch before selecting additional kernels.
+- P3: ordered native HIP stream uploads of validated bridge pieces; no new scheduler. Existing native local successor pipeline, chunk limits and buffer ownership retained.
+- P4: parallel independent HIP session_zero enqueue with all-owner drain; prefix cache reuse is not implemented.
+- P5: request-local adaptive native draft width (0–4), feedback only after terminal commit, subsequent global ACK before the next offer. Zero width uses existing native tail prime, preserving the anchor and exact-offer contract.
+- P6/P7: defer placement/throughput selection and representative acceptance to actual profiles; the 160 accepted tok/s objective is unchanged.
+
+All new execution switches are experimental opt-ins, with existing defaults unchanged. Standalone adaptive source/test exact-blob compilation passed 5,396 assertions; existing policy, bulk pairing and accounting suites passed 86,271 / 1,040,444 / 42 assertions. Exact launcher shell passed syntax and four stub-executable cases. Full integrated host/native build and new analyzer/protocol fixtures pending on Oberon (direct checkout DNS unavailable). No GPU speedup, high-position MTP qualification, or task performance claim.
