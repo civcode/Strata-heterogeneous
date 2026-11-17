@@ -4632,6 +4632,10 @@ int main(int argc, char** argv) {
         }
         if (null_fd > 2) (void) ::close(null_fd);
         ::setenv("STRATA_PREFILL_LAYER_MAJOR", "0", 1);   // (the layer-major walk has no hand-off out of the process)
+        // the prompt path keeps its own buffers: a loan of cache slots is taken and returned by the serve loop's prompt
+        // read around each run (host_res, relayout), which this process does not run - a chunk read here without it
+        // would compute over the experts in the slots its own buffers overwrite (all-NaN rows, report 0068)
+        o.no_prefill_borrow = true;
         o.prompt_cache = 0;
         o.conversation_cache_mib = 0;
     }

@@ -115,7 +115,29 @@ int main(int argc, char** argv) {
             const double a = now_ms();
             ok = ok && front.prefill(ptok.data(), prompt, 0, true, err);
             const double ms = now_ms() - a;
-            if (ok && !rows_ok(rows, (size_t) prompt * D, s)) { err = "the prompt rows are not finite or all zero"; ok = false; }
+            if (ok && !rows_ok(rows, (size_t) prompt * D, s)) {
+                long long bad = 0, zero_rows = 0, first_bad = -1;
+                for (long long r = 0; r < prompt; ++r) {
+                    bool all0 = true;
+                    for (size_t k = 0; k < D; ++k) {
+                        const float v = rows[(size_t) r * D + k];
+                        if (!std::isfinite(v)) { ++bad; if (first_bad < 0) first_bad = r; }
+                        if (v != 0.0f) all0 = false;
+                    }
+                    zero_rows += all0;
+                }
+                err = "the prompt rows are not finite or all zero (" + std::to_string(bad) + " non-finite values, first in row " +
+                      std::to_string(first_bad) + "; " + std::to_string(zero_rows) + " all-zero rows; first words";
+                for (int k = 0; k < 4; ++k) {
+                    uint32_t u = 0;
+                    std::memcpy(&u, rows + k, 4);
+                    char b[16];
+                    std::snprintf(b, sizeof b, " %08x", u);
+                    err += b;
+                }
+                err += ")";
+                ok = false;
+            }
             if (ok) std::printf("client: prompt chunk of %lld tokens ok in %.0f ms (%.0f tok/s on the front layers), sum|rows| %.1f\n",
                                 prompt, ms, 1000.0 * (double) prompt / ms, s);
             const int32_t nt = 3000;   // a window after the prompt
