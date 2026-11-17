@@ -6358,7 +6358,7 @@ int main(int argc, char** argv) {
             }
             return false;
         }
-        st.arena = arena_s;
+        st.arena = st.raw.weight_arena;   // vanilla records it; the owner-device teardown (st.raw) frees it
         st.arena_bytes = pool_bytes;
         if (!o.native_dense_gguf.empty() && !st.dense.load(o.native_dense_gguf, st.wt, err, o.native_ple_key)) {
             std::fprintf(stderr, "strata generate: layer split, CUDA%d native dense projections: %s\n", st.dev,
