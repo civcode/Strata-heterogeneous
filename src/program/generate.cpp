@@ -9998,8 +9998,9 @@ int main(int argc, char** argv) {
         // a layer split's CUDA0 session owns only [0, split_at[0]), so its graphs cover that range; the
         // whole-model replay paths (`session_loop`, the plain generate loop) refuse rather than read another
         // stage's state - a split runs its layers on the stages' verifiers (serve) or prefill stage chain
-        if (!strata::core::session_capture(wt, g, ss, d_parts, gr, err, /*split=*/o.gpu_stages, 0,
-                                           multi_gpu ? split_at[0] : -1)) {
+        // (MIXED SPLIT: the host's first stage starts at front_lb; the front stage's process ends at front_le)
+        if (!strata::core::session_capture(wt, g, ss, d_parts, gr, err, /*split=*/o.gpu_stages, front_lb,
+                                           multi_gpu ? split_at[0] : front_le > 0 ? front_le : -1)) {
             std::fprintf(stderr, "strata generate: session_capture: %s\n", err.c_str());
             return 1;
         }
@@ -10512,7 +10513,8 @@ int main(int argc, char** argv) {
                      (long long) resident);
     }
     if (!o.no_capture && !o.no_token_graph && layer_dump == nullptr && half_dump == nullptr &&
-        (hit_fn == nullptr || thits.on()) && !native_pack && !multi_gpu) {   // a split's token graph cannot span stages
+        (hit_fn == nullptr || thits.on()) && !native_pack && !multi_gpu &&
+        front_lb == 0 && front_le == 0) {   // a split's token graph cannot span stages (nor a mixed split's processes)
         if (!strata::core::session_capture_token(wt, g, ss, d_parts, loop_scratch.y_miss, loop_scratch.parts_bytes,
                                                  tgraph, err, thits.on() ? &thits : nullptr)) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
