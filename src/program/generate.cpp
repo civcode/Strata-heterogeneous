@@ -4683,6 +4683,13 @@ int main(int argc, char** argv) {
         // read around each run (host_res, relayout), which this process does not run - a chunk read here without it
         // would compute over the experts in the slots its own buffers overwrite (all-NaN rows, report 0068)
         o.no_prefill_borrow = true;
+        // its windows are a layer split's: at most kVerifyNarrowT rows (the shared hand-off's), so no lookup windows past
+        // them unless asked for (vanilla's default for a layer split, default_lookup_max_t)
+        if (o.lookup_max_t < 0) o.lookup_max_t = 0;
+        // its experts are read from the file mapping (--mmap-experts), not copied into a RAM arena of the whole model:
+        // the host holds that arena already, and two copies do not fit the RAM (report 0068); the front stage's few
+        // layers are mostly in its expert cache
+        o.mmap_experts = true;
         o.prompt_cache = 0;
         o.conversation_cache_mib = 0;
     }
@@ -7464,8 +7471,11 @@ int main(int argc, char** argv) {
         // here too would leave `native dense: already loaded`.
         {
             const int64_t lo = front_lb, hi = split_at.empty() ? g.n_layers : split_at[0];
+            // (MIXED SPLIT: layer 1, where the PLE block runs, is the front stage's; its weights are not in this table,
+            // so nothing here is wired to them and the PLE stays the front stage's, as with a later stage of a split)
+            if (front_lb > 1) ss.ple.w = {};
             const bool ok = reload(0, lo, hi, arena, pool_bytes, wt, native_dense) &&
-                            (o.ple_gguf.empty() || wire_ple(wt));
+                            (o.ple_gguf.empty() || front_lb > 1 || wire_ple(wt));
             if (!ok) {
                 std::fprintf(stderr, "strata generate: layer split, CUDA0: its own layers' weights: %s\n",
                              err.c_str());
@@ -7589,7 +7599,7 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata generate: zeroing the session state failed\n");
             return 1;
         }
-        if (!o.ple_gguf.empty()) {
+        if (!o.ple_gguf.empty() && front_lb <= 1) {   // (MIXED SPLIT: the PLE is the front stage's, see the trimmed weights)
             if (!ss.ple.ready()) {
                 std::fprintf(stderr, "strata generate: the PLE run is not ready after construction\n");
                 return 1;
@@ -15630,7 +15640,7 @@ int main(int argc, char** argv) {
             std::vector<int32_t> f_out((size_t) strata::kernels::kVerifyLongT, 0);
             std::vector<int64_t> f_ids;
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
-                if (T > ver.max_t()) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
+                if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
                 if (!ver.run(T, tokens, pos0, win_pool_fn, win_pool_user, f_out.data(), e)) return false;
                 if (drive.d.failed) { e = "the front stage's expert pool failed"; return false; }
                 return true;
