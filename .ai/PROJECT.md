@@ -15,6 +15,8 @@ Strata running one model across an NVIDIA card (CUDA) and AMD cards (HIP) at the
 3. Builds without the heterogeneous option behave exactly as vanilla.
 4. HIP-only (two AMD cards) is plain vanilla Strata with a native layer split. It uses no heterogeneous code.
 5. Numerical differences between CUDA and HIP are low priority.
+6. Exception, agreed by the Human User (2026-11-17): the engine hardening from `civcode/strata-dev-private` is
+   carried on top of vanilla as a labelled divergence. `.ai/HARDENING.md` lists every ported commit.
 
 The target design and the plan are in `.ai/SEAM.md` and the roadmap referenced from `.ai/STATUS.md`.
 
@@ -33,7 +35,8 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
 
 - Cards: one NVIDIA RTX 4070 Ti SUPER (16 GB, CUDA, sm_89) and two AMD Radeon AI PRO R9700 (HIP, gfx1201).
 - HIP toolchain: ROCm at `/opt/rocm/core-10.1` (`ROCM_PATH`, `HIP_PLATFORM=amd`), Ninja, `-DCMAKE_HIP_ARCHITECTURES=gfx1201
-  -DSTRATA_PREFILL_MMQ=ON -DCMAKE_BUILD_RPATH=/opt/rocm/lib`.
+  -DSTRATA_PREFILL_MMQ=ON -DSTRATA_MMQ=ON -DCMAKE_BUILD_RPATH=/opt/rocm/lib`. On 0.2.15 the MMQ prompt kernels need
+  both MMQ options; report 0066 measured about 22% faster prefill with them (2641 against 2163 tok/s, one sample).
 - CUDA toolchain: CUDA 13.0 at `/usr/local/cuda-13.0` (vanilla 0.2.15 is built with CUDA 13.0; driver 580.178.04).
   Configure the CUDA tree with `-DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=89`.
   `/usr/local/cuda` still points at CUDA 12.0, which the frozen branch was built with: leave it. nvcc 12.0 cannot
