@@ -2402,11 +2402,7 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
     }
     cudaGetDevice(&m.device);
     if (stage_le_ < 0) stage_le_ = g.n_layers;
-    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers || (stage_le_ < g.n_layers) != (next_ != nullptr
-#if defined(STRATA_HETERO)
-                                                                                                           || remote_out_ != nullptr   // (the next stage is in another process)
-#endif
-                                                                                                           )) {
+    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers || (stage_le_ < g.n_layers) != (next_ != nullptr)) {
         err = "prefill: the stage's layer range is wrong";
         return false;
     }
@@ -4149,24 +4145,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         for (size_t i = 0; i < tap_local_.size(); ++i) tap_slot[(size_t) tap_local_[i]] = (int) i;
     }
 #endif
-#if defined(STRATA_HETERO)
-    // MIXED SPLIT: the rows of each chunk come from the front stage's process (set_remote_in).  `hand_in_` is set per
-    // chunk and cleared again, so everything outside the chunk's read sees the first stage this path is here.
-    struct RemoteIn {
-        Prefill* p;
-        ~RemoteIn() { if (p != nullptr) p->hand_in_ = nullptr; }
-    } remote_in_scope{remote_fill_ ? this : nullptr};
-    if (remote_out_ != nullptr && n > remote_cap_) {
-        err = "prefill: the mixed split's hand-off holds " + std::to_string((long long) remote_cap_) + " rows, the run has " +
-              std::to_string((long long) n);
-        return false;
-    }
-#endif
     for (int64_t c0 = 0; c0 < n; c0 += C) {
         if (should_stop && should_stop()) { err = "cancelled"; return false; }
-#if defined(STRATA_HETERO)
-        if (remote_fill_) hand_in_ = nullptr;
-#endif
         // the first stage: end the run before this chunk (every chunk before it is handed on; the caller's drain
         // waits for the later stages to read them)
         if (c0 > 0 && hand_in_ == nullptr && stop_at_chunk && stop_at_chunk()) {
@@ -4183,14 +4163,6 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
             std::fflush(stderr);
         }
         const int64_t T = std::min(C, n - c0), p0 = pos0 + c0;
-        int64_t hand_c0 = c0;   // the chunk's first row in hand_in_
-#if defined(STRATA_HETERO)
-        if (remote_fill_) {
-            if (!remote_fill_(tokens + c0, T, p0, c0 + T >= n, err)) return false;
-            hand_in_ = remote_in_;   // the front stage wrote this chunk's rows from row 0
-            hand_c0 = 0;
-        }
-#endif
         // A fused layout carved with a tail (relayout's `tail`, loan_rules.hpp) holds MMQ's rows for that many tokens of a
         // chunk below the stream floor: a longer one would overrun GU / H / Xq / Hq (an illegal access, or a hang).  The
         // lend sizes the tail from the segment, so this is the clean error for anything that drifts from it.
@@ -4245,7 +4217,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 return false;
             }
         } else if (hand_in_ != nullptr) {
-            if (cudaMemcpyAsync(m.R, hand_in_ + (size_t) hand_c0 * D, (size_t) T * D * 4, cudaMemcpyHostToDevice, m.cs) !=
+            if (cudaMemcpyAsync(m.R, hand_in_ + (size_t) c0 * D, (size_t) T * D * 4, cudaMemcpyHostToDevice, m.cs) !=
                 cudaSuccess) {
                 err = "prefill: the layer split's hand-off upload failed";
                 return false;
@@ -7242,19 +7214,10 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         stats_.tokens += T;
         core::progress_at("reading the prompt (batched): finishing the chunk from token", p0);
         pt.mark(kPfStart, cs);
-#if defined(STRATA_HETERO)
-        const bool remote_out = remote_out_ != nullptr;
-#else
-        constexpr bool remote_out = false;
-#endif
-        if (next_ != nullptr || remote_out) {
+        if (next_ != nullptr) {
             // The current hand-off slot was used two chunks ago.
-#if defined(STRATA_HETERO)
-            float* h = remote_out ? remote_out_ + (size_t) c0 * D : m.hand[hand_buf_];
-#else
             float* h = m.hand[hand_buf_];
-#endif
-            const int hp = remote_out ? 0 : m.hand_pieces;
+            const int hp = m.hand_pieces;
             if (hp > 0) {
                 // STRATA_HANDOFF_PIPE: the pieces' downloads stay queued; the host waits for the chunk's work only (the
                 // state on_stage_chunk saves, the error check), the next stage's uploads wait on the pieces' events
@@ -7279,7 +7242,6 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
             // Wait only for the DIRECT successor's previous chunk. That successor
             // may already have forwarded its older chunk to later GPUs.
             if (on_stage_chunk && !on_stage_chunk(p0 + T, err)) return false;
-            if (remote_out) continue;   // MIXED SPLIT: the rows are in the shared hand-off; the other process reads them
             if (next_run_.valid() && !next_run_.get()) { err = next_err_; return false; }
             next_err_.clear();
             next_->hand_in_ = h;

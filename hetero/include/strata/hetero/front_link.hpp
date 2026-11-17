@@ -39,10 +39,6 @@ struct LinkIdentity {
     bool valid(std::string& why) const;
 };
 
-/// A value for LinkIdentity::model_fingerprint that both engines compute alike: FNV-1a over the pack's index.txt and
-/// the sizes of `files` (the model's GGUF shards), in that order.  Never 0.
-uint64_t model_fingerprint(const std::string& pack_dir, const std::vector<std::string>& files);
-
 enum class Op : uint16_t { Hello = 1, Run = 2, Commit = 3, Prefill = 4, Session = 5, Shutdown = 6, Reply = 100 };
 
 struct Frame {
@@ -71,15 +67,6 @@ public:
 /// end and 1 on a protocol or transport error (`err` says which).  An operation the backend refuses is answered
 /// with its error and serving goes on: the host decides what follows.
 int serve_front(int fd, FrontBackend& backend, std::string& err);
-
-/// The same in two steps, for a worker that needs the hand-off memory before it can build what serves the link (the
-/// engine captures its window graphs with the hand-off's device address).  `front_accept` waits for the host's hello,
-/// maps the region and returns the identity the host sent; nothing is answered yet.  The worker compares the identity
-/// and answers with `front_accept_reply`; after an `ok` answer `serve_front_greeted` serves the other operations
-/// (`backend.attach` is not called).  Ok / Eof (the host closed the socket first) / Error.
-Recv front_accept(int fd, LinkIdentity& id, SharedRegion& region, uint64_t& seq, std::string& err);
-bool front_accept_reply(int fd, uint64_t seq, bool ok, const std::string& why, std::string& err);
-int serve_front_greeted(int fd, FrontBackend& backend, const LinkIdentity& id, std::string& err);
 
 /// The host's side: a FrontStage whose calls travel to the worker.
 class RemoteFrontStage final : public FrontStage {

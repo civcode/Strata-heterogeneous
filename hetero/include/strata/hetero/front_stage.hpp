@@ -23,7 +23,6 @@ enum class SessionOp : int32_t {
     Snapshot = 3,   ///< save the state as checkpoint `a` (length `b`)
     Restore = 4,    ///< restore checkpoint `a`
     Truncate = 5,   ///< drop the state past position `a`
-    Abandon = 6,    ///< the last window is dropped without a commit (vanilla runs the next window over it)
 };
 
 class FrontStage {

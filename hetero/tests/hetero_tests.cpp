@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <cstring>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
 
@@ -107,88 +106,6 @@ void test_link_round_trip() {
     const std::vector<std::string> want = {"attach", "session 1 0 0", "prefill 5 0 last 5", "run 3 5 33", "commit 2",
                                            "session 3 7 7"};
     CHECK(backend.calls == want);
-}
-
-// The two-step accept the engine's worker uses: the region is mapped before the backend exists, a refused identity
-// reaches the host as a failed hello, and an abandoned window lets the next one run.
-void test_two_step_accept() {
-    {
-        Pair s;
-        StubBackend backend;
-        int rc = -1;
-        std::string serr;
-        std::thread worker([&] {
-            LinkIdentity id;
-            SharedRegion region;
-            uint64_t seq = 0;
-            if (front_accept(s.worker, id, region, seq, serr) != Recv::Ok) return;
-            const bool same = id == test_identity() && region.valid() && region.slots() == 2;
-            backend.region = std::move(region);
-            if (!front_accept_reply(s.worker, seq, same, "identity mismatch", serr) || !same) return;
-            rc = serve_front_greeted(s.worker, backend, id, serr);
-        });
-        SharedRegion region;
-        CHECK(make_region(region));
-        RemoteFrontStage front(s.host, 5000);
-        std::string err;
-        CHECK(front.hello(test_identity(), region, err));
-        const int32_t toks[2] = {5, 6};
-        CHECK(front.run(2, toks, 0, err));
-        CHECK(!front.run(2, toks, 0, err));                        // the first window was neither committed nor dropped
-        CHECK(front.session(SessionOp::Abandon, 0, 0, err));
-        CHECK(front.run(2, toks, 0, err));
-        CHECK(front.commit(2, err));
-        CHECK(!front.session((SessionOp) 7, 0, 0, err));
-        CHECK(front.shutdown(err));
-        worker.join();
-        CHECK(rc == 0);
-        const std::vector<std::string> want = {"run 2 0 6", "session 6 0 0", "run 2 0 6", "commit 2"};
-        CHECK(backend.calls == want);
-    }
-    {
-        Pair s;
-        std::string serr;
-        bool refused = false;
-        std::thread worker([&] {
-            LinkIdentity id;
-            SharedRegion region;
-            uint64_t seq = 0;
-            if (front_accept(s.worker, id, region, seq, serr) != Recv::Ok) return;
-            refused = front_accept_reply(s.worker, seq, false, "another model", serr);
-        });
-        SharedRegion region;
-        CHECK(make_region(region));
-        RemoteFrontStage front(s.host, 5000);
-        std::string err;
-        CHECK(!front.hello(test_identity(), region, err));
-        CHECK(err.find("another model") != std::string::npos);
-        CHECK(front.broken());
-        worker.join();
-        CHECK(refused);
-    }
-}
-
-void test_fingerprint() {
-    const std::string dir = "/tmp/strata-hetero-fp-" + std::to_string((long) ::getpid());
-    CHECK(::mkdir(dir.c_str(), 0700) == 0);
-    auto write = [&](const std::string& name, const std::string& text) {
-        std::FILE* f = std::fopen((dir + "/" + name).c_str(), "wb");
-        CHECK(f != nullptr);
-        if (f) { std::fwrite(text.data(), 1, text.size(), f); std::fclose(f); }
-    };
-    write("index.txt", "blk.0.a 1\n");
-    write("m.gguf", "12345");
-    const uint64_t a = model_fingerprint(dir, {dir + "/m.gguf"});
-    CHECK(a != 0 && a == model_fingerprint(dir, {dir + "/m.gguf"}));
-    write("m.gguf", "123456");
-    CHECK(a != model_fingerprint(dir, {dir + "/m.gguf"}));     // another model file
-    write("m.gguf", "12345");
-    write("index.txt", "blk.0.a 2\n");
-    CHECK(a != model_fingerprint(dir, {dir + "/m.gguf"}));     // another pack
-    CHECK(model_fingerprint(dir, {}) != model_fingerprint(dir, {dir + "/missing"}));
-    (void) ::unlink((dir + "/index.txt").c_str());
-    (void) ::unlink((dir + "/m.gguf").c_str());
-    (void) ::rmdir(dir.c_str());
 }
 
 void test_link_rules() {
@@ -408,8 +325,6 @@ int main(int argc, char** argv) {
     test_shared_region();
     test_link_round_trip();
     test_link_rules();
-    test_two_step_accept();
-    test_fingerprint();
     test_identity_refused();
     test_protocol_errors();
     test_worker_lost_and_timeout();

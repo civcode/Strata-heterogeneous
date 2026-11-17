@@ -25,10 +25,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(strata_hetero PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# drives a front stage worker (an engine started with --front-stage) without a host engine; host-only
-add_executable(hetero_front_client tools/front_client.cpp)
-target_link_libraries(hetero_front_client PRIVATE strata_hetero)
-
 option(STRATA_HETERO_TESTS "Build the CPU tests of the mixed-split seam" ON)
 if(STRATA_HETERO_TESTS)
   add_executable(hetero_mock_worker tests/mock_worker.cpp)

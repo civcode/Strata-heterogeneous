@@ -294,21 +294,6 @@ public:
     /// run `init`.
     bool set_stage_helper(Prefill* helper, std::string& err);
 
-#if defined(STRATA_HETERO)
-    /// MIXED SPLIT (.ai/SEAM.md): the stage after this one runs in another process.  A stage that does not end at
-    /// the last layer and has no `next` copies each chunk's rows to `rows` (pinned host memory both processes map;
-    /// room for `cap_rows` rows) instead: a run's rows land at their offset in the run, so one run fills it once.
-    /// Set before `init`.
-    void set_remote_out(float* rows, int64_t cap_rows) { remote_out_ = rows; remote_cap_ = cap_rows; }
-    /// MIXED SPLIT: the stage before this one runs in another process.  Before each chunk `fill` has that process
-    /// read the chunk's tokens (it returns when the chunk's rows are in `rows`); the chunk is then read from them
-    /// as a later stage of a layer split reads the rows it is handed.
-    void set_remote_in(const float* rows,
-                       std::function<bool(const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err)> fill) {
-        remote_in_ = rows; remote_fill_ = std::move(fill);
-    }
-#endif
-
     /// The CPU expert pool (decode's, idle while a prompt is read). With STRATA_PREFILL_CPU_SHARE set, a chunk below
     /// stream_all_min() tokens - an agent's tool output - hands it the non-resident experts routed by at most MAXT of
     /// its tokens, fewest first, up to a share of the experts it would stream (`auto`: measured, where both sides end
@@ -400,13 +385,6 @@ private:
     /// on its device) when it copies the chunk in pieces without a host wait; null with the one-copy hand-off
     const void* hand_ev_ = nullptr;
     int hand_pieces_ = 0;
-
-#if defined(STRATA_HETERO)
-    float* remote_out_ = nullptr;       ///< set_remote_out
-    int64_t remote_cap_ = 0;
-    const float* remote_in_ = nullptr;  ///< set_remote_in
-    std::function<bool(const int64_t*, int64_t, int64_t, bool, std::string&)> remote_fill_;
-#endif
 
     std::string next_err_;
     std::future<bool> next_run_;
