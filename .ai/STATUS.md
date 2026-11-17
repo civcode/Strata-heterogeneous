@@ -1,15 +1,18 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0067` (Tier 2) open.
+Turn holder: **Coding Agent**, handoff `0068` (Tier 1) open.
 
 ## Current milestone
 
-Hardening gate: the engine hardening from `civcode/strata-dev-private` is ported onto vanilla 0.2.15
-(`.ai/HARDENING.md`) and must build, pass its GPU tests and serve HIP-only before mixed-engine work resumes.
+M2: mixed generation on vanilla's loop, CUDA [0,15) + HIP [15,33) + HIP [33,48) (handoff 0068).
 
-Why: on 2026-11-17 Oberon had a host crash (native fault in `libhipblaslt`, PID 1 fault, reboot) on a vanilla 0.2.15
-build. Cause unknown. The Human User ran the patched private branch for days without such a failure and asked for the
-hardening first.
+Hardening gate passed (report 0067): the ported hardening builds in all three trees with no source fixes; host CTest
+225 passed, 6 skipped; HIP GPU tests 95 passed; CUDA 17 passed, 3 skipped (need two CUDA cards); readback reproducer
+passes; HIP-only serves with conversation-cache reuse and shuts down cleanly; no new kernel GPU faults or crashes.
+HIP-only with MMQ (different prompts from 0065): decode 115 to 122 tok/s, prefill 2831 tok/s at 6.4K tokens.
+
+The mixed-engine work is re-applied (`584e8e62`). The front stage failure of report 0066 is traced and fixed in source
+(`33e5782c`, unverified): two whole-model graph captures ignored the mixed split's layer range.
 
 ## History in short
 
@@ -34,7 +37,7 @@ hardening first.
 
 ## Next step
 
-After report 0067: Chat AI re-applies the parked mixed-engine work on top of the hardening, reviews it against the
-contract, and writes the next Tier 1 handoff for the front stage bring-up.
+After report 0068: Chat AI reviews the engine diff against the contract and plans the next step (caches across the
+boundary, or the CUDA/HIP edge cost, depending on what 0068 reaches).
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
