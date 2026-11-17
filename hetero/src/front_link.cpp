@@ -1,5 +1,8 @@
 #include "strata/hetero/front_link.hpp"
 
+#include <cstdio>
+#include <sys/stat.h>
+
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -198,9 +201,41 @@ Recv recv_frame(int fd, Frame& f, int* got_fd, int timeout_ms, std::string& err)
     return Recv::Ok;
 }
 
-int serve_front(int fd, FrontBackend& backend, std::string& err) {
-    bool greeted = false;
-    LinkIdentity id;
+namespace {
+
+// The hello's payload -> identity and the mapped region.  Takes ownership of `got` (the passed descriptor).
+bool parse_hello(const Frame& f, int got, LinkIdentity& id, SharedRegion& region, std::string& why) {
+    auto drop = [&](const char* w) {
+        if (got >= 0) (void) ::close(got);
+        why = w;
+        return false;
+    };
+    const uint8_t* p = f.payload.data();
+    constexpr size_t fixed = 4 + 4 + 8 + 4 * 6 + 8 + 8;
+    if (f.payload.size() < fixed) return drop("short hello");
+    id.protocol = get<uint32_t>(p);
+    (void) get<uint32_t>(p);
+    id.model_fingerprint = get<uint64_t>(p);
+    id.n_layers = get<int32_t>(p);
+    id.front_end = get<int32_t>(p);
+    id.hc = get<int32_t>(p);
+    id.n_embd = get<int32_t>(p);
+    id.max_rows = get<int32_t>(p);
+    (void) get<int32_t>(p);
+    id.max_context = get<int64_t>(p);
+    const uint64_t n_slots = get<uint64_t>(p);
+    std::vector<size_t> sizes;
+    if (n_slots == 0 || n_slots > SharedRegion::kMaxSlots || f.payload.size() != fixed + n_slots * 8)
+        return drop("bad hello slot table");
+    for (uint64_t i = 0; i < n_slots; ++i) sizes.push_back((size_t) get<uint64_t>(p));
+    if (id.protocol != kLinkProtocol) return drop("protocol version mismatch");
+    std::string e;
+    if (!id.valid(e)) { if (got >= 0) (void) ::close(got); why = "identity: " + e; return false; }
+    if (got < 0) { why = "the hello carries no hand-off memory"; return false; }
+    return SharedRegion::adopt(got, sizes, region, why);   // adopt owns `got` from here
+}
+
+int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, LinkIdentity id) {
     int window = 0;   // the rows of the window that waits for its commit
     for (;;) {
         Frame f;
@@ -218,31 +253,8 @@ int serve_front(int fd, FrontBackend& backend, std::string& err) {
         };
         if (f.op == Op::Hello) {
             if (greeted) { if (got >= 0) (void) ::close(got); return fatal("a second hello"); }
-            const uint8_t* p = f.payload.data();
-            constexpr size_t fixed = 4 + 4 + 8 + 4 * 6 + 8 + 8;
-            if (f.payload.size() < fixed) { if (got >= 0) (void) ::close(got); return fatal("short hello"); }
-            id.protocol = get<uint32_t>(p);
-            (void) get<uint32_t>(p);
-            id.model_fingerprint = get<uint64_t>(p);
-            id.n_layers = get<int32_t>(p);
-            id.front_end = get<int32_t>(p);
-            id.hc = get<int32_t>(p);
-            id.n_embd = get<int32_t>(p);
-            id.max_rows = get<int32_t>(p);
-            (void) get<int32_t>(p);
-            id.max_context = get<int64_t>(p);
-            const uint64_t n_slots = get<uint64_t>(p);
-            std::vector<size_t> sizes;
-            if (n_slots == 0 || n_slots > SharedRegion::kMaxSlots || f.payload.size() != fixed + n_slots * 8) {
-                if (got >= 0) (void) ::close(got);
-                return fatal("bad hello slot table");
-            }
-            for (uint64_t i = 0; i < n_slots; ++i) sizes.push_back((size_t) get<uint64_t>(p));
-            if (id.protocol != kLinkProtocol) { if (got >= 0) (void) ::close(got); return fatal("protocol version mismatch"); }
-            if (!id.valid(e)) { if (got >= 0) (void) ::close(got); return fatal("identity: " + e); }
-            if (got < 0) return fatal("the hello carries no hand-off memory");
             SharedRegion region;
-            if (!SharedRegion::adopt(got, sizes, region, e)) return fatal(e);   // adopt owns `got` from here
+            if (!parse_hello(f, got, id, region, e)) return fatal(e);
             if (!backend.attach(id, std::move(region), e)) return fatal("refused: " + e);
             greeted = true;
             if (!send_reply(fd, f.seq, true, "", err)) return 1;
@@ -285,7 +297,7 @@ int serve_front(int fd, FrontBackend& backend, std::string& err) {
             break;
         }
         case Op::Session: {
-            if (f.a < (int64_t) SessionOp::Reset || f.a > (int64_t) SessionOp::Truncate) { e = "bad session operation"; break; }
+            if (f.a < (int64_t) SessionOp::Reset || f.a > (int64_t) SessionOp::Abandon) { e = "bad session operation"; break; }
             ok = backend.session((SessionOp) f.a, f.b, f.c, e);
             if (ok) window = 0;   // every session operation ends a window that was not committed
             break;
@@ -299,6 +311,57 @@ int serve_front(int fd, FrontBackend& backend, std::string& err) {
         if (!ok && e.empty()) e = "the front stage failed without a message";
         if (!send_reply(fd, f.seq, ok, ok ? "" : e, err)) return 1;
     }
+}
+
+} // namespace
+
+int serve_front(int fd, FrontBackend& backend, std::string& err) { return serve_loop(fd, backend, err, false, LinkIdentity{}); }
+
+int serve_front_greeted(int fd, FrontBackend& backend, const LinkIdentity& id, std::string& err) {
+    return serve_loop(fd, backend, err, true, id);
+}
+
+Recv front_accept(int fd, LinkIdentity& id, SharedRegion& region, uint64_t& seq, std::string& err) {
+    Frame f;
+    int got = -1;
+    const Recv r = recv_frame(fd, f, &got, -1, err);
+    if (r != Recv::Ok) return r;
+    seq = f.seq;
+    std::string why;
+    if (f.op != Op::Hello) {
+        if (got >= 0) (void) ::close(got);
+        why = "an operation before the hello";
+    } else if (parse_hello(f, got, id, region, why)) {
+        return Recv::Ok;
+    }
+    std::string ignored;
+    (void) send_reply(fd, f.seq, false, why, ignored);
+    err = "front link: " + why;
+    return Recv::Error;
+}
+
+bool front_accept_reply(int fd, uint64_t seq, bool ok, const std::string& why, std::string& err) {
+    return send_reply(fd, seq, ok, ok ? "" : "refused: " + why, err);
+}
+
+uint64_t model_fingerprint(const std::string& pack_dir, const std::vector<std::string>& files) {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](const void* p, size_t n) {
+        const uint8_t* b = static_cast<const uint8_t*>(p);
+        for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ull; }
+    };
+    if (std::FILE* f = std::fopen((pack_dir + "/index.txt").c_str(), "rb")) {
+        char buf[65536];
+        size_t n = 0;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) mix(buf, n);
+        std::fclose(f);
+    }
+    for (const std::string& p : files) {
+        struct stat st {};
+        const uint64_t v = ::stat(p.c_str(), &st) == 0 ? (uint64_t) st.st_size : ~0ull;
+        mix(&v, sizeof v);
+    }
+    return h == 0 ? 1 : h;
 }
 
 bool RemoteFrontStage::call(Frame& req, int pass_fd, std::string& err) {

@@ -217,6 +217,12 @@ bool draft_vocab_whole_head();       // STRATA_METAL_DRAFT_VOCAB=full
 #include <set>
 #include <unordered_map>
 #include <vector>
+#if defined(STRATA_HETERO)
+#include "strata/hetero/front_link.hpp"
+#include "strata/hetero/worker_process.hpp"
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 // STRATA_DF2_TAP_DUMP=FILE (research, off by default): every prompt tap batch the DFlash2 context takes is appended to FILE as
 // int64 pos0, int64 rows, then rows x floats_per_row float32 (the tap rows [rows][taps][n_embd]), for the layer-major / chunk-major
@@ -1107,6 +1113,14 @@ struct Options {
     /// when K is not accepted as guessed).  0 = off (the stages take turns).
     /// -1 (not asked for) = 2 on gfx12 (HIP) layer splits of 3 or more stages, else 0; --pipeline-windows N asks for it.
     int pipeline_windows = -1;
+#if defined(STRATA_HETERO)
+    // MIXED SPLIT (.ai/SEAM.md): the layers [0, front_layers) run in another process, the `front_exe` engine (a
+    // build for the other make of card), which this one starts with --front-stage.
+    std::string front_exe;                 ///< --front-exe: the other build's strata (absolute path)
+    int front_layers = 0;                  ///< --front-layers K: the front stage runs layers [0, K)
+    std::vector<std::string> front_args;   ///< --front-arg A (repeatable): appended to the front stage's arguments
+    int front_stage = 0;                   ///< --front-stage K: THIS process is the front stage (set by the host)
+#endif
     /// A layer split: each card keeps the dense weights of its own layers only (the rest of the model's are another
     /// card's), and the VRAM this frees goes to its expert cache.  --no-trim-stage-weights: every card keeps them all.
     bool trim_stage_weights = true;
@@ -1627,6 +1641,73 @@ void drive_pool_split(void* u, const float* x, const int32_t* ids, int64_t n, in
 void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int64_t n, int64_t k, float* out, int64_t l) {
     drive_pool_split_impl(u, x, ids, n, k, out, l, strata::kernels::cpu::NativeArithmetic::WindowInvariant);
 }
+
+#if defined(STRATA_HETERO)
+// ================================ MIXED SPLIT (.ai/SEAM.md) ================================
+/// The host's end of the front link: the worker process, the shared hand-off memory and the calls the first local
+/// stage forwards.  Declared before everything that uses the GPU, so it ends after it: the destructor closes the
+/// socket (the worker's cue to end) and waits for the worker; it never signals it.
+struct HeteroHost {
+    strata::hetero::WorkerProcess worker;
+    strata::hetero::SharedRegion region;
+    std::unique_ptr<strata::hetero::RemoteFrontStage> link;
+    bool window_open = false;          ///< the front stage holds a window that was neither committed nor dropped
+    std::vector<int32_t> tok32;
+    bool on() const { return link != nullptr; }
+    bool drop_window(std::string& err) {
+        if (!window_open) return true;
+        window_open = false;   // (vanilla runs the next window over a window nobody committed)
+        return link->session(strata::hetero::SessionOp::Abandon, 0, 0, err);
+    }
+    bool run(int T, const int32_t* tokens, int64_t pos0, std::string& err) {
+        if (!drop_window(err) || !link->run(T, tokens, pos0, err)) return false;
+        window_open = true;
+        return true;
+    }
+    bool commit(int n_keep, std::string& err) {
+        window_open = false;
+        return link->commit(n_keep, err);
+    }
+    bool prefill(const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) {
+        if (!drop_window(err)) return false;
+        tok32.resize((size_t) n);
+        for (int64_t i = 0; i < n; ++i) tok32[(size_t) i] = (int32_t) tokens[i];
+        return link->prefill(tok32.data(), n, pos0, last, err);
+    }
+    bool reset(std::string& err) {
+        window_open = false;
+        return link->session(strata::hetero::SessionOp::Reset, 0, 0, err);
+    }
+    ~HeteroHost() {
+        if (!worker.started()) return;
+        std::string e;
+        if (link && !link->broken()) (void) link->shutdown(e);
+        link.reset();
+        std::fprintf(stderr, "strata serve: mixed split: waiting for the front stage (PID %ld) to end\n", (long) worker.pid());
+        if (worker.finish(e)) std::fprintf(stderr, "strata serve: mixed split: the front stage ended cleanly\n");
+        else std::fprintf(stderr, "strata serve: mixed split: %s\n", e.c_str());
+    }
+};
+
+/// The front stage's side of the link: the forwarded calls on this process's own first-stage objects.
+struct HeteroFrontBackend final : strata::hetero::FrontBackend {
+    std::function<bool(int, const int32_t*, int64_t, std::string&)> f_run;
+    std::function<bool(int, std::string&)> f_commit;
+    std::function<bool(const int32_t*, int64_t, int64_t, bool, std::string&)> f_prefill;
+    std::function<bool(strata::hetero::SessionOp, int64_t, int64_t, std::string&)> f_session;
+    bool attach(const strata::hetero::LinkIdentity&, strata::hetero::SharedRegion&&, std::string& err) override {
+        err = "the hand-off memory is attached already";
+        return false;
+    }
+    bool run(int T, const int32_t* tokens, int64_t pos0, std::string& err) override { return f_run(T, tokens, pos0, err); }
+    bool commit(int n_keep, std::string& err) override { return f_commit(n_keep, err); }
+    bool prefill(const int32_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) override {
+        return f_prefill(tokens, n, pos0, last, err);
+    }
+    bool session(strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& err) override { return f_session(op, a, b, err); }
+};
+
+#endif
 
 /// Layer split across GPUs: a later stage on its own device, with its own copy of the dense weights, a session, an
 /// expert cache for its layers, a verify window and a prompt path; the last one also holds the head (the drafter
@@ -4052,6 +4133,12 @@ int main(int argc, char** argv) {
         else if (a == "--no-publish-kernel") o.no_publish_kernel = true;
         else if (a == "--no-fused-gdn") o.no_fused_gdn = true;
         else if (a == "--no-fast-select") o.no_fast_select = true;
+#if defined(STRATA_HETERO)
+        else if (a == "--front-exe") o.front_exe = next("--front-exe");
+        else if (a == "--front-layers") o.front_layers = std::atoi(next("--front-layers"));
+        else if (a == "--front-arg") o.front_args.push_back(next("--front-arg"));
+        else if (a == "--front-stage") o.front_stage = std::atoi(next("--front-stage"));
+#endif
         else {
             // An unknown flag is an ERROR and not a warning: a typo'd `--max-neww` that silently generated 16
             // tokens would look like a working run.
@@ -4475,6 +4562,82 @@ int main(int argc, char** argv) {
         return n > 0 ? n : 0;
     }();
     strata::core::set_primary_device(primary_device);
+#if defined(STRATA_HETERO)
+    // ---- MIXED SPLIT (.ai/SEAM.md).  `front_lb` > 0: this process is the host and its first stage starts at that
+    // layer (the layers before it run in the front stage's process).  `front_le` > 0: this process IS the front
+    // stage and runs layers [0, front_le), then serves the front link instead of the serve protocol.
+    const int64_t front_lb = o.front_exe.empty() ? 0 : o.front_layers;
+    const int64_t front_le = o.front_stage;
+    HeteroHost hetero;
+    if (!o.front_exe.empty() || o.front_layers != 0) {
+        const char* no = !o.serve ? "it needs --serve"
+                       : o.front_exe.empty() || o.front_exe[0] != '/' ? "--front-exe needs the absolute path of the other build's strata"
+                       : o.front_layers < 2 ? "--front-layers K needs K of 2 or more"
+                       : front_le > 0 ? "--front-stage is the front stage's own option"
+                       : o.layer_split.empty() ? "the host needs an explicit --layer-split for its own cards"
+                       : o.layer_split == "auto" ? "--layer-split auto is not supported yet (name the first layer of each later card)"
+                       : o.vision ? "--vision is not supported yet"
+                       : !o.cvec_files.empty() ? "control vectors are not supported yet"
+                       : o.batch != 0 ? "--batch / --slots are not supported yet"
+                       : o.draft == "dflash2" || o.draft_auto ? "the DFlash2 drafter is not supported yet (--draft mtp)"
+                       : o.pipeline_windows > 0 ? "--pipeline-windows above 0 is not supported yet"
+                       : o.peer_device >= 0 ? "--peer-device is not supported yet"
+                       : o.expert_cache_remote[0] > 0 || o.expert_cache_remote[1] > 0 || o.expert_cache_remote[2] > 0
+                             ? "the helper caches (--expert-cache-remote) are not supported yet"
+                       : nullptr;
+        if (no != nullptr) {
+            std::fprintf(stderr, "strata serve: mixed split (--front-exe / --front-layers): %s\n", no);
+            return 2;
+        }
+        o.pipeline_windows = 0;   // (the default would turn the pipelined windows on for a layer split on gfx12)
+        if (o.prompt_cache != 0 || o.conversation_cache_mib != 0)
+            std::fprintf(stderr, "strata serve: mixed split: the prompt checkpoints and the conversation cache are off in this version "
+                                 "(the front stage's session is not saved or restored yet): every request reads its prompt from token 0\n");
+        o.prompt_cache = 0;
+        o.conversation_cache_mib = 0;
+        // the front stage: this engine's own arguments without the host's options, as its first stage [0, K)
+        std::vector<std::string> wa;
+        for (int i = 1; i < argc; ++i) {
+            const std::string a = argv[i];
+            static const char* const with_value[] = {"--front-exe", "--front-layers", "--front-arg", "--layer-split", "--split-device",
+                                                     "--mtp", "--pipeline-windows", "--prompt-cache", "--conversation-cache-mib",
+                                                     "--gpu", "--vram-reserve-later-mib", "--draft"};
+            bool skip_it = false;
+            for (const char* w : with_value) if (a == w) { ++i; skip_it = true; }
+            if (!skip_it) wa.push_back(a);
+        }
+        wa.push_back("--front-stage");
+        wa.push_back(std::to_string(o.front_layers));
+        for (const std::string& a : o.front_args) wa.push_back(a);
+        std::string werr;
+        if (!strata::hetero::WorkerProcess::launch(o.front_exe, wa, /*drain_ms=*/60000, hetero.worker, werr)) {
+            std::fprintf(stderr, "strata serve: mixed split: %s\n", werr.c_str());
+            return 1;
+        }
+        std::fprintf(stderr, "strata serve: mixed split: front stage started (PID %ld, %s): layers 0-%d there, %d-... here\n",
+                     (long) hetero.worker.pid(), o.front_exe.c_str(), o.front_layers - 1, o.front_layers);
+    }
+    if (front_le > 0) {
+        if (!o.serve || front_le < 2 || !o.layer_split.empty() || o.vision || !o.cvec_files.empty() || o.batch != 0 || !o.mtp.empty()) {
+            std::fprintf(stderr, "strata serve: --front-stage K (the front stage of a mixed split, started by the host engine) needs "
+                                 "--serve and K of 2 or more, and takes no --layer-split, --vision, control vector, --batch or --mtp\n");
+            return 2;
+        }
+        // this process inherited the host's standard input and output, which carry the host's serve protocol: it must
+        // neither read the one nor write to the other.  Its link is descriptor 3.
+        const int null_fd = ::open("/dev/null", O_RDONLY);
+        if (null_fd < 0 || ::dup2(null_fd, 0) < 0 || ::dup2(2, 1) < 0) {
+            std::fprintf(stderr, "strata serve: front stage: redirecting the standard streams failed\n");
+            return 1;
+        }
+        if (null_fd > 2) (void) ::close(null_fd);
+        ::setenv("STRATA_PREFILL_LAYER_MAJOR", "0", 1);   // (the layer-major walk has no hand-off out of the process)
+        o.prompt_cache = 0;
+        o.conversation_cache_mib = 0;
+    }
+#else
+    constexpr int64_t front_lb = 0, front_le = 0;
+#endif
     // parking with --layer-split saves every stage (SavedConversation::stage_images)
     // Layer split (multi-GPU): the later stages run layers [K_i, K_i+1) on their own GPUs (--split-device, default
     // the next visible ones); "auto" places the K from each GPU's free VRAM once the weights are in (below).  KV
@@ -4543,7 +4706,7 @@ int main(int argc, char** argv) {
             split_auto = false;
         } else if (ok) {
             ok = (split_auto || split_at.size() == split_devs.size()) && split_devs.size() < (size_t) SplitDrive::kMax;
-            for (size_t i = 0; ok && i < split_at.size(); ++i) ok = split_at[i] >= 2 && (i == 0 || split_at[i] > split_at[i - 1]);
+            for (size_t i = 0; ok && i < split_at.size(); ++i) ok = split_at[i] >= 2 && split_at[i] > front_lb && (i == 0 || split_at[i] > split_at[i - 1]);
             for (size_t i = 0; ok && !split_same && i < split_devs.size(); ++i) {
                 ok = split_devs[i] > 0 && split_devs[i] < n_dev;
                 for (size_t j = 0; ok && j < i; ++j) ok = split_devs[i] != split_devs[j];
@@ -5605,10 +5768,14 @@ int main(int argc, char** argv) {
         std::fclose(f);
     };
     if (stage_trim) {
-        add_foreign(0, split_at[0], skip, o.mmap_experts);
-        strata::core::NativeDense::set_layer_range(0, (int) split_at[0]);
-        std::fprintf(stderr, "strata generate: layer split: CUDA0 loads the dense weights of layers 0-%lld only\n",
-                     (long long) split_at[0] - 1);
+        add_foreign(front_lb, split_at[0], skip, o.mmap_experts);
+        strata::core::NativeDense::set_layer_range((int) front_lb, (int) split_at[0]);
+        std::fprintf(stderr, "strata generate: layer split: CUDA0 loads the dense weights of layers %lld-%lld only\n",
+                     (long long) front_lb, (long long) split_at[0] - 1);
+    } else if (front_le > 0) {   // MIXED SPLIT: the front stage's process loads its own layers' dense weights only
+        add_foreign(0, front_le, skip, o.mmap_experts);
+        strata::core::NativeDense::set_layer_range(0, (int) front_le);
+        std::fprintf(stderr, "strata generate: front stage: the dense weights of layers 0-%lld only\n", (long long) front_le - 1);
     }
     // STRATA_HC_REQ8=1 (opt-in, changes the output): the hyper-connection projections are not loaded as BF16;
     // load_hc_q8 below requantizes them to int8 + an fp32 scale per 32 values (~0.56x the bytes), and the freed VRAM
@@ -6415,6 +6582,14 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "strata generate: profile %s: %zu ranked pairs, built for %lld slots\n",
                      o.expert_profile.c_str(), profile.size(), (long long) pslots);
+        if (front_lb > 0 || front_le > 0) {   // MIXED SPLIT: only the pairs of the layers this process runs
+            const size_t all = profile.size();
+            profile.erase(std::remove_if(profile.begin(), profile.end(), [&](const std::pair<int32_t, int32_t>& pr) {
+                              return pr.first < front_lb || (front_le > 0 && pr.first >= front_le);
+                          }), profile.end());
+            std::fprintf(stderr, "strata generate: mixed split: %zu of the %zu ranked pairs are of this process's layers\n",
+                         profile.size(), all);
+        }
     }
     // #477: the whole ranking as loaded, the prior of --expert-profile-save's order (a layer split keeps only
     // CUDA0's pairs in `profile` below).  Empty without --expert-profile-save.
@@ -7196,7 +7371,7 @@ int main(int argc, char** argv) {
         // (which also verifies the split search's pricing), and this block runs before it - reloading them
         // here too would leave `native dense: already loaded`.
         {
-            const int64_t lo = 0, hi = split_at.empty() ? g.n_layers : split_at[0];
+            const int64_t lo = front_lb, hi = split_at.empty() ? g.n_layers : split_at[0];
             const bool ok = reload(0, lo, hi, arena, pool_bytes, wt, native_dense) &&
                             (o.ple_gguf.empty() || wire_ple(wt));
             if (!ok) {
@@ -7277,7 +7452,7 @@ int main(int argc, char** argv) {
     // fixed in llama.cpp: allocation sized by the whole model instead of the device's own work.
     {
         const strata::core::OnDevice on0(primary_device);   // STRATA_PRIMARY_DEVICE (upstream: a literal 0)
-        const int64_t hi0 = multi_gpu ? split_at[0] : -1;
+        const int64_t hi0 = multi_gpu ? split_at[0] : front_le > 0 ? front_le : -1;   // (MIXED SPLIT: the front stage ends at front_le)
         // the elastic K/V (--kv-grow, see kvg_ensure): one GPU, the whole K/V in VRAM (no streaming), a profiled cache
         // that can give slots up, and every expert in RAM for the CPU to compute the ones it gives up
         {
@@ -7289,7 +7464,7 @@ int main(int argc, char** argv) {
                             !o.expert_profile.empty() && !o.resident_cpu_experts && o.expert_cache != 0 && !remote &&
                             strata::core::vmm_available() &&
                             // the batch slots carve their own K/V and --vram-elastic's cache is not one VMM range
-                            o.batch == 0 && !o.vram_elastic && o.peer_device < 0;
+                            o.batch == 0 && !o.vram_elastic && o.peer_device < 0 && front_le == 0;
             if (asked && !on)
                 std::fprintf(stderr, "strata generate: --kv-grow is off (one GPU, a profile, the whole K/V in VRAM, "
                                      "every expert in RAM, no --batch, --vram-elastic or --peer-device)\n");
@@ -7297,11 +7472,11 @@ int main(int argc, char** argv) {
             strata::core::qsa_set_kv_elastic(on, iv != nullptr && std::atoll(iv) > 0 ? std::atoll(iv) : 16384);
             strata::core::ExpertCache::set_vmm(on);
         }
-        if (cudaMalloc(&sbuf, strata::core::session_bytes(g, o.max_context, K, 0, hi0)) != cudaSuccess) {
+        if (cudaMalloc(&sbuf, strata::core::session_bytes(g, o.max_context, K, front_lb, hi0)) != cudaSuccess) {
             std::fprintf(stderr, "strata generate: session state allocation failed\n");
             return 1;
         }
-        if (strata::core::session_init(g, o.max_context, K, sbuf, ss, 0, hi0) == 0) {
+        if (strata::core::session_init(g, o.max_context, K, sbuf, ss, front_lb, hi0) == 0) {
             std::fprintf(stderr, "strata generate: session_init failed\n");
             return 1;
         }
@@ -9331,7 +9506,7 @@ int main(int argc, char** argv) {
                      (long long) filled, st.profile.size());
     }
     if (multi_gpu)
-        std::fprintf(stderr, "strata generate: layer split: CUDA0 runs layers 0-%lld\n", (long long) (split_at[0] - 1));
+        std::fprintf(stderr, "strata generate: layer split: CUDA0 runs layers %lld-%lld\n", (long long) front_lb, (long long) (split_at[0] - 1));
     // THE LAYER SPLIT'S SPILL WALK, STEP 4: THE LOAN KEEPS 16.  A stage whose cache is too small to lend the prompt path a 256-token chunk and keep 128 slots behind makes the path
     // allocate its own buffers on top (more than the reserve): the same short card as the single card's, which keeps 16 slots instead (the cache is smaller, prompts are read in
     // smaller chunks, the start works).  Never on a card with room: it only fires when a cache is below the usual loan.
@@ -11176,7 +11351,7 @@ int main(int argc, char** argv) {
                 strata::core::ExpertCache& xc = i == 0 ? xcache : stages[i - 1]->cache;
                 const strata::core::SessionState& ses = i == 0 ? ss : stages[i - 1]->ss;
                 const int64_t dev = i == 0 ? -1 : stages[i - 1]->dev;
-                const int64_t lb = i == 0 ? 0 : stages[i - 1]->lb;
+                const int64_t lb = i == 0 ? front_lb : stages[i - 1]->lb;
                 const int64_t le = i == 0 ? split_at[0] : stages[i - 1]->le;
                 if (xc.slots() <= 0 || le <= lb) continue;
                 const uint64_t need = strata::prefill::Prefill::bytes_needed(g, ses, bound);
@@ -11579,7 +11754,7 @@ int main(int argc, char** argv) {
         // whose cache already filled its reserve, that is the over-subscription the auto sizing avoids - so the
         // chunk is the largest one EVERY participant can lend (a smaller chunk only reads slower)
         if (pf_borrow && d_res != nullptr) {
-            pf_parts.push_back({&xcache, &ss, &sp, -1, 0, multi_gpu ? split_at[0] : g.n_layers, -1, -1, 0, {}});
+            pf_parts.push_back({&xcache, &ss, &sp, -1, front_lb, multi_gpu ? split_at[0] : front_le > 0 ? front_le : g.n_layers, -1, -1, 0, {}});
             for (auto& st : stages)
                 pf_parts.push_back({&st->cache, &st->ss, &st->sp, st->dev, st->lb, st->le, -1, -1, 0, {}});
             // The two tests plan_lend makes for CUDA0 alone, one participant at a time: a loan must leave the
@@ -12129,6 +12304,83 @@ int main(int argc, char** argv) {
         // hold (no allocation, no VRAM: the slots ARE the drafter's bytes) - and a prompt takes it by moving that
         // path's ring count (set_ring_room_active), so any later rebuild here re-carves it the same way.
         strata::prefill::Prefill* room_path = nullptr;
+#if defined(STRATA_HETERO)
+        // ---- MIXED SPLIT: THE SHARED HAND-OFF.  Vanilla's stage hand-off between two cards of one process is mapped
+        // pinned host memory (cudaHostAlloc); between the two processes it is a shared mapping that each registers with
+        // its own runtime.  Slot 0: the window hand-off (the rows a verify window hands the next stage), slot 1: its
+        // ready word, slot 2: the prompt path's chunk rows.  The host creates it and sends it with the hello; the front
+        // stage waits for the hello here, before its window graphs are captured with the hand-off's device address.
+        float* het_hand_d = nullptr;        // slot 0 as the device sees it
+        uint32_t *het_flag_h = nullptr, *het_flag_d = nullptr;
+        float* het_rows_h = nullptr;        // slot 2 (host address: the prompt path copies to / from it)
+        int64_t het_rows_cap = 0;
+        strata::hetero::LinkIdentity het_id;
+        strata::hetero::SharedRegion het_region;   // the front stage's mapping (the host's is in `hetero`)
+        if (front_lb > 0 || front_le > 0) {
+            const size_t HB = (size_t) strata::core::Verifier::handoff_floats(g) * sizeof(float);
+            const size_t DB = (size_t) g.hc * (size_t) g.n_embd * sizeof(float);
+            het_id.model_fingerprint = strata::hetero::model_fingerprint(o.pack, o.native_shards);
+            het_id.n_layers = (int32_t) g.n_layers;
+            het_id.front_end = (int32_t) (front_lb > 0 ? front_lb : front_le);
+            het_id.hc = (int32_t) g.hc;
+            het_id.n_embd = (int32_t) g.n_embd;
+            het_id.max_rows = strata::kernels::kVerifyNarrowT;
+            het_id.max_context = o.max_context;
+            strata::hetero::SharedRegion* region = nullptr;
+            std::string he;
+            if (front_lb > 0) {
+                het_rows_cap = o.prefill_chunk;
+                if (!strata::hetero::SharedRegion::create({(size_t) het_id.max_rows * HB, 64, (size_t) het_rows_cap * DB}, hetero.region, he)) {
+                    std::fprintf(stderr, "strata serve: mixed split: %s\n", he.c_str());
+                    return 1;
+                }
+                region = &hetero.region;
+                hetero.link = std::make_unique<strata::hetero::RemoteFrontStage>(hetero.worker.socket(), /*timeout_ms=*/180000);
+                std::fprintf(stderr, "strata serve: mixed split: waiting for the front stage to load and take the hand-off memory\n");
+                if (!hetero.link->hello(het_id, hetero.region, he)) {
+                    std::fprintf(stderr, "strata serve: mixed split: %s\n", he.c_str());
+                    return 1;
+                }
+            } else {
+                strata::hetero::LinkIdentity got;
+                uint64_t seq = 0;
+                const strata::hetero::Recv r = strata::hetero::front_accept(strata::hetero::kWorkerSocketFd, got, het_region, seq, he);
+                if (r != strata::hetero::Recv::Ok) {
+                    std::fprintf(stderr, "strata serve: front stage: %s\n", r == strata::hetero::Recv::Eof ? "the host closed the link before its hello" : he.c_str());
+                    return r == strata::hetero::Recv::Eof ? 0 : 1;
+                }
+                std::string why;
+                if (got != het_id)
+                    why = got.model_fingerprint != het_id.model_fingerprint ? "the two engines did not load the same model files"
+                                                                            : "the two engines differ in the model's shape, the split layer or the context";
+                else if (het_region.slots() != 3 || het_region.slot_bytes(0) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(1) < 4 ||
+                         het_region.slot_bytes(2) < DB)
+                    why = "the hand-off memory has another layout";
+                if (!strata::hetero::front_accept_reply(strata::hetero::kWorkerSocketFd, seq, why.empty(), why, he) || !why.empty()) {
+                    std::fprintf(stderr, "strata serve: front stage: %s\n", why.empty() ? he.c_str() : why.c_str());
+                    return 1;
+                }
+                het_rows_cap = (int64_t) (het_region.slot_bytes(2) / DB);
+                region = &het_region;
+            }
+            // (registered, never unregistered: it lives as long as the process, as vanilla's hand-off does)
+            void* base_d = nullptr;
+            if (cudaHostRegister(region->base(), region->bytes(), cudaHostRegisterMapped | cudaHostRegisterPortable) != cudaSuccess ||
+                cudaHostGetDevicePointer(&base_d, region->base(), 0) != cudaSuccess) {
+                std::fprintf(stderr, "strata serve: mixed split: registering the shared hand-off memory failed: %s\n",
+                             cudaGetErrorString(cudaGetLastError()));
+                return 1;
+            }
+            auto dev_of = [&](size_t slot) { return (uint8_t*) base_d + ((uint8_t*) region->slot(slot) - (uint8_t*) region->base()); };
+            het_hand_d = (float*) dev_of(0);
+            het_flag_h = (uint32_t*) region->slot(1);
+            het_flag_d = (uint32_t*) dev_of(1);
+            het_rows_h = (float*) region->slot(2);
+            std::fprintf(stderr, "strata serve: mixed split: shared hand-off memory %.1f MiB (%d window rows, %lld prompt rows), %s\n",
+                         (double) region->bytes() / 1048576.0, het_id.max_rows, (long long) het_rows_cap,
+                         front_lb > 0 ? "the front stage has it" : "attached");
+        }
+#endif
         auto init_prompt_paths = [&]() -> int {   // 0: ready; 1: failed (err set); 2: failed with "do not fit"
             room_path = nullptr;
             for (size_t i = 0; i < stages.size(); ++i) {
@@ -12154,7 +12406,18 @@ int main(int argc, char** argv) {
                     return err.find("do not fit") != std::string::npos ? 2 : 1;
                 }
             }
-            if (multi_gpu) sp.set_stage(0, split_at[0], &stages[0]->sp);
+            if (multi_gpu) sp.set_stage(front_lb, split_at[0], &stages[0]->sp);
+#if defined(STRATA_HETERO)
+            if (front_lb > 0)   // MIXED SPLIT: each chunk's rows come from the front stage's process
+                sp.set_remote_in(het_rows_h, [&hetero, het_rows_cap](const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& e) {
+                    if (n > het_rows_cap) { e = "mixed split: a prompt chunk larger than the shared hand-off"; return false; }
+                    return hetero.prefill(tokens, n, pos0, last, e);
+                });
+            if (front_le > 0) {   // MIXED SPLIT: this process is the front stage; its rows leave through the shared hand-off
+                sp.set_stage(0, front_le, nullptr);
+                sp.set_remote_out(het_rows_h, het_rows_cap);
+            }
+#endif
             if (share_pool) sp.set_cpu_pool(&pool);
             int cur_dev = 0;
             cudaGetDevice(&cur_dev);   // the device this path is about to run on (dev -1: the current one)
@@ -12460,8 +12723,14 @@ int main(int argc, char** argv) {
             split_drive.base = &drive;
             split_drive.n = n_stages;
             for (int st = 0; st < n_stages; ++st) {
-                stage_ver(st).set_stage(st == 0 ? 0 : split_at[(size_t) st - 1], st + 1 < n_stages ? split_at[(size_t) st] : -1,
-                                        st == 0 ? nullptr : hand[(size_t) st - 1], st + 1 < n_stages ? hand[(size_t) st] : nullptr);
+                // (MIXED SPLIT: the first stage starts at front_lb and reads the front stage's hand-off)
+#if defined(STRATA_HETERO)
+                const float* const hand_first = front_lb > 0 ? het_hand_d : nullptr;
+#else
+                const float* const hand_first = nullptr;
+#endif
+                stage_ver(st).set_stage(st == 0 ? front_lb : split_at[(size_t) st - 1], st + 1 < n_stages ? split_at[(size_t) st] : -1,
+                                        st == 0 ? hand_first : hand[(size_t) st - 1], st + 1 < n_stages ? hand[(size_t) st] : nullptr);
                 if (hrows > strata::kernels::kVerifyNarrowT) stage_ver(st).set_handoff_rows(hrows);
 #if defined(STRATA_HAVE_DFLASH2)
                 if (use_df2 && st > 0) stage_ver(st).set_taps(df2.tap_layers());   // (stage 0 gets its taps below, as on one card)
@@ -12508,7 +12777,18 @@ int main(int argc, char** argv) {
                 }
             }
             for (int st = 0; st + 1 < n_stages; ++st) stage_ver(st).set_next(&stage_ver(st + 1), &split_drive);
-            std::string plan_s = "0-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
+#if defined(STRATA_HETERO)
+            if (front_lb > 0) {
+                // MIXED SPLIT: the first local stage's window waits (bounded) on the front stage's ready word, and its
+                // run / commit go to the front stage first - the mirror image of set_next
+                ver.set_handoff_flags(het_flag_h, het_flag_d, overlap ? hflag_h[0] : nullptr, overlap ? hflag_d[0] : nullptr);
+                strata::core::Verifier::FrontCalls fc;
+                fc.run = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.run(T, tokens, pos0, e); };
+                fc.commit = [&hetero](int n_keep, std::string& e) { return hetero.commit(n_keep, e); };
+                ver.set_front(std::move(fc));
+            }
+#endif
+            std::string plan_s = std::to_string(front_lb) + "-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
             for (int st = 1; st < n_stages; ++st)
                 plan_s += ", " + std::to_string(split_at[(size_t) st - 1]) + "-" + std::to_string(split_drive.end[st] - 1) +
                           " (CUDA" + std::to_string(split_same ? 0 : stages[(size_t) st - 1]->dev) + ")";
@@ -12579,6 +12859,12 @@ int main(int argc, char** argv) {
 #if defined(STRATA_HAVE_DFLASH2)
         if (use_df2) ver.set_taps(df2.tap_layers());
         if (batch_df2) ver.set_batch_taps(true);
+#endif
+#if defined(STRATA_HETERO)
+        if (front_le > 0) {   // MIXED SPLIT: this process is the front stage: layers [0, front_le), the hand-off out, no head
+            ver.set_stage(0, front_le, nullptr, het_hand_d);
+            ver.set_handoff_flags(nullptr, nullptr, het_flag_h, het_flag_d);
+        }
 #endif
         if (!ver.init(wt, g, ss, vh, native_head.loaded() || prefill_head_alias_bound ? &native_head : nullptr,
                       batch_max_t(), err) ||
@@ -15198,6 +15484,51 @@ int main(int argc, char** argv) {
             }
         }
         g_gpu_pause_idle.idle(gpu_pause_now());   // AMD on Linux: the gap before the first request starts here (the start-up's own pauses are not a "between")
+#if defined(STRATA_HETERO)
+        if (front_le > 0) {
+            // ---- MIXED SPLIT: THE FRONT STAGE SERVES THE LINK instead of the serve protocol.  Each call is the call the
+            // loop below makes on its own first stage: a window (Verifier::run), its commit, a prompt chunk (Prefill::run),
+            // a new sequence (session_zero).  When the host closes the link the loop below finds its input ended and the
+            // engine ends as after any serve.
+            HeteroFrontBackend fb;
+            std::vector<int32_t> f_out((size_t) strata::kernels::kVerifyLongT, 0);
+            std::vector<int64_t> f_ids;
+            fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
+                if (T > ver.max_t()) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
+                if (!ver.run(T, tokens, pos0, win_pool_fn, win_pool_user, f_out.data(), e)) return false;
+                if (drive.d.failed) { e = "the front stage's expert pool failed"; return false; }
+                return true;
+            };
+            fb.f_commit = [&](int n_keep, std::string& e) { return ver.commit(n_keep, e); };
+            fb.f_prefill = [&](const int32_t* tokens, int64_t n, int64_t pos0, bool, std::string& e) {
+                if (!ver.wait_commit(e)) return false;
+                f_ids.assign(tokens, tokens + n);
+                return sp.run(f_ids.data(), n, pos0, e);
+            };
+            fb.f_session = [&](strata::hetero::SessionOp op, int64_t, int64_t, std::string& e) {
+                if (!ver.wait_commit(e)) return false;
+                if (op == strata::hetero::SessionOp::Abandon) return true;   // (the next window runs over the dropped one)
+                if (op != strata::hetero::SessionOp::Reset) { e = "the front stage does not save or restore its session yet"; return false; }
+                strata::core::session_zero(ss, g, nullptr, main_cs);
+                if (cudaStreamSynchronize(main_stream) != cudaSuccess) { e = "zeroing the front stage's session failed"; return false; }
+                return true;
+            };
+            std::fprintf(stderr, "strata serve: front stage: layers 0-%lld ready, serving the link\n", (long long) front_le - 1);
+            std::string fe;
+            const int frc = strata::hetero::serve_front_greeted(strata::hetero::kWorkerSocketFd, fb, het_id, fe);
+            std::fprintf(stderr, "strata serve: front stage: the link ended%s%s\n", frc == 0 ? " cleanly" : ": ", frc == 0 ? "" : fe.c_str());
+            if (!ver.wait_commit(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
+            if (frc != 0) return 1;
+        }
+        if (front_lb > 0) {   // the front stage's session starts empty, as this one's; this also waits until it serves
+            std::string fe;
+            if (!hetero.reset(fe)) {
+                std::fprintf(stderr, "strata serve: mixed split: the front stage is not ready: %s\n", fe.c_str());
+                return 1;
+            }
+            std::fprintf(stderr, "strata serve: mixed split: the front stage is ready\n");
+        }
+#endif
         std::printf("READY %lld stop hold holdb\n", (long long) o.max_context);   // "stop": this engine honours STOP; "hold": GEN hold=N:ID; "holdb": the --batch slots end at the hold too (BDONE hold)
         std::fflush(stdout);
         std::string line;
@@ -17918,6 +18249,16 @@ int main(int argc, char** argv) {
             if (resume == 0) {
                 strata::core::session_zero(ss, g, nullptr, main_cs);
                 cudaStreamSynchronize(main_stream);
+#if defined(STRATA_HETERO)
+                if (hetero.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
+                    std::string fe;
+                    if (!hetero.reset(fe)) {
+                        std::printf("ERR mixed split: the front stage could not start a new sequence: %s\n", fe.c_str());
+                        std::fflush(stdout);
+                        return 1;
+                    }
+                }
+#endif
                 for (auto& st : stages) {
                     const strata::core::OnDevice on(st->dev);
                     strata::core::session_zero(st->ss, g, nullptr, (void*) st->stream);

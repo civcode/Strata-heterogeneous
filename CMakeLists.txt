@@ -803,6 +803,11 @@ endif()
 option(STRATA_HETERO "Build the CUDA/HIP mixed-split seam library and its CPU tests (hetero/)" OFF)
 if(STRATA_HETERO)
   add_subdirectory(hetero)
+  # the engine's hooks for it (Verifier::set_front, Prefill::set_remote_in / set_remote_out, the --front-* options)
+  if(TARGET strata_engine AND TARGET strata)
+    target_compile_definitions(strata_engine PUBLIC STRATA_HETERO=1)
+    target_link_libraries(strata PRIVATE strata_hetero)
+  endif()
 endif()
 
 # What this configure registered, so a missing capability is a stated skip (tools/check prints this line too).
