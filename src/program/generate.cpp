@@ -7474,8 +7474,12 @@ int main(int argc, char** argv) {
             // (MIXED SPLIT: layer 1, where the PLE block runs, is the front stage's; its weights are not in this table,
             // so nothing here is wired to them and the PLE stays the front stage's, as with a later stage of a split)
             if (front_lb > 1) ss.ple.w = {};
-            const bool ok = reload(0, lo, hi, arena, pool_bytes, wt, native_dense) &&
-                            (o.ple_gguf.empty() || front_lb > 1 || wire_ple(wt));
+            const bool reloaded = reload(0, lo, hi, arena, pool_bytes, wt, native_dense);
+            // (HARDENING port fix: the owner frees the arena `reload` allocated, not the one it freed - at the engine's
+            // end the stale record failed with "primary weight arena: invalid argument", report 0068)
+            primary_raw->weight_arena = arena;
+            primary_raw->cleanup_armed = primary_raw->cleanup_armed || arena != nullptr;
+            const bool ok = reloaded && (o.ple_gguf.empty() || front_lb > 1 || wire_ple(wt));
             if (!ok) {
                 std::fprintf(stderr, "strata generate: layer split, CUDA0: its own layers' weights: %s\n",
                              err.c_str());
