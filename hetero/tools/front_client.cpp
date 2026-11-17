@@ -42,6 +42,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> shards, wargs;
     int layers = 15, n_layers = 48, hc = 4, n_embd = 2560, windows = 8;
     long long context = 196608, chunk = 2048, prompt = 1000;
+    std::string tokens_csv, dump_prefix;   // --tokens a,b,c --dump PREFIX: the rows of these tokens, read as a prompt and as windows
     int i = 2;
     for (; i < argc; ++i) {
         const std::string a = argv[i];
@@ -54,6 +55,8 @@ int main(int argc, char** argv) {
         else if (a == "--chunk") chunk = std::atoll(val());
         else if (a == "--prompt") prompt = std::atoll(val());
         else if (a == "--windows") windows = std::atoi(val());
+        else if (a == "--tokens") tokens_csv = val();
+        else if (a == "--dump") dump_prefix = val();
         else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 2; }
     }
     for (; i < argc; ++i) wargs.push_back(argv[i]);
@@ -142,6 +145,37 @@ int main(int argc, char** argv) {
                                 prompt, ms, 1000.0 * (double) prompt / ms, s);
             const int32_t nt = 3000;   // a window after the prompt
             ok = ok && front.run(1, &nt, prompt, err) && front.commit(1, err);
+        }
+        if (ok && !tokens_csv.empty() && !dump_prefix.empty()) {
+            // the same tokens as one prompt run (prompt rows: R after the front's last layer) and as one-token windows
+            // (each window's hand-off row: R, bo, inject), written raw for an offline comparison
+            std::vector<int32_t> tk;
+            for (size_t p0 = 0; p0 <= tokens_csv.size();) {
+                size_t q = tokens_csv.find(',', p0);
+                if (q == std::string::npos) q = tokens_csv.size();
+                if (q > p0) tk.push_back((int32_t) std::atol(tokens_csv.substr(p0, q - p0).c_str()));
+                p0 = q + 1;
+            }
+            const int64_t n = (int64_t) tk.size();
+            ok = front.session(SessionOp::Reset, 0, 0, err) && front.prefill(tk.data(), n, 0, true, err);
+            if (ok) {
+                std::FILE* f = std::fopen((dump_prefix + ".prompt.f32").c_str(), "wb");
+                std::fwrite(rows, sizeof(float), (size_t) n * D, f);
+                std::fclose(f);
+            }
+            ok = ok && front.session(SessionOp::Reset, 0, 0, err);
+            std::vector<float> wrows;
+            for (int64_t t = 0; ok && t < n; ++t) {
+                ok = front.run(1, &tk[(size_t) t], t, err);
+                if (ok) wrows.insert(wrows.end(), hand, hand + HF);
+                ok = ok && front.commit(1, err);
+            }
+            if (ok) {
+                std::FILE* f = std::fopen((dump_prefix + ".windows.f32").c_str(), "wb");
+                std::fwrite(wrows.data(), sizeof(float), wrows.size(), f);
+                std::fclose(f);
+                std::printf("client: dumped %lld tokens' rows to %s.{prompt,windows}.f32\n", (long long) n, dump_prefix.c_str());
+            }
         }
         if (!ok) std::fprintf(stderr, "client: FAILED: %s\n", err.c_str());
         std::string e2;
