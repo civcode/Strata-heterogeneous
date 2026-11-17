@@ -3280,6 +3280,9 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     const ModelGeometry& g = *g_;
     SessionState& ss = *ss_;
     if (pos0 + T > ss.qsa_states[ss.qsa_primary()].max_cells) { err = "verify: the window runs past the context"; return false; }
+#if defined(STRATA_HETERO)
+    if (front_.run && !front_.run(T, tokens, pos0, err)) return false;   // MIXED SPLIT: layers [0, lb_) in the front process
+#endif
     // the overlapped split launched this stage's window already: keep the graph variant (#871) chosen for it then,
     // or this thread would serve the window as the other variant
     const bool pre = prelaunched_ == T;
@@ -3891,6 +3894,9 @@ bool Verifier::commit(int n_keep, std::string& err) {
 #endif
     const OnDevice on_device(device_);
     if (n_keep < 1 || n_keep > last_t_) { err = "verify: commit count out of range"; return false; }
+#if defined(STRATA_HETERO)
+    if (front_.commit && !front_.commit(n_keep, err)) return false;   // MIXED SPLIT: the front stage commits first
+#endif
     const Clock::time_point t0 = Clock::now();
     h_commit_[0] = n_keep;
     h_commit_[1] = n_keep - 1;
