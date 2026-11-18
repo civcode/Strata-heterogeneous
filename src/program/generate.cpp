@@ -1708,9 +1708,8 @@ struct HeteroHost {
         return link->session(strata::hetero::SessionOp::Abandon, 0, 0, err);
     }
     // STRATA_SPLIT_TIMING (logging only): the link's round trips, the first local stage's wait on the front stage's
-    // ready word (a bounded wait queued on its stream before its window, between two events), every local stage's
-    // window on its GPU (Verifier::set_launch_mark)
-    cudaStream_t t_cs = nullptr;          ///< the first local stage's stream
+    // ready word (a bounded wait queued on its stream just before its window graph, between two events), every local
+    // stage's window graph on its GPU (Verifier::set_launch_mark)
     const uint32_t* t_flag_d = nullptr;   ///< the front stage's ready word, as that device sees it
     uint32_t *t_err_h = nullptr, *t_err_d = nullptr;
     HeteroSum t_run, t_commit;
@@ -1721,23 +1720,7 @@ struct HeteroHost {
         const auto t0 = std::chrono::steady_clock::now();
         if (!link->run(T, tokens, pos0, err)) return false;
         window_open = true;
-        if (hetero_timing()) {
-            t_run.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-            if (t_cs != nullptr && t_flag_d != nullptr) {
-                if (t_err_h == nullptr && (cudaHostAlloc((void**) &t_err_h, 64, cudaHostAllocMapped) != cudaSuccess ||
-                                           cudaHostGetDevicePointer((void**) &t_err_d, t_err_h, 0) != cudaSuccess)) {
-                    (void) cudaGetLastError();
-                    t_err_h = t_err_d = nullptr;
-                }
-                if (t_err_d != nullptr) {
-                    t_wait.mark(t_cs, false);
-                    // the same bounded wait the window graph starts with (30 s, as STRATA_SPLIT_WAIT_MS's default); the
-                    // graph's own wait then finds the word up
-                    strata::kernels::wait_handoff(t_flag_d, 1u, t_err_d, 30000ull * 1000000ull, t_cs);
-                    t_wait.mark(t_cs, true);
-                }
-            }
-        }
+        if (hetero_timing()) t_run.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
         return true;
     }
     bool commit(int n_keep, std::string& err) {
@@ -1768,11 +1751,30 @@ struct HeteroHost {
         t_run.mark(); t_commit.mark(); t_wait.sum.mark();
     }
     /// STRATA_SPLIT_TIMING: time every local stage's window graphs (the stage's Verifier::set_launch_mark).
-    void time_stage(strata::core::Verifier& v) {
+    /// The first local stage (`first`) also gets the wait on the ready word, queued before its graph.
+    void time_stage(strata::core::Verifier& v, bool first) {
         if (!hetero_timing()) return;
         t_stage.push_back(std::make_unique<HeteroGpuSpan>());
         HeteroGpuSpan* sp = t_stage.back().get();
-        v.set_launch_mark([sp](cudaStream_t cs, bool after) { sp->mark(cs, after); });
+        v.set_launch_mark([this, sp, first](cudaStream_t cs, bool after) {
+            if (first && !after && t_flag_d != nullptr) {
+                if (t_err_h == nullptr && (cudaHostAlloc((void**) &t_err_h, 64, cudaHostAllocMapped) != cudaSuccess ||
+                                           cudaHostGetDevicePointer((void**) &t_err_d, t_err_h, 0) != cudaSuccess)) {
+                    (void) cudaGetLastError();
+                    t_err_h = t_err_d = nullptr;
+                    t_flag_d = nullptr;
+                    std::fprintf(stderr, "strata serve: mixed split timing: no mapped word for the wait; the wait is not timed\n");
+                }
+                if (t_err_d != nullptr) {
+                    t_wait.mark(cs, false);
+                    // the same bounded wait the window graph starts with (30 s, STRATA_SPLIT_WAIT_MS's default); the
+                    // graph's own wait then finds the word up
+                    strata::kernels::wait_handoff(t_flag_d, 1u, t_err_d, 30000ull * 1000000ull, cs);
+                    t_wait.mark(cs, true);
+                }
+            }
+            sp->mark(cs, after);
+        });
     }
     bool prefill(const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) {
         if (!drop_window(err)) return false;
@@ -13067,10 +13069,9 @@ int main(int argc, char** argv) {
                 fc.commit = [&hetero](int n_keep, std::string& e) { return hetero.commit(n_keep, e); };
                 ver.set_front(std::move(fc));
                 if (hetero_timing()) {   // STRATA_SPLIT_TIMING: the wait on the ready word and every local stage's windows
-                    hetero.t_cs = ver.stream();
                     hetero.t_flag_d = het_flag_d;
                     hetero.t_stage.clear();
-                    for (int st = 0; st < n_stages; ++st) hetero.time_stage(stage_ver(st));
+                    for (int st = 0; st < n_stages; ++st) hetero.time_stage(stage_ver(st), st == 0);
                 }
             }
 #endif
