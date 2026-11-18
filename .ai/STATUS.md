@@ -1,32 +1,36 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0076` (Tier 2), once the Human User hands it over.
+Turn holder: **Human User**: choose the next performance step (see Open decisions).
 
 ## Current milestone
 
-Production as the reference: bring up both production mirrors and measure mixed against production (handoff 0076).
+Production measured (report 0076, `2f5255e3`). Both production mirrors serve at 262,144 tokens without fallback.
 
-Report 0075 was Completed (`96a18261`). Chat AI's review:
-- **Prompt pipeline, HIP-only:** best R = 700. That gives +3.1% prefill on the long prompt and −0.4% at 16K (the
-  default already reads 16K in two 8,192-token chunks). Not worth turning on here. In mixed mode R = 700 costs 14% at
-  16K: each extra chunk is another serial CUDA pass.
-- **Vision and control vector:** no measurable cost on text requests. The vector even raises draft acceptance on the
-  coding prompt (+2.7% decode).
-- **The mixed decode window is fully serial.** Vanilla's `Verifier::run` synchronises before the front stage answers.
-  Per window (coding prompt): CUDA 3.3 ms (19%), first R9700 5.45 (31%), second R9700 with the head 5.68 (32%),
-  drafter 1.6 (9%), commit 0.7 (4%), gaps about 0.9. The link adds 0.03 ms. The CUDA card is faster per layer than an
-  R9700 (0.22 against 0.30 ms).
-- **`--layer-split auto` in mixed mode:** implemented by adding a starting layer to vanilla's planner, all guarded. It
-  picks K = 31; no A/B yet. `--split-skip-if-fits` is now refused in mixed mode.
-- **Design notes** (in the report): `--batch` takes 2 Tier 1 turns for serial groups, plus 2 for pipelined groups
-  (shared with pipelined windows); DFlash2 takes 2 Tier 1 turns plus a short Tier 2 turn.
-- **Contract:** the timing hook in `Verifier` (`set_launch_mark`) and the planner hook are guarded, and timing is
-  logging only. `check_off_is_vanilla.py` reports 6 of 6.
-- **After report 0075,** Chat AI re-applied the production-mirror revision (configs, launcher, `PROJECT.md`), set the
-  mixed mirror to `layer_split: auto`, and updated `.ai/DIVERGENCE.md`.
-- **The numbers of reports 0067 to 0075** come from the older example settings, not production.
+Chat AI's review:
+- **Memory:** the CUDA card holds 14.3 of 16 GB, the R9700s 19.2 and 20.6 GB in mixed mode (25.8 / 26.1 GB in
+  HIP-only). With `--mmap-experts`, about 50 GiB of RAM is available (page cache included), against about 19 GiB with
+  the RAM arena of reports 0069 to 0075. The RAM headroom concern is gone.
+- **Overlap:** `STRATA_SPLIT_OVERLAP=1` takes effect on the host's split in mixed mode (log: "overlapped").
+- **Caches:** a 16,093-token conversation was parked and restored from a checkpoint under the production cache
+  settings (`cache_n=16088`). A `cvec=0` request and a vision request both work.
+- **Mixed (no pipelined windows) against production (HIP-only with `--pipeline-windows 2`),** median of three:
+
+  | Prompt | Prefill, mixed / production | Decode, mixed / production |
+  | --- | --- | --- |
+  | Code (118 tokens) | 265 / 324 tok/s (−18%) | 117.8 / 107.9 (+9%) |
+  | Long (5,000) | 2,287 / 2,351 (−3%) | 118.7 / 122.7 (−3%) |
+  | 16K | 3,388 / 3,478 (−3%) | 131.2 / 132.2 (−1%) |
+
+  Decode is on par: the samples are small and the generated sequences differ. Prefill is about 3% behind on long
+  prompts and 18% on the short one, where the absolute gap is about 80 ms of first-token time. That looks like a fixed
+  per-request cost in mixed mode (session ops, Images, Steer, the front stage's synchronised prompt pass);
+  unconfirmed.
+- **`--layer-split auto` (K = 31) against the fixed 33:** no difference.
+- **No engine change; no faults, core dumps or reboots;** about 510 s of GPU time.
 
 ## History in short
+
+- Report 0076: production mirrors at 262,144 tokens; mixed without pipelining on par with production decode; prefill −3% long, −18% on a short prompt.
 
 - Report 0075: mixed decode window measured (serial, CUDA 19%, link 0.03 ms); prompt pipeline not worth it; vision/cvec free; `--layer-split auto` in mixed mode.
 
@@ -79,14 +83,15 @@ Report 0075 was Completed (`96a18261`). Chat AI's review:
 
 ## Open decisions for the Human User
 
-- None.
+- **The next performance step.** Chat AI recommends pipelined decode windows (Tier 1), starting with the front stage
+  answering right after it launches its window (which pipelining needs anyway). Alternatives:
+  - the short-prompt fixed cost (about 80 ms);
+  - pipelined prompt chunks across the edge;
+  - more layers on the CUDA card;
+  - `--batch` or DFlash2.
 
 ## Next step
 
-After report 0076: the Human User chooses the next performance work, with mixed-against-production numbers in hand:
-- **Pipelined decode windows:** the target is the 19% CUDA share; the link is cheap.
-- **Pipelined prompt chunks across the edge.**
-- **Moving layers onto the faster CUDA card:** about 0.08 ms per layer, VRAM permitting.
-- **`--batch` or DFlash2,** from the design notes.
+Depends on the decision above.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
