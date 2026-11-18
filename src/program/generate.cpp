@@ -15580,7 +15580,9 @@ int main(int argc, char** argv) {
             fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
                 using Op = strata::hetero::SessionOp;
                 if (op == Op::Drop) {   // the host's cache let that conversation go: nothing on the GPU, the window stays
-                    book.drop_image(a, b);
+                    const bool removed = book.drop_image(a, b);
+                    std::fprintf(stderr, "strata serve: front Drop key=%lld tokens=%lld removed=%d parked=%zu\n",
+                                 (long long) a, (long long) b, (int) removed, book.images());
                     return true;
                 }
                 if (!ver.wait_commit(e)) return false;
