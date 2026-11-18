@@ -1,0 +1,3 @@
+READY after 27.2 s; idle: {"available_gib": 18.61, "shmem_gib": 33.3, "cached_gib": 51.58, "engines": {"2113723": {"RssAnon": 2.56, "RssFile": 0.23, "RssShmem": 33.22}, "2113730": {"RssAnon": 1.47, "RssFile": 0.22, "RssShmem": 32.03}}, "nvidia_used_mib": [15215], "amd_used_mb": [19216, 18403, 203]}
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2178.6 1769.2 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.9491120329994374, "first_token_s": 2.197288982999453, "reused": 0, "prefill_tps": 2260.167079776003, "decode_tps": 113.04544426859597, "drafts": "117/186", "finish": "length", "prefill_ms": 2178.6} first ids [8160, 369, 264, 11782, 314, 279, 2128, 303, 4097, 16916, 3387, 25]
+engine rc 0 total 35.9 s

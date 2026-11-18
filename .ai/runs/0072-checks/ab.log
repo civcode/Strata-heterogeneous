@@ -1,0 +1,12 @@
+A 1 exit 0 elapsed 33.17 total 67.26
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2178.0 1757.4 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.9367137560002448, "first_token_s": 2.1967146550005054, "reused": 0, "prefill_tps": 2260.78971533517, "decode_tps": 113.80448389666553, "drafts": "117/186", "finish": "length", "prefill_ms": 2178.0}
+B 2 exit 0 elapsed 37.96 total 105.22
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2205.8 1758.4 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.965658142999928, "first_token_s": 2.224618055999599, "reused": 0, "prefill_tps": 2232.2966724091034, "decode_tps": 113.73976342129207, "drafts": "117/186", "finish": "length", "prefill_ms": 2205.8}
+A 3 exit 0 elapsed 36.89 total 142.11
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2178.6 1769.2 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.9491120329994374, "first_token_s": 2.197288982999453, "reused": 0, "prefill_tps": 2260.167079776003, "decode_tps": 113.04544426859597, "drafts": "117/186", "finish": "length", "prefill_ms": 2178.6}
+B 4 exit 0 elapsed 36.59 total 178.7
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2184.2 1757.9 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.943615268999565, "first_token_s": 2.2030884850000803, "reused": 0, "prefill_tps": 2254.3723102280014, "decode_tps": 113.77211445474714, "drafts": "117/186", "finish": "length", "prefill_ms": 2184.2}
+A 5 exit 0 elapsed 28.65 total 207.35
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2177.7 1758.3 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.9373643680000896, "first_token_s": 2.196455030000834, "reused": 0, "prefill_tps": 2261.101161776186, "decode_tps": 113.74623215605983, "drafts": "117/186", "finish": "length", "prefill_ms": 2177.7}
+B 6 exit 0 elapsed 36.49 total 243.84
+{"name": "long", "prompt": 4924, "done": "DONE 200 4924 2187.0 1757.2 length 117 186 0 0 0 0 0 0.0 4924 0 chunk=4917 experts_streamed=0", "wall_s": 3.945756588999757, "first_token_s": 2.2058918339998854, "reused": 0, "prefill_tps": 2251.48605395519, "decode_tps": 113.81743683132255, "drafts": "117/186", "finish": "length", "prefill_ms": 2187.0}
