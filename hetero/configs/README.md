@@ -30,7 +30,9 @@ changed since the stamp. A commit that touches only notes, reports, run logs, do
 `hetero/tools/` or the configs here does not make a build stale. Vision helpers come from the host build or from a build of `tools/vision` in this checkout, stamped the
 same way (with `STRATA_VISION_HIP=ON` for `"gpu": true`). Do not bypass the check.
 Not supported in a mixed split yet: `--batch`, DFlash2,
-`--pipeline-windows`, `--layer-split auto`.
+`--pipeline-windows`. `"layer_split": "auto"` works since report 0075: vanilla's search plans the host's cards over
+layers `[front_layers, 48)` (on Oberon K=31, against the configs' fixed 33). `STRATA_SPLIT_TIMING=1` in the
+environment logs a mixed decode window's parts per request (report 0075).
 
 Drivers in `hetero/tools/`: `engine_drive.py` (the engine over the serve protocol, token prompts from `mkprompts.py`),
 `server_checks.py` (the HTTP checks of report 0069), `front_client.cpp` (the front stage alone).

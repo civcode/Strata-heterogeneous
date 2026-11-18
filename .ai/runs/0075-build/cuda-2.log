@@ -1,0 +1,17 @@
+[1/2] Building CXX object CMakeFiles/strata.dir/src/program/generate.cpp.o
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In function ‘int main(int, char**)’:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9206:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9206 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9232:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9232 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9365:29: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9365 |                 const auto& lay = strata::kernels::cpu::expert_layout();
+      |                             ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:17420:30: warning: unused variable ‘w’ [-Wunused-variable]
+17420 |                 const double w = (double) bt_windows, wall = std::chrono::duration<double, std::milli>(Clock::now() - bt_start).count();
+      |                              ^
+[2/2] Linking CXX executable strata

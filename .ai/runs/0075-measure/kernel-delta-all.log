@@ -1,0 +1,6 @@
+Nov 18 17:44:54 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 4099 times, consider switching to WQ_UNBOUND
+Nov 18 17:48:38 oberon kernel: workqueue: svm_range_deferred_list_work [amdgpu] hogged CPU for >10000us 67 times, consider switching to WQ_UNBOUND
+Nov 18 17:57:05 oberon kernel: Cannot map memory with base addr 0x7d7246eae000 and size of 0x7e9152 pages
+Nov 18 17:59:57 oberon kernel: Cannot map memory with base addr 0x7accd6eae000 and size of 0x7e9152 pages
+Nov 18 18:00:28 oberon kernel: audit: type=1400 audit(1795021228.834:270): apparmor="DENIED" operation="open" class="file" profile="snap.firmware-updater.firmware-notifier" name="/proc/sys/vm/max_map_count" pid=3331970 comm="firmware-notifi" requested_mask="r" denied_mask="r" fsuid=1000 ouid=0
+Nov 18 21:00:28 oberon kernel: audit: type=1400 audit(1795032028.874:271): apparmor="DENIED" operation="open" class="file" profile="snap.firmware-updater.firmware-notifier" name="/proc/sys/vm/max_map_count" pid=3824003 comm="firmware-notifi" requested_mask="r" denied_mask="r" fsuid=1000 ouid=0

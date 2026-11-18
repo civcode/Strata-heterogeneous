@@ -1,0 +1,54 @@
+{
+ "rc": 0,
+ "elapsed": 31.034534578000603,
+ "results": [
+  {
+   "label": "code",
+   "usage": {
+    "prompt_tokens": 83,
+    "completion_tokens": 300,
+    "total_tokens": 383,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 83,
+    "prompt_ms": 401.1,
+    "prompt_per_token_ms": 4.833,
+    "prompt_per_second": 206.9,
+    "predicted_n": 300,
+    "predicted_ms": 2967.7,
+    "predicted_per_token_ms": 9.892,
+    "predicted_per_second": 101.1,
+    "draft_n": 180,
+    "draft_n_accepted": 132
+   }
+  },
+  {
+   "label": "long",
+   "usage": {
+    "prompt_tokens": 4963,
+    "completion_tokens": 200,
+    "total_tokens": 5163,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 4963,
+    "prompt_ms": 2190.1,
+    "prompt_per_token_ms": 0.441,
+    "prompt_per_second": 2266.1,
+    "predicted_n": 200,
+    "predicted_ms": 1859.6,
+    "predicted_per_token_ms": 9.298,
+    "predicted_per_second": 107.6,
+    "draft_n": 161,
+    "draft_n_accepted": 107
+   }
+  }
+ ]
+}

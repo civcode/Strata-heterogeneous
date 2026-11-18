@@ -1,0 +1,64 @@
+[1/32] Building CXX object CMakeFiles/strata_engine.dir/src/core/verify.cpp.o
+[2/32] Linking CXX static library libstrata_engine.a
+[3/32] Linking CXX executable vmm_test
+[4/32] Linking CXX executable device_free_error_test
+[5/32] Linking CXX executable expert_profile_save_test
+[6/32] Linking CXX executable expert_cache_per_layer_test
+[7/32] Linking CXX executable gdn_harness
+[8/32] Linking CXX executable expert_cache_slot_guard_test
+[9/32] Linking CXX executable lm_kernels_parity
+[10/32] Linking CXX executable gdn_chunk_parity
+[11/32] Linking CXX executable kv_host_dma_parity
+[12/32] Linking CXX executable expert_profile_version_test
+[13/32] Linking CXX executable expert_cache_segmented_test
+[14/32] Linking CXX executable gdn_chunk_bench
+[15/32] Linking CXX executable hc_q8_stream_test
+[16/32] Linking CXX executable gemm_dequant_side_parity
+[17/32] Linking CXX executable gr_upmix_parity
+[18/32] Linking CXX executable gemm_f32_parity
+[19/32] Linking CXX executable expert_layout_test
+[20/32] Linking CXX executable file_expert_source_test
+[21/32] Linking CXX executable gemm_w16_parity
+[22/32] Linking CXX executable gemm_bf16_parity
+[23/32] Linking CXX executable split_lend_complement_test
+[24/32] Linking CXX executable native_dense_ple_key_test
+[25/32] Linking CXX executable strata-q36
+[26/32] Linking CXX executable native_dense_hc_default_test
+[27/32] Linking CXX executable native_dense_price_test
+[28/32] Linking CXX executable kv_grow_refused_test
+[29/32] Linking CXX executable prefill_expert_paths_bench
+[30/32] Linking CXX executable native_expert_parity
+[31/32] Building CXX object CMakeFiles/strata.dir/src/program/generate.cpp.o
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In function ‘int main(int, char**)’:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9204:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9204 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9230:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9230 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9363:29: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9363 |                 const auto& lay = strata::kernels::cpu::expert_layout();
+      |                             ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:17419:30: warning: unused variable ‘w’ [-Wunused-variable]
+17419 |                 const double w = (double) bt_windows, wall = std::chrono::duration<double, std::milli>(Clock::now() - bt_start).count();
+      |                              ^
+[32/32] Linking CXX executable strata
+[1/2] Building CXX object CMakeFiles/strata.dir/src/program/generate.cpp.o
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In function ‘int main(int, char**)’:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9204:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9204 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9230:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9230 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:9363:29: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9363 |                 const auto& lay = strata::kernels::cpu::expert_layout();
+      |                             ^~~
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-mixed-native/src/program/generate.cpp:17419:30: warning: unused variable ‘w’ [-Wunused-variable]
+17419 |                 const double w = (double) bt_windows, wall = std::chrono::duration<double, std::milli>(Clock::now() - bt_start).count();
+      |                              ^
+[2/2] Linking CXX executable strata

@@ -22,11 +22,12 @@ def variant(arm):
         out.append(a[i]); i += 1
     c['args'] = out
     if arm == 'novision': c.pop('vision', None)
+    if arm == 'auto': c['layer_split'] = 'auto'   # task 9: vanilla's search plans the host's layers
     c['//'] = f'handoff 0075: {base_name}.example.json, arm {arm}'
     p = RUN / f'{base_name}-{arm}.config.json'; p.write_text(json.dumps(c, indent=1)); return p
 port = 8095
 for i, arm in enumerate(arms * rounds):
-    name = f'arm-{base_name}-{i}-{arm}'; cfgp = variant(arm); base = kernel(); t0 = time.monotonic(); res = []
+    name = f'{os.environ.get("ARM_TAG", "arm")}-{base_name}-{i}-{arm}'; cfgp = variant(arm); base = kernel(); t0 = time.monotonic(); res = []
     with open(RUN / f'{name}.out', 'w') as log:
         p = subprocess.Popen([sys.executable, 'hetero/tools/serve_mixed.py', '--config', str(cfgp), '--port', str(port),
                               '--run-dir', str(RUN / name)], stdout=log, stderr=subprocess.STDOUT, env=ENV)
