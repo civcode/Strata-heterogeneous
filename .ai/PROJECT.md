@@ -61,8 +61,10 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
 ## Project stage and hardware test budget
 
 - Stage: **early development**.
-- Hardware test budget: **5 minutes per agent turn**, short prompts, runs sequential, never two GPU jobs at once.
-- A handoff's larger budget applies only when `.ai/STATUS.md` records the Human User's approval of it.
+- Hardware test budget: **up to 30 minutes of GPU run time per handoff** (Human User, 2026-11-18), short prompts,
+  runs sequential, never two GPU jobs at once. Every single run stays under 2 minutes unless the handoff says otherwise.
+- A handoff that expects more than 30 minutes states its budget, and Chat AI tells the Human User when it hands it
+  over. It is allowed by default; the Human User intervenes only to refuse it. A handoff may set a lower budget.
 - Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
 - Long-duration tests (soak, long context, capacity sweeps, the 160 tok/s qualification) wait for
   release-candidate state and an explicit request from the Human User.

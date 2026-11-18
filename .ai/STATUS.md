@@ -50,10 +50,12 @@ Since report 0070, by Chat AI:
 - 2026-11-18: remove the hardening (rebuild, force-push); defer the host's arena trim; accept the live-session resume
   difference as vanilla behaviour.
 - 2026-11-18: rename the build option to `STRATA_MIXED_SPLIT`, with related defines, tests and targets.
+- 2026-11-18: a standing GPU allowance of 30 minutes per handoff; a larger budget is announced and allowed unless
+  the Human User refuses it.
 
 ## Open decisions for the Human User
 
-- Handoff 0071's 15-minute GPU budget (above the 5-minute default). Until it is recorded here, the agent uses 5.
+- None.
 
 ## Next step
 

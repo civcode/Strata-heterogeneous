@@ -62,8 +62,8 @@ this checkout, and a controlled answer to the mixed prefill drop (1,787 against 
    sample, and the median for each line.
 
 ## Order and budget
-- **Budget:** 15 minutes of GPU run time if `.ai/STATUS.md` records the Human User's approval, otherwise 5 minutes.
-  Every single run under 2 minutes.
+- **Budget:** 15 minutes of GPU run time (within the project's 30-minute allowance). Every single run under 2
+  minutes.
 - **Priority order:** tasks 4, 5, 6. If the budget runs out, stop and report what was not reached.
 
 ## Constraints
