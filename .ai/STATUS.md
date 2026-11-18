@@ -1,8 +1,10 @@
 # Status
 
-Turn holder: **Human User**: choose the next performance step (see Open decisions).
+Turn holder: **Coding Agent**, handoff `0077` (Tier 1), once the Human User hands it over.
 
 ## Current milestone
+
+M7: pipelined decode windows in mixed mode (handoff 0077, Tier 1).
 
 Production measured (report 0076, `2f5255e3`). Both production mirrors serve at 262,144 tokens without fallback.
 
@@ -80,18 +82,15 @@ Chat AI's review:
   - the remaining refusals: `--layer-split auto` implemented, design notes for `--batch` and DFlash2.
 - 2026-11-18: the production setup is the reference for performance comparisons (`.ai/PROJECT.md`). The example
   configs mirror it; reports 0067 to 0074 ran other settings.
+- 2026-11-18: the next performance step is pipelined decode windows in mixed mode.
 
 ## Open decisions for the Human User
 
-- **The next performance step.** Chat AI recommends pipelined decode windows (Tier 1), starting with the front stage
-  answering right after it launches its window (which pipelining needs anyway). Alternatives:
-  - the short-prompt fixed cost (about 80 ms);
-  - pipelined prompt chunks across the edge;
-  - more layers on the CUDA card;
-  - `--batch` or DFlash2.
+- None.
 
 ## Next step
 
-Depends on the decision above.
+After report 0077: Chat AI reviews the hooks against the contract and updates `.ai/DIVERGENCE.md`. Then the next
+performance or feature step: the short-prompt fixed cost, prompt chunks across the edge, `--batch`, or DFlash2.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
