@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace strata::hetero {
 
@@ -35,6 +36,31 @@ constexpr SessionOp kLastSessionOp = SessionOp::Steer;
 /// Whether `op` ends a window that was not committed (every session operation but Drop does).
 constexpr bool ends_window(SessionOp op) { return op != SessionOp::Drop; }
 
+/// A picture in a request (vanilla's ConversationImageKey): its first `<|image_pad|>` position and its hash.
+struct ImageKey {
+    int64_t start = 0;
+    uint64_t hash = 0;
+    bool operator==(const ImageKey& o) const { return start == o.start && hash == o.hash; }
+    bool operator!=(const ImageKey& o) const { return !(*this == o); }
+};
+
+/// A picture's place in the prompt: its key and how many `<|image_pad|>` tokens (= embedding rows) it covers.
+struct ImageSpan {
+    int64_t start = 0;
+    uint64_t hash = 0;
+    int64_t rows = 0;
+};
+
+/// A request's image input as the host built it (vanilla's per-request vision setup in generate.cpp), sent to the
+/// front stage before the request's first prompt chunk.  A text request sends no images and no table: the front stage
+/// puts the identity table back if it holds another.
+struct FrontImages {
+    int64_t n = 0;                   ///< the prompt's tokens (the image rows are indexed by prompt position below it)
+    std::vector<ImageSpan> images;   ///< in prompt order
+    std::vector<int32_t> mrope;      ///< the (t, h, w) position of every cell; empty for a text request
+    std::vector<float> rows;         ///< the image rows in prompt order, n_embd floats each (sum of `rows` rows)
+};
+
 class FrontStage {
 public:
     virtual ~FrontStage() = default;
@@ -54,6 +80,9 @@ public:
 
     /// Repeat a session operation on the front stage's session.
     virtual bool session(SessionOp op, int64_t a, int64_t b, std::string& err) = 0;
+
+    /// The request's image positions, rows and keys (or none, for a text request).  Ends a window not committed.
+    virtual bool images(FrontImages& im, std::string& err) = 0;
 };
 
 } // namespace strata::hetero

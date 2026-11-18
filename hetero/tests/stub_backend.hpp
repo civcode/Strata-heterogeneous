@@ -51,19 +51,27 @@ struct StubBackend : FrontBackend {
         calls.push_back("session " + std::to_string((int) op) + " " + std::to_string(a) + " " + std::to_string(b));
         return true;
     }
+    FrontImages last_images;
+    bool images(FrontImages& im, std::string&) override {
+        calls.push_back("images " + std::to_string(im.n) + " " + std::to_string(im.images.size()) + " " + std::to_string(im.rows.size()));
+        last_images = std::move(im);
+        return true;
+    }
 };
 
 /// The front stage's session bookkeeping as the engine's front backend uses it, with a string for the session state:
-/// a checkpoint is the token history it was taken at, an image that history with its checkpoints.
+/// a checkpoint is the token history (and pictures) it was taken at, an image that history with its checkpoints.
 struct BookBackend : StubBackend {
-    struct Image { std::vector<int32_t> ids; std::vector<std::string> parts; };
-    FrontSessionBook<std::string, Image> book{3, 2};
+    struct Part { std::vector<int32_t> ids; std::vector<ImageKey> imgs; };
+    struct Image { std::vector<int32_t> ids; std::vector<ImageKey> imgs; std::vector<Part> parts; };
+    FrontSessionBook<Part, Image> book{3, 2};
     std::string state;   // what the "session" holds: the tokens, as text
     static std::string text(const std::vector<int32_t>& ids) {
         std::string t;
         for (int32_t v : ids) t += std::to_string(v) + ",";
         return t;
     }
+    int64_t key_with(const Part& p, bool steer) const { return state_key(p.ids.data(), (int64_t) p.ids.size(), steer, p.imgs); }
     bool run(int T, const int32_t* tokens, int64_t pos0, std::string& err) override {
         return book.on_run(tokens, T, pos0, err) && StubBackend::run(T, tokens, pos0, err);
     }
@@ -77,6 +85,11 @@ struct BookBackend : StubBackend {
         state = text(book.history());
         return StubBackend::prefill(tokens, n, pos0, last, err);
     }
+    bool images(FrontImages& im, std::string& err) override {
+        book.on_abandon();
+        book.set_request_images(images_below(im.images, im.n));
+        return StubBackend::images(im, err);
+    }
     bool session(SessionOp op, int64_t a, int64_t b, std::string& err) override {
         calls.push_back("session " + std::to_string((int) op) + " " + std::to_string(b));
         if (ends_window(op)) book.on_abandon();   // (as the engine's front stage does)
@@ -87,40 +100,32 @@ struct BookBackend : StubBackend {
         case SessionOp::Steer: book.set_steer(a != 0); return true;
         case SessionOp::Snapshot:
             if (!book.check(a, b, "a checkpoint", err)) return false;
-            book.put_part(a, b, std::string(state));
+            book.put_part(a, b, Part{book.history(), book.images_held()});
             return true;
         case SessionOp::Restore: {
-            const std::string* p = book.find_part(a, b);
+            const Part* p = book.find_part(a, b);
             if (p == nullptr) { err = "no checkpoint"; return false; }
-            state = *p;
-            std::vector<int32_t> ids;
-            for (size_t i = 0; i < p->size();) { const size_t c = p->find(',', i); ids.push_back(std::stoi(p->substr(i, c - i))); i = c + 1; }
-            book.set_history(std::move(ids));
-            book.set_steer(book.steer_of(a, book.history()));   // the switch the restored state was computed with
+            state = text(p->ids);
+            book.set_history(p->ids, p->imgs);
+            book.set_steer(book.steer_of(a, p->ids, p->imgs));   // the switch the restored state was computed with
             return true;
         }
         case SessionOp::Park: {
             if (!book.check(a, b, "a park", err)) return false;
-            const auto& h = book.history();
-            Image im{h, book.parts_on(h, b, [&](const std::string& s) {
-                         std::vector<int32_t> ids;
-                         for (size_t i = 0; i < s.size();) { const size_t c = s.find(',', i); ids.push_back(std::stoi(s.substr(i, c - i))); i = c + 1; }
-                         return steer_key(token_key(ids.data(), (int64_t) ids.size()), book.steer());
-                     })};
+            Image im{book.history(), book.images_held(), book.parts_on(b, [&](const Part& p) { return key_with(p, book.steer()); })};
             book.put_image(a, b, std::move(im));
             return true;
         }
         case SessionOp::Unpark: {
             auto im = book.take_image(a, b);
             if (!im) { err = "no parked copy"; return false; }
-            book.set_history(im->ids);
-            const bool steer = book.steer_of(a, im->ids);   // the switch the parked state was computed with
+            book.set_history(im->ids, im->imgs);
+            const bool steer = book.steer_of(a, im->ids, im->imgs);   // the switch the parked state was computed with
             book.set_steer(steer);
             state = text(im->ids);
-            for (std::string& p : im->parts) {
-                std::vector<int32_t> ids;
-                for (size_t i = 0; i < p.size();) { const size_t c = p.find(',', i); ids.push_back(std::stoi(p.substr(i, c - i))); i = c + 1; }
-                book.put_part(steer_key(token_key(ids.data(), (int64_t) ids.size()), steer), (int64_t) ids.size(), std::move(p));
+            for (Part& p : im->parts) {
+                const int64_t k = key_with(p, steer), n = (int64_t) p.ids.size();
+                book.put_part(k, n, std::move(p));
             }
             return true;
         }

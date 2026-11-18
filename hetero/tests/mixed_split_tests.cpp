@@ -555,6 +555,157 @@ void test_session_steer() {
     CHECK(rc == 0);
 }
 
+
+// image_key / state_key: the pictures below a prefix's length are part of its key; text keys are unchanged.
+void test_image_key() {
+    const int32_t ids[6] = {1, 248056, 248056, 248056, 2, 3};
+    const std::vector<ImageKey> none, a = {{1, 0xaaaa}}, b = {{1, 0xbbbb}}, late = {{5, 0xaaaa}};
+    const int64_t t = token_key(ids, 6);
+    CHECK(image_key(t, none, 6) == t);
+    CHECK(state_key(ids, 6, true, none) == t);
+    CHECK(state_key(ids, 6, false, none) == steer_key(t, false));
+    CHECK(state_key(ids, 6, true, a) != t);
+    CHECK(state_key(ids, 6, true, a) != state_key(ids, 6, true, b));               // same tokens, other picture
+    CHECK(state_key(ids, 6, true, a) != state_key(ids, 6, false, a));
+    CHECK(state_key(ids, 5, true, late) == token_key(ids, 5));                       // a picture at or past n is not below it
+    CHECK(state_key(ids, 1, true, a) == token_key(ids, 1));
+    const std::vector<strata::hetero::ImageSpan> spans = {{1, 0xaaaa, 3}};
+    CHECK(state_key(ids, 6, true, spans) == state_key(ids, 6, true, a));             // any type with start and hash
+    CHECK(images_below(a, 1).empty() && images_below(a, 2) == a);
+}
+
+FrontImages picture(int64_t n, int64_t start, int64_t rows, uint64_t hash, int n_embd, float mark) {
+    FrontImages im;
+    im.n = n;
+    im.images.push_back({start, hash, rows});
+    im.mrope.assign(3 * 64, 0);
+    for (size_t i = 0; i < im.mrope.size(); ++i) im.mrope[i] = (int32_t) (i / 3);
+    im.rows.resize((size_t) rows * (size_t) n_embd);
+    for (size_t i = 0; i < im.rows.size(); ++i) im.rows[i] = mark + (float) (i % 977);
+    return im;
+}
+
+// Images over the link: the whole input arrives (in pieces past kLinkMaxPayload), a bad layout is refused without
+// breaking the link, and a text request (no images, no table) passes.
+void test_images_link() {
+    Pair s;
+    StubBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;
+    CHECK(make_region(region));
+    RemoteFrontStage front(s.host, 10000);
+    std::string err;
+    const LinkIdentity id = test_identity();
+    CHECK(front.hello(id, region, err));
+    // 2,000 rows of 2,560 floats: about 20 MB, two pieces
+    FrontImages big = picture(3000, 10, 2000, 0x1234, id.n_embd, 0.25f);
+    const FrontImages sent = big;
+    CHECK(encode_images(sent).size() > kLinkMaxPayload);
+    CHECK(front.images(big, err));
+    CHECK(backend.last_images.n == 3000 && backend.last_images.images.size() == 1);
+    CHECK(backend.last_images.images[0].start == 10 && backend.last_images.images[0].rows == 2000 &&
+          backend.last_images.images[0].hash == 0x1234);
+    CHECK(backend.last_images.mrope == sent.mrope);
+    CHECK(backend.last_images.rows == sent.rows);
+    // two pictures
+    FrontImages two = picture(100, 2, 4, 7, id.n_embd, 1.0f);
+    two.images.push_back({20, 8, 3});
+    two.rows.resize((size_t) 7 * (size_t) id.n_embd, 2.0f);
+    CHECK(front.images(two, err));
+    CHECK(backend.last_images.images.size() == 2 && backend.last_images.rows.size() == (size_t) 7 * id.n_embd);
+    // refused layouts (the link stays up)
+    FrontImages past = picture(12, 10, 4, 1, id.n_embd, 0.0f);   // rows past the prompt
+    CHECK(!front.images(past, err));
+    CHECK(err.find("outside the prompt") != std::string::npos);
+    FrontImages overlap = picture(100, 2, 4, 7, id.n_embd, 0.0f);
+    overlap.images.push_back({4, 8, 3});
+    overlap.rows.resize((size_t) 7 * (size_t) id.n_embd);
+    CHECK(!front.images(overlap, err));
+    FrontImages short_rows = picture(100, 2, 4, 7, id.n_embd, 0.0f);
+    short_rows.rows.pop_back();
+    CHECK(!front.images(short_rows, err));
+    FrontImages table_only;
+    table_only.n = 5;
+    table_only.mrope.assign(30, 0);
+    CHECK(!front.images(table_only, err));
+    CHECK(!front.broken());
+    FrontImages text;   // a text request
+    text.n = 5;
+    CHECK(front.images(text, err));
+    CHECK(backend.last_images.images.empty() && backend.last_images.mrope.empty());
+    // a window open: the host drops it first (HeteroHost); the link refuses images over it
+    const int32_t win[2] = {1, 2};
+    CHECK(front.run(2, win, 0, err));
+    CHECK(!front.images(text, err));
+    CHECK(front.commit(2, err));
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+}
+
+// Pictures in the front stage's keys: two requests with the same tokens and different pictures never share a state,
+// and a session holding one picture is not continued by a request with another.
+void test_session_images() {
+    Pair s;
+    test::BookBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;
+    CHECK(make_region(region));
+    RemoteFrontStage front(s.host, 5000);
+    std::string err;
+    const LinkIdentity id = test_identity();
+    CHECK(front.hello(id, region, err));
+    const std::vector<int32_t> p = {1, 248056, 248056, 248056, 2, 3, 4};   // a picture of three rows at 1
+    FrontImages a = picture(8, 1, 3, 0xaaaa, id.n_embd, 0.0f), b = picture(8, 1, 3, 0xbbbb, id.n_embd, 0.0f);
+    const std::vector<ImageKey> ka = {{1, 0xaaaa}}, kb = {{1, 0xbbbb}};
+    // request A: read, checkpoint, park
+    CHECK(front.images(a, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    CHECK(front.prefill(p.data(), 7, 0, true, err));
+    CHECK(backend.book.images_held() == ka);
+    CHECK(!front.session(SessionOp::Snapshot, token_key(p.data(), 7), 7, err));                 // the key without the picture
+    CHECK(!front.session(SessionOp::Snapshot, state_key(p.data(), 7, true, kb), 7, err));      // another picture
+    CHECK(front.session(SessionOp::Snapshot, state_key(p.data(), 7, true, ka), 7, err));
+    CHECK(front.session(SessionOp::Park, state_key(p.data(), 7, true, ka), 7, err));
+    // request B, the same tokens: A's state is neither restored nor continued
+    CHECK(front.images(b, err));
+    const int32_t more[1] = {5};
+    CHECK(!front.prefill(more, 1, 7, true, err));                                                // the session holds A's picture
+    CHECK(err.find("other pictures") != std::string::npos);
+    CHECK(!front.session(SessionOp::Unpark, state_key(p.data(), 7, true, kb), 7, err));
+    CHECK(!front.session(SessionOp::Restore, state_key(p.data(), 7, true, kb), 7, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    CHECK(front.prefill(p.data(), 7, 0, true, err));
+    CHECK(backend.book.images_held() == kb);
+    CHECK(front.session(SessionOp::Snapshot, state_key(p.data(), 7, true, kb), 7, err));
+    // request A again (a second turn): its parked copy comes back with its picture and its checkpoint
+    CHECK(front.images(a, err));
+    CHECK(front.session(SessionOp::Unpark, state_key(p.data(), 7, true, ka), 7, err));
+    CHECK(backend.book.images_held() == ka);
+    CHECK(front.prefill(more, 1, 7, true, err));                                                 // continues A
+    CHECK(backend.book.images_held() == ka);
+    CHECK(front.session(SessionOp::Restore, state_key(p.data(), 7, true, ka), 7, err));
+    CHECK(backend.book.images_held() == ka);
+    // a text request after it: the session is reset, the keys are the plain token keys again
+    FrontImages text;
+    text.n = 3;
+    CHECK(front.images(text, err));
+    CHECK(!front.prefill(more, 1, 7, true, err));                                                // A's picture is below 7
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    const int32_t t3[3] = {7, 8, 9};
+    CHECK(front.prefill(t3, 3, 0, true, err));
+    CHECK(backend.book.images_held().empty());
+    CHECK(front.session(SessionOp::Snapshot, token_key(t3, 3), 3, err));
+    CHECK(!front.broken());
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -562,6 +713,9 @@ int main(int argc, char** argv) {
     test_session_ops();
     test_session_drop();
     test_session_steer();
+    test_image_key();
+    test_images_link();
+    test_session_images();
     test_shared_region();
     test_link_round_trip();
     test_link_rules();

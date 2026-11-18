@@ -3,7 +3,9 @@
 #include <cstdio>
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <cstddef>
 #include <chrono>
 #include <cstring>
 #include <poll.h>
@@ -20,6 +22,8 @@ namespace strata::hetero {
 namespace {
 
 constexpr size_t kHeader = 48;
+constexpr uint32_t kImagesMagic = 0x31494653;   // "SFI1"
+constexpr size_t kImagesHeader = 4 + 4 + 8 + 8 + 8 + 8;
 
 using Clock = std::chrono::steady_clock;
 
@@ -237,6 +241,7 @@ bool parse_hello(const Frame& f, int got, LinkIdentity& id, SharedRegion& region
 
 int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, LinkIdentity id) {
     int window = 0;   // the rows of the window that waits for its commit
+    std::vector<uint8_t> images;   // the image input received so far (Op::Images)
     for (;;) {
         Frame f;
         int got = -1;
@@ -302,6 +307,27 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
             if (ok && ends_window((SessionOp) f.a)) window = 0;   // a session operation ends a window not committed (not Drop)
             break;
         }
+        case Op::Images: {   // one piece of a request's image input; the last one hands the whole to the backend
+            const int64_t total = f.a, off = f.b;
+            const uint64_t cap = kImagesHeader + (uint64_t) id.max_context * 24 + ((uint64_t) id.max_context + 4096) * 12 +
+                                 (uint64_t) id.max_context * (uint64_t) id.n_embd * 4;
+            if (off == 0) images.clear();
+            if (total < (int64_t) kImagesHeader || (uint64_t) total > cap || off != (int64_t) images.size() ||
+                f.payload.empty() || (uint64_t) off + f.payload.size() > (uint64_t) total) {
+                images.clear();
+                e = "bad image input piece";
+                break;
+            }
+            if (window != 0) { images.clear(); e = "a window is still waiting for its commit"; break; }
+            if (off == 0) images.reserve((size_t) total);
+            images.insert(images.end(), f.payload.begin(), f.payload.end());
+            if ((int64_t) images.size() < total) { ok = true; break; }
+            FrontImages im;
+            ok = decode_images(images, id, im, e) && backend.images(im, e);
+            images.clear();
+            images.shrink_to_fit();
+            break;
+        }
         case Op::Shutdown:
             if (!send_reply(fd, f.seq, true, "", err)) return 1;
             return 0;
@@ -362,6 +388,65 @@ uint64_t model_fingerprint(const std::string& pack_dir, const std::vector<std::s
         mix(&v, sizeof v);
     }
     return h == 0 ? 1 : h;
+}
+
+std::vector<uint8_t> encode_images(const FrontImages& im) {
+    std::vector<uint8_t> out(kImagesHeader + im.images.size() * 24 + im.mrope.size() * sizeof(int32_t) +
+                             im.rows.size() * sizeof(float));
+    uint8_t* p = out.data();
+    put<uint32_t>(p, kImagesMagic);
+    put<uint32_t>(p, 0);
+    put<int64_t>(p, im.n);
+    put<uint64_t>(p, (uint64_t) im.images.size());
+    put<uint64_t>(p, (uint64_t) im.mrope.size());
+    put<uint64_t>(p, (uint64_t) im.rows.size());
+    for (const ImageSpan& s : im.images) {
+        put<int64_t>(p, s.start);
+        put<uint64_t>(p, s.hash);
+        put<int64_t>(p, s.rows);
+    }
+    if (!im.mrope.empty()) { std::memcpy(p, im.mrope.data(), im.mrope.size() * sizeof(int32_t)); p += im.mrope.size() * sizeof(int32_t); }
+    if (!im.rows.empty()) std::memcpy(p, im.rows.data(), im.rows.size() * sizeof(float));
+    return out;
+}
+
+bool decode_images(const std::vector<uint8_t>& bytes, const LinkIdentity& id, FrontImages& im, std::string& why) {
+    if (bytes.size() < kImagesHeader) { why = "short image input"; return false; }
+    const uint8_t* p = bytes.data();
+    if (get<uint32_t>(p) != kImagesMagic) { why = "not an image input"; return false; }
+    (void) get<uint32_t>(p);
+    const int64_t n = get<int64_t>(p);
+    const uint64_t n_img = get<uint64_t>(p), n_mrope = get<uint64_t>(p), n_rows = get<uint64_t>(p);
+    if (n < 1 || n > id.max_context) { why = "image input: bad prompt length"; return false; }
+    // (every count bounded before it is multiplied)
+    const uint64_t max_cells = (uint64_t) id.max_context + 4096;
+    if (n_img > (uint64_t) n || n_mrope > max_cells * 3 || n_mrope % 3 != 0 || n_rows > (uint64_t) n * (uint64_t) id.n_embd) {
+        why = "image input: bad counts";
+        return false;
+    }
+    if (bytes.size() != kImagesHeader + n_img * 24 + n_mrope * sizeof(int32_t) + n_rows * sizeof(float)) {
+        why = "image input: bad size";
+        return false;
+    }
+    if ((n_img == 0) != (n_mrope == 0)) { why = "image input: a position table goes with images and only with them"; return false; }
+    im.n = n;
+    im.images.resize((size_t) n_img);
+    int64_t end = 0;
+    uint64_t rows = 0;
+    for (ImageSpan& s : im.images) {
+        s.start = get<int64_t>(p);
+        s.hash = get<uint64_t>(p);
+        s.rows = get<int64_t>(p);
+        if (s.start < end || s.rows < 1 || s.rows > n - s.start) { why = "image input: images outside the prompt or out of order"; return false; }
+        end = s.start + s.rows;
+        rows += (uint64_t) s.rows;
+    }
+    if (rows * (uint64_t) id.n_embd != n_rows) { why = "image input: the rows do not match the images"; return false; }
+    im.mrope.resize((size_t) n_mrope);
+    if (n_mrope > 0) { std::memcpy(im.mrope.data(), p, (size_t) n_mrope * sizeof(int32_t)); p += n_mrope * sizeof(int32_t); }
+    im.rows.resize((size_t) n_rows);
+    if (n_rows > 0) std::memcpy(im.rows.data(), p, (size_t) n_rows * sizeof(float));
+    return true;
 }
 
 bool RemoteFrontStage::call(Frame& req, int pass_fd, std::string& err) {
@@ -462,6 +547,22 @@ bool RemoteFrontStage::session(SessionOp op, int64_t a, int64_t b, std::string& 
     f.b = a;
     f.c = b;
     return call(f, -1, err);
+}
+
+bool RemoteFrontStage::images(FrontImages& im, std::string& err) {
+    if (!greeted_) { err = "front link: no hello yet"; return false; }
+    const std::vector<uint8_t> bytes = encode_images(im);
+    for (size_t off = 0; off < bytes.size();) {
+        const size_t len = std::min(kLinkMaxPayload, bytes.size() - off);
+        Frame f;
+        f.op = Op::Images;
+        f.a = (int64_t) bytes.size();
+        f.b = (int64_t) off;
+        f.payload.assign(bytes.begin() + (std::ptrdiff_t) off, bytes.begin() + (std::ptrdiff_t) (off + len));
+        if (!call(f, -1, err)) return false;
+        off += len;
+    }
+    return true;
 }
 
 bool RemoteFrontStage::shutdown(std::string& err) {

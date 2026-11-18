@@ -15,7 +15,7 @@
 
 namespace strata::hetero {
 
-constexpr uint32_t kLinkProtocol = 1;
+constexpr uint32_t kLinkProtocol = 2;   // 2: Images
 constexpr uint32_t kLinkMagic = 0x314c4653;          // "SFL1"
 constexpr size_t kLinkMaxPayload = size_t(16) << 20; // tokens of one prompt chunk, with room to spare
 
@@ -43,7 +43,14 @@ struct LinkIdentity {
 /// the sizes of `files` (the model's GGUF shards), in that order.  Never 0.
 uint64_t model_fingerprint(const std::string& pack_dir, const std::vector<std::string>& files);
 
-enum class Op : uint16_t { Hello = 1, Run = 2, Commit = 3, Prefill = 4, Session = 5, Shutdown = 6, Reply = 100 };
+/// Images: a request's FrontImages, serialized and sent in pieces of at most kLinkMaxPayload bytes (`a`: the total,
+/// `b`: the piece's offset); each piece is answered, the last one after the worker's backend took the whole.
+enum class Op : uint16_t { Hello = 1, Run = 2, Commit = 3, Prefill = 4, Session = 5, Shutdown = 6, Images = 7, Reply = 100 };
+
+/// FrontImages on the wire (little-endian, both processes on one host).  `decode` checks the layout against the
+/// identity: positions inside the prompt, images in order and apart, n_embd floats per row.
+std::vector<uint8_t> encode_images(const FrontImages& im);
+bool decode_images(const std::vector<uint8_t>& bytes, const LinkIdentity& id, FrontImages& im, std::string& why);
 
 struct Frame {
     Op op = Op::Reply;
@@ -94,6 +101,7 @@ public:
     bool commit(int n_keep, std::string& err) override;
     bool prefill(const int32_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) override;
     bool session(SessionOp op, int64_t a, int64_t b, std::string& err) override;
+    bool images(FrontImages& im, std::string& err) override;
 
     /// Ask the worker to end its serve loop.  After this (or any transport error) the link is closed for calls.
     bool shutdown(std::string& err);

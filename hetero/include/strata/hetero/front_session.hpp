@@ -4,12 +4,14 @@
 //
 // The host keeps vanilla's checkpoints and parked conversations for its own layers.  The front stage repeats each
 // save and restore on its own layers and keeps the result here, under the token prefix it belongs to: the host sends
-// (token_key(ids, n), n) with every session operation, and the front stage checks it against the tokens its own
-// session holds before it saves or restores anything.  A difference means the two processes no longer hold the same
+// (state_key(ids, n, ..), n) with every session operation (the tokens, the control-vector switch and the pictures below
+// n), and the front stage checks it against the state its own session holds before it saves or restores anything.  A difference means the two processes no longer hold the same
 // conversation, which would otherwise show up only as a wrong continuation.
 //
 // `Part` is a checkpoint of the front stage's session (vanilla's ConversationCheckpoint), `Image` a parked copy of it
 // (vanilla's SavedConversation).  The CPU tests use plain types.  No GPU, engine or transport dependency.
+
+#include "strata/hetero/front_stage.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -45,6 +47,44 @@ inline int64_t steer_key(int64_t key, bool steer) {
     return k == 0 ? 1 : k;
 }
 
+/// Two pictures with the same `<|image_pad|>` tokens are different states (vanilla's caches compare the image keys
+/// below a prefix's length with its tokens).  The key mixes in the (start, hash) of every picture that starts below
+/// `n`; with none it is `key` itself, so the keys of text are unchanged.  `K`: any type with `start` and `hash`
+/// (vanilla's ConversationImageKey, ImageKey, ImageSpan).
+template <class K>
+inline int64_t image_key(int64_t key, const std::vector<K>& imgs, int64_t n) {
+    uint64_t h = (uint64_t) key;
+    bool any = false;
+    auto mix = [&h](uint64_t v) {
+        for (int k = 0; k < 8; ++k) { h ^= (v >> (8 * k)) & 0xffu; h *= 1099511628211ull; }
+    };
+    for (const K& im : imgs) {
+        if (im.start >= n) continue;
+        any = true;
+        mix((uint64_t) im.start);
+        mix((uint64_t) im.hash);
+    }
+    if (!any) return key;
+    const int64_t k = (int64_t) (h & 0x7fffffffffffffffull);
+    return k == 0 ? 1 : k;
+}
+
+/// The key of a saved state: the tokens `ids[0, n)`, the control-vector switch it was computed with and the pictures
+/// below `n` (what vanilla's checkpoints and parked conversations are matched by).
+template <class T, class K>
+inline int64_t state_key(const T* ids, int64_t n, bool steer, const std::vector<K>& imgs) {
+    return image_key(steer_key(token_key(ids, n), steer), imgs, n);
+}
+
+/// The keys of `imgs` that start below `n`, as ImageKey.
+template <class K>
+inline std::vector<ImageKey> images_below(const std::vector<K>& imgs, int64_t n) {
+    std::vector<ImageKey> v;
+    for (const K& im : imgs)
+        if (im.start < n) v.push_back(ImageKey{im.start, im.hash});
+    return v;
+}
+
 template <class Part, class Image>
 class FrontSessionBook {
 public:
@@ -52,11 +92,15 @@ public:
     FrontSessionBook(size_t max_parts, size_t max_images) : max_parts_(std::max<size_t>(max_parts, 1)), max_images_(max_images) {}
 
     // ---- the tokens the session holds: every operation that changes the session reports here
-    void on_reset() { hist_.clear(); window_ = false; }
+    void on_reset() { hist_.clear(); imgs_.clear(); window_ = false; }
+    /// The pictures of the request the host is about to read (Images): the session's own pictures below a position
+    /// must be the request's for a prompt chunk or window to continue it there.
+    void set_request_images(std::vector<ImageKey> keys) { req_imgs_ = std::move(keys); }
     /// A prompt chunk at `pos0`: refused unless it continues the session exactly.
     bool on_prefill(const int32_t* tokens, int64_t n, int64_t pos0, std::string& err) {
         if (!continues(pos0, "prompt chunk", err)) return false;
         hist_.insert(hist_.end(), tokens, tokens + n);
+        imgs_ = images_below(req_imgs_, (int64_t) hist_.size());
         return true;
     }
     /// A window at `pos0` (kept only by on_commit).
@@ -73,15 +117,24 @@ public:
     }
     void on_abandon() { window_ = false; }
     const std::vector<int32_t>& history() const { return hist_; }
+    /// The pictures of the session's state (all start below history().size()).
+    const std::vector<ImageKey>& images_held() const { return imgs_; }
     /// The control-vector switch the session's state was computed with (Steer; a Restore or Unpark sets it from the
     /// key it restored).
     void set_steer(bool on) { steer_ = on; }
     bool steer() const { return steer_; }
-    /// Which switch a host key of these tokens names: true for the token key itself, false for its steer_key(.., false).
-    bool steer_of(int64_t key, const std::vector<int32_t>& ids) const {
-        return steer_key(token_key(ids.data(), (int64_t) ids.size()), true) == key;
+    /// Which switch a host key of these tokens and pictures names: true for the switch on, false for off.
+    template <class K = ImageKey>
+    static bool steer_of(int64_t key, const std::vector<int32_t>& ids, const std::vector<K>& imgs = {}) {
+        return state_key(ids.data(), (int64_t) ids.size(), true, imgs) == key;
     }
-    void set_history(std::vector<int32_t> ids) { hist_ = std::move(ids); window_ = false; }
+    /// A restored state: its tokens and pictures.
+    template <class K = ImageKey>
+    void set_history(std::vector<int32_t> ids, const std::vector<K>& imgs = {}) {
+        hist_ = std::move(ids);
+        imgs_ = images_below(imgs, (int64_t) hist_.size());
+        window_ = false;
+    }
 
     /// The session holds exactly the `n` tokens the host's `key` names.
     bool check(int64_t key, int64_t n, const char* what, std::string& err) const {
@@ -90,9 +143,9 @@ public:
                   std::to_string((long long) hist_.size());
             return false;
         }
-        if (steer_key(token_key(hist_.data(), n), steer_) != key) {
+        if (state_key(hist_.data(), n, steer_, imgs_) != key) {
             err = std::string(what) + " at " + std::to_string((long long) n) +
-                  " tokens: the front stage holds other tokens than the host";
+                  " tokens: the front stage holds other tokens (or pictures, or control-vector switch) than the host";
             return false;
         }
         return true;
@@ -108,12 +161,13 @@ public:
             }
         return nullptr;
     }
-    /// Copies of the parts that are prefixes of `ids[0, n)` (what a parked image of that conversation holds).
+    /// Copies of the parts that are prefixes of the session's state at `n` tokens (what a parked image of that
+    /// conversation holds).
     template <class Key>
-    std::vector<Part> parts_on(const std::vector<int32_t>& ids, int64_t n, Key key_of_part) const {
+    std::vector<Part> parts_on(int64_t n, Key key_of_part) const {
         std::vector<Part> out;
         for (const auto& e : parts_)
-            if (e.n <= n && e.n <= (int64_t) ids.size() && steer_key(token_key(ids.data(), e.n), steer_) == e.key &&
+            if (e.n <= n && e.n <= (int64_t) hist_.size() && state_key(hist_.data(), e.n, steer_, imgs_) == e.key &&
                 key_of_part(e.v) == e.key)
                 out.push_back(e.v);
         return out;
@@ -150,13 +204,21 @@ private:
         while (l.size() > cap) l.pop_front();
     }
     bool continues(int64_t pos0, const char* what, std::string& err) const {
-        if (pos0 == (int64_t) hist_.size()) return true;
-        err = std::string("a ") + what + " at position " + std::to_string((long long) pos0) + ", but the front stage holds " +
-              std::to_string((long long) hist_.size()) + " tokens (the two sessions are out of step)";
-        return false;
+        if (pos0 != (int64_t) hist_.size()) {
+            err = std::string("a ") + what + " at position " + std::to_string((long long) pos0) + ", but the front stage holds " +
+                  std::to_string((long long) hist_.size()) + " tokens (the two sessions are out of step)";
+            return false;
+        }
+        if (images_below(req_imgs_, pos0) != imgs_) {
+            err = std::string("a ") + what + " at position " + std::to_string((long long) pos0) +
+                  ": the front stage's session holds other pictures than this request";
+            return false;
+        }
+        return true;
     }
     size_t max_parts_, max_images_;
     std::vector<int32_t> hist_, win_;
+    std::vector<ImageKey> req_imgs_, imgs_;   // the request's pictures (Images), the session state's
     bool window_ = false;
     bool steer_ = true;   // no vector loaded: always on (vanilla's want_cvec)
     std::list<Entry<Part>> parts_;
