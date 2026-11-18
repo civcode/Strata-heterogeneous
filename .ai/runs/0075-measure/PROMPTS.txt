@@ -1,0 +1,1 @@
+prompts.json: made with hetero/tools/mkprompts.py MODEL_GGUF prompts.json --fresh 48 (5.6 MB, not committed)
