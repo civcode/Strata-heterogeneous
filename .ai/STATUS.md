@@ -1,8 +1,10 @@
 # Status
 
-Turn holder: **Human User**: decide on pipelining in the mixed config and the next step (see Open decisions).
+Turn holder: **Coding Agent**, handoff `0078` (Tier 1), once the Human User hands it over.
 
 ## Current milestone
+
+M8: mixed-mode performance (handoff 0078): the wrong-guess notice, the short-prompt cost, prompt chunks across the link.
 
 M7 reached (report 0077, `f5eec160`): `--pipeline-windows 2` works in mixed mode and emits exactly the serial loop's
 token IDs.
@@ -90,22 +92,18 @@ Chat AI's review:
 - 2026-11-18: the production setup is the reference for performance comparisons (`.ai/PROJECT.md`). The example
   configs mirror it; reports 0067 to 0074 ran other settings.
 - 2026-11-18: the next performance step is pipelined decode windows in mixed mode.
+- 2026-11-18: keep `--pipeline-windows 2` in the mixed config. Next, in one handoff: tell the front stage when its
+  window is judged wrong, cut the short-prompt fixed cost, overlap prompt chunks across the link.
 
 ## Open decisions for the Human User
 
-- **Keep `--pipeline-windows 2` in `mixed.example.json`?** Chat AI recommends keeping it: it matches production, it
-  gains at long contexts, and the production settings (conversations parked from 8,192 tokens) point at long-context
-  use.
-- **The next step,** one of:
-  - telling the front stage when its window is judged wrong;
-  - the short-prompt fixed cost;
-  - prompt chunks across the edge;
-  - `--batch`;
-  - DFlash2.
+- None. (Handoff 0078's 40-minute budget is above the allowance; the Human User is told, and it stands unless refused.)
 
 ## Next step
 
-After report 0077: Chat AI reviews the hooks against the contract and updates `.ai/DIVERGENCE.md`. Then the next
-performance or feature step: the short-prompt fixed cost, prompt chunks across the edge, `--batch`, or DFlash2.
+After report 0078: Chat AI reviews the hooks, updates `.ai/DIVERGENCE.md`, and proposes the next step:
+- `--batch`;
+- DFlash2;
+- or a long-duration qualification run once the project nears a release candidate.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
