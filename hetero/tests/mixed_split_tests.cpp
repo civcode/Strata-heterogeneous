@@ -2,7 +2,12 @@
 // Usage: mixed_split_tests <absolute path of mixed_split_mock_worker>
 
 #include "stub_backend.hpp"
+#include "strata/hetero/front_runner.hpp"
 #include "strata/hetero/worker_process.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <functional>
 
 #include <cstdio>
 #include <cstring>
@@ -706,10 +711,63 @@ void test_session_images() {
     CHECK(rc == 0);
 }
 
+// The front stage's window in flight: the call returns at the launch, the next call waits for the window's end and
+// gets an error it ended with.
+void test_window_runner() {
+    WindowRunner r;
+    std::string err;
+    CHECK(r.settle(err));                                   // nothing ran yet
+    std::atomic<int> stage{0};
+    std::atomic<bool> go{false};
+    CHECK(r.start([&](const std::function<void()>& launched, std::string&) {
+        stage = 1;
+        launched();
+        launched();                                         // (a second call does nothing)
+        while (!go.load()) std::this_thread::yield();
+        stage = 2;
+        return true;
+    }, err));
+    CHECK(stage.load() == 1);                               // returned at the launch, the window still runs
+    CHECK(r.busy());
+    go = true;
+    CHECK(r.settle(err));
+    CHECK(stage.load() == 2 && !r.busy());
+    // a failure before the launch is the start's
+    err.clear();
+    CHECK(!r.start([](const std::function<void()>&, std::string& e) { e = "no launch"; return false; }, err));
+    CHECK(err == "no launch");
+    CHECK(r.settle(err));                                   // reported once
+    // a failure after the launch is the next call's
+    err.clear();
+    CHECK(r.start([](const std::function<void()>& launched, std::string& e) {
+        launched();
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        e = "layer 3 never rang";
+        return false;
+    }, err));
+    CHECK(!r.settle(err));
+    CHECK(err == "layer 3 never rang");
+    CHECK(r.settle(err));
+    // a job that ends without calling launched() and without an error
+    CHECK(r.start([](const std::function<void()>&, std::string&) { return true; }, err));
+    // start() settles the job before: its error reaches the start
+    err.clear();
+    CHECK(r.start([](const std::function<void()>& launched, std::string& e) {
+        launched();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        e = "late";
+        return false;
+    }, err));
+    bool ran = false;
+    CHECK(!r.start([&](const std::function<void()>& launched, std::string&) { ran = true; launched(); return true; }, err));
+    CHECK(err == "late" && !ran);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     test_token_key();
+    test_window_runner();
     test_session_ops();
     test_session_drop();
     test_session_steer();

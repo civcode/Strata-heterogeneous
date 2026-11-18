@@ -219,6 +219,7 @@ bool draft_vocab_whole_head();       // STRATA_METAL_DRAFT_VOCAB=full
 #include <vector>
 #if defined(STRATA_MIXED_SPLIT)
 #include "strata/hetero/front_link.hpp"
+#include "strata/hetero/front_runner.hpp"
 #include "strata/hetero/front_session.hpp"
 #include "strata/hetero/worker_process.hpp"
 #include <fcntl.h>
@@ -15838,7 +15839,16 @@ int main(int argc, char** argv) {
             // call of a request) and at the end
             HeteroGpuSpan f_gpu;
             HeteroSum f_run_ms, f_commit_ms;
-            if (hetero_timing()) ver.set_launch_mark([&f_gpu](cudaStream_t cs, bool after) { f_gpu.mark(cs, after); });
+            // the window in flight (WindowRunner): the run call is answered once the window graph is launched (the launch
+            // mark after it); vanilla's Verifier::run serves the window to its end on the runner's thread, and every later
+            // call waits for it first (settle).  The host's first stage waits on the ready word on its GPU meanwhile.
+            strata::hetero::WindowRunner runner;
+            const std::function<void()>* f_launched = nullptr;   // the job's launched(), on the runner's thread
+            std::vector<int32_t> f_tok((size_t) strata::kernels::kVerifyLongT, 0);
+            ver.set_launch_mark([&f_gpu, &f_launched](cudaStream_t cs, bool after) {
+                if (hetero_timing()) f_gpu.mark(cs, after);
+                if (after && f_launched != nullptr) (*f_launched)();
+            });
             auto f_timing_report = [&](const char* when) {
                 if (!hetero_timing()) return;
                 f_gpu.collect();
@@ -15851,14 +15861,22 @@ int main(int argc, char** argv) {
             };
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
                 if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
+                if (!runner.settle(e)) return false;
                 if (!book.on_run(tokens, T, pos0, e)) return false;
                 const auto t0 = std::chrono::steady_clock::now();
-                if (!ver.run(T, tokens, pos0, win_pool_fn, win_pool_user, f_out.data(), e)) return false;
+                std::copy(tokens, tokens + T, f_tok.begin());
+                const bool ok = runner.start([&, T, pos0](const std::function<void()>& launched, std::string& je) {
+                    f_launched = &launched;
+                    const bool r = ver.run(T, f_tok.data(), pos0, win_pool_fn, win_pool_user, f_out.data(), je);
+                    f_launched = nullptr;
+                    if (r && drive.d.failed) { je = "the front stage's expert pool failed"; return false; }
+                    return r;
+                }, e);
                 if (hetero_timing()) f_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-                if (drive.d.failed) { e = "the front stage's expert pool failed"; return false; }
-                return true;
+                return ok;
             };
             fb.f_commit = [&](int n_keep, std::string& e) {
+                if (!runner.settle(e)) return false;   // the window ended without an error
                 const auto t0 = std::chrono::steady_clock::now();
                 if (!ver.commit(n_keep, e)) return false;
                 if (hetero_timing()) f_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
@@ -15866,7 +15884,7 @@ int main(int argc, char** argv) {
                 return true;
             };
             fb.f_prefill = [&](const int32_t* tokens, int64_t n, int64_t pos0, bool, std::string& e) {
-                if (!ver.wait_commit(e)) return false;
+                if (!runner.settle(e) || !ver.wait_commit(e)) return false;
                 book.on_abandon();   // (a window nobody committed: the prompt runs over it, as in vanilla)
                 if (sp.embd_rows != nullptr && pos0 + n > (int64_t) f_row_ptr.size()) { e = "a prompt chunk past the image request's prompt"; return false; }
                 if (!book.on_prefill(tokens, n, pos0, e)) return false;
@@ -15875,8 +15893,9 @@ int main(int argc, char** argv) {
             };
             // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
             fb.f_images = [&](strata::hetero::FrontImages& im, std::string& e) {
+                const bool settled = runner.settle(e);
                 f_timing_report("since the last request");
-                if (!ver.wait_commit(e)) return false;
+                if (!settled || !ver.wait_commit(e)) return false;
                 book.on_abandon();
                 // vanilla's upload_mrope: CUDA0's table and every later stage's (each device reads its own)
                 auto upload_mrope = [&]() -> bool {
@@ -15933,7 +15952,7 @@ int main(int argc, char** argv) {
             fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
                 using Op = strata::hetero::SessionOp;
                 if (op == Op::Steer) {   // the request's control-vector switch (vanilla's cvec_set_enabled; it synchronizes)
-                    if (!ver.wait_commit(e)) return false;
+                    if (!runner.settle(e) || !ver.wait_commit(e)) return false;
                     book.on_abandon();
                     if (strata::kernels::cvec().loaded()) strata::kernels::cvec_set_enabled(a != 0);
                     book.set_steer(strata::kernels::cvec().loaded() ? a != 0 : true);
@@ -15945,7 +15964,7 @@ int main(int argc, char** argv) {
                                  (long long) a, (long long) b, (int) removed, book.images());
                     return true;
                 }
-                if (!ver.wait_commit(e)) return false;
+                if (!runner.settle(e) || !ver.wait_commit(e)) return false;
                 book.on_abandon();   // every session operation ends a window that was not committed
                 switch (op) {
                 case Op::Abandon: return true;   // (the next window runs over the dropped one)
@@ -16009,6 +16028,7 @@ int main(int argc, char** argv) {
             std::string fe;
             const int frc = strata::hetero::serve_front_greeted(strata::hetero::kWorkerSocketFd, fb, het_id, fe);
             std::fprintf(stderr, "strata serve: front stage: the link ended%s%s\n", frc == 0 ? " cleanly" : ": ", frc == 0 ? "" : fe.c_str());
+            if (!runner.settle(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
             if (!ver.wait_commit(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
             f_timing_report("since the last request (at the link's end)");
             ver.set_launch_mark(nullptr);
