@@ -11,6 +11,9 @@ mkdir -p "$RUN"
 "$REPO/.venv/bin/python" -I "$REPO/hetero/tools/serve_mixed.py" --config "$CFG" --port "$PORT" --run-dir "$RUN" "$@" \
     > "$RUN/$NAME.server.out" 2>&1 &
 SP=$!
+# Cooperatively stop the server before a single GPU run reaches two minutes.
+( sleep 105; kill -TERM "$SP" 2>/dev/null || true ) &
+WATCHDOG=$!
 up=0
 for i in $(seq 1 100); do
     sleep 1
@@ -18,10 +21,12 @@ for i in $(seq 1 100); do
     curl -s -m 2 "http://127.0.0.1:$PORT/v1/models" > /dev/null 2>&1 && { up=1; break; }
 done
 echo "server up=$up after ${i}s"
-LOG=$(python3 -I -c "import json,sys; print(json.load(open(sys.argv[1]))['log'])" "$RUN/$NAME.json")
-MODEL=$(python3 -I -c "import json,sys; print(json.load(open(sys.argv[1]))['model_name'])" "$RUN/$NAME.json")
+LOG=$("$REPO/.venv/bin/python" -I -c "import json,sys; print(json.load(open(sys.argv[1]))['log'])" "$RUN/$NAME.json")
+MODEL=$("$REPO/.venv/bin/python" -I -c "import json,sys; print(json.load(open(sys.argv[1]))['model_name'])" "$RUN/$NAME.json")
 [ $up = 1 ] && timeout 100 "$REPO/.venv/bin/python" -I "$REPO/hetero/tools/server_checks.py" "$PORT" "$MODEL" "$LOG" "$RUN/$NAME.checks.json"
 kill -TERM $SP 2>/dev/null
+kill "$WATCHDOG" 2>/dev/null || true
+wait "$WATCHDOG" 2>/dev/null || true
 for i in $(seq 1 120); do sleep 1; kill -0 $SP 2>/dev/null || break; done
 echo "server ended after ${i}s: $(kill -0 $SP 2>/dev/null && echo STILL RUNNING || echo gone)"
 ps -eo pid,args | grep "[b]uild-0067-.*/strata" | cut -c1-120
