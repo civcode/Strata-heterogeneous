@@ -1,31 +1,34 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0075` (Tier 1) open.
+Turn holder: **Coding Agent**, handoff `0076` (Tier 2), once the Human User hands it over.
 
 ## Current milestone
 
-M6 reached (report 0074, `9a16e06f`): the mixed config runs what the HIP-only config runs, vision and the control
-vector. `mixed.example.json` is the counterpart of `hiponly.example.json`.
+Production as the reference: bring up both production mirrors and measure mixed against production (handoff 0076).
 
-Chat AI's review:
-- **Engine change:** only `generate.cpp` changed, all inside the guards; `check_off_is_vanilla.py` reports 6 of 6.
-  The host sends each request's image input as vanilla built it (link message Images, protocol 2), and the front
-  stage's keys gain the pictures. The front stage's table upload copies vanilla's eight-line `upload_mrope` lambda:
-  acceptable duplication in guarded code.
-- **Control vectors:** on and off differ, as in HIP-only. A conversation parked with `cvec=1` is not reused at `cvec=0`
-  and is reused again at `cvec=1` (52 tokens). Against HIP-only, a near-tie at token 0, as in report 0068.
-- **Vision:** two different images with the same question each get their own description, including two same-size
-  images with swapped colours (same image tokens, no reuse across them). A text request after an image is unaffected.
-  Reuse is 318 tokens from an image's own checkpoint, and 410 in a two-turn chat about one image.
-- **Long prompt,** like-for-like configs, untraced, median of three: mixed 2,257 / 107.9 tok/s (prefill / decode),
-  HIP-only 2,308 / 105.4.
-- **Finding:** with the vector loaded but off, mixed is not bit-identical to mixed without it (layer 14, the front
-  stage's last layer). Likely rounding; recorded in `.ai/DIVERGENCE.md`.
-- **Since report 0074,** by Chat AI: `.ai/DIVERGENCE.md` updated. `check_launch.py` no longer counts the scripts in
-  `hetero/tools/` or the configs as built sources, so drivers can be committed there without staleness (report 0074
-  had to keep its driver in the run evidence).
+Report 0075 was Completed (`96a18261`). Chat AI's review:
+- **Prompt pipeline, HIP-only:** best R = 700. That gives +3.1% prefill on the long prompt and −0.4% at 16K (the
+  default already reads 16K in two 8,192-token chunks). Not worth turning on here. In mixed mode R = 700 costs 14% at
+  16K: each extra chunk is another serial CUDA pass.
+- **Vision and control vector:** no measurable cost on text requests. The vector even raises draft acceptance on the
+  coding prompt (+2.7% decode).
+- **The mixed decode window is fully serial.** Vanilla's `Verifier::run` synchronises before the front stage answers.
+  Per window (coding prompt): CUDA 3.3 ms (19%), first R9700 5.45 (31%), second R9700 with the head 5.68 (32%),
+  drafter 1.6 (9%), commit 0.7 (4%), gaps about 0.9. The link adds 0.03 ms. The CUDA card is faster per layer than an
+  R9700 (0.22 against 0.30 ms).
+- **`--layer-split auto` in mixed mode:** implemented by adding a starting layer to vanilla's planner, all guarded. It
+  picks K = 31; no A/B yet. `--split-skip-if-fits` is now refused in mixed mode.
+- **Design notes** (in the report): `--batch` takes 2 Tier 1 turns for serial groups, plus 2 for pipelined groups
+  (shared with pipelined windows); DFlash2 takes 2 Tier 1 turns plus a short Tier 2 turn.
+- **Contract:** the timing hook in `Verifier` (`set_launch_mark`) and the planner hook are guarded, and timing is
+  logging only. `check_off_is_vanilla.py` reports 6 of 6.
+- **After report 0075,** Chat AI re-applied the production-mirror revision (configs, launcher, `PROJECT.md`), set the
+  mixed mirror to `layer_split: auto`, and updated `.ai/DIVERGENCE.md`.
+- **The numbers of reports 0067 to 0075** come from the older example settings, not production.
 
 ## History in short
+
+- Report 0075: mixed decode window measured (serial, CUDA 19%, link 0.03 ms); prompt pipeline not worth it; vision/cvec free; `--layer-split auto` in mixed mode.
 
 - M6 reached (report 0074): vision and control vectors in mixed mode.
 
@@ -71,6 +74,8 @@ Chat AI's review:
   - the A/B on vision and the control vector;
   - timing lines for the mixed decode window;
   - the remaining refusals: `--layer-split auto` implemented, design notes for `--batch` and DFlash2.
+- 2026-11-18: the production setup is the reference for performance comparisons (`.ai/PROJECT.md`). The example
+  configs mirror it; reports 0067 to 0074 ran other settings.
 
 ## Open decisions for the Human User
 
@@ -78,9 +83,10 @@ Chat AI's review:
 
 ## Next step
 
-After report 0075: Chat AI reviews it and proposes the next performance work from its numbers:
-- pipelined decode windows;
-- pipelined prompt chunks across the CUDA/HIP edge (the front stage reading chunk c+1 while the first R9700 reads c);
-- or `--batch` / DFlash2, from the design notes.
+After report 0076: the Human User chooses the next performance work, with mixed-against-production numbers in hand:
+- **Pipelined decode windows:** the target is the 19% CUDA share; the link is cheap.
+- **Pipelined prompt chunks across the edge.**
+- **Moving layers onto the faster CUDA card:** about 0.08 ms per layer, VRAM permitting.
+- **`--batch` or DFlash2,** from the design notes.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
