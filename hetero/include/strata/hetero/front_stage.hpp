@@ -83,6 +83,22 @@ public:
 
     /// The request's image positions, rows and keys (or none, for a text request).  Ends a window not committed.
     virtual bool images(FrontImages& im, std::string& err) = 0;
+
+    // ---- --pipeline-windows (vanilla's pipelined loop): the first stage has a verifier per window parity (0, 1), and
+    // the front stage mirrors each.  A window and its commit are queued, not waited for; a window's rows reach the host
+    // through the parity's own hand-off and ready word.
+
+    /// Launch the window of `T` tokens at `pos0` on the verifier of `parity` (Verifier::pl_launch).  The front stage
+    /// first saves the GDN state the window reads, for that parity (vanilla's snap_take, taken before every launch).
+    /// Returns once the window is launched.
+    virtual bool pl_run(int parity, int T, const int32_t* tokens, int64_t pos0, std::string& err) = 0;
+    /// Queue the commit of the first `n_keep` tokens of `parity`'s last window (Verifier::pl_commit_async).  A second
+    /// call for the same window, after pl_undo, replays it with the real count.  Returns once that window has finished
+    /// without an error and its commit is queued.
+    virtual bool pl_commit(int parity, int n_keep, std::string& err) = 0;
+    /// A wrong speculative guess: restore the GDN state saved before `parity`'s last window (the undo of vanilla's
+    /// pipelined loop), so the session holds what it held when that window was launched.
+    virtual bool pl_undo(int parity, std::string& err) = 0;
 };
 
 } // namespace strata::hetero

@@ -1731,6 +1731,24 @@ struct HeteroHost {
         if (hetero_timing()) t_commit.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
         return ok;
     }
+    // --pipeline-windows: the first stage's verifier of parity `q` launches / commits (Verifier::FrontCalls), and the
+    // decode loop's undo of a wrong guess restores the front stage's GDN state as it restores the first stage's
+    bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) {
+        if (!drop_window(err)) return false;
+        if (link->pl_run(q, T, tokens, pos0, err)) return true;
+        err = "mixed split: the front stage: " + err;
+        return false;
+    }
+    bool pl_commit(int q, int n_keep, std::string& err) {
+        if (link->pl_commit(q, n_keep, err)) return true;
+        err = "mixed split: the front stage: " + err;
+        return false;
+    }
+    bool pl_undo(int q, std::string& err) {
+        if (link->pl_undo(q, err)) return true;
+        err = "mixed split: the front stage: " + err;
+        return false;
+    }
     /// STRATA_SPLIT_TIMING: the per-window averages since the last report (one line; a request's decode windows).
     void timing_report() {
         if (!hetero_timing() || link == nullptr) return;
@@ -1857,6 +1875,12 @@ struct HeteroFrontBackend final : strata::hetero::FrontBackend {
     std::function<bool(const int32_t*, int64_t, int64_t, bool, std::string&)> f_prefill;
     std::function<bool(strata::hetero::SessionOp, int64_t, int64_t, std::string&)> f_session;
     std::function<bool(strata::hetero::FrontImages&, std::string&)> f_images;
+    std::function<bool(int, int, const int32_t*, int64_t, std::string&)> f_pl_run;
+    std::function<bool(int, int, std::string&)> f_pl_commit;
+    std::function<bool(int, std::string&)> f_pl_undo;
+    bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override { return f_pl_run(q, T, tokens, pos0, err); }
+    bool pl_commit(int q, int n_keep, std::string& err) override { return f_pl_commit(q, n_keep, err); }
+    bool pl_undo(int q, std::string& err) override { return f_pl_undo(q, err); }
     bool attach(const strata::hetero::LinkIdentity&, strata::hetero::SharedRegion&&, std::string& err) override {
         err = "the hand-off memory is attached already";
         return false;
@@ -4732,6 +4756,7 @@ int main(int argc, char** argv) {
     const int64_t front_lb = o.front_exe.empty() ? 0 : o.front_layers;
     const int64_t front_le = o.front_stage;
     size_t front_parts_cap = 0, front_images_cap = 0;   // the front stage's session store (set below)
+    bool front_pipe = false;   // the front stage of a host with --pipeline-windows: a verifier per window parity (set below)
     HeteroHost hetero;
     if (!o.front_exe.empty() || o.front_layers != 0) {
         const char* no = !o.serve ? "it needs --serve"
@@ -4742,7 +4767,6 @@ int main(int argc, char** argv) {
                        : o.split_skip_if_fits ? "--split-skip-if-fits is not supported (the host's cards run layers past the front stage's)"
                        : o.batch != 0 ? "--batch / --slots are not supported yet"
                        : o.draft == "dflash2" || o.draft_auto ? "the DFlash2 drafter is not supported yet (--draft mtp)"
-                       : o.pipeline_windows > 0 ? "--pipeline-windows above 0 is not supported yet"
                        : o.peer_device >= 0 ? "--peer-device is not supported yet"
                        : o.expert_cache_remote[0] > 0 || o.expert_cache_remote[1] > 0 || o.expert_cache_remote[2] > 0
                              ? "the helper caches (--expert-cache-remote) are not supported yet"
@@ -4751,7 +4775,7 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata serve: mixed split (--front-exe / --front-layers): %s\n", no);
             return 2;
         }
-        o.pipeline_windows = 0;   // (the default would turn the pipelined windows on for a layer split on gfx12)
+        if (o.pipeline_windows < 0) o.pipeline_windows = 0;   // (the default would turn them on for a layer split on gfx12; asked for, they run)
         // the prompt checkpoints and the conversation cache stay as asked: each save and restore of the first stage's
         // session is repeated on the front stage's (HeteroHost::at).  The front stage gets --prompt-cache and
         // --conversation-cache-slots too, to size its store of them.
@@ -4760,7 +4784,7 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
             static const char* const with_value[] = {"--front-exe", "--front-layers", "--front-arg", "--layer-split", "--split-device",
-                                                     "--mtp", "--pipeline-windows", "--conversation-cache-mib",
+                                                     "--mtp", "--conversation-cache-mib",
                                                      "--gpu", "--vram-reserve-later-mib", "--draft"};
             bool skip_it = false;
             for (const char* w : with_value) if (a == w) { ++i; skip_it = true; }
@@ -4808,6 +4832,12 @@ int main(int argc, char** argv) {
         front_images_cap = (size_t) std::max(o.conversation_cache_slots, 0) + 1;
         o.prompt_cache = 0;   // (its own serve loop does not run)
         o.conversation_cache_mib = 0;
+        // the host's --pipeline-windows: this process mirrors its first stage's two verifiers (one per window parity) and
+        // its GDN snapshots, and runs no pipelined loop of its own; the VRAM vanilla keeps out of the expert cache for them
+        // (kPipeWindowMib, kPipeSnapMib) stays in the reserve
+        front_pipe = o.pipeline_windows > 0;
+        o.pipeline_windows = 0;
+        if (front_pipe) o.vram_reserve_mib += 160 + 96;
     }
 #endif
     // parking with --layer-split saves every stage (SavedConversation::stage_images)
@@ -12586,10 +12616,13 @@ int main(int argc, char** argv) {
         // ---- MIXED SPLIT: THE SHARED HAND-OFF.  Vanilla's stage hand-off between two cards of one process is mapped
         // pinned host memory (cudaHostAlloc); between the two processes it is a shared mapping that each registers with
         // its own runtime.  Slot 0: the window hand-off (the rows a verify window hands the next stage), slot 1: its
-        // ready word, slot 2: the prompt path's chunk rows.  The host creates it and sends it with the hello; the front
+        // ready word, slot 2: the prompt path's chunk rows, slots 3 and 4: the odd windows' hand-off and ready word (a pipelined
+        // window's, --pipeline-windows; the even windows and the serial loop use slots 0 and 1).  The host creates it and sends it with the hello; the front
         // stage waits for the hello here, before its window graphs are captured with the hand-off's device address.
         float* het_hand_d = nullptr;        // slot 0 as the device sees it
         uint32_t *het_flag_h = nullptr, *het_flag_d = nullptr;
+        float* het_hand_b_d = nullptr;      // --pipeline-windows: the odd windows' hand-off (slot 3) and ready word (slot 4)
+        uint32_t *het_flag_b_h = nullptr, *het_flag_b_d = nullptr;
         float* het_rows_h = nullptr;        // slot 2 (host address: the prompt path copies to / from it)
         int64_t het_rows_cap = 0;
         strata::hetero::LinkIdentity het_id;
@@ -12608,7 +12641,8 @@ int main(int argc, char** argv) {
             std::string he;
             if (front_lb > 0) {
                 het_rows_cap = o.prefill_chunk;
-                if (!strata::hetero::SharedRegion::create({(size_t) het_id.max_rows * HB, 64, (size_t) het_rows_cap * DB}, hetero.region, he)) {
+                if (!strata::hetero::SharedRegion::create({(size_t) het_id.max_rows * HB, 64, (size_t) het_rows_cap * DB, (size_t) het_id.max_rows * HB, 64},
+                                                          hetero.region, he)) {
                     std::fprintf(stderr, "strata serve: mixed split: %s\n", he.c_str());
                     return 1;
                 }
@@ -12631,8 +12665,8 @@ int main(int argc, char** argv) {
                 if (got != het_id)
                     why = got.model_fingerprint != het_id.model_fingerprint ? "the two engines did not load the same model files"
                                                                             : "the two engines differ in the model's shape, the split layer or the context";
-                else if (het_region.slots() != 3 || het_region.slot_bytes(0) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(1) < 4 ||
-                         het_region.slot_bytes(2) < DB)
+                else if (het_region.slots() != 5 || het_region.slot_bytes(0) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(1) < 4 ||
+                         het_region.slot_bytes(2) < DB || het_region.slot_bytes(3) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(4) < 4)
                     why = "the hand-off memory has another layout";
                 if (!strata::hetero::front_accept_reply(strata::hetero::kWorkerSocketFd, seq, why.empty(), why, he) || !why.empty()) {
                     std::fprintf(stderr, "strata serve: front stage: %s\n", why.empty() ? he.c_str() : why.c_str());
@@ -12654,6 +12688,9 @@ int main(int argc, char** argv) {
             het_flag_h = (uint32_t*) region->slot(1);
             het_flag_d = (uint32_t*) dev_of(1);
             het_rows_h = (float*) region->slot(2);
+            het_hand_b_d = (float*) dev_of(3);
+            het_flag_b_h = (uint32_t*) region->slot(4);
+            het_flag_b_d = (uint32_t*) dev_of(4);
             std::fprintf(stderr, "strata serve: mixed split: shared hand-off memory %.1f MiB (%d window rows, %lld prompt rows), %s\n",
                          (double) region->bytes() / 1048576.0, het_id.max_rows, (long long) het_rows_cap,
                          front_lb > 0 ? "the front stage has it" : "attached");
@@ -13068,6 +13105,8 @@ int main(int argc, char** argv) {
                 strata::core::Verifier::FrontCalls fc;
                 fc.run = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.run(T, tokens, pos0, e); };
                 fc.commit = [&hetero](int n_keep, std::string& e) { return hetero.commit(n_keep, e); };
+                fc.pl_launch = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.pl_run(0, T, tokens, pos0, e); };
+                fc.pl_commit = [&hetero](int n_keep, std::string& e) { return hetero.pl_commit(0, n_keep, e); };
                 ver.set_front(std::move(fc));
                 if (hetero_timing()) {   // STRATA_SPLIT_TIMING: the wait on the ready word and every local stage's windows
                     hetero.t_flag_d = het_flag_d;
@@ -13103,7 +13142,18 @@ int main(int argc, char** argv) {
                 }
                 std::memset(hh, 0, hb);
             }
+#if defined(STRATA_MIXED_SPLIT)
+            ver_b.set_stage(front_lb, split_at[0], front_lb > 0 ? het_hand_b_d : nullptr, hand_b[0]);
+            if (front_lb > 0) {   // MIXED SPLIT: the odd windows' hand-off from the front stage, its ready word, its calls
+                ver_b.set_handoff_flags(het_flag_b_h, het_flag_b_d, nullptr, nullptr);
+                strata::core::Verifier::FrontCalls fc;
+                fc.pl_launch = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.pl_run(1, T, tokens, pos0, e); };
+                fc.pl_commit = [&hetero](int n_keep, std::string& e) { return hetero.pl_commit(1, n_keep, e); };
+                ver_b.set_front(std::move(fc));
+            }
+#else
             ver_b.set_stage(0, split_at[0], nullptr, hand_b[0]);
+#endif
             for (int st = 1; st < n_stages; ++st) {
                 GpuStage& gs = *stages[(size_t) st - 1];
                 const bool last = st + 1 == n_stages;
@@ -13153,9 +13203,30 @@ int main(int argc, char** argv) {
         if (batch_df2) ver.set_batch_taps(true);
 #endif
 #if defined(STRATA_MIXED_SPLIT)
+        // MIXED SPLIT, the front stage of a host with --pipeline-windows: what vanilla gives its first stage there - the
+        // odd windows' verifier (ver_b) on one stream with `ver`, rows published from every layer, and a GDN snapshot per
+        // parity taken on a side stream before each launch (PlSnap, snap_take), restored by the host's undo
+        struct HetSnap {
+            size_t bytes = 0;
+            void* state = nullptr;
+            float* buf[2] = {nullptr, nullptr};
+            cudaStream_t side = nullptr;
+            cudaEvent_t pre[2] = {nullptr, nullptr}, ev[2] = {nullptr, nullptr};
+            bool taken[2] = {false, false};
+            int32_t ple[2][2] = {{-1, -1}, {-1, -1}};   // ss.ple_prev at the launch (the undo's undo_ple)
+        } het_snap;
+        cudaStream_t het_pl_stream = nullptr;
         if (front_le > 0) {   // MIXED SPLIT: this process is the front stage: layers [0, front_le), the hand-off out, no head
             ver.set_stage(0, front_le, nullptr, het_hand_d);
             ver.set_handoff_flags(nullptr, nullptr, het_flag_h, het_flag_d);
+            if (front_pipe) {
+                if (cudaStreamCreateWithFlags(&het_pl_stream, cudaStreamNonBlocking) != cudaSuccess) {
+                    std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: stream creation failed\n");
+                    return 1;
+                }
+                ver.set_stream(het_pl_stream);
+                ver.set_always_publish(true);
+            }
         }
 #endif
         if (!ver.init(wt, g, ss, vh, native_head.loaded() || prefill_head_alias_bound ? &native_head : nullptr,
@@ -13166,6 +13237,34 @@ int main(int argc, char** argv) {
             return 1;
         }
         if (prefill_head_alias_bound) mtp.set_window_R(ver.final_R_all());
+#if defined(STRATA_MIXED_SPLIT)
+        if (front_le > 0 && front_pipe) {   // MIXED SPLIT: the front stage's odd windows' verifier and its GDN snapshots
+            ver_b.set_stream(het_pl_stream);
+            ver_b.set_always_publish(true);
+            ver_b.set_stage(0, front_le, nullptr, het_hand_b_d);
+            ver_b.set_handoff_flags(nullptr, nullptr, het_flag_b_h, het_flag_b_d);
+            if (!ver_b.init(wt, g, ss, vh, nullptr, std::min<int>(ver.max_t(), strata::kernels::kVerifyNarrowT), err)) {
+                std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: the second verifier: %s\n", err.c_str());
+                return 1;
+            }
+            ver_b.set_split(o.spec_split);   // (as `ver`'s, below)
+            ver_b.set_pcie_mode(o.pcie_mode == "dma" ? 0 : o.pcie_mode == "direct" ? 1 : 2);
+            het_snap.bytes = gdn_snapshot_bytes(ss);
+            het_snap.state = (void*) ss.gdn_state;
+            bool ok_s = cudaStreamCreateWithFlags(&het_snap.side, cudaStreamNonBlocking) == cudaSuccess;
+            for (int i = 0; i < 2 && ok_s; ++i)
+                ok_s = cudaMalloc((void**) &het_snap.buf[i], het_snap.bytes) == cudaSuccess &&
+                       cudaEventCreateWithFlags(&het_snap.pre[i], cudaEventDisableTiming) == cudaSuccess &&
+                       cudaEventCreateWithFlags(&het_snap.ev[i], cudaEventDisableTiming) == cudaSuccess;
+            if (!ok_s) {
+                std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: the GDN snapshots (2 x %.1f MiB) do not fit\n",
+                             (double) het_snap.bytes / 1048576.0);
+                return 1;
+            }
+            std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: two verifiers, GDN snapshots of 2 x %.1f MiB\n",
+                         (double) het_snap.bytes / 1048576.0);
+        }
+#endif
 #if defined(STRATA_HAVE_DFLASH2)
 #if defined(STRATA_HAVE_DFLASH2)
         // DFlash2 prompt taps on a layer split.  Every stage's prompt path taps the requested layers it runs into its own staging and hands them to its
@@ -15849,6 +15948,28 @@ int main(int argc, char** argv) {
                 if (hetero_timing()) f_gpu.mark(cs, after);
                 if (after && f_launched != nullptr) (*f_launched)();
             });
+            // --pipeline-windows (the host's first stage's two verifiers, mirrored): pipelined work queued since the last
+            // synchronization; every other operation finds it landed first (vanilla's pl_drain at the pipelined loop's end)
+            strata::core::Verifier* const f_pv[2] = {&ver, &ver_b};
+            bool f_pl_used = false;
+            auto settle = [&](std::string& e) -> bool {
+                if (!runner.settle(e)) return false;
+                drive.d.plan = ver.plan_sink();   // (an odd window's plans went to ver_b's)
+                if (!f_pl_used) return true;
+                f_pl_used = false;
+                if (cudaStreamSynchronize(het_pl_stream) != cudaSuccess || cudaStreamSynchronize(het_snap.side) != cudaSuccess) {
+                    e = std::string("the front stage's pipelined windows: ") + cudaGetErrorString(cudaGetLastError());
+                    return false;
+                }
+                return true;
+            };
+            if (front_pipe) {   // every graph captured while nothing is in flight (pl_prepare)
+                std::string ce;
+                if (!ver.capture_all(ce) || !ver_b.capture_all(ce)) {
+                    std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: %s\n", ce.c_str());
+                    return 1;
+                }
+            }
             auto f_timing_report = [&](const char* when) {
                 if (!hetero_timing()) return;
                 f_gpu.collect();
@@ -15861,7 +15982,7 @@ int main(int argc, char** argv) {
             };
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
                 if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
-                if (!runner.settle(e)) return false;
+                if (!settle(e)) return false;
                 if (!book.on_run(tokens, T, pos0, e)) return false;
                 const auto t0 = std::chrono::steady_clock::now();
                 std::copy(tokens, tokens + T, f_tok.begin());
@@ -15876,15 +15997,75 @@ int main(int argc, char** argv) {
                 return ok;
             };
             fb.f_commit = [&](int n_keep, std::string& e) {
-                if (!runner.settle(e)) return false;   // the window ended without an error
+                if (!settle(e)) return false;   // the window ended without an error
                 const auto t0 = std::chrono::steady_clock::now();
                 if (!ver.commit(n_keep, e)) return false;
                 if (hetero_timing()) f_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 book.on_commit(n_keep);
                 return true;
             };
+            // the pipelined windows: the calls the host's first stage makes on its verifier of parity q (pl_launch,
+            // pl_commit_async) and the undo of its decode loop, here on this stage's own verifier of that parity
+            fb.f_pl_run = [&](int q, int T, const int32_t* tokens, int64_t pos0, std::string& e) {
+                if (!front_pipe) { e = "a pipelined window, but the front stage was started without --pipeline-windows"; return false; }
+                if (T > f_pv[q]->max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's"; return false; }
+                if (!runner.settle(e)) return false;
+                if (!book.on_pl_run(q, tokens, T, pos0, e)) return false;
+                // snap_take: the GDN state the window reads, copied on the side stream behind the stream's work so far
+                if (cudaEventRecord(het_snap.pre[q], het_pl_stream) != cudaSuccess ||
+                    cudaStreamWaitEvent(het_snap.side, het_snap.pre[q], 0) != cudaSuccess ||
+                    cudaMemcpyAsync(het_snap.buf[q], het_snap.state, het_snap.bytes, cudaMemcpyDeviceToDevice, het_snap.side) != cudaSuccess ||
+                    cudaEventRecord(het_snap.ev[q], het_snap.side) != cudaSuccess) {
+                    e = "the GDN snapshot failed";
+                    return false;
+                }
+                (void) cudaStreamQuery(het_snap.side);
+                het_snap.taken[q] = true;
+                het_snap.ple[q][0] = ss.ple_prev[0];
+                het_snap.ple[q][1] = ss.ple_prev[1];
+                f_pl_used = true;
+                drive.d.plan = f_pv[q]->plan_sink();
+                if (!f_pv[q]->pl_launch(T, tokens, pos0, e)) return false;
+                strata::core::Verifier* const v = f_pv[q];
+                return runner.start([&, v](const std::function<void()>& launched, std::string& je) {
+                    launched();
+                    for (;;) {   // the window served and polled to its end (the pipelined loop's pump)
+                        if (v->service(win_pool_fn, win_pool_user, je) < 0) return false;
+                        if (v->done(je)) {
+                            if (!v->pl_finish(nullptr, je)) return false;
+                            if (drive.d.failed) { je = "the front stage's expert pool failed"; return false; }
+                            return true;
+                        }
+                        if (!je.empty()) return false;
+                        std::this_thread::yield();
+                    }
+                }, e);
+            };
+            fb.f_pl_commit = [&](int q, int n_keep, std::string& e) {
+                if (!front_pipe) { e = "a pipelined commit, but the front stage was started without --pipeline-windows"; return false; }
+                if (!runner.settle(e)) return false;   // the window ended without an error
+                if (!book.on_pl_commit(q, n_keep, e)) return false;
+                // the commit changes the state: after the window's snapshot copy
+                if (het_snap.taken[q] && cudaStreamWaitEvent(het_pl_stream, het_snap.ev[q], 0) != cudaSuccess) { e = "the GDN snapshot failed"; return false; }
+                f_pl_used = true;
+                return f_pv[q]->pl_commit_async(n_keep, e);
+            };
+            fb.f_pl_undo = [&](int q, std::string& e) {
+                if (!front_pipe || !het_snap.taken[q]) { e = "no GDN snapshot of that window to restore"; return false; }
+                if (!runner.settle(e)) return false;   // the wrong window has stopped
+                if (!book.on_pl_undo(q, e)) return false;
+                if (cudaStreamWaitEvent(het_pl_stream, het_snap.ev[q], 0) != cudaSuccess ||
+                    cudaMemcpyAsync(het_snap.state, het_snap.buf[q], het_snap.bytes, cudaMemcpyDeviceToDevice, het_pl_stream) != cudaSuccess) {
+                    e = "restoring the GDN snapshot failed";
+                    return false;
+                }
+                ss.ple_prev[0] = het_snap.ple[q][0];
+                ss.ple_prev[1] = het_snap.ple[q][1];
+                f_pl_used = true;
+                return true;
+            };
             fb.f_prefill = [&](const int32_t* tokens, int64_t n, int64_t pos0, bool, std::string& e) {
-                if (!runner.settle(e) || !ver.wait_commit(e)) return false;
+                if (!settle(e) || !ver.wait_commit(e)) return false;
                 book.on_abandon();   // (a window nobody committed: the prompt runs over it, as in vanilla)
                 if (sp.embd_rows != nullptr && pos0 + n > (int64_t) f_row_ptr.size()) { e = "a prompt chunk past the image request's prompt"; return false; }
                 if (!book.on_prefill(tokens, n, pos0, e)) return false;
@@ -15893,7 +16074,7 @@ int main(int argc, char** argv) {
             };
             // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
             fb.f_images = [&](strata::hetero::FrontImages& im, std::string& e) {
-                const bool settled = runner.settle(e);
+                const bool settled = settle(e);
                 f_timing_report("since the last request");
                 if (!settled || !ver.wait_commit(e)) return false;
                 book.on_abandon();
@@ -15952,7 +16133,7 @@ int main(int argc, char** argv) {
             fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
                 using Op = strata::hetero::SessionOp;
                 if (op == Op::Steer) {   // the request's control-vector switch (vanilla's cvec_set_enabled; it synchronizes)
-                    if (!runner.settle(e) || !ver.wait_commit(e)) return false;
+                    if (!settle(e) || !ver.wait_commit(e)) return false;
                     book.on_abandon();
                     if (strata::kernels::cvec().loaded()) strata::kernels::cvec_set_enabled(a != 0);
                     book.set_steer(strata::kernels::cvec().loaded() ? a != 0 : true);
@@ -15964,7 +16145,7 @@ int main(int argc, char** argv) {
                                  (long long) a, (long long) b, (int) removed, book.images());
                     return true;
                 }
-                if (!runner.settle(e) || !ver.wait_commit(e)) return false;
+                if (!settle(e) || !ver.wait_commit(e)) return false;
                 book.on_abandon();   // every session operation ends a window that was not committed
                 switch (op) {
                 case Op::Abandon: return true;   // (the next window runs over the dropped one)
@@ -16028,7 +16209,7 @@ int main(int argc, char** argv) {
             std::string fe;
             const int frc = strata::hetero::serve_front_greeted(strata::hetero::kWorkerSocketFd, fb, het_id, fe);
             std::fprintf(stderr, "strata serve: front stage: the link ended%s%s\n", frc == 0 ? " cleanly" : ": ", frc == 0 ? "" : fe.c_str());
-            if (!runner.settle(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
+            if (!settle(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
             if (!ver.wait_commit(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
             f_timing_report("since the last request (at the link's end)");
             ver.set_launch_mark(nullptr);
@@ -20829,6 +21010,10 @@ int main(int argc, char** argv) {
                                 ss.ple_prev[0] = undo_ple[0];
                                 ss.ple_prev[1] = undo_ple[1];
                             }
+#if defined(STRATA_MIXED_SPLIT)
+                            // MIXED SPLIT: the front stage (part of stage 0) restores its own snapshot of the window
+                            if (st == 0 && hetero.on() && !hetero.pl_undo(undo_w.seq & 1, err)) return die(err);
+#endif
                             if (undo_keep > 0 && !VF(st, undo_w).pl_commit_async(undo_keep, err)) return die(err);   // 0: the window was dropped (stop_skip)
                         }
                         doomed = false;

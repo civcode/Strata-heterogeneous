@@ -5276,6 +5276,9 @@ bool Verifier::pl_launch(int T, const int32_t* tokens, int64_t pos0, std::string
         err = "verify: pipelined window not prepared (capture_all)";
         return false;
     }
+#if defined(STRATA_MIXED_SPLIT)
+    if (front_.pl_launch && !front_.pl_launch(T, tokens, pos0, err)) return false;   // MIXED SPLIT: the front stage's window first
+#endif
     if (pre_launch_ && !pre_launch_(cs_, err)) return false;
     const Clock::time_point t0 = Clock::now();
     last_batch_ = false;
@@ -5450,6 +5453,9 @@ bool Verifier::pl_commit_async(int n_keep, std::string& err) {
     const OnDevice on_device(device_);
     if (n_keep < 1 || n_keep > last_t_) { err = "verify: commit count out of range"; return false; }
     if (commit_exec_ == nullptr || ev_commit_ == nullptr) { err = "verify: pipelined commit not prepared"; return false; }
+#if defined(STRATA_MIXED_SPLIT)
+    if (front_.pl_commit && !front_.pl_commit(n_keep, err)) return false;   // MIXED SPLIT: the front stage commits first
+#endif
     const Clock::time_point t0 = Clock::now();
     if (commit_live_) {   // its graph reads the words below when it starts: the previous one has (a window ago)
         cudaError_t q;

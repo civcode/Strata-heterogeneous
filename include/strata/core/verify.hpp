@@ -230,6 +230,10 @@ public:
     struct FrontCalls {
         std::function<bool(int T, const int32_t* tokens, int64_t pos0, std::string& err)> run;
         std::function<bool(int n_keep, std::string& err)> commit;
+        /// --pipeline-windows: `pl_launch` launches the front stage's window of this verifier's parity first, and
+        /// `pl_commit_async` queues its commit there first (the undo is the decode loop's, see generate.cpp)
+        std::function<bool(int T, const int32_t* tokens, int64_t pos0, std::string& err)> pl_launch;
+        std::function<bool(int n_keep, std::string& err)> pl_commit;
     };
     void set_front(FrontCalls calls) { front_ = std::move(calls); }
     /// MIXED SPLIT, STRATA_SPLIT_TIMING (logging only): called on this stage's stream just before (`after` false) and

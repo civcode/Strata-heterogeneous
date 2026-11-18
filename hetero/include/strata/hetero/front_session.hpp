@@ -92,7 +92,7 @@ public:
     FrontSessionBook(size_t max_parts, size_t max_images) : max_parts_(std::max<size_t>(max_parts, 1)), max_images_(max_images) {}
 
     // ---- the tokens the session holds: every operation that changes the session reports here
-    void on_reset() { hist_.clear(); imgs_.clear(); window_ = false; }
+    void on_reset() { hist_.clear(); imgs_.clear(); window_ = false; pl_live_[0] = pl_live_[1] = false; }
     /// The pictures of the request the host is about to read (Images): the session's own pictures below a position
     /// must be the request's for a prompt chunk or window to continue it there.
     void set_request_images(std::vector<ImageKey> keys) { req_imgs_ = std::move(keys); }
@@ -115,7 +115,37 @@ public:
         hist_.insert(hist_.end(), win_.begin(), win_.begin() + std::min<int64_t>(n_keep, (int64_t) win_.size()));
         window_ = false;
     }
-    void on_abandon() { window_ = false; }
+    void on_abandon() { window_ = false; pl_live_[0] = pl_live_[1] = false; }
+
+    // ---- pipelined windows (FrontStage::pl_run ...): a window per parity, its commit queued, an undo going back to the
+    // tokens the session held at its launch
+    /// A window of `parity` at `pos0`; the session's tokens now are what an undo of it goes back to.
+    bool on_pl_run(int parity, const int32_t* tokens, int T, int64_t pos0, std::string& err) {
+        if (parity < 0 || parity > 1) { err = "bad window parity"; return false; }
+        if (!continues(pos0, "window", err)) return false;
+        plw_[parity].assign(tokens, tokens + T);
+        pl_at_[parity] = hist_.size();
+        pl_live_[parity] = true;
+        window_ = false;
+        return true;
+    }
+    /// Its commit (again after an undo, with the real count).
+    bool on_pl_commit(int parity, int n_keep, std::string& err) {
+        if (parity < 0 || parity > 1 || !pl_live_[parity]) { err = "no pipelined window of that parity"; return false; }
+        if (n_keep < 1 || n_keep > (int) plw_[parity].size() || hist_.size() != pl_at_[parity]) {
+            err = "a pipelined commit that does not continue the session at its window";
+            return false;
+        }
+        hist_.insert(hist_.end(), plw_[parity].begin(), plw_[parity].begin() + n_keep);
+        return true;
+    }
+    /// The undo: the tokens held at the window's launch.
+    bool on_pl_undo(int parity, std::string& err) {
+        if (parity < 0 || parity > 1 || !pl_live_[parity] || hist_.size() < pl_at_[parity]) { err = "no pipelined window of that parity to undo"; return false; }
+        hist_.resize(pl_at_[parity]);
+        imgs_ = images_below(imgs_, (int64_t) hist_.size());
+        return true;
+    }
     const std::vector<int32_t>& history() const { return hist_; }
     /// The pictures of the session's state (all start below history().size()).
     const std::vector<ImageKey>& images_held() const { return imgs_; }
@@ -220,6 +250,9 @@ private:
     std::vector<int32_t> hist_, win_;
     std::vector<ImageKey> req_imgs_, imgs_;   // the request's pictures (Images), the session state's
     bool window_ = false;
+    std::vector<int32_t> plw_[2];      // each parity's last pipelined window
+    size_t pl_at_[2] = {0, 0};         // the session's tokens at its launch
+    bool pl_live_[2] = {false, false};
     bool steer_ = true;   // no vector loaded: always on (vanilla's want_cvec)
     std::list<Entry<Part>> parts_;
     std::list<Entry<Image>> images_;

@@ -711,6 +711,70 @@ void test_session_images() {
     CHECK(rc == 0);
 }
 
+// Pipelined windows over the link: a window per parity with its own hand-off and ready word, the asynchronous commit,
+// the undo and the replayed commit, and the rules the worker enforces.
+void test_pipelined_link() {
+    Pair s;
+    test::BookBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;   // the engine's layout: hand-off 0, ready word 0, prompt rows, hand-off 1, ready word 1
+    std::string err;
+    CHECK(SharedRegion::create({8 * sizeof(float) * 16, 64, 4096, 8 * sizeof(float) * 16, 64}, region, err));
+    RemoteFrontStage front(s.host, 5000);
+    CHECK(front.hello(test_identity(), region, err));
+    const int32_t prompt[4] = {1, 2, 3, 4};
+    CHECK(front.prefill(prompt, 4, 0, true, err));
+    const int32_t a[3] = {5, 6, 7}, b[2] = {8, 9}, a2[2] = {6, 70};
+    CHECK(!front.pl_commit(0, 1, err));                     // nothing launched on parity 0
+    CHECK(err == "no pipelined window of that parity to commit");
+    CHECK(!front.pl_undo(1, err));
+    CHECK(!front.pl_run(2, 3, a, 4, err));                  // no such parity (refused on the host)
+    CHECK(!front.pl_run(0, 3, a, 3, err));                  // not where the session is
+    CHECK(err.find("out of step") != std::string::npos);
+    CHECK(front.pl_run(0, 3, a, 4, err));                   // A (parity 0)
+    uint32_t ready = 0;
+    std::memcpy(&ready, region.slot(1), sizeof ready);
+    CHECK(ready == 103 && static_cast<float*>(region.slot(0))[2] == 7.25f);
+    CHECK(!front.pl_commit(0, 4, err));                     // more than the window
+    CHECK(front.pl_commit(0, 3, err));                      // A committed whole, speculatively
+    CHECK(front.pl_run(1, 2, b, 7, err));                   // B (parity 1) behind it, through hand-off 1
+    std::memcpy(&ready, region.slot(4), sizeof ready);
+    CHECK(ready == 102 && static_cast<float*>(region.slot(3))[1] == 9.25f);
+    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3, 4, 5, 6, 7}));
+    // A's verdict kept 1 draft (a = 1): B was a wrong guess.  Undo A's commit, replay it with its real count (2)
+    CHECK(front.pl_undo(0, err));
+    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3, 4}));
+    CHECK(front.pl_commit(0, 2, err));
+    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3, 4, 5, 6}));
+    CHECK(!front.pl_commit(0, 2, err));                     // a second replay does not continue the session
+    CHECK(!front.pl_run(1, 2, a2, 7, err));                 // the next window starts where the real commit ended
+    CHECK(front.pl_run(0, 2, a2, 6, err));
+    CHECK(front.pl_commit(0, 2, err));
+    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3, 4, 5, 6, 6, 70}));
+    // a serial window or a session operation ends the pipelined windows: nothing is left to commit or undo
+    CHECK(front.session(SessionOp::Abandon, 0, 0, err));
+    CHECK(!front.pl_commit(0, 1, err));
+    CHECK(!front.pl_undo(0, err));
+    const int32_t w[1] = {11};
+    CHECK(front.run(1, w, 8, err));
+    CHECK(!front.pl_run(0, 1, w, 8, err));                  // the serial window waits for its commit
+    CHECK(front.commit(1, err));
+    backend.fail_next_run = true;                           // a failed launch leaves no window to commit
+    CHECK(!front.pl_run(1, 1, w, 9, err));
+    CHECK(err == "stub run failure");
+    CHECK(!front.pl_commit(1, 1, err));
+    CHECK(!front.broken());
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+    const std::vector<std::string> want = {"attach", "prefill 4 0 last 4", "pl_run 0 3 4 7", "pl_commit 0 3", "pl_run 1 2 7 9",
+                                           "pl_undo 0", "pl_commit 0 2", "pl_run 0 2 6 70", "pl_commit 0 2",
+                                           "session 6 0", "run 1 8 11", "commit 1"};
+    CHECK(backend.calls == want);
+}
+
 // The front stage's window in flight: the call returns at the launch, the next call waits for the window's end and
 // gets an error it ended with.
 void test_window_runner() {
@@ -767,6 +831,7 @@ void test_window_runner() {
 
 int main(int argc, char** argv) {
     test_token_key();
+    test_pipelined_link();
     test_window_runner();
     test_session_ops();
     test_session_drop();

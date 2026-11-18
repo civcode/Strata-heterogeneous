@@ -241,6 +241,7 @@ bool parse_hello(const Frame& f, int got, LinkIdentity& id, SharedRegion& region
 
 int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, LinkIdentity id) {
     int window = 0;   // the rows of the window that waits for its commit
+    int pl_t[2] = {0, 0};   // the rows of each parity's last pipelined window (0: none since the last other operation)
     std::vector<uint8_t> images;   // the image input received so far (Op::Images)
     for (;;) {
         Frame f;
@@ -278,8 +279,39 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
             if (window != 0) { e = "a window is still waiting for its commit"; break; }
             std::vector<int32_t> tok((size_t) T);
             std::memcpy(tok.data(), f.payload.data(), f.payload.size());
+            pl_t[0] = pl_t[1] = 0;
             ok = backend.run((int) T, tok.data(), pos0, e);
             if (ok) window = (int) T;
+            break;
+        }
+        case Op::PlRun: {
+            const int64_t T = f.a, pos0 = f.b, q = f.c;
+            if (q < 0 || q > 1 || T < 1 || T > id.max_rows || f.payload.size() != (size_t) T * sizeof(int32_t) || pos0 < 0 ||
+                pos0 + T > id.max_context) {
+                e = "bad pipelined window";
+                break;
+            }
+            if (window != 0) { e = "a window is still waiting for its commit"; break; }
+            std::vector<int32_t> tok((size_t) T);
+            std::memcpy(tok.data(), f.payload.data(), f.payload.size());
+            pl_t[q] = 0;   // (a failed launch leaves nothing to commit or undo)
+            ok = backend.pl_run((int) q, (int) T, tok.data(), pos0, e);
+            if (ok) pl_t[q] = (int) T;
+            break;
+        }
+        case Op::PlCommit: {
+            const int64_t n = f.a, q = f.c;
+            if (q < 0 || q > 1) { e = "bad window parity"; break; }
+            if (pl_t[q] == 0) { e = "no pipelined window of that parity to commit"; break; }
+            if (n < 1 || n > pl_t[q]) { e = "bad commit length"; break; }
+            ok = backend.pl_commit((int) q, (int) n, e);   // (the window stays: an undo may replay its commit)
+            break;
+        }
+        case Op::PlUndo: {
+            const int64_t q = f.c;
+            if (q < 0 || q > 1) { e = "bad window parity"; break; }
+            if (pl_t[q] == 0) { e = "no pipelined window of that parity to undo"; break; }
+            ok = backend.pl_undo((int) q, e);
             break;
         }
         case Op::Commit: {
@@ -296,6 +328,7 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
                 break;
             }
             if (window != 0) { e = "a window is still waiting for its commit"; break; }
+            pl_t[0] = pl_t[1] = 0;
             std::vector<int32_t> tok((size_t) n);
             std::memcpy(tok.data(), f.payload.data(), f.payload.size());
             ok = backend.prefill(tok.data(), n, pos0, f.c != 0, e);
@@ -303,6 +336,7 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
         }
         case Op::Session: {
             if (f.a < (int64_t) SessionOp::Reset || f.a > (int64_t) kLastSessionOp) { e = "bad session operation"; break; }
+            if (ends_window((SessionOp) f.a)) pl_t[0] = pl_t[1] = 0;
             ok = backend.session((SessionOp) f.a, f.b, f.c, e);
             if (ok && ends_window((SessionOp) f.a)) window = 0;   // a session operation ends a window not committed (not Drop)
             break;
@@ -319,6 +353,7 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
                 break;
             }
             if (window != 0) { images.clear(); e = "a window is still waiting for its commit"; break; }
+            pl_t[0] = pl_t[1] = 0;
             if (off == 0) images.reserve((size_t) total);
             images.insert(images.end(), f.payload.begin(), f.payload.end());
             if ((int64_t) images.size() < total) { ok = true; break; }
@@ -563,6 +598,36 @@ bool RemoteFrontStage::images(FrontImages& im, std::string& err) {
         off += len;
     }
     return true;
+}
+
+bool RemoteFrontStage::pl_run(int parity, int T, const int32_t* tokens, int64_t pos0, std::string& err) {
+    if (!greeted_) { err = "front link: no hello yet"; return false; }
+    if (T < 1 || tokens == nullptr || parity < 0 || parity > 1) { err = "front link: bad pipelined window"; return false; }
+    Frame f;
+    f.op = Op::PlRun;
+    f.a = T;
+    f.b = pos0;
+    f.c = parity;
+    f.payload.resize((size_t) T * sizeof(int32_t));
+    std::memcpy(f.payload.data(), tokens, f.payload.size());
+    return call(f, -1, err);
+}
+
+bool RemoteFrontStage::pl_commit(int parity, int n_keep, std::string& err) {
+    if (!greeted_) { err = "front link: no hello yet"; return false; }
+    Frame f;
+    f.op = Op::PlCommit;
+    f.a = n_keep;
+    f.c = parity;
+    return call(f, -1, err);
+}
+
+bool RemoteFrontStage::pl_undo(int parity, std::string& err) {
+    if (!greeted_) { err = "front link: no hello yet"; return false; }
+    Frame f;
+    f.op = Op::PlUndo;
+    f.c = parity;
+    return call(f, -1, err);
 }
 
 bool RemoteFrontStage::shutdown(std::string& err) {

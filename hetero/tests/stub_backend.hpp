@@ -57,6 +57,26 @@ struct StubBackend : FrontBackend {
         last_images = std::move(im);
         return true;
     }
+    /// pipelined windows: parity q writes its own hand-off (slot 3q, or slot 0 in a two-slot region) and ready word
+    bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override {
+        if (fail_next_run) { fail_next_run = false; err = "stub run failure"; return false; }
+        calls.push_back("pl_run " + std::to_string(q) + " " + std::to_string(T) + " " + std::to_string(pos0) + " " +
+                        std::to_string(tokens[T - 1]));
+        const size_t hs = region.slots() >= 5 && q == 1 ? 3 : 0;
+        float* rows = static_cast<float*>(region.slot(hs));
+        for (int t = 0; t < T; ++t) rows[t] = (float) tokens[t] + 0.25f;
+        uint32_t ready = (uint32_t) (100 + T);
+        std::memcpy(region.slot(hs + 1), &ready, sizeof ready);
+        return true;
+    }
+    bool pl_commit(int q, int n_keep, std::string&) override {
+        calls.push_back("pl_commit " + std::to_string(q) + " " + std::to_string(n_keep));
+        return true;
+    }
+    bool pl_undo(int q, std::string&) override {
+        calls.push_back("pl_undo " + std::to_string(q));
+        return true;
+    }
 };
 
 /// The front stage's session bookkeeping as the engine's front backend uses it, with a string for the session state:
@@ -84,6 +104,19 @@ struct BookBackend : StubBackend {
         if (!book.on_prefill(tokens, n, pos0, err)) return false;
         state = text(book.history());
         return StubBackend::prefill(tokens, n, pos0, last, err);
+    }
+    bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override {
+        return book.on_pl_run(q, tokens, T, pos0, err) && StubBackend::pl_run(q, T, tokens, pos0, err);
+    }
+    bool pl_commit(int q, int n_keep, std::string& err) override {
+        if (!book.on_pl_commit(q, n_keep, err)) return false;
+        state = text(book.history());
+        return StubBackend::pl_commit(q, n_keep, err);
+    }
+    bool pl_undo(int q, std::string& err) override {
+        if (!book.on_pl_undo(q, err)) return false;
+        state = text(book.history());
+        return StubBackend::pl_undo(q, err);
     }
     bool images(FrontImages& im, std::string& err) override {
         book.on_abandon();
