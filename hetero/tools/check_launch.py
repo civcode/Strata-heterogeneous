@@ -10,9 +10,11 @@ from hetero_common import expand
 
 REPO = Path(__file__).resolve().parents[2]
 VISION = REPO / 'tools' / 'vision'
-# what does not go into a build: notes, reports, run logs, docs and benchmark write-ups.  A commit that changes only
+# what does not go into a build: notes, reports, run logs, docs, benchmark write-ups, and the mixed split's driver
+# scripts and run configs.  A commit that changes only
 # these does not make a build stale (rule 7 is about the code that runs).
-NOT_BUILT = [':!.ai', ':!runs*', ':!docs', ':!bench', ':!*.md']
+NOT_BUILT = [':!.ai', ':!runs*', ':!docs', ':!bench', ':!*.md',
+             ':!hetero/tools/*.py', ':!hetero/tools/*.sh', ':!hetero/configs']   # drivers and run configs: not built
 
 
 def git(*args):

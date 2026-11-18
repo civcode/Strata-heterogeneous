@@ -26,8 +26,8 @@ Both examples name this checkout's `build-0071-hip` (the mixed one also `build-0
 toolchains in `.ai/PROJECT.md`). After a successful build of each tree, write `git rev-parse HEAD` into its
 `BUILD_COMMIT` file. Before starting, the launcher (`check_launch.py`) checks that each executable comes from a build of
 this checkout, that its libraries come from that build or a system or toolkit path, and that the sources have not
-changed since the stamp. A commit that touches only notes, reports, run logs, docs or `*.md` files does not make a
-build stale. Vision helpers come from the host build or from a build of `tools/vision` in this checkout, stamped the
+changed since the stamp. A commit that touches only notes, reports, run logs, docs, `*.md` files, the scripts in
+`hetero/tools/` or the configs here does not make a build stale. Vision helpers come from the host build or from a build of `tools/vision` in this checkout, stamped the
 same way (with `STRATA_VISION_HIP=ON` for `"gpu": true`). Do not bypass the check.
 Not supported in a mixed split yet: `--batch`, DFlash2,
 `--pipeline-windows`, `--layer-split auto`.

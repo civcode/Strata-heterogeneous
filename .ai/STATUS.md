@@ -1,22 +1,33 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0074` (Tier 1) open.
+Turn holder: **Human User**: choose the next step (see Open decisions).
 
 ## Current milestone
 
-M6: the mixed config runs what the HIP-only config runs, vision and the control vector (handoff 0074).
+M6 reached (report 0074, `9a16e06f`): the mixed config runs what the HIP-only config runs, vision and the control
+vector. `mixed.example.json` is the counterpart of `hiponly.example.json`.
 
-- **Control vectors,** implemented by Chat AI (`e7d6d857`, CPU-tested and syntax-checked, not run on the cards):
-  - the front stage loads the same vector, since the options were already forwarded to it;
-  - `SessionOp::Steer` repeats each request's switch;
-  - the front stage's keys carry the switch.
-- **Vision** (Tier 1 in handoff 0074): the host sends the front stage each request's position table, image rows and
-  image keys. The front stage's keys gain the image keys.
-
-Pipelined windows are set aside for now (Human User, 2026-11-18). They stay an important goal and are revisited later.
-Report 0073 measured +4 to 6% for HIP-only; the mixed per-stage split still needs timing lines.
+Chat AI's review:
+- **Engine change:** only `generate.cpp` changed, all inside the guards; `check_off_is_vanilla.py` reports 6 of 6.
+  The host sends each request's image input as vanilla built it (link message Images, protocol 2), and the front
+  stage's keys gain the pictures. The front stage's table upload copies vanilla's eight-line `upload_mrope` lambda:
+  acceptable duplication in guarded code.
+- **Control vectors:** on and off differ, as in HIP-only. A conversation parked with `cvec=1` is not reused at `cvec=0`
+  and is reused again at `cvec=1` (52 tokens). Against HIP-only, a near-tie at token 0, as in report 0068.
+- **Vision:** two different images with the same question each get their own description, including two same-size
+  images with swapped colours (same image tokens, no reuse across them). A text request after an image is unaffected.
+  Reuse is 318 tokens from an image's own checkpoint, and 410 in a two-turn chat about one image.
+- **Long prompt,** like-for-like configs, untraced, median of three: mixed 2,257 / 107.9 tok/s (prefill / decode),
+  HIP-only 2,308 / 105.4.
+- **Finding:** with the vector loaded but off, mixed is not bit-identical to mixed without it (layer 14, the front
+  stage's last layer). Likely rounding; recorded in `.ai/DIVERGENCE.md`.
+- **Since report 0074,** by Chat AI: `.ai/DIVERGENCE.md` updated. `check_launch.py` no longer counts the scripts in
+  `hetero/tools/` or the configs as built sources, so drivers can be committed there without staleness (report 0074
+  had to keep its driver in the run evidence).
 
 ## History in short
+
+- M6 reached (report 0074): vision and control vectors in mixed mode.
 
 - Report 0073: HIP-only pipelined windows +4 to 6% on this rig; mixed per-stage split not measurable yet.
 
@@ -58,12 +69,13 @@ Report 0073 measured +4 to 6% for HIP-only; the mixed per-stage split still need
 
 ## Open decisions for the Human User
 
-- None.
+- **The next step,** one of:
+  - the HIP-only A/B on the cost of vision and the control vector (about 5 GPU minutes);
+  - the remaining refusals (`--batch`, DFlash2, `--layer-split auto`);
+  - pipelined windows.
 
 ## Next step
 
-After report 0074: Chat AI reviews the vision change against the contract and updates `.ai/DIVERGENCE.md`. Then one
-of: the remaining refusals (`--batch`, DFlash2, `--layer-split auto`), or pipelined windows, as the Human User
-decides.
+Depends on the decision above.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn

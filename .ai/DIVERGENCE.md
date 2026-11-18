@@ -6,7 +6,7 @@ Reference: vanilla Strata 0.2.15 (`c775728`). Kept current by Chat AI; checked w
 ## With `STRATA_MIXED_SPLIT` off (the default): vanilla
 
 Every change in a vanilla engine file sits inside `#if defined(STRATA_MIXED_SPLIT)`. With the option off, the six
-changed files read exactly as vanilla after the preprocessor. The branch deletes no vanilla line: it adds 713 lines to
+changed files read exactly as vanilla after the preprocessor. The branch deletes no vanilla line: it adds 853 lines to
 7 vanilla files. The only change outside a guard is the option itself in the top-level `CMakeLists.txt` (12 lines,
 default `OFF`).
 
@@ -18,15 +18,19 @@ default `OFF`).
 | `include/strata/core/verify.hpp`, `src/core/verify.cpp` | `Verifier::set_front`: the first local stage forwards each window's run and commit to the front stage | 19 |
 | `include/strata/prefill/prefill.hpp`, `src/prefill/prefill.cpp` | `Prefill::set_remote_out` / `set_remote_in`: a prompt chunk's rows go to, or come from, the shared hand-off instead of a stage in the same process | 69 |
 | `include/strata/core/conversation_cache.hpp` | `ConversationCache::on_drop`: reports each parked conversation the cache lets go (not one taken for a restore) | 25 |
-| `src/program/generate.cpp` | See below | 588 |
-| `hetero/` | The seam library (shared region, front link, worker process), its CPU tests, the probe, run configs and tools | 3,291 |
+| `src/program/generate.cpp` | See below | 728 |
+| `hetero/` | The seam library (shared region, front link, worker process), its CPU tests, the probe, run configs and tools | 3,727 |
 
 What `generate.cpp` adds:
 - **Options:** `--front-exe`, `--front-layers`, `--front-arg` on the host; `--front-stage` on the front stage.
 - **Host:** `HeteroHost` starts the front stage (`WorkerProcess`), sets up the shared hand-off, and repeats session
-  operations on it: Reset, Abandon, Snapshot, Restore, Park, Unpark, Drop.
+  operations on it: Reset, Abandon, Snapshot, Restore, Park, Unpark, Drop, and Steer (each request's control-vector
+  switch). Before each request's first prompt chunk it sends the request's image input as vanilla built it: the
+  position table, the image rows and the picture keys (link message Images, in pieces under 16 MiB).
 - **Front stage:** loads layers `[0, K)`, serves the front link instead of the serve protocol, and keeps its parts of
-  checkpoints and parked conversations (`FrontSessionBook`).
+  checkpoints and parked conversations (`FrontSessionBook`). Their keys are the tokens, the control-vector switch and
+  the pictures, as vanilla's cache tells states apart. With `--vision` it uploads the host's position table and points
+  its prompt path at the rows it received; it loads the host's control vector for its own layers.
 - **Layer ranges:** the host's first stage starts at `front_lb`, and the front stage's process ends at `front_le`. This
   applies wherever vanilla assumed the first stage starts at layer 0 or that one card holds every layer: trimmed
   weights, session sizing, the two whole-model graph captures, PLE wiring, the output head, and the expert profile.
@@ -42,18 +46,29 @@ The reasons are Chat AI's reading of the code, not measured.
 | Option | Why not yet |
 | --- | --- |
 | `--layer-split auto` | The split search prices one process's cards; it does not know the front stage. Name the host's split. |
-| `--vision` | Image embeddings enter at the token embedding, which is the front stage's, in the other process. |
-| Control vectors | They act on a layer range that spans both processes; the front stage would need its part. |
 | `--batch` / `--slots` | The front link mirrors one session; batch slots would need one front session each. |
 | DFlash2 | It drafts from taps on every stage, including the front stage's layers. |
 | `--pipeline-windows` above 0 | The link carries one window at a time. Planned next (see `.ai/STATUS.md`). |
 | `--peer-device`, the helper caches | Both put experts on other cards, which the front stage's process does not see. |
 | Session ops Rollback, Truncate | Vanilla's serve loop never calls them; the front stage refuses them. |
 
+## Supported in mixed mode since
+
+- Control vectors (Chat AI `e7d6d857`; verified in report 0074).
+- `--vision` (report 0074, `0bccc402`).
+
 ## Not carried
 
 - The `civcode/strata-dev-private` hardening: withdrawn on 2026-11-18 (`.ai/HARDENING.md`); archived on
   `archive/hardened-0069`.
+
+## Known differences in output
+
+- Greedy output can differ from HIP-only at an early token. In reports 0068 and 0074 this was a near-tie: the
+  CUDA-only build picks the same token as mixed.
+- With a control vector loaded but switched off, mixed output is not bit-identical to mixed without a vector. Report
+  0074 traced it to layer 14, the front stage's last layer, where a covered layer's FFN write happens in another kernel.
+  The likely cause is a rounding difference; not confirmed bit by bit.
 
 ## Vanilla findings (upstream candidates, not caused by this branch)
 
