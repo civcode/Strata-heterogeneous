@@ -1,0 +1,1199 @@
+[
+ {
+  "name": "pcie_share_rule_test",
+  "rc": 0,
+  "seconds": 0.03,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 169: pcie_share_rule_test\n1/1 Test #169: pcie_share_rule_test .............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "amd_community_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 170: amd_community_test\n1/1 Test #170: amd_community_test ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "amd_community_test_dot_off",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 171: amd_community_test_dot_off\n1/1 Test #171: amd_community_test_dot_off .......   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "gfx12_extra_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 172: gfx12_extra_test\n1/1 Test #172: gfx12_extra_test .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "nv_defaults_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 173: nv_defaults_test\n1/1 Test #173: nv_defaults_test .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "kva_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 174: kva_test\n1/1 Test #174: kva_test .........................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "adapt_async_default_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 175: adapt_async_default_test\n1/1 Test #175: adapt_async_default_test .........   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "uma_cache_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 176: uma_cache_test\n1/1 Test #176: uma_cache_test ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "suffix_drafter_test",
+  "rc": 0,
+  "seconds": 0.05,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 177: suffix_drafter_test\n1/1 Test #177: suffix_drafter_test ..............   Passed    0.05 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.05 sec\n"
+ },
+ {
+  "name": "controller_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 178: controller_test\n1/1 Test #178: controller_test ..................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "draft_policy_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 179: draft_policy_test\n1/1 Test #179: draft_policy_test ................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "window_rule_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 180: window_rule_test\n1/1 Test #180: window_rule_test .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "draft_vocab_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 181: draft_vocab_test\n1/1 Test #181: draft_vocab_test .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "spec_start_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 182: spec_start_test\n1/1 Test #182: spec_start_test ..................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "message_boundary_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 183: message_boundary_test\n1/1 Test #183: message_boundary_test ............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "reply_branch_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 184: reply_branch_test\n1/1 Test #184: reply_branch_test ................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "split_ring_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 185: split_ring_test\n1/1 Test #185: split_ring_test ..................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "conv_cache_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 186: conv_cache_test\n1/1 Test #186: conv_cache_test ..................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "adapt_decay_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 187: adapt_decay_test\n1/1 Test #187: adapt_decay_test .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "window_limits_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 188: window_limits_test\n1/1 Test #188: window_limits_test ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "serve_stop_bound_test",
+  "rc": 0,
+  "seconds": 0.02,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 189: serve_stop_bound_test\n1/1 Test #189: serve_stop_bound_test ............   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n"
+ },
+ {
+  "name": "lookup_default_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 190: lookup_default_test\n1/1 Test #190: lookup_default_test ..............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "window_evict_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 191: window_evict_test\n1/1 Test #191: window_evict_test ................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "draft_kv_plan_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 192: draft_kv_plan_test\n1/1 Test #192: draft_kv_plan_test ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "coupled_draft_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 193: coupled_draft_test\n1/1 Test #193: coupled_draft_test ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "penalty_window_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 194: penalty_window_test\n1/1 Test #194: penalty_window_test ..............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "slot_history_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 195: slot_history_test\n1/1 Test #195: slot_history_test ................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "spec_prob_test",
+  "rc": 0,
+  "seconds": 2.34,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 196: spec_prob_test\n1/1 Test #196: spec_prob_test ...................   Passed    2.33 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.34 sec\n"
+ },
+ {
+  "name": "gated_proposal_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 197: gated_proposal_test\n1/1 Test #197: gated_proposal_test ..............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "spec_admission_default",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 198: spec_admission_default\n1/1 Test #198: spec_admission_default ...........   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "spec_admission_pick",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 199: spec_admission_pick\n1/1 Test #199: spec_admission_pick ..............   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "spec_admission_top",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 200: spec_admission_top\n1/1 Test #200: spec_admission_top ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "spec_admission_exact_top_only",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 201: spec_admission_exact_top_only\n1/1 Test #201: spec_admission_exact_top_only ....   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "draft_cap_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 202: draft_cap_test\n1/1 Test #202: draft_cap_test ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "bf16_bits_test",
+  "rc": 0,
+  "seconds": 0.78,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 203: bf16_bits_test\n1/1 Test #203: bf16_bits_test ...................   Passed    0.77 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.78 sec\n"
+ },
+ {
+  "name": "batch_rows_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 204: batch_rows_test\n1/1 Test #204: batch_rows_test ..................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "batch_groups_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 205: batch_groups_test\n1/1 Test #205: batch_groups_test ................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "dequant_q5_1_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 206: dequant_q5_1_test\n1/1 Test #206: dequant_q5_1_test ................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity",
+  "rc": 0,
+  "seconds": 0.1,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 207: native_arithmetic_parity\n1/1 Test #207: native_arithmetic_parity .........   Passed    0.10 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.10 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_avx",
+  "rc": 0,
+  "seconds": 0.46,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 208: native_arithmetic_parity_avx\n1/1 Test #208: native_arithmetic_parity_avx .....   Passed    0.45 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.45 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_kq256",
+  "rc": 0,
+  "seconds": 0.11,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 209: native_arithmetic_parity_kq256\n1/1 Test #209: native_arithmetic_parity_kq256 ...   Passed    0.10 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.10 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_mt1",
+  "rc": 0,
+  "seconds": 0.1,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 210: native_arithmetic_parity_mt1\n1/1 Test #210: native_arithmetic_parity_mt1 .....   Passed    0.09 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.09 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_no512",
+  "rc": 0,
+  "seconds": 0.11,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 211: native_arithmetic_parity_no512\n1/1 Test #211: native_arithmetic_parity_no512 ...   Passed    0.11 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.11 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_ggml",
+  "rc": 0,
+  "seconds": 0.11,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 212: native_arithmetic_parity_ggml\n1/1 Test #212: native_arithmetic_parity_ggml ....   Passed    0.10 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.11 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_nvfp4_avx2",
+  "rc": 0,
+  "seconds": 0.11,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 213: native_arithmetic_parity_nvfp4_avx2\n1/1 Test #213: native_arithmetic_parity_nvfp4_avx2 ...   Passed    0.10 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.11 sec\n"
+ },
+ {
+  "name": "native_arithmetic_parity_nvfp4_ggml",
+  "rc": 0,
+  "seconds": 0.11,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 214: native_arithmetic_parity_nvfp4_ggml\n1/1 Test #214: native_arithmetic_parity_nvfp4_ggml ...   Passed    0.10 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.10 sec\n"
+ },
+ {
+  "name": "pool_determinism",
+  "rc": 0,
+  "seconds": 37.45,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 215: pool_determinism\n1/1 Test #215: pool_determinism .................   Passed   37.45 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  37.45 sec\n"
+ },
+ {
+  "name": "pool_tasks_test",
+  "rc": 0,
+  "seconds": 4.52,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 216: pool_tasks_test\n1/1 Test #216: pool_tasks_test ..................   Passed    4.51 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   4.51 sec\n"
+ },
+ {
+  "name": "router_dot_parity",
+  "rc": 0,
+  "seconds": 0.03,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 217: router_dot_parity\n1/1 Test #217: router_dot_parity ................   Passed    0.02 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.03 sec\n"
+ },
+ {
+  "name": "router_dot_parity_avx",
+  "rc": 0,
+  "seconds": 0.03,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 218: router_dot_parity_avx\n1/1 Test #218: router_dot_parity_avx ............   Passed    0.02 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.03 sec\n"
+ },
+ {
+  "name": "iq512_gather_parity_scalar",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 219: iq512_gather_parity_scalar\n1/1 Test #219: iq512_gather_parity_scalar .......   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "iq512_gather_parity_gather",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 220: iq512_gather_parity_gather\n1/1 Test #220: iq512_gather_parity_gather .......   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "iq_avx2_parity",
+  "rc": 0,
+  "seconds": 0.16,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 221: iq_avx2_parity\n1/1 Test #221: iq_avx2_parity ...................   Passed    0.15 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.16 sec\n"
+ },
+ {
+  "name": "iq_avx2_parity_iq3s_mt1",
+  "rc": 0,
+  "seconds": 0.16,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 222: iq_avx2_parity_iq3s_mt1\n1/1 Test #222: iq_avx2_parity_iq3s_mt1 ..........   Passed    0.15 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.15 sec\n"
+ },
+ {
+  "name": "iq_avx1_parity",
+  "rc": 0,
+  "seconds": 0.09,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 223: iq_avx1_parity\n1/1 Test #223: iq_avx1_parity ...................   Passed    0.08 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.08 sec\n"
+ },
+ {
+  "name": "q8k_quant_parity",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 224: q8k_quant_parity\n1/1 Test #224: q8k_quant_parity .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "q8k_quant_parity_avx",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 225: q8k_quant_parity_avx\n1/1 Test #225: q8k_quant_parity_avx .............   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "quant_selftest",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 226: quant_selftest\n1/1 Test #226: quant_selftest ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "nvfp4_decode_model_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 227: nvfp4_decode_model_test\n1/1 Test #227: nvfp4_decode_model_test ..........   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "type_geometry_oracle",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 228: type_geometry_oracle\n1/1 Test #228: type_geometry_oracle .............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "quant_parity",
+  "rc": 0,
+  "seconds": 11.02,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 229: quant_parity\n1/1 Test #229: quant_parity .....................   Passed   11.02 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  11.02 sec\n"
+ },
+ {
+  "name": "quant_golden_regen",
+  "rc": 0,
+  "seconds": 11.05,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 230: quant_golden_regen\n1/1 Test #230: quant_golden_regen ...............   Passed   11.04 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  11.04 sec\n"
+ },
+ {
+  "name": "no_mmq_symbols",
+  "rc": 0,
+  "seconds": 38.2,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 231: no_mmq_symbols\n1/1 Test #231: no_mmq_symbols ...................   Passed   38.19 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  38.19 sec\n"
+ },
+ {
+  "name": "prefill_fused_q36_test_hostblobs",
+  "rc": 0,
+  "seconds": 1.77,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 237: prefill_fused_q36_test_hostblobs\n1/1 Test #237: prefill_fused_q36_test_hostblobs ...   Passed    1.76 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.77 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_q2n",
+  "rc": 0,
+  "seconds": 9.0,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 238: prefill_fused_iq_test_q2n\n1/1 Test #238: prefill_fused_iq_test_q2n ........   Passed    9.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   9.00 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_sm75",
+  "rc": 0,
+  "seconds": 0.09,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 239: prefill_fused_iq_test_sm75\n1/1 Test #239: prefill_fused_iq_test_sm75 .......***Skipped   0.08 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.08 sec\n\nThe following tests did not run:\n\t239 - prefill_fused_iq_test_sm75 (Skipped)\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_nt256",
+  "rc": 0,
+  "seconds": 54.93,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 240: prefill_fused_iq_test_nt256\n1/1 Test #240: prefill_fused_iq_test_nt256 ......   Passed   54.92 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  54.93 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_f16",
+  "rc": 0,
+  "seconds": 55.9,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 241: prefill_fused_iq_test_f16\n1/1 Test #241: prefill_fused_iq_test_f16 ........   Passed   55.89 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  55.90 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_ws",
+  "rc": 0,
+  "seconds": 0.19,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 242: prefill_fused_iq_test_ws\n1/1 Test #242: prefill_fused_iq_test_ws .........***Skipped   0.18 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.19 sec\n\nThe following tests did not run:\n\t242 - prefill_fused_iq_test_ws (Skipped)\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_q50",
+  "rc": 0,
+  "seconds": 14.5,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 243: prefill_fused_iq_test_q50\n1/1 Test #243: prefill_fused_iq_test_q50 ........   Passed   14.49 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  14.49 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_hostblobs",
+  "rc": 0,
+  "seconds": 2.94,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 244: prefill_fused_iq_test_hostblobs\n1/1 Test #244: prefill_fused_iq_test_hostblobs ...   Passed    2.93 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.94 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_kq",
+  "rc": 0,
+  "seconds": 44.64,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 245: prefill_fused_iq_test_kq\n1/1 Test #245: prefill_fused_iq_test_kq .........   Passed   44.63 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  44.63 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_kqbits",
+  "rc": 0,
+  "seconds": 15.29,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 246: prefill_fused_iq_test_kqbits\n1/1 Test #246: prefill_fused_iq_test_kqbits .....   Passed   15.28 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  15.29 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_q8d",
+  "rc": 0,
+  "seconds": 22.57,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 247: prefill_fused_iq_test_q8d\n1/1 Test #247: prefill_fused_iq_test_q8d ........   Passed   22.56 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  22.57 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_q8gu",
+  "rc": 0,
+  "seconds": 12.09,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 248: prefill_fused_iq_test_q8gu\n1/1 Test #248: prefill_fused_iq_test_q8gu .......   Passed   12.08 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  12.08 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_q6k",
+  "rc": 0,
+  "seconds": 11.82,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 249: prefill_fused_iq_test_q6k\n1/1 Test #249: prefill_fused_iq_test_q6k ........   Passed   11.81 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  11.82 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_tq",
+  "rc": 0,
+  "seconds": 24.29,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 250: prefill_fused_iq_test_tq\n1/1 Test #250: prefill_fused_iq_test_tq .........   Passed   24.29 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  24.29 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_tqh",
+  "rc": 0,
+  "seconds": 24.47,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 251: prefill_fused_iq_test_tqh\n1/1 Test #251: prefill_fused_iq_test_tqh ........   Passed   24.46 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  24.47 sec\n"
+ },
+ {
+  "name": "prefill_fused_iq_test_nvfp4",
+  "rc": 0,
+  "seconds": 18.78,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 252: prefill_fused_iq_test_nvfp4\n1/1 Test #252: prefill_fused_iq_test_nvfp4 ......   Passed   18.77 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  18.77 sec\n"
+ },
+ {
+  "name": "nvfp4_cpu_parity",
+  "rc": 0,
+  "seconds": 0.17,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 253: nvfp4_cpu_parity\n1/1 Test #253: nvfp4_cpu_parity .................   Passed    0.16 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.17 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q4_K_q5_1",
+  "rc": 0,
+  "seconds": 0.4,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 254: native_expert_parity_q4_K_q5_1\n1/1 Test #254: native_expert_parity_q4_K_q5_1 ...   Passed    0.39 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.40 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q4_K_q8_0",
+  "rc": 0,
+  "seconds": 0.39,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 255: native_expert_parity_q4_K_q8_0\n1/1 Test #255: native_expert_parity_q4_K_q8_0 ...   Passed    0.38 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.39 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q5_K_q8_0",
+  "rc": 0,
+  "seconds": 0.39,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 256: native_expert_parity_q5_K_q8_0\n1/1 Test #256: native_expert_parity_q5_K_q8_0 ...   Passed    0.38 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.38 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q8_0_q8_0",
+  "rc": 0,
+  "seconds": 0.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 257: native_expert_parity_q8_0_q8_0\n1/1 Test #257: native_expert_parity_q8_0_q8_0 ...   Passed    0.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.27 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q4_K_q5_0",
+  "rc": 0,
+  "seconds": 0.38,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 258: native_expert_parity_q4_K_q5_0\n1/1 Test #258: native_expert_parity_q4_K_q5_0 ...   Passed    0.37 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.38 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q5_0_q8_0",
+  "rc": 0,
+  "seconds": 0.31,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 259: native_expert_parity_q5_0_q8_0\n1/1 Test #259: native_expert_parity_q5_0_q8_0 ...   Passed    0.30 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.30 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q4_0_q4_0",
+  "rc": 0,
+  "seconds": 0.26,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 260: native_expert_parity_q4_0_q4_0\n1/1 Test #260: native_expert_parity_q4_0_q4_0 ...   Passed    0.25 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.25 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q4_0_q4_1",
+  "rc": 0,
+  "seconds": 0.26,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 261: native_expert_parity_q4_0_q4_1\n1/1 Test #261: native_expert_parity_q4_0_q4_1 ...   Passed    0.25 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.26 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q6_K_q8_0",
+  "rc": 0,
+  "seconds": 0.32,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 262: native_expert_parity_q6_K_q8_0\n1/1 Test #262: native_expert_parity_q6_K_q8_0 ...   Passed    0.31 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.32 sec\n"
+ },
+ {
+  "name": "native_expert_parity_q5_1_min",
+  "rc": 0,
+  "seconds": 0.19,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 263: native_expert_parity_q5_1_min\n1/1 Test #263: native_expert_parity_q5_1_min ....   Passed    0.19 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.19 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq1_m_q2_0",
+  "rc": 0,
+  "seconds": 7.19,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 264: native_expert_parity_v31_iq1_m_q2_0\n1/1 Test #264: native_expert_parity_v31_iq1_m_q2_0 ...   Passed    7.19 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.19 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq1_m_iq4_nl",
+  "rc": 0,
+  "seconds": 7.44,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 265: native_expert_parity_v31_iq1_m_iq4_nl\n1/1 Test #265: native_expert_parity_v31_iq1_m_iq4_nl ...   Passed    7.43 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.43 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq1_m_q5_0",
+  "rc": 0,
+  "seconds": 7.36,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 266: native_expert_parity_v31_iq1_m_q5_0\n1/1 Test #266: native_expert_parity_v31_iq1_m_q5_0 ...   Passed    7.35 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.36 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq1_m_q8_0",
+  "rc": 0,
+  "seconds": 7.16,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 267: native_expert_parity_v31_iq1_m_q8_0\n1/1 Test #267: native_expert_parity_v31_iq1_m_q8_0 ...   Passed    7.15 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.15 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xxs_q2_0",
+  "rc": 0,
+  "seconds": 1.5,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 268: native_expert_parity_v31_iq2_xxs_q2_0\n1/1 Test #268: native_expert_parity_v31_iq2_xxs_q2_0 ...   Passed    1.50 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.50 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xxs_iq4_nl",
+  "rc": 0,
+  "seconds": 1.71,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 269: native_expert_parity_v31_iq2_xxs_iq4_nl\n1/1 Test #269: native_expert_parity_v31_iq2_xxs_iq4_nl ...   Passed    1.70 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.70 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xxs_q5_0",
+  "rc": 0,
+  "seconds": 1.5,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 270: native_expert_parity_v31_iq2_xxs_q5_0\n1/1 Test #270: native_expert_parity_v31_iq2_xxs_q5_0 ...   Passed    1.49 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.49 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xxs_q8_0",
+  "rc": 0,
+  "seconds": 1.51,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 271: native_expert_parity_v31_iq2_xxs_q8_0\n1/1 Test #271: native_expert_parity_v31_iq2_xxs_q8_0 ...   Passed    1.50 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.50 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xs_q2_0",
+  "rc": 0,
+  "seconds": 2.72,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 272: native_expert_parity_v31_iq2_xs_q2_0\n1/1 Test #272: native_expert_parity_v31_iq2_xs_q2_0 ...   Passed    2.72 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.72 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xs_iq4_nl",
+  "rc": 0,
+  "seconds": 2.93,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 273: native_expert_parity_v31_iq2_xs_iq4_nl\n1/1 Test #273: native_expert_parity_v31_iq2_xs_iq4_nl ...   Passed    2.91 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.92 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xs_q5_0",
+  "rc": 0,
+  "seconds": 2.69,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 274: native_expert_parity_v31_iq2_xs_q5_0\n1/1 Test #274: native_expert_parity_v31_iq2_xs_q5_0 ...   Passed    2.69 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.69 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_xs_q8_0",
+  "rc": 0,
+  "seconds": 2.71,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 275: native_expert_parity_v31_iq2_xs_q8_0\n1/1 Test #275: native_expert_parity_v31_iq2_xs_q8_0 ...   Passed    2.71 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.71 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_s_q2_0",
+  "rc": 0,
+  "seconds": 3.3,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 276: native_expert_parity_v31_iq2_s_q2_0\n1/1 Test #276: native_expert_parity_v31_iq2_s_q2_0 ...   Passed    3.29 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.29 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_s_iq4_nl",
+  "rc": 0,
+  "seconds": 3.48,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 277: native_expert_parity_v31_iq2_s_iq4_nl\n1/1 Test #277: native_expert_parity_v31_iq2_s_iq4_nl ...   Passed    3.47 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.48 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_s_q5_0",
+  "rc": 0,
+  "seconds": 3.27,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 278: native_expert_parity_v31_iq2_s_q5_0\n1/1 Test #278: native_expert_parity_v31_iq2_s_q5_0 ...   Passed    3.26 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.26 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq2_s_q8_0",
+  "rc": 0,
+  "seconds": 3.32,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 279: native_expert_parity_v31_iq2_s_q8_0\n1/1 Test #279: native_expert_parity_v31_iq2_s_q8_0 ...   Passed    3.31 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.32 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq3_xxs_q2_0",
+  "rc": 0,
+  "seconds": 1.32,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 280: native_expert_parity_v31_iq3_xxs_q2_0\n1/1 Test #280: native_expert_parity_v31_iq3_xxs_q2_0 ...   Passed    1.31 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.32 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq3_xxs_iq4_nl",
+  "rc": 0,
+  "seconds": 1.49,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 281: native_expert_parity_v31_iq3_xxs_iq4_nl\n1/1 Test #281: native_expert_parity_v31_iq3_xxs_iq4_nl ...   Passed    1.49 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.49 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq3_xxs_q5_0",
+  "rc": 0,
+  "seconds": 1.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 282: native_expert_parity_v31_iq3_xxs_q5_0\n1/1 Test #282: native_expert_parity_v31_iq3_xxs_q5_0 ...   Passed    1.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.28 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq3_xxs_q8_0",
+  "rc": 0,
+  "seconds": 1.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 283: native_expert_parity_v31_iq3_xxs_q8_0\n1/1 Test #283: native_expert_parity_v31_iq3_xxs_q8_0 ...   Passed    1.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.27 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq4_xs_q2_0",
+  "rc": 0,
+  "seconds": 0.68,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 284: native_expert_parity_v31_iq4_xs_q2_0\n1/1 Test #284: native_expert_parity_v31_iq4_xs_q2_0 ...   Passed    0.67 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.68 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq4_xs_iq4_nl",
+  "rc": 0,
+  "seconds": 0.87,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 285: native_expert_parity_v31_iq4_xs_iq4_nl\n1/1 Test #285: native_expert_parity_v31_iq4_xs_iq4_nl ...   Passed    0.87 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.87 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq4_xs_q5_0",
+  "rc": 0,
+  "seconds": 0.69,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 286: native_expert_parity_v31_iq4_xs_q5_0\n1/1 Test #286: native_expert_parity_v31_iq4_xs_q5_0 ...   Passed    0.68 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.68 sec\n"
+ },
+ {
+  "name": "native_expert_parity_v31_iq4_xs_q8_0",
+  "rc": 0,
+  "seconds": 0.67,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 287: native_expert_parity_v31_iq4_xs_q8_0\n1/1 Test #287: native_expert_parity_v31_iq4_xs_q8_0 ...   Passed    0.66 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.67 sec\n"
+ },
+ {
+  "name": "native_dense_parity",
+  "rc": 0,
+  "seconds": 3.7,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 288: native_dense_parity\n1/1 Test #288: native_dense_parity ..............   Passed    3.69 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.70 sec\n"
+ },
+ {
+  "name": "native_expert_parity_bf16_embd",
+  "rc": 0,
+  "seconds": 0.19,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 289: native_expert_parity_bf16_embd\n1/1 Test #289: native_expert_parity_bf16_embd ...   Passed    0.18 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.18 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq1_m_q2_0",
+  "rc": 0,
+  "seconds": 7.33,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 290: native_expert_parity_new_iq1_m_q2_0\n1/1 Test #290: native_expert_parity_new_iq1_m_q2_0 ...   Passed    7.32 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.32 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq1_m_iq4_nl",
+  "rc": 0,
+  "seconds": 7.31,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 291: native_expert_parity_new_iq1_m_iq4_nl\n1/1 Test #291: native_expert_parity_new_iq1_m_iq4_nl ...   Passed    7.31 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.31 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq1_m_q5_0",
+  "rc": 0,
+  "seconds": 7.12,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 292: native_expert_parity_new_iq1_m_q5_0\n1/1 Test #292: native_expert_parity_new_iq1_m_q5_0 ...   Passed    7.11 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.11 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq1_m_q8_0",
+  "rc": 0,
+  "seconds": 7.2,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 293: native_expert_parity_new_iq1_m_q8_0\n1/1 Test #293: native_expert_parity_new_iq1_m_q8_0 ...   Passed    7.19 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   7.19 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xxs_q2_0",
+  "rc": 0,
+  "seconds": 1.51,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 294: native_expert_parity_new_iq2_xxs_q2_0\n1/1 Test #294: native_expert_parity_new_iq2_xxs_q2_0 ...   Passed    1.51 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.51 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xxs_iq4_nl",
+  "rc": 0,
+  "seconds": 1.69,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 295: native_expert_parity_new_iq2_xxs_iq4_nl\n1/1 Test #295: native_expert_parity_new_iq2_xxs_iq4_nl ...   Passed    1.68 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.69 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xxs_q5_0",
+  "rc": 0,
+  "seconds": 1.48,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 296: native_expert_parity_new_iq2_xxs_q5_0\n1/1 Test #296: native_expert_parity_new_iq2_xxs_q5_0 ...   Passed    1.48 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.48 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xxs_q8_0",
+  "rc": 0,
+  "seconds": 1.52,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 297: native_expert_parity_new_iq2_xxs_q8_0\n1/1 Test #297: native_expert_parity_new_iq2_xxs_q8_0 ...   Passed    1.51 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.51 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xs_q2_0",
+  "rc": 0,
+  "seconds": 2.71,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 298: native_expert_parity_new_iq2_xs_q2_0\n1/1 Test #298: native_expert_parity_new_iq2_xs_q2_0 ...   Passed    2.70 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.70 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xs_iq4_nl",
+  "rc": 0,
+  "seconds": 2.91,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 299: native_expert_parity_new_iq2_xs_iq4_nl\n1/1 Test #299: native_expert_parity_new_iq2_xs_iq4_nl ...   Passed    2.91 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.91 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xs_q5_0",
+  "rc": 0,
+  "seconds": 2.75,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 300: native_expert_parity_new_iq2_xs_q5_0\n1/1 Test #300: native_expert_parity_new_iq2_xs_q5_0 ...   Passed    2.75 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.75 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_xs_q8_0",
+  "rc": 0,
+  "seconds": 2.7,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 301: native_expert_parity_new_iq2_xs_q8_0\n1/1 Test #301: native_expert_parity_new_iq2_xs_q8_0 ...   Passed    2.69 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   2.69 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_s_q2_0",
+  "rc": 0,
+  "seconds": 3.26,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 302: native_expert_parity_new_iq2_s_q2_0\n1/1 Test #302: native_expert_parity_new_iq2_s_q2_0 ...   Passed    3.25 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.25 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_s_iq4_nl",
+  "rc": 0,
+  "seconds": 3.48,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 303: native_expert_parity_new_iq2_s_iq4_nl\n1/1 Test #303: native_expert_parity_new_iq2_s_iq4_nl ...   Passed    3.47 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.47 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_s_q5_0",
+  "rc": 0,
+  "seconds": 3.24,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 304: native_expert_parity_new_iq2_s_q5_0\n1/1 Test #304: native_expert_parity_new_iq2_s_q5_0 ...   Passed    3.24 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.24 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq2_s_q8_0",
+  "rc": 0,
+  "seconds": 3.24,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 305: native_expert_parity_new_iq2_s_q8_0\n1/1 Test #305: native_expert_parity_new_iq2_s_q8_0 ...   Passed    3.24 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   3.24 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_q2_0_q2_0",
+  "rc": 0,
+  "seconds": 0.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 306: native_expert_parity_new_q2_0_q2_0\n1/1 Test #306: native_expert_parity_new_q2_0_q2_0 ...   Passed    0.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.27 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_q2_0_iq4_nl",
+  "rc": 0,
+  "seconds": 0.49,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 307: native_expert_parity_new_q2_0_iq4_nl\n1/1 Test #307: native_expert_parity_new_q2_0_iq4_nl ...   Passed    0.48 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.48 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_q2_0_q5_0",
+  "rc": 0,
+  "seconds": 0.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 308: native_expert_parity_new_q2_0_q5_0\n1/1 Test #308: native_expert_parity_new_q2_0_q5_0 ...   Passed    0.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.28 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_q2_0_q8_0",
+  "rc": 0,
+  "seconds": 0.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 309: native_expert_parity_new_q2_0_q8_0\n1/1 Test #309: native_expert_parity_new_q2_0_q8_0 ...   Passed    0.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.27 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq3_xxs_q2_0",
+  "rc": 0,
+  "seconds": 1.27,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 310: native_expert_parity_new_iq3_xxs_q2_0\n1/1 Test #310: native_expert_parity_new_iq3_xxs_q2_0 ...   Passed    1.26 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.26 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq3_xxs_iq4_nl",
+  "rc": 0,
+  "seconds": 1.5,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 311: native_expert_parity_new_iq3_xxs_iq4_nl\n1/1 Test #311: native_expert_parity_new_iq3_xxs_iq4_nl ...   Passed    1.49 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.49 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq3_xxs_q5_0",
+  "rc": 0,
+  "seconds": 1.28,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 312: native_expert_parity_new_iq3_xxs_q5_0\n1/1 Test #312: native_expert_parity_new_iq3_xxs_q5_0 ...   Passed    1.27 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.27 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq3_xxs_q8_0",
+  "rc": 0,
+  "seconds": 1.29,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 313: native_expert_parity_new_iq3_xxs_q8_0\n1/1 Test #313: native_expert_parity_new_iq3_xxs_q8_0 ...   Passed    1.28 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.28 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq4_xs_q2_0",
+  "rc": 0,
+  "seconds": 0.69,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 314: native_expert_parity_new_iq4_xs_q2_0\n1/1 Test #314: native_expert_parity_new_iq4_xs_q2_0 ...   Passed    0.69 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.69 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq4_xs_iq4_nl",
+  "rc": 0,
+  "seconds": 0.87,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 315: native_expert_parity_new_iq4_xs_iq4_nl\n1/1 Test #315: native_expert_parity_new_iq4_xs_iq4_nl ...   Passed    0.86 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.87 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq4_xs_q5_0",
+  "rc": 0,
+  "seconds": 0.68,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 316: native_expert_parity_new_iq4_xs_q5_0\n1/1 Test #316: native_expert_parity_new_iq4_xs_q5_0 ...   Passed    0.68 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.68 sec\n"
+ },
+ {
+  "name": "native_expert_parity_new_iq4_xs_q8_0",
+  "rc": 0,
+  "seconds": 0.67,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 317: native_expert_parity_new_iq4_xs_q8_0\n1/1 Test #317: native_expert_parity_new_iq4_xs_q8_0 ...   Passed    0.67 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.67 sec\n"
+ },
+ {
+  "name": "native_dense_types_parity",
+  "rc": 0,
+  "seconds": 1.95,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 318: native_dense_types_parity\n1/1 Test #318: native_dense_types_parity ........   Passed    1.94 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   1.95 sec\n"
+ },
+ {
+  "name": "pool_affinity_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 319: pool_affinity_test\n1/1 Test #319: pool_affinity_test ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "expert_multi_test",
+  "rc": 0,
+  "seconds": 0.06,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 320: expert_multi_test\n1/1 Test #320: expert_multi_test ................   Passed    0.05 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.06 sec\n"
+ },
+ {
+  "name": "q2_bitplane_parity",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 321: q2_bitplane_parity\n1/1 Test #321: q2_bitplane_parity ...............   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "native_hadamard_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 322: native_hadamard_test\n1/1 Test #322: native_hadamard_test .............***Skipped   0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n\nThe following tests did not run:\n\t322 - native_hadamard_test (Skipped)\n"
+ },
+ {
+  "name": "tq_cpu_parity",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 323: tq_cpu_parity\n1/1 Test #323: tq_cpu_parity ....................***Skipped   0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n\nThe following tests did not run:\n\t323 - tq_cpu_parity (Skipped)\n"
+ },
+ {
+  "name": "tq_cpu_parity_avx2",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 324: tq_cpu_parity_avx2\n1/1 Test #324: tq_cpu_parity_avx2 ...............***Skipped   0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n\nThe following tests did not run:\n\t324 - tq_cpu_parity_avx2 (Skipped)\n"
+ },
+ {
+  "name": "tqp_cpu_test",
+  "rc": 0,
+  "seconds": 0.02,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 325: tqp_cpu_test\n1/1 Test #325: tqp_cpu_test .....................   Passed    0.02 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n"
+ },
+ {
+  "name": "tqp_cpu_test_avx2",
+  "rc": 0,
+  "seconds": 0.03,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 326: tqp_cpu_test_avx2\n1/1 Test #326: tqp_cpu_test_avx2 ................   Passed    0.02 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n"
+ },
+ {
+  "name": "expert_parity",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 327: expert_parity\n1/1 Test #327: expert_parity ....................***Skipped   0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n\nThe following tests did not run:\n\t327 - expert_parity (Skipped)\n"
+ },
+ {
+  "name": "pool_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": true,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 328: pool_test\n1/1 Test #328: pool_test ........................***Skipped   0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n\nThe following tests did not run:\n\t328 - pool_test (Skipped)\n"
+ },
+ {
+  "name": "pool_cores_test",
+  "rc": 0,
+  "seconds": 0.02,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 329: pool_cores_test\n1/1 Test #329: pool_cores_test ..................   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n"
+ },
+ {
+  "name": "pool_plan_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 330: pool_plan_test\n1/1 Test #330: pool_plan_test ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "numa_pool_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 331: numa_pool_test\n1/1 Test #331: numa_pool_test ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "cgroup_cpu_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 332: cgroup_cpu_test\n1/1 Test #332: cgroup_cpu_test ..................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "card_node_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 333: card_node_test\n1/1 Test #333: card_node_test ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "home_cpus_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 334: home_cpus_test\n1/1 Test #334: home_cpus_test ...................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "warm_policy_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 335: warm_policy_test\n1/1 Test #335: warm_policy_test .................   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ },
+ {
+  "name": "copy_events_test",
+  "rc": 0,
+  "seconds": 0.05,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 336: copy_events_test\n1/1 Test #336: copy_events_test .................   Passed    0.05 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.05 sec\n"
+ },
+ {
+  "name": "pool_stress",
+  "rc": 0,
+  "seconds": 20.22,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 337: pool_stress\n1/1 Test #337: pool_stress ......................   Passed   20.21 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =  20.22 sec\n"
+ },
+ {
+  "name": "isa_guard_check",
+  "rc": 0,
+  "seconds": 0.96,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 338: isa_guard_check\n1/1 Test #338: isa_guard_check ..................   Passed    0.95 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.95 sec\n"
+ },
+ {
+  "name": "direct_file_async_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 339: direct_file_async_test\n1/1 Test #339: direct_file_async_test ...........   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "aux_cpus_test",
+  "rc": 0,
+  "seconds": 0.02,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 340: aux_cpus_test\n1/1 Test #340: aux_cpus_test ....................   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.01 sec\n"
+ },
+ {
+  "name": "cuda_spill_guard",
+  "rc": 8,
+  "seconds": 0.22,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 341: cuda_spill_guard\n1/1 Test #341: cuda_spill_guard .................***Failed    0.22 sec\ncheck_cuda_spills: /home/chris/workspace/Strata-mixed-native/build-0071-cuda/libstrata_kernels.a: 2468 kernels on sm_89 (2468 entries; 0 vendored ggml entries skipped), 435 use stack / local memory, 0 of them known from the baseline, 2 not allowed\ncheck_cuda_spills: no baseline for sm_89: its 2 violations cannot be told from new ones (baselines: sm_120, sm_75, sm_86)\n  VIOLATION void strata::kernels::<unnamed>::native_gu_swiglu_kernel<(int)23, (bool)0>(const unsigned long long *, const int *, const int *, const int *, const block_q8_1 * sm_89: STACK 8 LOCAL 0 (not in ALLOWED) [iq_kernels.cu.o]\n  VIOLATION void strata::kernels::<unnamed>::native_gu_swiglu_kernel<(int)17, (bool)1>(const unsigned long long *, const int *, const int *, const int *, const block_q8_1 * sm_89: STACK 8 LOCAL 0 (not in ALLOWED) [iq_kernels.cu.o]\ncheck_cuda_spills: /home/chris/workspace/Strata-mixed-native/build-0071-cuda/libstrata_core.a: 1 kernels on sm_89 (1 entries; 0 vendored ggml entries skipped), 0 use stack / local memory, 0 of them known from the baseline, 0 not allowed\ncheck_cuda_spills: /home/chris/workspace/Strata-mixed-native/build-0071-cuda/libstrata_engine.a: 2 kernels on sm_89 (2 entries; 0 vendored ggml entries skipped), 0 use stack / local memory, 0 of them known from the baseline, 0 not allowed\ncheck_cuda_spills: /home/chris/workspace/Strata-mixed-native/build-0071-cuda/libstrata_prefill.a: 72 kernels on sm_89 (72 entries; 0 vendored ggml entries skipped), 13 use stack / local memory, 0 of them known from the baseline, 0 not allowed\ncheck_cuda_spills: /home/chris/workspace/Strata-mixed-native/build-0071-cuda/libstrata_qwen35.a: 63 kernels on sm_89 (63 entries; 0 vendored ggml entries skipped), 3 use stack / local memory, 0 of them known from the baseline, 0 not allowed\ncheck_cuda_spills: /home/chris/workspace/Strata-mixed-native/build-0071-cuda/libstrata_pf_own.a: 167 kernels on sm_89 (167 entries; 0 vendored ggml entries skipped), 60 use stack / local memory, 0 of them known from the baseline, 0 not allowed\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.22 sec\n\nThe following tests FAILED:\n\t341 - cuda_spill_guard (Failed)\nErrors while running CTest\n"
+ },
+ {
+  "name": "check_cuda_spills_unit",
+  "rc": 0,
+  "seconds": 0.12,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 342: check_cuda_spills_unit\n1/1 Test #342: check_cuda_spills_unit ...........   Passed    0.11 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.11 sec\n"
+ },
+ {
+  "name": "mixed_split_tests",
+  "rc": 0,
+  "seconds": 0.84,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 343: mixed_split_tests\n1/1 Test #343: mixed_split_tests ................   Passed    0.83 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.83 sec\n"
+ },
+ {
+  "name": "mixed_split_cache_drop_test",
+  "rc": 0,
+  "seconds": 0.01,
+  "skip": false,
+  "output": "Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda\nTest project /home/chris/workspace/Strata-mixed-native/build-0071-cuda\n    Start 344: mixed_split_cache_drop_test\n1/1 Test #344: mixed_split_cache_drop_test ......   Passed    0.00 sec\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.00 sec\n"
+ }
+]
