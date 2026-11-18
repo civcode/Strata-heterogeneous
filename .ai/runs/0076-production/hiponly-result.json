@@ -1,0 +1,80 @@
+{
+ "request": {
+  "id": "chatcmpl-f27c48297771430d85b2bd97",
+  "object": "chat.completion",
+  "created": 1795035333,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user: \"Explain briefly what a mutex is.\" Need final concise. Explain mutex: mutual exclusion lock, synchronization primitive, ensures only one thread"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 60,
+   "completion_tokens": 32,
+   "total_tokens": 92,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 60,
+   "prompt_ms": 288.0,
+   "prompt_per_token_ms": 4.8,
+   "prompt_per_second": 208.3,
+   "predicted_n": 32,
+   "predicted_ms": 286.6,
+   "predicted_per_token_ms": 8.956,
+   "predicted_per_second": 111.7,
+   "draft_n": 26,
+   "draft_n_accepted": 17
+  }
+ },
+ "long16k": {
+  "id": "chatcmpl-5f5d7d942bc94cd29a8d8cd8",
+  "object": "chat.completion",
+  "created": 1795035334,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: Summarise the following document in five bullet points. Need produce final with five bullets. Need likely concise but enough. Need"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 16093,
+   "completion_tokens": 32,
+   "total_tokens": 16125,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 16093,
+   "prompt_ms": 4626.1,
+   "prompt_per_token_ms": 0.287,
+   "prompt_per_second": 3478.7,
+   "predicted_n": 32,
+   "predicted_ms": 257.6,
+   "predicted_per_token_ms": 8.05,
+   "predicted_per_second": 124.2,
+   "draft_n": 29,
+   "draft_n_accepted": 20
+  }
+ },
+ "rc": 0,
+ "elapsed": 16.873441232994082
+}

@@ -1,0 +1,37 @@
+               total        used        free      shared  buff/cache   available
+Mem:            60Gi       9.9Gi       9.7Gi       1.8Gi        43Gi        50Gi
+Swap:           15Gi       110Mi        15Gi
+
+Wed Nov 18 21:54:47 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4070 ...    Off |   00000000:04:00.0 Off |                  N/A |
+|  0%   48C    P2             46W /  285W |   14253MiB /  16376MiB |      3%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            4662      G   /usr/lib/xorg/Xorg                        4MiB |
+|    0   N/A  N/A         3971166      C   ...native/build-0071-cuda/strata      14230MiB |
++-----------------------------------------------------------------------------------------+
+
+GPU: 0
+    MEM_CARVEOUT: N/A (UMA carveout is not supported on this ASIC/VBIOS)
+
+GPU: 1
+    MEM_CARVEOUT: N/A (UMA carveout is not supported on this ASIC/VBIOS)
+
+GPU: 2
+    MEM_CARVEOUT: N/A (UMA carveout is not supported on this ASIC/VBIOS)
+
+
+
