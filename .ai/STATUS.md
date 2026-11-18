@@ -1,22 +1,28 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0069` (Tier 1) open once the Human User confirms its 30-minute budget.
+Turn holder: **Human User**: decisions below (hardening removal, RAM, the live-resume criterion).
 
 ## Current milestone
 
-M4: the mixed profile serves like vanilla. That means caches across the boundary, one copy of the experts in RAM, and
-the run configs and drivers committed (handoff 0069).
-
-M2 reached (report 0068, `c002991d`): mixed requests run through vanilla's loop with CUDA [0,15) and HIP [15,33) +
-[33,48). All five bring-up steps passed, including `serve/server.py` streaming, non-streaming, cancel and SIGTERM
-shutdown. Long prompt (4,924 tokens), mixed against HIP-only: prefill 2,342 against 2,229 tok/s; decode 116 against
-111 tok/s. One sample each. Greedy output differs from HIP-only at token 0; the front stage's layer-14 rows match a
-CUDA-only run (cosine >= 0.9997), so this is a near-tie and a low-priority numerical finding. The engine changes use
-vanilla options (`--no-prefill-borrow`, `--mmap-experts`, lookup windows 0), leave the PLE to the front stage, and fix
-a stale arena record in the hardening port (all builds). Chat AI reviewed them and accepts them under the contract.
-Kernel log: 17 amdgpu `hogged CPU` warnings, mostly during a RAM-starved run; no GPU faults, crashes or reboots.
+M4 reached with one open point (report 0069, `4785ba1b`):
+- **Caches:** both work across the boundary. The front stage repeats checkpoints and parked conversations through
+  vanilla's own save and restore calls, after checking that it holds the same tokens.
+- **Turn 2 with and without reuse:** checkpoint and park paths match a fresh read (50/50, and 33/33 where the reply
+  stops early). The live-session resume differs at token 7; vanilla HIP-only also differs on that path, at token 29.
+- **Reuse:** the same counts as HIP-only.
+- **Server checks:** all pass; the slow reader is within 0.3% of the fast one.
+- **Long prompt:** prefill 2,249 and decode 113 tok/s against HIP-only 2,236 and 111.
+- **RAM and VRAM:** one shared expert arena (memfd), but no extra free RAM: about 19 GiB available with the engine
+  idle. The front stage no longer loads the head.
+- **Review:** Chat AI reviewed the engine diff: vanilla calls only, behind `STRATA_HETERO`.
+- **Open risk (from reading the code, unconfirmed):** the front stage's store of checkpoints and parked
+  conversations is bounded by count, while the host's conversation cache evicts by bytes. The front stage can keep
+  copies the host has dropped, costing RAM, and a mismatch in eviction order would turn into a failed restore, which
+  vanilla treats as fatal for the engine.
 
 ## History in short
+
+- M2 reached (report 0068): mixed generation on vanilla's loop; long prompt 2,342 / 116 tok/s.
 
 - Hardening gate passed (report 0067): all builds, HIP GPU tests 95/95, CUDA 17 passed and 3 skipped,
   reproducer passes, HIP-only serves with cache reuse.
@@ -35,14 +41,20 @@ Kernel log: 17 amdgpu `hogged CPU` warnings, mostly during a RAM-starved run; no
 
 ## Open decisions for the Human User
 
-- None blocking. Recommended in parallel, outside this project: the host-integrity checks the incident report lists
-  (memory test, EDAC/MCE review, storage health), because two PID 1 crashes (6 and 17 November) need an explanation
-  of their own.
+- **Remove the ported hardening?** The Human User now attributes the 17 November crash to a launch config that mixed
+  components from different builds. Chat AI checked in a scratch copy:
+  - All mixed commits, 0069 included (`33e5782c`, `0bb4225b`, `4455e9a2`, `ec8bb9c6`, `9655e74d`), replay without
+    conflicts onto `3f65b5de` (vanilla plus the original mixed commit, before the hardening).
+  - Two lines of `ec8bb9c6` (the hardening arena record) must be dropped.
+  - The session-save calls 0069 uses have the same signatures in vanilla.
+  - Options: A, rebuild and archive today's head as `archive/hardened-0069`; or B, twelve revert commits on top.
+- **RAM:** whether to limit the host's expert arena to its own layers (new code, about 10 GiB of RAM).
+- **Live-session resume:** whether to accept its token difference as vanilla behaviour, since HIP-only also differs.
 
 ## Next step
 
-After report 0069: Chat AI reviews the session-op binding against the contract. It then plans M5 (divergence list,
-open refusals) and the remaining performance items: the front stage's 2048-token prompt chunks, and the CUDA/HIP
-edge cost per window.
+After the decisions: if the hardening goes, Chat AI rebuilds the branch and writes a short Tier 2 re-check handoff
+(builds, hetero_tests, HIP-only and mixed serving, same-build check of the launch config). Then the front stage's
+store is bounded and kept in step with the host's evictions, then M5.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
