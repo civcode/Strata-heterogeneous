@@ -1,26 +1,30 @@
 # Status
 
-Turn holder: **Human User**: decisions below (hardening removal, RAM, the live-resume criterion).
+Turn holder: **Coding Agent**, handoff `0070` (Tier 2) open.
 
 ## Current milestone
 
-M4 reached with one open point (report 0069, `4785ba1b`):
-- **Caches:** both work across the boundary. The front stage repeats checkpoints and parked conversations through
-  vanilla's own save and restore calls, after checking that it holds the same tokens.
-- **Turn 2 with and without reuse:** checkpoint and park paths match a fresh read (50/50, and 33/33 where the reply
-  stops early). The live-session resume differs at token 7; vanilla HIP-only also differs on that path, at token 29.
-- **Reuse:** the same counts as HIP-only.
-- **Server checks:** all pass; the slow reader is within 0.3% of the fast one.
-- **Long prompt:** prefill 2,249 and decode 113 tok/s against HIP-only 2,236 and 111.
-- **RAM and VRAM:** one shared expert arena (memfd), but no extra free RAM: about 19 GiB available with the engine
-  idle. The front stage no longer loads the head.
-- **Review:** Chat AI reviewed the engine diff: vanilla calls only, behind `STRATA_HETERO`.
-- **Open risk (from reading the code, unconfirmed):** the front stage's store of checkpoints and parked
-  conversations is bounded by count, while the host's conversation cache evicts by bytes. The front stage can keep
-  copies the host has dropped, costing RAM, and a mismatch in eviction order would turn into a failed restore, which
-  vanilla treats as fatal for the engine.
+Re-check of the rebuilt branch (handoff 0070), then M5.
+
+**2026-11-18:** the strata-dev-private hardening is removed (Human User's decision). `feature/mixed-native` was rebuilt
+from `3f65b5de` (vanilla 0.2.15 plus the original mixed commit) and force-pushed. The hardened line is on
+`archive/hardened-0069` (`b099f46f`); `.ai/HARDENING.md` maps old commits to new ones. Compared with vanilla, the
+branch changes 5 engine files (`generate.cpp`, `verify.cpp/.hpp`, `prefill.cpp/.hpp`), the conversation-cache header
+(one guarded hook) and the top-level `CMakeLists.txt`, plus `hetero/`.
+
+Checked by Chat AI without a GPU:
+- The mixed engine changes equal the hardened line's, except the two hardening arena lines and one vanilla-form
+  allocation.
+- `hetero_tests` and `hetero_cache_drop_test` pass.
+- The engine files syntax-check with only vanilla's own build-define errors.
+- Reports 0067 to 0069 were measured with the hardening in.
+
+New: the front stage drops a parked copy when the host's conversation cache lets it go (`0b0f671b`, unverified on the
+cards). That closes the count-against-bytes risk of report 0069.
 
 ## History in short
+
+- M4 reached on the hardened line (report 0069): caches across the boundary, server checks, configs committed.
 
 - M2 reached (report 0068): mixed generation on vanilla's loop; long prompt 2,342 / 116 tok/s.
 
@@ -38,23 +42,17 @@ M4 reached with one open point (report 0069, `4785ba1b`):
 - 2026-11-16: reference vanilla 0.2.15; fresh branch; old branch frozen; probes not carried; HIP hosts the loop;
   agent tiers; 30 to 60 minutes GPU time for the Tier 1 bring-up.
 - 2026-11-17: integrate the private hardening before continuing the mixed engine.
+- 2026-11-18: remove the hardening (rebuild, force-push); defer the host's arena trim; accept the live-session resume
+  difference as vanilla behaviour.
 
 ## Open decisions for the Human User
 
-- **Remove the ported hardening?** The Human User now attributes the 17 November crash to a launch config that mixed
-  components from different builds. Chat AI checked in a scratch copy:
-  - All mixed commits, 0069 included (`33e5782c`, `0bb4225b`, `4455e9a2`, `ec8bb9c6`, `9655e74d`), replay without
-    conflicts onto `3f65b5de` (vanilla plus the original mixed commit, before the hardening).
-  - Two lines of `ec8bb9c6` (the hardening arena record) must be dropped.
-  - The session-save calls 0069 uses have the same signatures in vanilla.
-  - Options: A, rebuild and archive today's head as `archive/hardened-0069`; or B, twelve revert commits on top.
-- **RAM:** whether to limit the host's expert arena to its own layers (new code, about 10 GiB of RAM).
-- **Live-session resume:** whether to accept its token difference as vanilla behaviour, since HIP-only also differs.
+- Handoff 0070's 15-minute GPU budget (above the 5-minute default).
 
 ## Next step
 
-After the decisions: if the hardening goes, Chat AI rebuilds the branch and writes a short Tier 2 re-check handoff
-(builds, hetero_tests, HIP-only and mixed serving, same-build check of the launch config). Then the front stage's
-store is bounded and kept in step with the host's evictions, then M5.
+After report 0070: M5. That means a short divergence list (the seam, the guarded hooks, the options mixed mode still
+refuses, and why), then the remaining performance items (the front stage's 2048-token prompt chunks, the edge cost per
+window).
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn

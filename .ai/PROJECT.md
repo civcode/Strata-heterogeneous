@@ -18,8 +18,9 @@ Strata running one model across an NVIDIA card (CUDA) and AMD cards (HIP) at the
 6. Withdrawn (2026-11-18): the engine hardening from `civcode/strata-dev-private` is no longer carried. The 17 November
    crash is attributed to a launch config that mixed components from different builds. The hardened line is kept on
    branch `archive/hardened-0069`; see `.ai/HARDENING.md`.
-7. A launch config uses the engine binary and libraries of one build directory only. Before a run, check that every
-   path in the config that points into a build tree points into the same one.
+7. Every process in a launch config runs from one build directory, with that build's libraries. A mixed config names
+   exactly two builds, one HIP build for the host and one CUDA build for the front stage, and both are built from
+   the same commit of this branch. Check before a run (`hetero/tools/check_launch.py`, handoff 0070).
 
 The target design and the plan are in `.ai/SEAM.md` and the roadmap referenced from `.ai/STATUS.md`.
 
