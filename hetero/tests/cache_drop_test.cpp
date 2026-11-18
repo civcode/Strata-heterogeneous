@@ -1,6 +1,6 @@
 // The mixed split's hook in vanilla's conversation cache (ConversationCache::on_drop, STRATA_MIXED_SPLIT): the host tells the
 // front stage about every parked conversation the cache lets go, so the front stage's copy goes too.  It must fire for
-// an eviction, a refused put and a clear, and must not fire for take(), which hands a conversation out to be restored
+// an eviction, a superseded entry and a clear, and must not fire for take(), which hands a conversation out to be restored
 // (the front stage restores its copy right after).
 
 #ifndef STRATA_MIXED_SPLIT
@@ -52,11 +52,20 @@ int main() {
         check(dropped.empty(), "take is not reported");
     }
     dropped.clear();
-    {   // a put the budget refuses: the front stage parked its copy first, so it is reported
+    {   // a put the budget refuses never held the conversation: not this hook's (the caller reports it)
         ConversationCache cache(16, 4);
         watch(cache);
         check(!cache.put(image({4, 4})), "too large for the budget");
-        check(dropped.size() == 1 && dropped[0] == std::vector<int32_t>({4, 4}), "the refused image is reported");
+        check(dropped.empty(), "a refused put is not reported by the cache");
+    }
+    dropped.clear();
+    {   // a put that supersedes a parked prefix of itself: the superseded entry is reported
+        ConversationCache cache(1 << 20, 4);
+        watch(cache);
+        check(cache.put(image({1, 2})), "park A");
+        check(cache.put(image({1, 2, 3, 4})), "park A's continuation");
+        check(cache.size() == 1 || dropped.empty(), "either A is superseded and reported, or both stay");
+        check(cache.size() + dropped.size() == 2, "every entry is parked or reported");
     }
     dropped.clear();
     {   // clear (#879): every parked conversation is reported

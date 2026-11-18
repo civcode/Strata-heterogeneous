@@ -2402,11 +2402,13 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
     }
     cudaGetDevice(&m.device);
     if (stage_le_ < 0) stage_le_ = g.n_layers;
-    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers || (stage_le_ < g.n_layers) != (next_ != nullptr
 #if defined(STRATA_MIXED_SPLIT)
-                                                                                                           || remote_out_ != nullptr   // (the next stage is in another process)
+    // (MIXED SPLIT: the next stage may be in another process, remote_out_)
+    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers ||
+        (stage_le_ < g.n_layers) != (next_ != nullptr || remote_out_ != nullptr)) {
+#else
+    if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers || (stage_le_ < g.n_layers) != (next_ != nullptr)) {
 #endif
-                                                                                                           )) {
         err = "prefill: the stage's layer range is wrong";
         return false;
     }
@@ -4183,8 +4185,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
             std::fflush(stderr);
         }
         const int64_t T = std::min(C, n - c0), p0 = pos0 + c0;
-        int64_t hand_c0 = c0;   // the chunk's first row in hand_in_
 #if defined(STRATA_MIXED_SPLIT)
+        int64_t hand_c0 = c0;   // the chunk's first row in hand_in_
         if (remote_fill_) {
             if (!remote_fill_(tokens + c0, T, p0, c0 + T >= n, err)) return false;
             hand_in_ = remote_in_;   // the front stage wrote this chunk's rows from row 0
@@ -4245,7 +4247,11 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 return false;
             }
         } else if (hand_in_ != nullptr) {
+#if defined(STRATA_MIXED_SPLIT)
             if (cudaMemcpyAsync(m.R, hand_in_ + (size_t) hand_c0 * D, (size_t) T * D * 4, cudaMemcpyHostToDevice, m.cs) !=
+#else
+            if (cudaMemcpyAsync(m.R, hand_in_ + (size_t) c0 * D, (size_t) T * D * 4, cudaMemcpyHostToDevice, m.cs) !=
+#endif
                 cudaSuccess) {
                 err = "prefill: the layer split's hand-off upload failed";
                 return false;
@@ -7244,17 +7250,18 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         pt.mark(kPfStart, cs);
 #if defined(STRATA_MIXED_SPLIT)
         const bool remote_out = remote_out_ != nullptr;
-#else
-        constexpr bool remote_out = false;
-#endif
         if (next_ != nullptr || remote_out) {
+#else
+        if (next_ != nullptr) {
+#endif
             // The current hand-off slot was used two chunks ago.
 #if defined(STRATA_MIXED_SPLIT)
             float* h = remote_out ? remote_out_ + (size_t) c0 * D : m.hand[hand_buf_];
+            const int hp = remote_out ? 0 : m.hand_pieces;
 #else
             float* h = m.hand[hand_buf_];
+            const int hp = m.hand_pieces;
 #endif
-            const int hp = remote_out ? 0 : m.hand_pieces;
             if (hp > 0) {
                 // STRATA_HANDOFF_PIPE: the pieces' downloads stay queued; the host waits for the chunk's work only (the
                 // state on_stage_chunk saves, the error check), the next stage's uploads wait on the pieces' events
@@ -7279,7 +7286,9 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
             // Wait only for the DIRECT successor's previous chunk. That successor
             // may already have forwarded its older chunk to later GPUs.
             if (on_stage_chunk && !on_stage_chunk(p0 + T, err)) return false;
+#if defined(STRATA_MIXED_SPLIT)
             if (remote_out) continue;   // MIXED SPLIT: the rows are in the shared hand-off; the other process reads them
+#endif
             if (next_run_.valid() && !next_run_.get()) { err = next_err_; return false; }
             next_err_.clear();
             next_->hand_in_ = h;

@@ -364,7 +364,13 @@ public:
     SavedConversation take(size_t index) {
         SavedConversation out = std::move(entries_.at(index));
         bytes_ -= out.bytes();
-        erase(index, /*dropped=*/false);
+#if defined(STRATA_MIXED_SPLIT)
+        taking_ = true;   // (handed out to be restored: not a drop)
+#endif
+        erase(index);
+#if defined(STRATA_MIXED_SPLIT)
+        taking_ = false;
+#endif
         return out;
     }
 
@@ -547,30 +553,23 @@ public:
 
     bool put(SavedConversation&& image, size_t held = 0) {
         const size_t n = image.bytes();
-        if (!enabled() || held > budget_ || n > budget_ - held) return refused(image);   // make_room's refusal, first
+        if (!enabled() || held > budget_ || n > budget_ - held) return false;   // make_room's refusal, first
         drop_superseded(image.live.ids, image.live.imgs, image.checkpoints, image.cvec);
-        if (!make_room(n, held)) return refused(image);
+        if (!make_room(n, held)) return false;
         entries_.push_back(std::move(image));
         serials_.push_back(next_serial_++);
         bytes_ += n;
         return true;
     }
-
 #if defined(STRATA_MIXED_SPLIT)
-    // MIXED SPLIT: told of each parked conversation this cache lets go (evicted, superseded, cleared, or refused by
-    // put), not of one take() hands out to be restored.  The front stage drops its copy of it.
+
+    // MIXED SPLIT: told of each parked conversation this cache lets go (evicted, superseded or cleared), not of one
+    // take() hands out to be restored.  The front stage drops its copy of it.  (A put this cache refuses never held
+    // the conversation: its caller reports that one.)
     std::function<void(const SavedConversation&)> on_drop;
 #endif
 
 private:
-    bool refused(const SavedConversation& image) {
-#if defined(STRATA_MIXED_SPLIT)
-        if (on_drop) on_drop(image);
-#else
-        (void) image;
-#endif
-        return false;
-    }
     // gives the pool's idle bytes back as far as images + idle + `incoming` would pass the budget (images alone never
     // need more than the loop in make_room leaves them)
     void trim_pool(size_t incoming_and_held) {
@@ -590,11 +589,9 @@ private:
         }
         return false;
     }
-    void erase(size_t index, bool dropped = true) {
+    void erase(size_t index) {
 #if defined(STRATA_MIXED_SPLIT)
-        if (dropped && on_drop) on_drop(entries_[index]);
-#else
-        (void) dropped;
+        if (!taking_ && on_drop) on_drop(entries_[index]);
 #endif
         entries_.erase(entries_.begin() + (std::ptrdiff_t) index);
         serials_.erase(serials_.begin() + (std::ptrdiff_t) index);
@@ -603,6 +600,9 @@ private:
     int64_t min_tokens_ = 0;   // --conversation-cache-min-tokens: 0 parks every conversation, whatever its size
     std::deque<SavedConversation> entries_; // least recently active first
     std::deque<uint64_t> serials_;          // entries_[i]'s identity, never reused
+#if defined(STRATA_MIXED_SPLIT)
+    bool taking_ = false;                   // inside take(): its erase is not a drop
+#endif
     uint64_t next_serial_ = 1, guarded_ = 0;
     bool guard_blocked_ = false;
     ConversationKvReuse reuse_;

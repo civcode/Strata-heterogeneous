@@ -1642,8 +1642,8 @@ void drive_pool_split(void* u, const float* x, const int32_t* ids, int64_t n, in
 void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int64_t n, int64_t k, float* out, int64_t l) {
     drive_pool_split_impl(u, x, ids, n, k, out, l, strata::kernels::cpu::NativeArithmetic::WindowInvariant);
 }
-
 #if defined(STRATA_MIXED_SPLIT)
+
 // ================================ MIXED SPLIT (.ai/SEAM.md) ================================
 /// The host's end of the front link: the worker process, the shared hand-off memory and the calls the first local
 /// stage forwards.  Declared before everything that uses the GPU, so it ends after it: the destructor closes the
@@ -4665,8 +4665,6 @@ int main(int argc, char** argv) {
         o.prompt_cache = 0;   // (its own serve loop does not run)
         o.conversation_cache_mib = 0;
     }
-#else
-    constexpr int64_t front_lb = 0, front_le = 0;
 #endif
     // parking with --layer-split saves every stage (SavedConversation::stage_images)
     // Layer split (multi-GPU): the later stages run layers [K_i, K_i+1) on their own GPUs (--split-device, default
@@ -4736,7 +4734,11 @@ int main(int argc, char** argv) {
             split_auto = false;
         } else if (ok) {
             ok = (split_auto || split_at.size() == split_devs.size()) && split_devs.size() < (size_t) SplitDrive::kMax;
+#if defined(STRATA_MIXED_SPLIT)
             for (size_t i = 0; ok && i < split_at.size(); ++i) ok = split_at[i] >= 2 && split_at[i] > front_lb && (i == 0 || split_at[i] > split_at[i - 1]);
+#else
+            for (size_t i = 0; ok && i < split_at.size(); ++i) ok = split_at[i] >= 2 && (i == 0 || split_at[i] > split_at[i - 1]);
+#endif
             for (size_t i = 0; ok && !split_same && i < split_devs.size(); ++i) {
                 ok = split_devs[i] > 0 && split_devs[i] < n_dev;
                 for (size_t j = 0; ok && j < i; ++j) ok = split_devs[i] != split_devs[j];
@@ -5798,6 +5800,7 @@ int main(int argc, char** argv) {
         std::fclose(f);
     };
     if (stage_trim) {
+#if defined(STRATA_MIXED_SPLIT)
         add_foreign(front_lb, split_at[0], skip, o.mmap_experts);
         strata::core::NativeDense::set_layer_range((int) front_lb, (int) split_at[0]);
         std::fprintf(stderr, "strata generate: layer split: CUDA0 loads the dense weights of layers %lld-%lld only\n",
@@ -5806,6 +5809,12 @@ int main(int argc, char** argv) {
         add_foreign(0, front_le, skip, o.mmap_experts);
         strata::core::NativeDense::set_layer_range(0, (int) front_le);
         std::fprintf(stderr, "strata generate: front stage: the dense weights of layers 0-%lld only\n", (long long) front_le - 1);
+#else
+        add_foreign(0, split_at[0], skip, o.mmap_experts);
+        strata::core::NativeDense::set_layer_range(0, (int) split_at[0]);
+        std::fprintf(stderr, "strata generate: layer split: CUDA0 loads the dense weights of layers 0-%lld only\n",
+                     (long long) split_at[0] - 1);
+#endif
     }
     // STRATA_HC_REQ8=1 (opt-in, changes the output): the hyper-connection projections are not loaded as BF16;
     // load_hc_q8 below requantizes them to int8 + an fp32 scale per 32 values (~0.56x the bytes), and the freed VRAM
@@ -6612,6 +6621,7 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "strata generate: profile %s: %zu ranked pairs, built for %lld slots\n",
                      o.expert_profile.c_str(), profile.size(), (long long) pslots);
+#if defined(STRATA_MIXED_SPLIT)
         if (front_lb > 0 || front_le > 0) {   // MIXED SPLIT: only the pairs of the layers this process runs
             const size_t all = profile.size();
             profile.erase(std::remove_if(profile.begin(), profile.end(), [&](const std::pair<int32_t, int32_t>& pr) {
@@ -6620,6 +6630,7 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata generate: mixed split: %zu of the %zu ranked pairs are of this process's layers\n",
                          profile.size(), all);
         }
+#endif
     }
     // #477: the whole ranking as loaded, the prior of --expert-profile-save's order (a layer split keeps only
     // CUDA0's pairs in `profile` below).  Empty without --expert-profile-save.
@@ -7401,12 +7412,20 @@ int main(int argc, char** argv) {
         // (which also verifies the split search's pricing), and this block runs before it - reloading them
         // here too would leave `native dense: already loaded`.
         {
+#if defined(STRATA_MIXED_SPLIT)
             const int64_t lo = front_lb, hi = split_at.empty() ? g.n_layers : split_at[0];
             // (MIXED SPLIT: layer 1, where the PLE block runs, is the front stage's; its weights are not in this table,
             // so nothing here is wired to them and the PLE stays the front stage's, as with a later stage of a split)
             if (front_lb > 1) ss.ple.w = {};
+#else
+            const int64_t lo = 0, hi = split_at.empty() ? g.n_layers : split_at[0];
+#endif
             const bool ok = reload(0, lo, hi, arena, pool_bytes, wt, native_dense) &&
+#if defined(STRATA_MIXED_SPLIT)
                             (o.ple_gguf.empty() || front_lb > 1 || wire_ple(wt));
+#else
+                            (o.ple_gguf.empty() || wire_ple(wt));
+#endif
             if (!ok) {
                 std::fprintf(stderr, "strata generate: layer split, CUDA0: its own layers' weights: %s\n",
                              err.c_str());
@@ -7485,7 +7504,11 @@ int main(int argc, char** argv) {
     // fixed in llama.cpp: allocation sized by the whole model instead of the device's own work.
     {
         const strata::core::OnDevice on0(primary_device);   // STRATA_PRIMARY_DEVICE (upstream: a literal 0)
+#if defined(STRATA_MIXED_SPLIT)
         const int64_t hi0 = multi_gpu ? split_at[0] : front_le > 0 ? front_le : -1;   // (MIXED SPLIT: the front stage ends at front_le)
+#else
+        const int64_t hi0 = multi_gpu ? split_at[0] : -1;
+#endif
         // the elastic K/V (--kv-grow, see kvg_ensure): one GPU, the whole K/V in VRAM (no streaming), a profiled cache
         // that can give slots up, and every expert in RAM for the CPU to compute the ones it gives up
         {
@@ -7497,7 +7520,11 @@ int main(int argc, char** argv) {
                             !o.expert_profile.empty() && !o.resident_cpu_experts && o.expert_cache != 0 && !remote &&
                             strata::core::vmm_available() &&
                             // the batch slots carve their own K/V and --vram-elastic's cache is not one VMM range
+#if defined(STRATA_MIXED_SPLIT)
                             o.batch == 0 && !o.vram_elastic && o.peer_device < 0 && front_le == 0;
+#else
+                            o.batch == 0 && !o.vram_elastic && o.peer_device < 0;
+#endif
             if (asked && !on)
                 std::fprintf(stderr, "strata generate: --kv-grow is off (one GPU, a profile, the whole K/V in VRAM, "
                                      "every expert in RAM, no --batch, --vram-elastic or --peer-device)\n");
@@ -7505,11 +7532,19 @@ int main(int argc, char** argv) {
             strata::core::qsa_set_kv_elastic(on, iv != nullptr && std::atoll(iv) > 0 ? std::atoll(iv) : 16384);
             strata::core::ExpertCache::set_vmm(on);
         }
+#if defined(STRATA_MIXED_SPLIT)
         if (cudaMalloc(&sbuf, strata::core::session_bytes(g, o.max_context, K, front_lb, hi0)) != cudaSuccess) {
+#else
+        if (cudaMalloc(&sbuf, strata::core::session_bytes(g, o.max_context, K, 0, hi0)) != cudaSuccess) {
+#endif
             std::fprintf(stderr, "strata generate: session state allocation failed\n");
             return 1;
         }
+#if defined(STRATA_MIXED_SPLIT)
         if (strata::core::session_init(g, o.max_context, K, sbuf, ss, front_lb, hi0) == 0) {
+#else
+        if (strata::core::session_init(g, o.max_context, K, sbuf, ss, 0, hi0) == 0) {
+#endif
             std::fprintf(stderr, "strata generate: session_init failed\n");
             return 1;
         }
@@ -7527,7 +7562,11 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata generate: zeroing the session state failed\n");
             return 1;
         }
+#if defined(STRATA_MIXED_SPLIT)
         if (!o.ple_gguf.empty() && front_lb <= 1) {   // (MIXED SPLIT: the PLE is the front stage's, see the trimmed weights)
+#else
+        if (!o.ple_gguf.empty()) {
+#endif
             if (!ss.ple.ready()) {
                 std::fprintf(stderr, "strata generate: the PLE run is not ready after construction\n");
                 return 1;
@@ -8055,7 +8094,11 @@ int main(int argc, char** argv) {
     if (wo == nullptr) { std::fprintf(stderr, "strata generate: output.weight is missing\n"); return 1; }
     const int64_t n_vocab = wo->ne1;
     strata::core::NativeHead native_head;
+#if defined(STRATA_MIXED_SPLIT)
     if (!o.native_head_gguf.empty() && !multi_gpu && front_le == 0) {   // a layer split's head is on its last stage (a mixed split's front stage has none)
+#else
+    if (!o.native_head_gguf.empty() && !multi_gpu) {   // a layer split's head is on its last stage
+#endif
         const auto head_t0 = std::chrono::steady_clock::now();
         if (!native_head.load(o.native_head_shards, g.n_embd, n_vocab, err)) {
             std::fprintf(stderr, "strata generate: %s%s%s\n", err.c_str(), vram_free_note().c_str(), vram_batch_hint(err, o.batch).c_str());
@@ -9539,7 +9582,11 @@ int main(int argc, char** argv) {
                      (long long) filled, st.profile.size());
     }
     if (multi_gpu)
+#if defined(STRATA_MIXED_SPLIT)
         std::fprintf(stderr, "strata generate: layer split: CUDA0 runs layers %lld-%lld\n", (long long) front_lb, (long long) (split_at[0] - 1));
+#else
+        std::fprintf(stderr, "strata generate: layer split: CUDA0 runs layers 0-%lld\n", (long long) (split_at[0] - 1));
+#endif
     // THE LAYER SPLIT'S SPILL WALK, STEP 4: THE LOAN KEEPS 16.  A stage whose cache is too small to lend the prompt path a 256-token chunk and keep 128 slots behind makes the path
     // allocate its own buffers on top (more than the reserve): the same short card as the single card's, which keeps 16 slots instead (the cache is smaller, prompts are read in
     // smaller chunks, the start works).  Never on a card with room: it only fires when a cache is below the usual loan.
@@ -10031,9 +10078,14 @@ int main(int argc, char** argv) {
         // a layer split's CUDA0 session owns only [0, split_at[0]), so its graphs cover that range; the
         // whole-model replay paths (`session_loop`, the plain generate loop) refuse rather than read another
         // stage's state - a split runs its layers on the stages' verifiers (serve) or prefill stage chain
+#if defined(STRATA_MIXED_SPLIT)
         // (MIXED SPLIT: the host's first stage starts at front_lb; the front stage's process ends at front_le)
         if (!strata::core::session_capture(wt, g, ss, d_parts, gr, err, /*split=*/o.gpu_stages, front_lb,
                                            multi_gpu ? split_at[0] : front_le > 0 ? front_le : -1)) {
+#else
+        if (!strata::core::session_capture(wt, g, ss, d_parts, gr, err, /*split=*/o.gpu_stages, 0,
+                                           multi_gpu ? split_at[0] : -1)) {
+#endif
             std::fprintf(stderr, "strata generate: session_capture: %s\n", err.c_str());
             return 1;
         }
@@ -10546,8 +10598,12 @@ int main(int argc, char** argv) {
                      (long long) resident);
     }
     if (!o.no_capture && !o.no_token_graph && layer_dump == nullptr && half_dump == nullptr &&
+#if defined(STRATA_MIXED_SPLIT)
         (hit_fn == nullptr || thits.on()) && !native_pack && !multi_gpu &&
         front_lb == 0 && front_le == 0) {   // a split's token graph cannot span stages (nor a mixed split's processes)
+#else
+        (hit_fn == nullptr || thits.on()) && !native_pack && !multi_gpu) {   // a split's token graph cannot span stages
+#endif
         if (!strata::core::session_capture_token(wt, g, ss, d_parts, loop_scratch.y_miss, loop_scratch.parts_bytes,
                                                  tgraph, err, thits.on() ? &thits : nullptr)) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
@@ -11386,7 +11442,11 @@ int main(int argc, char** argv) {
                 strata::core::ExpertCache& xc = i == 0 ? xcache : stages[i - 1]->cache;
                 const strata::core::SessionState& ses = i == 0 ? ss : stages[i - 1]->ss;
                 const int64_t dev = i == 0 ? -1 : stages[i - 1]->dev;
+#if defined(STRATA_MIXED_SPLIT)
                 const int64_t lb = i == 0 ? front_lb : stages[i - 1]->lb;
+#else
+                const int64_t lb = i == 0 ? 0 : stages[i - 1]->lb;
+#endif
                 const int64_t le = i == 0 ? split_at[0] : stages[i - 1]->le;
                 if (xc.slots() <= 0 || le <= lb) continue;
                 const uint64_t need = strata::prefill::Prefill::bytes_needed(g, ses, bound);
@@ -11789,7 +11849,11 @@ int main(int argc, char** argv) {
         // whose cache already filled its reserve, that is the over-subscription the auto sizing avoids - so the
         // chunk is the largest one EVERY participant can lend (a smaller chunk only reads slower)
         if (pf_borrow && d_res != nullptr) {
+#if defined(STRATA_MIXED_SPLIT)
             pf_parts.push_back({&xcache, &ss, &sp, -1, front_lb, multi_gpu ? split_at[0] : front_le > 0 ? front_le : g.n_layers, -1, -1, 0, {}});
+#else
+            pf_parts.push_back({&xcache, &ss, &sp, -1, 0, multi_gpu ? split_at[0] : g.n_layers, -1, -1, 0, {}});
+#endif
             for (auto& st : stages)
                 pf_parts.push_back({&st->cache, &st->ss, &st->sp, st->dev, st->lb, st->le, -1, -1, 0, {}});
             // The two tests plan_lend makes for CUDA0 alone, one participant at a time: a loan must leave the
@@ -12441,7 +12505,11 @@ int main(int argc, char** argv) {
                     return err.find("do not fit") != std::string::npos ? 2 : 1;
                 }
             }
+#if defined(STRATA_MIXED_SPLIT)
             if (multi_gpu) sp.set_stage(front_lb, split_at[0], &stages[0]->sp);
+#else
+            if (multi_gpu) sp.set_stage(0, split_at[0], &stages[0]->sp);
+#endif
 #if defined(STRATA_MIXED_SPLIT)
             if (front_lb > 0)   // MIXED SPLIT: each chunk's rows come from the front stage's process
                 sp.set_remote_in(het_rows_h, [&hetero, het_rows_cap](const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& e) {
@@ -12758,14 +12826,15 @@ int main(int argc, char** argv) {
             split_drive.base = &drive;
             split_drive.n = n_stages;
             for (int st = 0; st < n_stages; ++st) {
-                // (MIXED SPLIT: the first stage starts at front_lb and reads the front stage's hand-off)
 #if defined(STRATA_MIXED_SPLIT)
+                // (MIXED SPLIT: the first stage starts at front_lb and reads the front stage's hand-off)
                 const float* const hand_first = front_lb > 0 ? het_hand_d : nullptr;
-#else
-                const float* const hand_first = nullptr;
-#endif
                 stage_ver(st).set_stage(st == 0 ? front_lb : split_at[(size_t) st - 1], st + 1 < n_stages ? split_at[(size_t) st] : -1,
                                         st == 0 ? hand_first : hand[(size_t) st - 1], st + 1 < n_stages ? hand[(size_t) st] : nullptr);
+#else
+                stage_ver(st).set_stage(st == 0 ? 0 : split_at[(size_t) st - 1], st + 1 < n_stages ? split_at[(size_t) st] : -1,
+                                        st == 0 ? nullptr : hand[(size_t) st - 1], st + 1 < n_stages ? hand[(size_t) st] : nullptr);
+#endif
                 if (hrows > strata::kernels::kVerifyNarrowT) stage_ver(st).set_handoff_rows(hrows);
 #if defined(STRATA_HAVE_DFLASH2)
                 if (use_df2 && st > 0) stage_ver(st).set_taps(df2.tap_layers());   // (stage 0 gets its taps below, as on one card)
@@ -12823,7 +12892,11 @@ int main(int argc, char** argv) {
                 ver.set_front(std::move(fc));
             }
 #endif
+#if defined(STRATA_MIXED_SPLIT)
             std::string plan_s = std::to_string(front_lb) + "-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
+#else
+            std::string plan_s = "0-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
+#endif
             for (int st = 1; st < n_stages; ++st)
                 plan_s += ", " + std::to_string(split_at[(size_t) st - 1]) + "-" + std::to_string(split_drive.end[st] - 1) +
                           " (CUDA" + std::to_string(split_same ? 0 : stages[(size_t) st - 1]->dev) + ")";
@@ -13721,6 +13794,13 @@ int main(int argc, char** argv) {
 #endif
                 const size_t snapshot_bytes = image.bytes();
                 const bool stored = conversations.put(std::move(image), held);
+#if defined(STRATA_MIXED_SPLIT)
+                if (!stored && hetero.on() && &src.session == &ss) {   // MIXED SPLIT: the front stage parked a copy above
+                    std::string fe;
+                    if (!hetero.drop(src.ids.data(), (int64_t) src.ids.size(), fe))
+                        std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
+                }
+#endif
                 std::fprintf(stderr, "strata serve: conversation cache: %s %zu tokens%s in %.1f ms; parked=%zu bytes=%zu evictions=%zu snapshot_bytes=%zu reused_kv_bytes=%zu\n",
                              stored ? "parked" : "skipped", src.ids.size(), src.what.c_str(),
                              std::chrono::duration<double, std::milli>(Clock::now() - t0).count(),
@@ -18061,8 +18141,18 @@ int main(int argc, char** argv) {
                                  (long long) strata::program::conv_cache::kRestoreFirstUseMib);
                     auto retry = std::move(*incoming);
                     incoming.reset();
+#if defined(STRATA_MIXED_SPLIT)
+                    const std::vector<int32_t> retry_ids = retry.live.ids;   // (the front stage still holds its copy)
+                    if (!conversations.put(std::move(retry))) {
+                        std::fprintf(stderr, "strata serve: conversation cache: could not return the skipped snapshot\n");
+                        std::string fe;
+                        if (hetero.on() && !hetero.drop(retry_ids.data(), (int64_t) retry_ids.size(), fe))
+                            std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
+                    }
+#else
                     if (!conversations.put(std::move(retry)))
                         std::fprintf(stderr, "strata serve: conversation cache: could not return the skipped snapshot\n");
+#endif
                     err.clear();
                 }
             }
