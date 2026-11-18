@@ -45,17 +45,10 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   Configure the CUDA tree with `-DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=89`.
   `/usr/local/cuda` still points at CUDA 12.0, which the frozen branch was built with: leave it. nvcc 12.0 cannot
   compile vanilla 0.2.15 (report 0063). Do not change vanilla sources to fit a toolkit.
-- **Production setup** (the Human User, 2026-11-18): `hetero/configs/hiponly.example.json` mirrors it, with
-  placeholders for the paths. Port 8081, `parallel` 1, `layer_split: auto`, two R9700.
-  - Model: Qwen3.8-Flash-Next GSQ-RCO Q2_0, `--mmap-experts`, `--expert-cache auto`, `--prefill auto`.
-  - Drafting: MTP with `--spec 4 --spec-min-p 0.5`, `--pipeline-windows 2`.
-  - Context and KV: `--max-context 262144`, `--kv int8`, `--kv-resident 0`.
-  - Vision on (GPU encoder, `max_tokens` 1024); a scaled control vector over layers 4 to 44 (project, per-layer).
-  - Caches: `--prompt-cache 6 --prompt-cache-spread`, `--conversation-cache-slots 4`,
-    `--conversation-cache-min-tokens 8192`.
-  - Environment: `HSA_ENABLE_SDMA=0`, `STRATA_SPLIT_OVERLAP=1`, `STRATA_PIPELINE_AUTO=0`, `STRATA_MTP_STAGE0=0`.
-  - Performance comparisons are made against this mirror. The older known-good config
-    (`/home/chris/workspace/Strata/strata-q2_0.json`, context 196608, report 0064) is not the production setup.
+- Known-good vanilla run config: `/home/chris/workspace/Strata/strata-q2_0.json`, started by `run-q2_0.sh` in that
+  checkout (port 8081, `HSA_ENABLE_SDMA=0`). Model: Qwen3.8-Flash-Next GSQ-RCO Q2_0, context 196608, `--kv int8`,
+  MTP with `--spec 4 --spec-min-p 0.5`, `--prefill auto`, `layer_split: auto`, vision on, and a scaled control
+  vector over layers 4 to 44. Its engine arguments are listed in report 0064.
 - Use the same build toolchain as vanilla Strata and the same checkout-local `.venv` setup. Do not use a system or
   global Python for project commands.
 - Build with 28 jobs.

@@ -8,7 +8,7 @@ The config's ${NAME} placeholders are filled from --set, then the environment (h
 STRATA_REPO and RUN_DIR default to this checkout and its runs/ directory).  The filled config is written to RUN_DIR, so
 the log and every other path the server writes go there, never into another checkout.
 
-A mixed split (a config whose args name --front-exe, without --mmap-experts) gets vanilla's --shared-expert-arena: a memory object made here,
+A mixed split (a config whose args name --front-exe) gets vanilla's --shared-expert-arena: a memory object made here,
 as serve/replicas.py makes one for replicas, so both processes map one copy of the experts (/dev/shm is too small for
 it on a 64 GB PC).  This process then becomes the server (exec), keeping that memory object open, so the path stays
 valid for as long as the server runs.  Stop it as any server: SIGINT or SIGTERM to this process (same pid).
@@ -47,10 +47,7 @@ def main():
     except (ValueError, OSError, subprocess.SubprocessError) as e:
         raise SystemExit(f"launch check: {e}") from e
     args = [str(x) for x in cfg.get("args", [])]
-    # (--mmap-experts: no resident arena to share - vanilla refuses the two together; both processes then read the
-    # experts through the same file mapping, one copy in the page cache)
-    if ("--front-exe" in args and not a.no_shared_arena and "--shared-expert-arena" not in args
-            and "--mmap-experts" not in args):
+    if "--front-exe" in args and not a.no_shared_arena and "--shared-expert-arena" not in args:
         path = shared_arena(inheritable=True)
         cfg["args"] = args + ["--shared-expert-arena", path]
         print(f"serve_mixed: one shared expert arena for both processes ({path})", flush=True)

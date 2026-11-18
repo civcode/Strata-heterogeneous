@@ -71,8 +71,6 @@ Chat AI's review:
   - the A/B on vision and the control vector;
   - timing lines for the mixed decode window;
   - the remaining refusals: `--layer-split auto` implemented, design notes for `--batch` and DFlash2.
-- 2026-11-18: the production setup is the reference for performance comparisons (`.ai/PROJECT.md`). The example
-  configs mirror it; reports 0067 to 0074 ran other settings.
 
 ## Open decisions for the Human User
 
