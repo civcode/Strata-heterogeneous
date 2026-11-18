@@ -1,0 +1,17 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-cuda
+Test project /home/chris/workspace/Strata-mixed-native/build-0071-cuda
+    Start 232: prefill_decode_golden
+1/5 Test #232: prefill_decode_golden ............   Passed    0.25 sec
+    Start 233: prefill_fused_moe_test
+2/5 Test #233: prefill_fused_moe_test ...........   Passed    1.79 sec
+    Start 234: prefill_fused_iq_test
+3/5 Test #234: prefill_fused_iq_test ............   Passed   69.79 sec
+    Start 235: prefill_expert_paths_bench
+4/5 Test #235: prefill_expert_paths_bench .......   Passed    0.89 sec
+    Start 236: prefill_fused_q36_test
+5/5 Test #236: prefill_fused_q36_test ...........   Passed   45.18 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) = 117.92 sec
+elapsed 117.92

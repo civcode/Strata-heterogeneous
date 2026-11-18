@@ -1,0 +1,13 @@
+Kernel changes since baseline:
+--- .ai/runs/0071-tests/kernel-before.log	2026-11-18 13:06:37.935168146 +0100
++++ .ai/runs/0071-tests/kernel-after.log	2026-11-18 13:27:48.534099540 +0100
+@@ -2365,3 +2365,5 @@
+ Nov 18 13:00:48 oberon kernel: docker0: port 1(veth07e34c8) entered forwarding state
+ Nov 18 13:03:46 oberon kernel: workqueue: mmput_async_fn hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+ Nov 18 13:04:02 oberon kernel: workqueue: mmput_async_fn hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
++Nov 18 13:23:47 oberon kernel: Cannot map memory with base addr 0x7160a5414000 and size of 0x10 pages
++Nov 18 13:23:47 oberon kernel: Cannot map memory with base addr 0x7160a52b6000 and size of 0x10 pages
+
+Coredump list changes:
+
+2026-11-18 11:29:01

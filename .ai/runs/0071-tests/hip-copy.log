@@ -1,0 +1,17 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0071-hip
+Test project /home/chris/workspace/Strata-mixed-native/build-0071-hip
+    Start 152: conversation_copy_streams_test
+1/1 Test #152: conversation_copy_streams_test ...***Failed    0.08 sec
+FAIL: a card's first copy stream and event take under 16 MiB
+conversation_copy_streams_test: the first copy stream + event of the card took 151552 KiB of device memory
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   0.08 sec
+
+The following tests FAILED:
+	152 - conversation_copy_streams_test (Failed)
+Errors while running CTest
+Command exited with non-zero status 8
+elapsed 0.08
