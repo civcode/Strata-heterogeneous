@@ -22,7 +22,7 @@ export STRATA_DATA=/home/chris/workspace/Strata-data \
 | `STRATA_VANILLA` | the vanilla checkout, read only: the control vector file (HIP-only config; data, not a program) |
 | `ROCM_LIB` | the ROCm libraries |
 
-The build trees named in `exe` and `--front-exe` are this checkout's `build-0070-hip` and `build-0070-cuda` (the
+The mixed example names this checkout's `build-0070-hip` and `build-0070-cuda`; the HIP-only example names `build-0071-hip` (the
 toolchains in `.ai/PROJECT.md`). After a successful build of each tree, write `git rev-parse HEAD` into its
 `BUILD_COMMIT` file. Before starting, the launcher (`check_launch.py`) checks that each executable comes from a build of
 this checkout, that its libraries come from that build or a system or toolkit path, and that the sources have not
