@@ -29,10 +29,13 @@ this checkout, that its libraries come from that build or a system or toolkit pa
 changed since the stamp. A commit that touches only notes, reports, run logs, docs, `*.md` files, the scripts in
 `hetero/tools/` or the configs here does not make a build stale. Vision helpers come from the host build or from a build of `tools/vision` in this checkout, stamped the
 same way (with `STRATA_VISION_HIP=ON` for `"gpu": true`). Do not bypass the check.
-Not supported in a mixed split yet: `--batch`, DFlash2,
-`--pipeline-windows`. `"layer_split": "auto"` works since report 0075: vanilla's search plans the host's cards over
+Not supported in a mixed split yet: `--batch`, DFlash2. `--pipeline-windows` works since report 0077 (both
+examples run it with `STRATA_PIPELINE_AUTO=0` and `STRATA_MTP_STAGE0=0`, as production does); in mixed mode
+`STRATA_SPLIT_TIMING` times only the serial loop's windows. `"layer_split": "auto"` works since report 0075: vanilla's search plans the host's cards over
 layers `[front_layers, 48)` (on Oberon K=31, against the configs' fixed 33). `STRATA_SPLIT_TIMING=1` in the
 environment logs a mixed decode window's parts per request (report 0075).
 
 Drivers in `hetero/tools/`: `engine_drive.py` (the engine over the serve protocol, token prompts from `mkprompts.py`),
-`server_checks.py` (the HTTP checks of report 0069), `front_client.cpp` (the front stage alone).
+`server_checks.py` (the HTTP checks of report 0069), `front_client.cpp` (the front stage alone), `run_engine.py` (one
+accounted engine run from a config), `serve_session.py` (one accounted server session from a config: the checks, the
+cache/vision/cvec features, or the code/long/16K measurement), `cmp_tokens.py` (token-exact comparison of two runs).

@@ -1,0 +1,120 @@
+{
+ "ready_s": 8.517720113995892,
+ "code": {
+  "id": "chatcmpl-0d41e9b912d84a0eb7a43588",
+  "object": "chat.completion",
+  "created": 1795038074,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "\"\n\nWe need produce final answer likely code and explanation. Need think in English. Need ensure complete Python implementation thread-safe LRU cache with type hints, docs, example usage, explain design and edge cases. Could provide code block. Need maybe include from __future__? Use collections.OrderedDict, threading.Lock. Generic type? Python 3.9+? Use typing Generic, TypeVar. Thread-safe: lock around get/set. LRU: OrderedDict move_to_end on get. Capacity positive int. Edge cases: capacity <=0? Could raise ValueError or behave no cache? Better raise ValueError. Thread safety: lock protects internal state; get and set atomic. If capacity 0? raise. If key unhashable? dict requires hashable; type hint Hashable. If cache full evict oldest. If same key update: move to end. If get missing returns default? Could implement get(key, default=None). Need maybe __contains__, __len__, clear. Need avoid deadlock? Use single lock. Could mention not safe for reentrant? Lock not reentrant; if methods call each other under lock?",
+     "reasoning_content": "We need answer user's request: \"Measurement 1 code.\n<|im_start|>user\nWrite a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 118,
+   "completion_tokens": 300,
+   "total_tokens": 418,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 118,
+   "prompt_ms": 473.2,
+   "prompt_per_token_ms": 4.01,
+   "prompt_per_second": 249.4,
+   "predicted_n": 300,
+   "predicted_ms": 2527.8,
+   "predicted_per_token_ms": 8.426,
+   "predicted_per_second": 118.7,
+   "draft_n": 212,
+   "draft_n_accepted": 145
+  }
+ },
+ "long": {
+  "id": "chatcmpl-512c092252c643948b4a3c06",
+  "object": "chat.completion",
+  "created": 1795038077,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "- Strata can run one model across two or more GPUs using a layer split, where contiguous model layers are assigned to different cards; NVIDIA is the main example, with AMD details in a separate document.\n- Each GPU has a role: Main runs the final output/draft/verification stage, Helper stores",
+     "reasoning_content": "We need answer user's request. User: \"Measurement 1 long.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# Strata on two or more GPUs (layer split)\n...\"\nNeed produce final answer with five bullet points summarizing document. Need likely concise. Need ensure five bullets. Could mention key points: purpose, roles, how split works, tuning/limits, pipeline windows/two models. Need maybe \"Measurement 1 long\" maybe irrelevant? Could be prompt injection? Need answer in English. Need final only. Ensure five bullet points. Need maybe not too long. Let's craft.\n"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 5000,
+   "completion_tokens": 200,
+   "total_tokens": 5200,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 5000,
+   "prompt_ms": 2167.7,
+   "prompt_per_token_ms": 0.434,
+   "prompt_per_second": 2306.6,
+   "predicted_n": 200,
+   "predicted_ms": 1678.5,
+   "predicted_per_token_ms": 8.393,
+   "predicted_per_second": 119.2,
+   "draft_n": 179,
+   "draft_n_accepted": 110
+  }
+ },
+ "long16k": {
+  "id": "chatcmpl-366a5aed244a4a20bfb95f28",
+  "object": "chat.completion",
+  "created": 1795038081,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Measurement 1 long16k.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# A770 decode optimization specification ... [long document] ... # Set up Strata for a user ... [truncated?]\"\n\nNeed produce final answer: five bullet points summarizing document. Need likely concise but enough. Need ensure five bullets. Need maybe mention document is spec for optimizing decode on Intel Arc A770 with Strata, target 20 tok/s, baseline ~12 tok/s, findings: bottleneck CPU expert"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 16102,
+   "completion_tokens": 128,
+   "total_tokens": 16230,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 16102,
+   "prompt_ms": 4743.6,
+   "prompt_per_token_ms": 0.295,
+   "prompt_per_second": 3394.5,
+   "predicted_n": 128,
+   "predicted_ms": 922.2,
+   "predicted_per_token_ms": 7.205,
+   "predicted_per_second": 138.8,
+   "draft_n": 110,
+   "draft_n_accepted": 78
+  }
+ },
+ "rc": 0,
+ "elapsed": 22.401689389997046,
+ "fault_lines": []
+}

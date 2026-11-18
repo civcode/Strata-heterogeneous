@@ -1,5 +1,5 @@
 {
- "//": "Mixed split on Oberon, the counterpart of hiponly.example.json (the production setup): CUDA layers [0,15) (front stage, the CUDA build), HIP on the two R9700 (host, the HIP build; layer_split auto plans layers [15,48), report 0075). Not carried over, because mixed mode refuses pipelined windows: --pipeline-windows 2, STRATA_PIPELINE_AUTO=0, STRATA_MTP_STAGE0=0. Start with hetero/tools/serve_mixed.py; placeholders: hetero/configs/README.md.",
+ "//": "Mixed split on Oberon, the counterpart of hiponly.example.json (the production setup): CUDA layers [0,15) (front stage, the CUDA build), HIP on the two R9700 (host, the HIP build; layer_split auto plans layers [15,48), report 0075). Pipelined windows as in production since report 0077: --pipeline-windows 2 with STRATA_PIPELINE_AUTO=0 and STRATA_MTP_STAGE0=0 (the draft layer on the host's last card); the front stage mirrors the host's first stage (its two verifiers, snapshots and undo). Start with hetero/tools/serve_mixed.py; placeholders: hetero/configs/README.md.",
  "exe": "${STRATA_REPO}/build-0071-hip/strata",
  "args": [
   "--pack",
@@ -46,6 +46,8 @@
   "4",
   "--conversation-cache-min-tokens",
   "8192",
+  "--pipeline-windows",
+  "2",
   "--front-exe",
   "${STRATA_REPO}/build-0071-cuda/strata",
   "--front-layers",
@@ -76,7 +78,9 @@
  },
  "env": {
   "HSA_ENABLE_SDMA": "0",
-  "STRATA_SPLIT_OVERLAP": "1"
+  "STRATA_SPLIT_OVERLAP": "1",
+  "STRATA_PIPELINE_AUTO": "0",
+  "STRATA_MTP_STAGE0": "0"
  },
  "parallel": 1
 }
