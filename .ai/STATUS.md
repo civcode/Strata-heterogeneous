@@ -1,31 +1,26 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0071` (Tier 2) open.
+Turn holder: **Coding Agent**, handoff `0072` (Tier 2) open.
 
 ## Current milestone
 
-Re-check of the rebuilt branch, continued (handoff 0071), then M5.
+Re-check of the rebuilt branch, last part (handoff 0072), then M5.
 
-Report 0070 was Partial (`4f30546e`). Chat AI's review:
-- **Passed on the rebuilt branch:** clean builds in all three trees; host CTest 138 passed, 6 skipped; the mixed
-  serving checks; turn 2 equal to a fresh read (50/50, checkpoint and park); the eviction run (A rereads after
-  eviction, D reuses, the front stage logs each Drop). The only engine change is that Drop log line.
-- **HIP `conversation_copy_streams_test` failed (148 MiB against 16 MiB):** vanilla's test on unchanged vanilla code.
-  The hardening had rewritten that assertion. Recorded as a vanilla finding (upstream candidate: the first HIP copy
-  stream on gfx1201 needs more than vanilla's 64 MiB restore guard). Not a mixed-split defect; no Tier 1 needed.
-- **HIP-only config refused by the launch check:** correct, since its vision helpers came from the vanilla checkout.
-  They are now built from this checkout (`tools/vision`).
-- **Launch check staleness:** a commit that changes only notes or reports no longer makes the builds stale.
-- **Mixed prefill:** 1,787 against 2,249 tok/s in report 0069, one sample each. Handoff 0071 measures the rebuilt
-  line against the hardened line, three samples each.
-- **Kernel line "Cannot map memory … 0x7e9152 pages":** 31.6 GiB, the shared arena's whole-arena HIP registration
-  that falls back to 48 slices. Not a fault.
-
-Since report 0070, by Chat AI:
-- the build option is renamed to `STRATA_MIXED_SPLIT`, with its define, tests option, targets and tests;
-- the run logs moved to `.ai/runs/`.
+Report 0071 was Partial: the budget ran out in the test suites (`d8861b91`). Chat AI's review:
+- **Builds:** all five pass, including both vision helpers built from this checkout. The committed HIP-only config
+  passes the launch check.
+- **HIP tests:** 272 passed, 15 skipped, 2 failed out of 289. One failure is the known vanilla
+  `conversation_copy_streams_test`; the other is `ple_parity`, which did not find its model file (a test input). No
+  mixed-split defect.
+- **CUDA tests:** 170 passed, 2 skipped (Windows-only), out of 172 run; the rest were not run.
+- **Kernel log:** two `Cannot map memory` lines of 0x10 pages appeared during the CUDA tests, cause not established.
+  No faults, crashes or reboots.
+- **Why the budget ran out:** the handoff asked for the whole GPU test set first, which took most of it. Handoff 0072
+  puts serving and the prefill A/B first.
 
 ## History in short
+
+- Report 0071: GPU test suites on the rebuilt branch (HIP 272/289, CUDA 170/172 run), no mixed-split defect.
 
 - 2026-11-18: hardening removed, branch rebuilt; front-stage Drop added; report 0070 re-check Partial (one vanilla HIP test).
 
