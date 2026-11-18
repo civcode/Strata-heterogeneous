@@ -1,28 +1,33 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0070` (Tier 2) open.
+Turn holder: **Coding Agent**, handoff `0071` (Tier 2) open.
 
 ## Current milestone
 
-Re-check of the rebuilt branch (handoff 0070), then M5.
+Re-check of the rebuilt branch, continued (handoff 0071), then M5.
 
-**2026-11-18:** the strata-dev-private hardening is removed (Human User's decision). `feature/mixed-native` was rebuilt
-from `3f65b5de` (vanilla 0.2.15 plus the original mixed commit) and force-pushed. The hardened line is on
-`archive/hardened-0069` (`b099f46f`); `.ai/HARDENING.md` maps old commits to new ones. Compared with vanilla, the
-branch changes 5 engine files (`generate.cpp`, `verify.cpp/.hpp`, `prefill.cpp/.hpp`), the conversation-cache header
-(one guarded hook) and the top-level `CMakeLists.txt`, plus `hetero/`.
+Report 0070 was Partial (`4f30546e`). Chat AI's review:
+- **Passed on the rebuilt branch:** clean builds in all three trees; host CTest 138 passed, 6 skipped; the mixed
+  serving checks; turn 2 equal to a fresh read (50/50, checkpoint and park); the eviction run (A rereads after
+  eviction, D reuses, the front stage logs each Drop). The only engine change is that Drop log line.
+- **HIP `conversation_copy_streams_test` failed (148 MiB against 16 MiB):** vanilla's test on unchanged vanilla code.
+  The hardening had rewritten that assertion. Recorded as a vanilla finding (upstream candidate: the first HIP copy
+  stream on gfx1201 needs more than vanilla's 64 MiB restore guard). Not a mixed-split defect; no Tier 1 needed.
+- **HIP-only config refused by the launch check:** correct, since its vision helpers came from the vanilla checkout.
+  They are now built from this checkout (`tools/vision`).
+- **Launch check staleness:** a commit that changes only notes or reports no longer makes the builds stale.
+- **Mixed prefill:** 1,787 against 2,249 tok/s in report 0069, one sample each. Handoff 0071 measures the rebuilt
+  line against the hardened line, three samples each.
+- **Kernel line "Cannot map memory … 0x7e9152 pages":** 31.6 GiB, the shared arena's whole-arena HIP registration
+  that falls back to 48 slices. Not a fault.
 
-Checked by Chat AI without a GPU:
-- The mixed engine changes equal the hardened line's, except the two hardening arena lines and one vanilla-form
-  allocation.
-- `mixed_split_tests` and `mixed_split_cache_drop_test` pass.
-- The engine files syntax-check with only vanilla's own build-define errors.
-- Reports 0067 to 0069 were measured with the hardening in.
-
-New: the front stage drops a parked copy when the host's conversation cache lets it go (`0b0f671b`, unverified on the
-cards). That closes the count-against-bytes risk of report 0069.
+Since report 0070, by Chat AI:
+- the build option is renamed to `STRATA_MIXED_SPLIT`, with its define, tests option, targets and tests;
+- the run logs moved to `.ai/runs/`.
 
 ## History in short
+
+- 2026-11-18: hardening removed, branch rebuilt; front-stage Drop added; report 0070 re-check Partial (one vanilla HIP test).
 
 - M4 reached on the hardened line (report 0069): caches across the boundary, server checks, configs committed.
 
@@ -44,10 +49,11 @@ cards). That closes the count-against-bytes risk of report 0069.
 - 2026-11-17: integrate the private hardening before continuing the mixed engine.
 - 2026-11-18: remove the hardening (rebuild, force-push); defer the host's arena trim; accept the live-session resume
   difference as vanilla behaviour.
+- 2026-11-18: rename the build option to `STRATA_MIXED_SPLIT`, with related defines, tests and targets.
 
 ## Open decisions for the Human User
 
-- Handoff 0070's 15-minute GPU budget (above the 5-minute default).
+- Handoff 0071's 15-minute GPU budget (above the 5-minute default). Until it is recorded here, the agent uses 5.
 
 ## Next step
 

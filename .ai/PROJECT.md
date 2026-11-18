@@ -62,6 +62,8 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
 
 - Stage: **early development**.
 - Hardware test budget: **5 minutes per agent turn**, short prompts, runs sequential, never two GPU jobs at once.
+- A handoff's larger budget applies only when `.ai/STATUS.md` records the Human User's approval of it.
+- Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
 - Long-duration tests (soak, long context, capacity sweeps, the 160 tok/s qualification) wait for
   release-candidate state and an explicit request from the Human User.
 - Never compare a traced run with an untraced one.
