@@ -22,8 +22,12 @@ export STRATA_DATA=/home/chris/workspace/Strata-data \
 | `STRATA_VANILLA` | the vanilla checkout, read only: control vector and vision engines (HIP-only config) |
 | `ROCM_LIB` | the ROCm libraries |
 
-The build trees named in `exe` and `--front-exe` are this checkout's `build-0067-hip` and `build-0067-cuda` (the
-toolchains in `.ai/PROJECT.md`). Not supported in a mixed split yet: vision, control vectors, `--batch`, DFlash2,
+The build trees named in `exe` and `--front-exe` are this checkout's `build-0070-hip` and `build-0070-cuda` (the
+toolchains in `.ai/PROJECT.md`). After building each tree from the current commit, record `git rev-parse HEAD >
+build-0070-hip/BUILD_COMMIT` (and likewise for CUDA). The launcher checks this stamp, CMake's checkout path and
+`ldd` before starting; rerun the builds and refresh the stamps after changing commits. The HIP-only example currently
+fails this check: its two vision executables are from the vanilla checkout, not the host build. Do not bypass the check.
+Not supported in a mixed split yet: vision, control vectors, `--batch`, DFlash2,
 `--pipeline-windows`, `--layer-split auto`.
 
 Drivers in `hetero/tools/`: `engine_drive.py` (the engine over the serve protocol, token prompts from `mkprompts.py`),

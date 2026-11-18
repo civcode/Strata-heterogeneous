@@ -13,7 +13,7 @@ as serve/replicas.py makes one for replicas, so both processes map one copy of t
 it on a 64 GB PC).  This process then becomes the server (exec), keeping that memory object open, so the path stays
 valid for as long as the server runs.  Stop it as any server: SIGINT or SIGTERM to this process (same pid).
 """
-import argparse, json, os, sys
+import argparse, json, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -32,6 +32,8 @@ def main():
     own = sys.argv[1:sys.argv.index("--")] if "--" in sys.argv else sys.argv[1:]
     extra = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     a = ap.parse_args(own)
+    if any(x == "--config" or x.startswith("--config=") or x == "--engine" or x.startswith("--engine=") for x in extra):
+        ap.error("server --config and --engine overrides bypass the launch check")
     names = {"STRATA_REPO": REPO}
     for kv in a.set:
         k, v = kv.split("=", 1)
@@ -42,7 +44,7 @@ def main():
     cfg = expand(json.load(open(a.config)), names)
     try:
         check_config(cfg)
-    except (ValueError, OSError) as e:
+    except (ValueError, OSError, subprocess.SubprocessError) as e:
         raise SystemExit(f"launch check: {e}") from e
     args = [str(x) for x in cfg.get("args", [])]
     if "--front-exe" in args and not a.no_shared_arena and "--shared-expert-arena" not in args:
