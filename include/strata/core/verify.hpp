@@ -232,6 +232,9 @@ public:
         std::function<bool(int n_keep, std::string& err)> commit;
     };
     void set_front(FrontCalls calls) { front_ = std::move(calls); }
+    /// MIXED SPLIT, STRATA_SPLIT_TIMING (logging only): called on this stage's stream just before (`after` false) and
+    /// just after (true) its window graph is launched, so events recorded there time the window on the GPU.
+    void set_launch_mark(std::function<void(cudaStream_t cs, bool after)> f) { launch_mark_ = std::move(f); }
 #endif
     /// floats per token in a hand-off buffer
     static int64_t handoff_floats(const ModelGeometry& g) { return (int64_t) g.hc * g.n_embd + g.n_embd + g.hc; }
@@ -623,6 +626,7 @@ private:
     void* next_user_ = nullptr;
 #if defined(STRATA_MIXED_SPLIT)
     FrontCalls front_;                   ///< set_front
+    std::function<void(cudaStream_t, bool)> launch_mark_;   ///< set_launch_mark
 #endif
     bool ple_stage() const { return lb_ <= 1 && 1 < le_; }   ///< holds layer 1, where the PLE block runs
     void stage_inputs(int T, const int32_t* tokens, int64_t pos0);

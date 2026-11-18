@@ -3347,6 +3347,9 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         // 0.1.43: with the all-resident graph the host serves no layer, so nothing can hold a layer back: every copy first
         if (adapt_gate_ != nullptr && adapt_gate_->active.load(std::memory_order_acquire) && ar_on() &&
             !adapt_gate_wait((int32_t) g.n_layers, err)) return false;
+#if defined(STRATA_MIXED_SPLIT)
+        if (launch_mark_) launch_mark_(cs_, false);   // MIXED SPLIT, STRATA_SPLIT_TIMING: an event before the window graph
+#endif
 #if defined(STRATA_VERIFY_HGL)
         // A blocking instrumented launch cannot also serve the graph's CPU doorbells.
         static const bool threaded_launch = [] {
@@ -3393,6 +3396,9 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[sel_long_][T] : exec_[sel_long_][T], cs_);
 #endif
         trace_ev("LAUNCHED", -1, -1, (int64_t) le);
+#if defined(STRATA_MIXED_SPLIT)
+        if (launch_mark_ && le == cudaSuccess) launch_mark_(cs_, true);   // ... and one after it
+#endif
         graph_launched = true;
         if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
 #if defined(STRATA_VERIFY_HGL)

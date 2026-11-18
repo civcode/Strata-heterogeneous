@@ -1645,6 +1645,53 @@ void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int
 #if defined(STRATA_MIXED_SPLIT)
 
 // ================================ MIXED SPLIT (.ai/SEAM.md) ================================
+/// STRATA_SPLIT_TIMING: a running sum and the part since the last report.
+struct HeteroSum {
+    double ms = 0.0, ms0 = 0.0;
+    int64_t n = 0, n0 = 0;
+    void add(double v) { ms += v; ++n; }
+    double avg_new() const { return n > n0 ? (ms - ms0) / (double) (n - n0) : 0.0; }
+    int64_t n_new() const { return n - n0; }
+    void mark() { ms0 = ms; n0 = n; }
+};
+/// STRATA_SPLIT_TIMING (logging only): one stage's GPU time per window, from two events on the stream that does the
+/// work (Verifier::set_launch_mark, or a wait the host queues).  A pair is read when the next one is recorded or at a
+/// report; by then the stream has passed it (the window was synced), so the read does not wait.
+struct HeteroGpuSpan {
+    cudaEvent_t ev[2] = {nullptr, nullptr};
+    int dev = -1;
+    bool open = false;      ///< the first event of a pair is recorded
+    bool pending = false;   ///< a whole pair is recorded and not read yet
+    HeteroSum sum;          ///< the pairs read
+    void mark(cudaStream_t cs, bool second) {
+        if (!second) {
+            collect();
+            if (ev[0] == nullptr) {
+                if (cudaGetDevice(&dev) != cudaSuccess) { (void) cudaGetLastError(); return; }
+                if (cudaEventCreate(&ev[0]) != cudaSuccess || cudaEventCreate(&ev[1]) != cudaSuccess) { (void) cudaGetLastError(); ev[0] = ev[1] = nullptr; return; }
+            }
+            open = cudaEventRecord(ev[0], cs) == cudaSuccess;
+            if (!open) (void) cudaGetLastError();   // (only this call's error: a sticky one stays for vanilla's checks)
+        } else if (open) {
+            open = false;
+            pending = cudaEventRecord(ev[1], cs) == cudaSuccess;
+            if (!pending) (void) cudaGetLastError();
+        }
+    }
+    void collect() {
+        if (!pending) return;
+        pending = false;
+        const strata::core::OnDevice on(dev);
+        float f = 0.0f;
+        if (cudaEventSynchronize(ev[1]) == cudaSuccess && cudaEventElapsedTime(&f, ev[0], ev[1]) == cudaSuccess) sum.add(f);
+        else (void) cudaGetLastError();
+    }
+};
+inline bool hetero_timing() {
+    static const bool on = std::getenv("STRATA_SPLIT_TIMING") != nullptr;
+    return on;
+}
+
 /// The host's end of the front link: the worker process, the shared hand-off memory and the calls the first local
 /// stage forwards.  Declared before everything that uses the GPU, so it ends after it: the destructor closes the
 /// socket (the worker's cue to end) and waits for the worker; it never signals it.
@@ -1660,14 +1707,72 @@ struct HeteroHost {
         window_open = false;   // (vanilla runs the next window over a window nobody committed)
         return link->session(strata::hetero::SessionOp::Abandon, 0, 0, err);
     }
+    // STRATA_SPLIT_TIMING (logging only): the link's round trips, the first local stage's wait on the front stage's
+    // ready word (a bounded wait queued on its stream before its window, between two events), every local stage's
+    // window on its GPU (Verifier::set_launch_mark)
+    cudaStream_t t_cs = nullptr;          ///< the first local stage's stream
+    const uint32_t* t_flag_d = nullptr;   ///< the front stage's ready word, as that device sees it
+    uint32_t *t_err_h = nullptr, *t_err_d = nullptr;
+    HeteroSum t_run, t_commit;
+    HeteroGpuSpan t_wait;
+    std::vector<std::unique_ptr<HeteroGpuSpan>> t_stage;   ///< one per local stage
     bool run(int T, const int32_t* tokens, int64_t pos0, std::string& err) {
-        if (!drop_window(err) || !link->run(T, tokens, pos0, err)) return false;
+        if (!drop_window(err)) return false;
+        const auto t0 = std::chrono::steady_clock::now();
+        if (!link->run(T, tokens, pos0, err)) return false;
         window_open = true;
+        if (hetero_timing()) {
+            t_run.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+            if (t_cs != nullptr && t_flag_d != nullptr) {
+                if (t_err_h == nullptr && (cudaHostAlloc((void**) &t_err_h, 64, cudaHostAllocMapped) != cudaSuccess ||
+                                           cudaHostGetDevicePointer((void**) &t_err_d, t_err_h, 0) != cudaSuccess)) {
+                    (void) cudaGetLastError();
+                    t_err_h = t_err_d = nullptr;
+                }
+                if (t_err_d != nullptr) {
+                    t_wait.mark(t_cs, false);
+                    // the same bounded wait the window graph starts with (30 s, as STRATA_SPLIT_WAIT_MS's default); the
+                    // graph's own wait then finds the word up
+                    strata::kernels::wait_handoff(t_flag_d, 1u, t_err_d, 30000ull * 1000000ull, t_cs);
+                    t_wait.mark(t_cs, true);
+                }
+            }
+        }
         return true;
     }
     bool commit(int n_keep, std::string& err) {
         window_open = false;
-        return link->commit(n_keep, err);
+        const auto t0 = std::chrono::steady_clock::now();
+        const bool ok = link->commit(n_keep, err);
+        if (hetero_timing()) t_commit.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        return ok;
+    }
+    /// STRATA_SPLIT_TIMING: the per-window averages since the last report (one line; a request's decode windows).
+    void timing_report() {
+        if (!hetero_timing() || link == nullptr) return;
+        t_wait.collect();
+        std::string st;
+        for (size_t i = 0; i < t_stage.size(); ++i) {
+            HeteroGpuSpan& sp = *t_stage[i];
+            sp.collect();
+            char b[96];
+            std::snprintf(b, sizeof b, "%sstage %zu GPU %.3f ms (%lld)", i ? ", " : "", i, sp.sum.avg_new(), (long long) sp.sum.n_new());
+            st += b;
+            sp.sum.mark();
+        }
+        std::fprintf(stderr, "strata serve: mixed split timing (STRATA_SPLIT_TIMING), per window since the last report: "
+                             "%lld windows; link run %.3f ms, link commit %.3f ms (%lld), first local stage's wait for the front "
+                             "stage's ready word %.3f ms (%lld); %s\n",
+                     (long long) t_run.n_new(), t_run.avg_new(), t_commit.avg_new(), (long long) t_commit.n_new(), t_wait.sum.avg_new(),
+                     (long long) t_wait.sum.n_new(), st.c_str());
+        t_run.mark(); t_commit.mark(); t_wait.sum.mark();
+    }
+    /// STRATA_SPLIT_TIMING: time every local stage's window graphs (the stage's Verifier::set_launch_mark).
+    void time_stage(strata::core::Verifier& v) {
+        if (!hetero_timing()) return;
+        t_stage.push_back(std::make_unique<HeteroGpuSpan>());
+        HeteroGpuSpan* sp = t_stage.back().get();
+        v.set_launch_mark([sp](cudaStream_t cs, bool after) { sp->mark(cs, after); });
     }
     bool prefill(const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) {
         if (!drop_window(err)) return false;
@@ -4631,7 +4736,7 @@ int main(int argc, char** argv) {
                        : o.front_layers < 2 ? "--front-layers K needs K of 2 or more"
                        : front_le > 0 ? "--front-stage is the front stage's own option"
                        : o.layer_split.empty() ? "the host needs an explicit --layer-split for its own cards"
-                       : o.layer_split == "auto" ? "--layer-split auto is not supported yet (name the first layer of each later card)"
+                       : o.split_skip_if_fits ? "--split-skip-if-fits is not supported (the host's cards run layers past the front stage's)"
                        : o.batch != 0 ? "--batch / --slots are not supported yet"
                        : o.draft == "dflash2" || o.draft_auto ? "the DFlash2 drafter is not supported yet (--draft mtp)"
                        : o.pipeline_windows > 0 ? "--pipeline-windows above 0 is not supported yet"
@@ -5711,7 +5816,12 @@ int main(int argc, char** argv) {
     // free once its fixed costs are paid, so every layer gets the same cache bytes on every card; it then runs as an explicit split with every card trimmed.  The dense set's size is
     // estimated from the pack (the native projections at the ratio the IQ3_S pack has); the check after CUDA0's load decides again from the exact figure.  Never reached by cards with
     // room; STRATA_STAGE_TRIM=0, STRATA_SPLIT_EARLY_OFF=1 or STRATA_SPILL_OFF=1 keeps the old path.
+#if defined(STRATA_MIXED_SPLIT)
+    // (MIXED SPLIT: not on the host - its proportional split would start at layer 0; the search below plans [front_lb, L))
+    if (multi_gpu && split_auto && front_lb == 0 && !trim_user_asked && !split_devs.empty() && std::getenv("STRATA_SPILL_OFF") == nullptr &&
+#else
     if (multi_gpu && split_auto && !trim_user_asked && !split_devs.empty() && std::getenv("STRATA_SPILL_OFF") == nullptr &&
+#endif
         !(std::getenv("STRATA_STAGE_TRIM") != nullptr && std::string(std::getenv("STRATA_STAGE_TRIM")) == "0") &&
         std::getenv("STRATA_SPLIT_EARLY_OFF") == nullptr && spill_discrete_gpu()) {
         namespace sw = strata::program::split_walk;
@@ -6833,6 +6943,9 @@ int main(int argc, char** argv) {
         std::vector<int64_t> cap((size_t) ns), used((size_t) ns);
         // what stage i has left for experts if it runs [lb, le): its room, minus its session and (a later stage) its weights
         auto stage_left = [&](int i, int64_t lb, int64_t le) -> int64_t {
+#if defined(STRATA_MIXED_SPLIT)
+            if (i == 0 && lb < front_lb) lb = front_lb;   // MIXED SPLIT: the host's first stage starts at front_lb
+#endif
             return cap[(size_t) i] - (int64_t) strata::core::session_bytes(g, o.max_context, K, lb, le) -
                    (i == 0 ? 0 : (int64_t) carve_bytes(lb, le));
         };
@@ -6941,7 +7054,11 @@ int main(int argc, char** argv) {
             // is why the sessions are allocated after the search: `session_bytes` is pure arithmetic.
             std::vector<int64_t> capr((size_t) ns);
             for (int i = 0; i < ns; ++i) {
+#if defined(STRATA_MIXED_SPLIT)
+                const int64_t lb = i == 0 ? front_lb : at[(size_t) i - 1];   // (MIXED SPLIT: the host's layers start at front_lb)
+#else
                 const int64_t lb = i == 0 ? 0 : at[(size_t) i - 1];
+#endif
                 const int64_t le = i + 1 < ns ? at[(size_t) i] : g.n_layers;
                 capr[(size_t) i] = stage_left(i, lb, le) + strata::program::split_rules::trim_credit(i, trim_frees(lb, le));
             }
@@ -6971,7 +7088,11 @@ int main(int argc, char** argv) {
                 ms += miss_ms * link_scale[(size_t) i] * std::max(0.0, mass_i[(size_t) i] - held_i[(size_t) i]) /
                       std::max(total_mass, 1e-9);
             for (int i = 0; i < ns; ++i) {
+#if defined(STRATA_MIXED_SPLIT)
+                const int64_t lb = i == 0 ? front_lb : at[(size_t) i - 1], le = i + 1 < ns ? at[(size_t) i] : g.n_layers;
+#else
                 const int64_t lb = i == 0 ? 0 : at[(size_t) i - 1], le = i + 1 < ns ? at[(size_t) i] : g.n_layers;
+#endif
                 ms += (double) (le - lb) * layer_ms[(size_t) i];
             }
             return ms;
@@ -6990,7 +7111,11 @@ int main(int argc, char** argv) {
         auto stage_max = [&](const std::vector<int64_t>& cuts) {
             double m = 0;
             for (int i = 0; i < ns; ++i) {
+#if defined(STRATA_MIXED_SPLIT)
+                const int64_t lb = i == 0 ? front_lb : cuts[(size_t) i - 1], le = i + 1 < ns ? cuts[(size_t) i] : g.n_layers;
+#else
                 const int64_t lb = i == 0 ? 0 : cuts[(size_t) i - 1], le = i + 1 < ns ? cuts[(size_t) i] : g.n_layers;
+#endif
                 m = std::max(m, (double) (le - lb) * layer_ms[(size_t) i]);
             }
             return m;
@@ -7007,6 +7132,9 @@ int main(int argc, char** argv) {
         // state.  bytes_needed only reads max_cells and kv_mode/n_pages/kv_int8/kv_q4/kv_hybrid, so we set those
         // fields directly, replicating kv_plan's arithmetic (layer.cpp:634) with the public getters.
         auto chunk_bytes = [&](int64_t lb, int64_t c) -> uint64_t {
+#if defined(STRATA_MIXED_SPLIT)
+            if (lb < front_lb) lb = front_lb;   // (MIXED SPLIT: the host's first stage)
+#endif
             strata::core::qsa_set_kv_resident(o.kv_resident);
             const strata::kernels::QsaShapes s = strata::core::qsa_shapes(g);
             const int64_t pages = (o.max_context + s.page_size - 1) / s.page_size;
@@ -7104,7 +7232,11 @@ int main(int argc, char** argv) {
         auto parts_of = [&](const std::vector<int64_t>& at) {
             std::vector<PartStat> parts((size_t) ns);
             for (int i = 0; i < ns; ++i) {
+#if defined(STRATA_MIXED_SPLIT)
+                parts[i].lb = i == 0 ? front_lb : at[i - 1];
+#else
                 parts[i].lb = i == 0 ? 0 : at[i - 1];
+#endif
                 parts[i].le = i + 1 < ns ? at[i] : g.n_layers;
                 parts[i].used = used[i];
                 parts[i].cnt = held_cnt[i];
@@ -7119,6 +7251,11 @@ int main(int argc, char** argv) {
         // best placement that is really a different one (not the neighbour one layer over)
         std::vector<std::pair<double, std::vector<int64_t>>> priced;
         auto consider = [&]() {
+#if defined(STRATA_MIXED_SPLIT)
+            // MIXED SPLIT: the host's first stage runs [front_lb, at[0]): at least two layers, as vanilla's K >= 2, and
+            // the #1616 floor once it applies
+            if (at[0] < front_lb + std::max<int64_t>(2, min_stage_layers)) return;
+#endif
             if (min_stage_layers > 1 && strata::program::split_rules::smallest_stage(at, g.n_layers) < min_stage_layers)
                 return;
             if (!stage_floors.empty() && strata::program::split_rules::below_floors(at, g.n_layers, stage_floors))
@@ -7210,6 +7347,9 @@ int main(int argc, char** argv) {
             for (int64_t k1 = 2; k1 + 2 < L; ++k1)
                 for (int64_t k2 = k1 + 1; k2 + 1 < L; ++k2)
                     for (int64_t k3 = k2 + 1; k3 < L; ++k3) {
+#if defined(STRATA_MIXED_SPLIT)
+                        if (k1 < front_lb + std::max<int64_t>(2, min_stage_layers)) continue;   // (MIXED SPLIT, as in `consider`)
+#endif
                         const size_t a = range_hold(0, 0, k1), b = range_hold(1, k1, k2);
                         const size_t c = range_hold(2, k2, k3), d = range_hold(3, k3, L);
                         const double hm = held_mass_at[a] + held_mass_at[b] + held_mass_at[c] + held_mass_at[d];
@@ -12926,6 +13066,12 @@ int main(int argc, char** argv) {
                 fc.run = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.run(T, tokens, pos0, e); };
                 fc.commit = [&hetero](int n_keep, std::string& e) { return hetero.commit(n_keep, e); };
                 ver.set_front(std::move(fc));
+                if (hetero_timing()) {   // STRATA_SPLIT_TIMING: the wait on the ready word and every local stage's windows
+                    hetero.t_cs = ver.stream();
+                    hetero.t_flag_d = het_flag_d;
+                    hetero.t_stage.clear();
+                    for (int st = 0; st < n_stages; ++st) hetero.time_stage(stage_ver(st));
+                }
             }
 #endif
 #if defined(STRATA_MIXED_SPLIT)
@@ -15686,15 +15832,35 @@ int main(int argc, char** argv) {
             std::vector<const float*> f_row_ptr;
             bool f_mrope_identity = true;
             auto key_of = [&](const ConvCheckpoint& c) { return key_with(c, book.steer()); };
+            // STRATA_SPLIT_TIMING (logging only): this stage's window on its GPU (two events around the graph launch)
+            // and the time each forwarded call takes here; one line per request (at its image input, the host's first
+            // call of a request) and at the end
+            HeteroGpuSpan f_gpu;
+            HeteroSum f_run_ms, f_commit_ms;
+            if (hetero_timing()) ver.set_launch_mark([&f_gpu](cudaStream_t cs, bool after) { f_gpu.mark(cs, after); });
+            auto f_timing_report = [&](const char* when) {
+                if (!hetero_timing()) return;
+                f_gpu.collect();
+                if (f_run_ms.n_new() > 0)
+                    std::fprintf(stderr, "strata serve: front stage timing (STRATA_SPLIT_TIMING), per window %s: %lld windows; "
+                                         "GPU %.3f ms (%lld), the run call %.3f ms, the commit call %.3f ms (%lld)\n", when,
+                                 (long long) f_run_ms.n_new(), f_gpu.sum.avg_new(), (long long) f_gpu.sum.n_new(), f_run_ms.avg_new(),
+                                 f_commit_ms.avg_new(), (long long) f_commit_ms.n_new());
+                f_gpu.sum.mark(); f_run_ms.mark(); f_commit_ms.mark();
+            };
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
                 if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
                 if (!book.on_run(tokens, T, pos0, e)) return false;
+                const auto t0 = std::chrono::steady_clock::now();
                 if (!ver.run(T, tokens, pos0, win_pool_fn, win_pool_user, f_out.data(), e)) return false;
+                if (hetero_timing()) f_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 if (drive.d.failed) { e = "the front stage's expert pool failed"; return false; }
                 return true;
             };
             fb.f_commit = [&](int n_keep, std::string& e) {
+                const auto t0 = std::chrono::steady_clock::now();
                 if (!ver.commit(n_keep, e)) return false;
+                if (hetero_timing()) f_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 book.on_commit(n_keep);
                 return true;
             };
@@ -15708,6 +15874,7 @@ int main(int argc, char** argv) {
             };
             // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
             fb.f_images = [&](strata::hetero::FrontImages& im, std::string& e) {
+                f_timing_report("since the last request");
                 if (!ver.wait_commit(e)) return false;
                 book.on_abandon();
                 // vanilla's upload_mrope: CUDA0's table and every later stage's (each device reads its own)
@@ -15842,6 +16009,8 @@ int main(int argc, char** argv) {
             const int frc = strata::hetero::serve_front_greeted(strata::hetero::kWorkerSocketFd, fb, het_id, fe);
             std::fprintf(stderr, "strata serve: front stage: the link ended%s%s\n", frc == 0 ? " cleanly" : ": ", frc == 0 ? "" : fe.c_str());
             if (!ver.wait_commit(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
+            f_timing_report("since the last request (at the link's end)");
+            ver.set_launch_mark(nullptr);
             if (frc != 0) return 1;
         }
         if (front_lb > 0) {   // the front stage's session starts empty, as this one's; this also waits until it serves
@@ -15851,6 +16020,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
             std::fprintf(stderr, "strata serve: mixed split: the front stage is ready\n");
+            hetero.timing_report();   // STRATA_SPLIT_TIMING: the warm-up's windows, so each request's line is its own
         }
 #endif
         std::printf("READY %lld stop hold holdb\n", (long long) o.max_context);   // "stop": this engine honours STOP; "hold": GEN hold=N:ID; "holdb": the --batch slots end at the hold too (BDONE hold)
@@ -22211,6 +22381,9 @@ int main(int argc, char** argv) {
                                          "pool + plan %.3f ms, host staging %.3f ms, commit %.3f ms\n", st,
                                  (long long) v.windows, v.ms_wait / w, v.ms_pool / w, v.ms_host / w, v.ms_commit / w);
                 }
+#if defined(STRATA_MIXED_SPLIT)
+            hetero.timing_report();   // MIXED SPLIT, STRATA_SPLIT_TIMING: this request's windows across the two processes
+#endif
             if (g.n_qsa_layers() > 0 && ss.qsa_states[ss.qsa_primary()].kv_mode == 1) {
                 // KV streaming, cumulative over the process: blocks the selections named vs blocks read from RAM
                 // (this device's owned ordinals; a split's other stages hold theirs)
