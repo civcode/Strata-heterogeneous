@@ -517,12 +517,51 @@ void test_session_drop() {
     CHECK(rc == 0);
 }
 
+// Steer: the control-vector switch.  A state saved with the vector off has another key than the same tokens with it
+// on, so a parked copy or checkpoint is never restored under the wrong switch.
+void test_session_steer() {
+    CHECK(steer_key(12345, true) == 12345);
+    CHECK(steer_key(12345, false) != 12345 && steer_key(12345, false) > 0);
+    Pair s;
+    test::BookBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;
+    CHECK(make_region(region));
+    RemoteFrontStage front(s.host, 5000);
+    std::string err;
+    CHECK(front.hello(test_identity(), region, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    std::vector<int32_t> a = {1, 2, 3};
+    CHECK(front.session(SessionOp::Steer, 0, 0, err));                                     // a request with cvec=0
+    CHECK(!backend.book.steer());
+    CHECK(front.prefill(a.data(), 3, 0, true, err));
+    const int64_t on = token_key(a.data(), 3), off = steer_key(on, false);
+    CHECK(!front.session(SessionOp::Snapshot, on, 3, err));                                // the host's key says "on"
+    CHECK(front.session(SessionOp::Snapshot, off, 3, err));
+    CHECK(front.session(SessionOp::Park, off, 3, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    CHECK(front.session(SessionOp::Steer, 1, 0, err));                                     // next request: cvec=1
+    CHECK(!front.session(SessionOp::Unpark, on, 3, err));                                  // no copy computed with it on
+    CHECK(!front.session(SessionOp::Restore, on, 3, err));
+    CHECK(front.session(SessionOp::Unpark, off, 3, err));                                  // the off copy, asked for as such
+    CHECK(!backend.book.steer());                                                          // the state's own switch
+    CHECK(backend.book.history() == a);
+    CHECK(front.session(SessionOp::Restore, off, 3, err));                                 // its checkpoint came back with it
+    CHECK(!front.broken());
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     test_token_key();
     test_session_ops();
     test_session_drop();
+    test_session_steer();
     test_shared_region();
     test_link_round_trip();
     test_link_rules();

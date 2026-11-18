@@ -84,6 +84,7 @@ struct BookBackend : StubBackend {
         case SessionOp::Reset: book.on_reset(); state.clear(); return true;
         case SessionOp::Abandon: book.on_abandon(); return true;
         case SessionOp::Drop: book.drop_image(a, b); return true;   // (the window and the session stay)
+        case SessionOp::Steer: book.set_steer(a != 0); return true;
         case SessionOp::Snapshot:
             if (!book.check(a, b, "a checkpoint", err)) return false;
             book.put_part(a, b, std::string(state));
@@ -95,6 +96,7 @@ struct BookBackend : StubBackend {
             std::vector<int32_t> ids;
             for (size_t i = 0; i < p->size();) { const size_t c = p->find(',', i); ids.push_back(std::stoi(p->substr(i, c - i))); i = c + 1; }
             book.set_history(std::move(ids));
+            book.set_steer(book.steer_of(a, book.history()));   // the switch the restored state was computed with
             return true;
         }
         case SessionOp::Park: {
@@ -103,7 +105,7 @@ struct BookBackend : StubBackend {
             Image im{h, book.parts_on(h, b, [&](const std::string& s) {
                          std::vector<int32_t> ids;
                          for (size_t i = 0; i < s.size();) { const size_t c = s.find(',', i); ids.push_back(std::stoi(s.substr(i, c - i))); i = c + 1; }
-                         return token_key(ids.data(), (int64_t) ids.size());
+                         return steer_key(token_key(ids.data(), (int64_t) ids.size()), book.steer());
                      })};
             book.put_image(a, b, std::move(im));
             return true;
@@ -112,11 +114,13 @@ struct BookBackend : StubBackend {
             auto im = book.take_image(a, b);
             if (!im) { err = "no parked copy"; return false; }
             book.set_history(im->ids);
+            const bool steer = book.steer_of(a, im->ids);   // the switch the parked state was computed with
+            book.set_steer(steer);
             state = text(im->ids);
             for (std::string& p : im->parts) {
                 std::vector<int32_t> ids;
                 for (size_t i = 0; i < p.size();) { const size_t c = p.find(',', i); ids.push_back(std::stoi(p.substr(i, c - i))); i = c + 1; }
-                book.put_part(token_key(ids.data(), (int64_t) ids.size()), (int64_t) ids.size(), std::move(p));
+                book.put_part(steer_key(token_key(ids.data(), (int64_t) ids.size()), steer), (int64_t) ids.size(), std::move(p));
             }
             return true;
         }

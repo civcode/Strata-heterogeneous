@@ -1682,18 +1682,28 @@ struct HeteroHost {
     /// A save or restore of the first stage's session, repeated on the front stage's for the same tokens `ids[0, n)`:
     /// Snapshot / Restore (a checkpoint), Park / Unpark (the conversation cache).  The front stage refuses it when its
     /// session does not hold those tokens.
+    /// `steer`: the control-vector switch the state was computed with (vanilla's cvec_cached / SavedConversation::cvec;
+    /// true without a vector).
     template <class T>
-    bool at(strata::hetero::SessionOp op, const T* ids, int64_t n, std::string& err) {
+    bool at(strata::hetero::SessionOp op, const T* ids, int64_t n, bool steer, std::string& err) {
         if (!drop_window(err)) return false;
-        if (link->session(op, strata::hetero::token_key(ids, n), n, err)) return true;
+        if (link->session(op, strata::hetero::steer_key(strata::hetero::token_key(ids, n), steer), n, err)) return true;
         err = "mixed split: the front stage: " + err;
         return false;
     }
     /// The host's conversation cache let the parked copy of `ids[0, n)` go: the front stage drops its own (no window or
     /// session change on either side).
     template <class T>
-    bool drop(const T* ids, int64_t n, std::string& err) {
-        return link->session(strata::hetero::SessionOp::Drop, strata::hetero::token_key(ids, n), n, err);
+    bool drop(const T* ids, int64_t n, bool steer, std::string& err) {
+        return link->session(strata::hetero::SessionOp::Drop, strata::hetero::steer_key(strata::hetero::token_key(ids, n), steer), n,
+                             err);
+    }
+    /// The request's control-vector switch (vanilla's cvec_set_enabled), repeated on the front stage.
+    bool steer(bool on, std::string& err) {
+        if (!drop_window(err)) return false;
+        if (link->session(strata::hetero::SessionOp::Steer, on ? 1 : 0, 0, err)) return true;
+        err = "mixed split: the front stage: " + err;
+        return false;
     }
     ~HeteroHost() {
         if (!worker.started()) return;
@@ -4595,7 +4605,6 @@ int main(int argc, char** argv) {
                        : o.layer_split.empty() ? "the host needs an explicit --layer-split for its own cards"
                        : o.layer_split == "auto" ? "--layer-split auto is not supported yet (name the first layer of each later card)"
                        : o.vision ? "--vision is not supported yet"
-                       : !o.cvec_files.empty() ? "control vectors are not supported yet"
                        : o.batch != 0 ? "--batch / --slots are not supported yet"
                        : o.draft == "dflash2" || o.draft_auto ? "the DFlash2 drafter is not supported yet (--draft mtp)"
                        : o.pipeline_windows > 0 ? "--pipeline-windows above 0 is not supported yet"
@@ -4634,9 +4643,9 @@ int main(int argc, char** argv) {
                      (long) hetero.worker.pid(), o.front_exe.c_str(), o.front_layers - 1, o.front_layers);
     }
     if (front_le > 0) {
-        if (!o.serve || front_le < 2 || !o.layer_split.empty() || o.vision || !o.cvec_files.empty() || o.batch != 0 || !o.mtp.empty()) {
+        if (!o.serve || front_le < 2 || !o.layer_split.empty() || o.vision || o.batch != 0 || !o.mtp.empty()) {
             std::fprintf(stderr, "strata serve: --front-stage K (the front stage of a mixed split, started by the host engine) needs "
-                                 "--serve and K of 2 or more, and takes no --layer-split, --vision, control vector, --batch or --mtp\n");
+                                 "--serve and K of 2 or more, and takes no --layer-split, --vision, --batch or --mtp\n");
             return 2;
         }
         // this process inherited the host's standard input and output, which carry the host's serve protocol: it must
@@ -13366,7 +13375,7 @@ int main(int argc, char** argv) {
         if (hetero.on())   // MIXED SPLIT: the front stage keeps a parked copy only while this cache keeps the conversation
             conversations.on_drop = [&hetero](const strata::core::SavedConversation& c) {
                 std::string fe;
-                if (!hetero.drop(c.live.ids.data(), (int64_t) c.live.ids.size(), fe))
+                if (!hetero.drop(c.live.ids.data(), (int64_t) c.live.ids.size(), c.cvec, fe))
                     std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
             };
 #endif
@@ -13789,7 +13798,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                 // MIXED SPLIT: the front stage parks its part of the main session (a batch slot's: no --batch here)
                 if (hetero.on() && &src.session == &ss &&
-                    !hetero.at(strata::hetero::SessionOp::Park, src.ids.data(), (int64_t) src.ids.size(), err))
+                    !hetero.at(strata::hetero::SessionOp::Park, src.ids.data(), (int64_t) src.ids.size(), src.cvec, err))
                     return false;
 #endif
                 const size_t snapshot_bytes = image.bytes();
@@ -13797,7 +13806,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                 if (!stored && hetero.on() && &src.session == &ss) {   // MIXED SPLIT: the front stage parked a copy above
                     std::string fe;
-                    if (!hetero.drop(src.ids.data(), (int64_t) src.ids.size(), fe))
+                    if (!hetero.drop(src.ids.data(), (int64_t) src.ids.size(), src.cvec, fe))
                         std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
                 }
 #endif
@@ -14012,7 +14021,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
             if (parts == nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part (a split's parts: on_stage_chunk)
                 std::string fe;
-                if (!hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, fe)) { ckpt_why = ": " + fe; return false; }
+                if (!hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, cvec_cached, fe)) { ckpt_why = ": " + fe; return false; }
             }
 #endif
             c.used = ++check_clock;
@@ -14182,7 +14191,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                     // MIXED SPLIT: the front stage saves its part with the first local stage's.  It has read exactly this far:
                     // the first local stage asks it for each chunk before reading that chunk itself
-                    if (i == 0 && hetero.on() && !hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, e)) return false;
+                    if (i == 0 && hetero.on() && !hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, cvec_cached, e)) return false;
 #endif
                     std::lock_guard<std::mutex> lk(part_mu);
                     auto& v = part_at[done];
@@ -15635,7 +15644,11 @@ int main(int argc, char** argv) {
             std::vector<int64_t> f_ids;
             // the tokens this session holds, and its parts of the host's checkpoints and parked conversations
             strata::hetero::FrontSessionBook<ConvCheckpoint, strata::core::SavedConversation> book(front_parts_cap, front_images_cap);
-            auto key_of = [](const ConvCheckpoint& c) { return strata::hetero::token_key(c.ids.data(), (int64_t) c.ids.size()); };
+            // a part's key: its tokens, and the control-vector switch its state was computed with (steer_key)
+            auto key_with = [](const ConvCheckpoint& c, bool steer) {
+                return strata::hetero::steer_key(strata::hetero::token_key(c.ids.data(), (int64_t) c.ids.size()), steer);
+            };
+            auto key_of = [&](const ConvCheckpoint& c) { return key_with(c, book.steer()); };
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
                 if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
                 if (!book.on_run(tokens, T, pos0, e)) return false;
@@ -15659,6 +15672,13 @@ int main(int argc, char** argv) {
             static const std::vector<strata::core::ConversationImageKey> f_no_imgs;
             fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
                 using Op = strata::hetero::SessionOp;
+                if (op == Op::Steer) {   // the request's control-vector switch (vanilla's cvec_set_enabled; it synchronizes)
+                    if (!ver.wait_commit(e)) return false;
+                    book.on_abandon();
+                    if (strata::kernels::cvec().loaded()) strata::kernels::cvec_set_enabled(a != 0);
+                    book.set_steer(strata::kernels::cvec().loaded() ? a != 0 : true);
+                    return true;
+                }
                 if (op == Op::Drop) {   // the host's cache let that conversation go: nothing on the GPU, the window stays
                     const bool removed = book.drop_image(a, b);
                     std::fprintf(stderr, "strata serve: front Drop key=%lld tokens=%lld removed=%d parked=%zu\n",
@@ -15688,6 +15708,7 @@ int main(int argc, char** argv) {
                     if (part == nullptr) { e = "no checkpoint at " + std::to_string((long long) b) + " tokens is kept here"; return false; }
                     if (!strata::core::conversation_checkpoint_restore(*part, ss, g, e)) return false;
                     book.set_history(part->ids);
+                    book.set_steer(book.steer_of(a, part->ids));   // the switch the restored state was computed with
                     return true;
                 }
                 case Op::Park: {   // the conversation cache's park: conversation_snapshot_save, without the draft layer (a later stage's form)
@@ -15709,8 +15730,10 @@ int main(int argc, char** argv) {
                         return false;
                     }
                     book.set_history(image->live.ids);
+                    const bool steer = book.steer_of(a, image->live.ids);   // the switch the parked state was computed with
+                    book.set_steer(steer);
                     for (ConvCheckpoint& c : image->checkpoints) {   // its checkpoints are this session's again
-                        const int64_t k = key_of(c), n = (int64_t) c.ids.size();
+                        const int64_t k = key_with(c, steer), n = (int64_t) c.ids.size();
                         book.put_part(k, n, std::move(c));
                     }
                     return true;
@@ -18143,10 +18166,11 @@ int main(int argc, char** argv) {
                     incoming.reset();
 #if defined(STRATA_MIXED_SPLIT)
                     const std::vector<int32_t> retry_ids = retry.live.ids;   // (the front stage still holds its copy)
+                    const bool retry_cvec = retry.cvec;
                     if (!conversations.put(std::move(retry))) {
                         std::fprintf(stderr, "strata serve: conversation cache: could not return the skipped snapshot\n");
                         std::string fe;
-                        if (hetero.on() && !hetero.drop(retry_ids.data(), (int64_t) retry_ids.size(), fe))
+                        if (hetero.on() && !hetero.drop(retry_ids.data(), (int64_t) retry_ids.size(), retry_cvec, fe))
                             std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
                     }
 #else
@@ -18412,7 +18436,8 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                 if (hetero.on()) {   // MIXED SPLIT: the front stage's parked part of this conversation
                     std::string fe;
-                    if (!hetero.at(strata::hetero::SessionOp::Unpark, incoming->live.ids.data(), (int64_t) incoming->live.ids.size(), fe)) {
+                    if (!hetero.at(strata::hetero::SessionOp::Unpark, incoming->live.ids.data(), (int64_t) incoming->live.ids.size(), incoming->cvec,
+                                   fe)) {
                         std::printf("ERR restoring parked conversation: %s\n", fe.c_str());
                         std::fflush(stdout);
                         return 1;
@@ -18450,6 +18475,16 @@ int main(int argc, char** argv) {
                 cvec_cached = want_cvec;
             }
             if (strata::kernels::cvec().loaded()) strata::kernels::cvec_set_enabled(want_cvec);
+#if defined(STRATA_MIXED_SPLIT)
+            if (hetero.on() && strata::kernels::cvec().loaded()) {   // MIXED SPLIT: the front stage's layers follow the switch
+                std::string fe;
+                if (!hetero.steer(want_cvec, fe)) {
+                    std::printf("ERR %s\n", fe.c_str());
+                    std::fflush(stdout);
+                    return 1;
+                }
+            }
+#endif
             // this request rewrites every cell from `resume` on, so a checkpoint past it (or not on this prompt's
             // path) no longer has its cells; the ones kept are prefixes of both the old tokens and the new
             auto off_path = [&](const ConvCheckpoint& c) {
@@ -18542,7 +18577,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                 if (reread_to < 0 && c != nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part of the checkpoint
                     std::string fe;
-                    if (!hetero.at(strata::hetero::SessionOp::Restore, c->ids.data(), (int64_t) c->ids.size(), fe)) {
+                    if (!hetero.at(strata::hetero::SessionOp::Restore, c->ids.data(), (int64_t) c->ids.size(), cvec_cached, fe)) {
                         std::printf("ERR restoring a conversation checkpoint failed: %s\n", fe.c_str());
                         std::fflush(stdout);
                         return 1;

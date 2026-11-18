@@ -36,6 +36,15 @@ inline int64_t token_key(const T* ids, int64_t n) {
     return k == 0 ? 1 : k;
 }
 
+/// A state computed with the control vector switched off is another state than the same tokens with it on (vanilla's
+/// conversation cache keeps them apart by SavedConversation::cvec).  The key of a state saved with the vector off is
+/// the token key mixed with a constant; with it on, or with no vector loaded, the token key itself.
+inline int64_t steer_key(int64_t key, bool steer) {
+    if (steer) return key;
+    const int64_t k = (int64_t) (((uint64_t) key * 0x9e3779b97f4a7c15ull ^ 0x5bd1e9955bd1e995ull) & 0x7fffffffffffffffull);
+    return k == 0 ? 1 : k;
+}
+
 template <class Part, class Image>
 class FrontSessionBook {
 public:
@@ -64,6 +73,14 @@ public:
     }
     void on_abandon() { window_ = false; }
     const std::vector<int32_t>& history() const { return hist_; }
+    /// The control-vector switch the session's state was computed with (Steer; a Restore or Unpark sets it from the
+    /// key it restored).
+    void set_steer(bool on) { steer_ = on; }
+    bool steer() const { return steer_; }
+    /// Which switch a host key of these tokens names: true for the token key itself, false for its steer_key(.., false).
+    bool steer_of(int64_t key, const std::vector<int32_t>& ids) const {
+        return steer_key(token_key(ids.data(), (int64_t) ids.size()), true) == key;
+    }
     void set_history(std::vector<int32_t> ids) { hist_ = std::move(ids); window_ = false; }
 
     /// The session holds exactly the `n` tokens the host's `key` names.
@@ -73,7 +90,7 @@ public:
                   std::to_string((long long) hist_.size());
             return false;
         }
-        if (token_key(hist_.data(), n) != key) {
+        if (steer_key(token_key(hist_.data(), n), steer_) != key) {
             err = std::string(what) + " at " + std::to_string((long long) n) +
                   " tokens: the front stage holds other tokens than the host";
             return false;
@@ -96,7 +113,8 @@ public:
     std::vector<Part> parts_on(const std::vector<int32_t>& ids, int64_t n, Key key_of_part) const {
         std::vector<Part> out;
         for (const auto& e : parts_)
-            if (e.n <= n && e.n <= (int64_t) ids.size() && token_key(ids.data(), e.n) == e.key && key_of_part(e.v) == e.key)
+            if (e.n <= n && e.n <= (int64_t) ids.size() && steer_key(token_key(ids.data(), e.n), steer_) == e.key &&
+                key_of_part(e.v) == e.key)
                 out.push_back(e.v);
         return out;
     }
@@ -140,6 +158,7 @@ private:
     size_t max_parts_, max_images_;
     std::vector<int32_t> hist_, win_;
     bool window_ = false;
+    bool steer_ = true;   // no vector loaded: always on (vanilla's want_cvec)
     std::list<Entry<Part>> parts_;
     std::list<Entry<Image>> images_;
 };

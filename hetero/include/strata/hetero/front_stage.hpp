@@ -28,8 +28,10 @@ enum class SessionOp : int32_t {
     Unpark = 8,     ///< restore (and drop) the parked session of the `b` tokens whose token_key is `a`
     Drop = 9,       ///< the host's conversation cache dropped (or refused) its copy of the `b` tokens whose token_key is
                     ///< `a`: drop the front stage's.  No copy is not an error.  Leaves the session and an open window alone.
+    Steer = 10,     ///< the request's control-vector switch: on (`a` = 1) or off (`a` = 0), vanilla's cvec_set_enabled.
+                    ///< The keys of the states saved from then on carry it (steer_key).
 };
-constexpr SessionOp kLastSessionOp = SessionOp::Drop;
+constexpr SessionOp kLastSessionOp = SessionOp::Steer;
 /// Whether `op` ends a window that was not committed (every session operation but Drop does).
 constexpr bool ends_window(SessionOp op) { return op != SessionOp::Drop; }
 
