@@ -1,6 +1,6 @@
 # Status
 
-Turn holder: **Human User**: choose the next step (see Open decisions).
+Turn holder: **Coding Agent**, handoff `0075` (Tier 1) open.
 
 ## Current milestone
 
@@ -66,16 +66,21 @@ Chat AI's review:
 - 2026-11-18: pipelined windows for the mixed split, once the base functionality is stable.
 - 2026-11-18: set pipelined windows aside for now (an important goal, revisited later); do vision and control vectors
   in mixed mode first.
+- 2026-11-18: next handoff (0075) combines four things:
+  - calibrating vanilla's prompt pipeline (`--prefill-pipe`) on HIP-only (the production config has none);
+  - the A/B on vision and the control vector;
+  - timing lines for the mixed decode window;
+  - the remaining refusals: `--layer-split auto` implemented, design notes for `--batch` and DFlash2.
 
 ## Open decisions for the Human User
 
-- **The next step,** one of:
-  - the HIP-only A/B on the cost of vision and the control vector (about 5 GPU minutes);
-  - the remaining refusals (`--batch`, DFlash2, `--layer-split auto`);
-  - pipelined windows.
+- None.
 
 ## Next step
 
-Depends on the decision above.
+After report 0075: Chat AI reviews it and proposes the next performance work from its numbers:
+- pipelined decode windows;
+- pipelined prompt chunks across the CUDA/HIP edge (the front stage reading chunk c+1 while the first R9700 reads c);
+- or `--batch` / DFlash2, from the design notes.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
