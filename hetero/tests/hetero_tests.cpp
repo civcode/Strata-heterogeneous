@@ -138,7 +138,7 @@ void test_two_step_accept() {
         CHECK(front.session(SessionOp::Abandon, 0, 0, err));
         CHECK(front.run(2, toks, 0, err));
         CHECK(front.commit(2, err));
-        CHECK(!front.session((SessionOp) 9, 0, 0, err));
+        CHECK(!front.session((SessionOp) ((int32_t) kLastSessionOp + 1), 0, 0, err));   // past the last operation
         CHECK(front.shutdown(err));
         worker.join();
         CHECK(rc == 0);
@@ -485,11 +485,44 @@ void test_session_ops() {
     CHECK(rc == 0);
 }
 
+// Drop: the host's conversation cache let a parked copy go (evicted, superseded, cleared or refused).  The front stage
+// drops its copy, and an open window survives it: the cache can drop entries while the host runs a window.
+void test_session_drop() {
+    Pair s;
+    test::BookBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;
+    CHECK(make_region(region));
+    RemoteFrontStage front(s.host, 5000);
+    std::string err;
+    CHECK(front.hello(test_identity(), region, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    std::vector<int32_t> a = {1, 2, 3};
+    CHECK(front.prefill(a.data(), 3, 0, true, err));
+    CHECK(front.session(SessionOp::Park, token_key(a.data(), 3), 3, err));
+    CHECK(backend.book.images() == 1);
+    const int32_t win[2] = {4, 5};
+    CHECK(front.run(2, win, 3, err));                                                      // a window is open ...
+    CHECK(front.session(SessionOp::Drop, token_key(a.data(), 3), 3, err));                // ... when the host drops A
+    CHECK(backend.book.images() == 0);
+    CHECK(front.commit(2, err));                                                           // the window still commits
+    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3, 4, 5}));
+    CHECK(front.session(SessionOp::Drop, token_key(a.data(), 3), 3, err));                // no copy: not an error
+    CHECK(!front.session(SessionOp::Unpark, token_key(a.data(), 3), 3, err));             // gone
+    CHECK(!front.broken());
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     test_token_key();
     test_session_ops();
+    test_session_drop();
     test_shared_region();
     test_link_round_trip();
     test_link_rules();

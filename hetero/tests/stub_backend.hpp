@@ -79,9 +79,11 @@ struct BookBackend : StubBackend {
     }
     bool session(SessionOp op, int64_t a, int64_t b, std::string& err) override {
         calls.push_back("session " + std::to_string((int) op) + " " + std::to_string(b));
+        if (ends_window(op)) book.on_abandon();   // (as the engine's front stage does)
         switch (op) {
         case SessionOp::Reset: book.on_reset(); state.clear(); return true;
         case SessionOp::Abandon: book.on_abandon(); return true;
+        case SessionOp::Drop: book.drop_image(a, b); return true;   // (the window and the session stay)
         case SessionOp::Snapshot:
             if (!book.check(a, b, "a checkpoint", err)) return false;
             book.put_part(a, b, std::string(state));

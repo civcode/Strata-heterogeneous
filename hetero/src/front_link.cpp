@@ -299,7 +299,7 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
         case Op::Session: {
             if (f.a < (int64_t) SessionOp::Reset || f.a > (int64_t) kLastSessionOp) { e = "bad session operation"; break; }
             ok = backend.session((SessionOp) f.a, f.b, f.c, e);
-            if (ok) window = 0;   // every session operation ends a window that was not committed
+            if (ok && ends_window((SessionOp) f.a)) window = 0;   // a session operation ends a window not committed (not Drop)
             break;
         }
         case Op::Shutdown:

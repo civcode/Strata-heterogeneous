@@ -9,6 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#if defined(STRATA_HETERO)
+#include <functional>
+#endif
 #include <memory>
 #include <utility>
 #include <vector>
@@ -361,7 +364,7 @@ public:
     SavedConversation take(size_t index) {
         SavedConversation out = std::move(entries_.at(index));
         bytes_ -= out.bytes();
-        erase(index);
+        erase(index, /*dropped=*/false);
         return out;
     }
 
@@ -447,6 +450,9 @@ public:
     // may carry the poison.  Returns how many were parked.
     size_t clear() {
         const size_t n = entries_.size();
+#if defined(STRATA_HETERO)
+        if (on_drop) for (const auto& e : entries_) on_drop(e);
+#endif
         entries_.clear();
         serials_.clear();
         bytes_ = 0;
@@ -541,16 +547,30 @@ public:
 
     bool put(SavedConversation&& image, size_t held = 0) {
         const size_t n = image.bytes();
-        if (!enabled() || held > budget_ || n > budget_ - held) return false;   // make_room's refusal, first
+        if (!enabled() || held > budget_ || n > budget_ - held) return refused(image);   // make_room's refusal, first
         drop_superseded(image.live.ids, image.live.imgs, image.checkpoints, image.cvec);
-        if (!make_room(n, held)) return false;
+        if (!make_room(n, held)) return refused(image);
         entries_.push_back(std::move(image));
         serials_.push_back(next_serial_++);
         bytes_ += n;
         return true;
     }
 
+#if defined(STRATA_HETERO)
+    // MIXED SPLIT: told of each parked conversation this cache lets go (evicted, superseded, cleared, or refused by
+    // put), not of one take() hands out to be restored.  The front stage drops its copy of it.
+    std::function<void(const SavedConversation&)> on_drop;
+#endif
+
 private:
+    bool refused(const SavedConversation& image) {
+#if defined(STRATA_HETERO)
+        if (on_drop) on_drop(image);
+#else
+        (void) image;
+#endif
+        return false;
+    }
     // gives the pool's idle bytes back as far as images + idle + `incoming` would pass the budget (images alone never
     // need more than the loop in make_room leaves them)
     void trim_pool(size_t incoming_and_held) {
@@ -570,7 +590,12 @@ private:
         }
         return false;
     }
-    void erase(size_t index) {
+    void erase(size_t index, bool dropped = true) {
+#if defined(STRATA_HETERO)
+        if (dropped && on_drop) on_drop(entries_[index]);
+#else
+        (void) dropped;
+#endif
         entries_.erase(entries_.begin() + (std::ptrdiff_t) index);
         serials_.erase(serials_.begin() + (std::ptrdiff_t) index);
     }

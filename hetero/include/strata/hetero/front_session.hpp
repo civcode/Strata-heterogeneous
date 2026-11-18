@@ -113,6 +113,12 @@ public:
             }
         return std::nullopt;
     }
+    /// The host's conversation cache no longer holds the copy of these tokens: drop ours.  False when there was none.
+    bool drop_image(int64_t key, int64_t n) {
+        const size_t before = images_.size();
+        images_.remove_if([&](const Entry<Image>& e) { return e.key == key && e.n == n; });
+        return images_.size() != before;
+    }
     size_t images() const { return images_.size(); }
     void clear_stores() { parts_.clear(); images_.clear(); }
 

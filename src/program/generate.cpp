@@ -1689,6 +1689,12 @@ struct HeteroHost {
         err = "mixed split: the front stage: " + err;
         return false;
     }
+    /// The host's conversation cache let the parked copy of `ids[0, n)` go: the front stage drops its own (no window or
+    /// session change on either side).
+    template <class T>
+    bool drop(const T* ids, int64_t n, std::string& err) {
+        return link->session(strata::hetero::SessionOp::Drop, strata::hetero::token_key(ids, n), n, err);
+    }
     ~HeteroHost() {
         if (!worker.started()) return;
         std::string e;
@@ -13283,6 +13289,14 @@ int main(int argc, char** argv) {
         strata::core::ConversationCache conversations(
             o.prompt_cache > 0 ? (size_t) o.conversation_cache_mib * 1024 * 1024 : 0,
             (size_t) o.conversation_cache_slots, o.conversation_cache_min_tokens);
+#if defined(STRATA_HETERO)
+        if (hetero.on())   // MIXED SPLIT: the front stage keeps a parked copy only while this cache keeps the conversation
+            conversations.on_drop = [&hetero](const strata::core::SavedConversation& c) {
+                std::string fe;
+                if (!hetero.drop(c.live.ids.data(), (int64_t) c.live.ids.size(), fe))
+                    std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
+            };
+#endif
         // The park pools (park_pool_policy.hpp): memory held idle between parks so a park does not pay the first touch of fresh pages.
         //   * the segment pool: one arena for the K/V buffers of parked conversations (STRATA_PARK_SEGPOOL_MIB=N sets its size, 0 turns it
         //     off; unset: min(2 GiB, a quarter of the cache); Linux only, the OS layer of Windows and macOS is not written yet: inert there);
@@ -15565,6 +15579,10 @@ int main(int argc, char** argv) {
             static const std::vector<strata::core::ConversationImageKey> f_no_imgs;
             fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
                 using Op = strata::hetero::SessionOp;
+                if (op == Op::Drop) {   // the host's cache let that conversation go: nothing on the GPU, the window stays
+                    book.drop_image(a, b);
+                    return true;
+                }
                 if (!ver.wait_commit(e)) return false;
                 book.on_abandon();   // every session operation ends a window that was not committed
                 switch (op) {

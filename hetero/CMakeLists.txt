@@ -41,6 +41,11 @@ if(STRATA_HETERO_TESTS)
   endif()
   add_test(NAME hetero_tests COMMAND hetero_tests $<TARGET_FILE:hetero_mock_worker>)
   set_tests_properties(hetero_tests PROPERTIES TIMEOUT 60)
+  # the mixed split's drop hook in vanilla's conversation cache (header only, no GPU)
+  add_executable(hetero_cache_drop_test tests/cache_drop_test.cpp)
+  target_include_directories(hetero_cache_drop_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+  target_compile_features(hetero_cache_drop_test PRIVATE cxx_std_20)
+  add_test(NAME hetero_cache_drop_test COMMAND hetero_cache_drop_test)
 endif()
 
 # ---- the shared hand-off probe: one source, built by a CUDA build and by a HIP build (probe/shared_handoff_probe.cu) ----

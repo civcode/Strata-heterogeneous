@@ -26,8 +26,12 @@ enum class SessionOp : int32_t {
     Abandon = 6,    ///< the last window is dropped without a commit (vanilla runs the next window over it)
     Park = 7,       ///< park the whole session (K/V, state, checkpoints) of the `b` tokens whose token_key is `a`
     Unpark = 8,     ///< restore (and drop) the parked session of the `b` tokens whose token_key is `a`
+    Drop = 9,       ///< the host's conversation cache dropped (or refused) its copy of the `b` tokens whose token_key is
+                    ///< `a`: drop the front stage's.  No copy is not an error.  Leaves the session and an open window alone.
 };
-constexpr SessionOp kLastSessionOp = SessionOp::Unpark;
+constexpr SessionOp kLastSessionOp = SessionOp::Drop;
+/// Whether `op` ends a window that was not committed (every session operation but Drop does).
+constexpr bool ends_window(SessionOp op) { return op != SessionOp::Drop; }
 
 class FrontStage {
 public:
