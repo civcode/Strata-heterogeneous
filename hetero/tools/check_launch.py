@@ -9,6 +9,22 @@ import sys
 from hetero_common import expand
 
 REPO = Path(__file__).resolve().parents[2]
+VISION = REPO / 'tools' / 'vision'
+# what does not go into a build: notes, reports, run logs, docs and benchmark write-ups.  A commit that changes only
+# these does not make a build stale (rule 7 is about the code that runs).
+NOT_BUILT = [':!.ai', ':!runs*', ':!docs', ':!bench', ':!*.md']
+
+
+def git(*args):
+    return subprocess.run(['git', '-C', str(REPO), *args], text=True, capture_output=True, timeout=30)
+
+
+def source_changed(since, until=None):
+    """True when the built sources differ between commit `since` and `until` (None: the working tree)."""
+    r = git('diff', '--quiet', since, *([until] if until else []), '--', '.', *NOT_BUILT)
+    if r.returncode not in (0, 1):
+        fail(f'BUILD_COMMIT {since} is not a commit of this checkout')
+    return r.returncode == 1
 
 
 def fail(message):
@@ -16,7 +32,9 @@ def fail(message):
 
 
 def check_config(cfg):
-    head = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
+    head = git('rev-parse', 'HEAD').stdout.strip()
+    if source_changed('HEAD'):
+        fail('the checkout has uncommitted source changes: commit or stash them, rebuild, and stamp the builds')
     cwd = Path(cfg.get('cwd', REPO)).resolve()
     args = list(map(str, cfg.get('args', [])))
     if any(a.startswith('--front-exe=') for a in args):
@@ -35,7 +53,7 @@ def check_config(cfg):
     dirs = [str(p) for p in cfg.get('lib_dirs', []) if Path(p).is_dir()]
     if dirs:
         env['LD_LIBRARY_PATH'] = ':'.join(dirs + ([env['LD_LIBRARY_PATH']] if env.get('LD_LIBRARY_PATH') else []))
-    builds = {}
+    builds, stamps = {}, {}
     for role, name in executables:
         if not isinstance(name, str) or not name:
             fail(f'{role}: executable missing')
@@ -48,12 +66,20 @@ def check_config(cfg):
             fail(f'{role}: no enclosing CMake build: {exe}')
         cache = (build / 'CMakeCache.txt').read_text().splitlines()
         values = dict(line.split('=', 1) for line in cache if '=' in line and not line.startswith(('#', '//')))
-        if Path(values.get('CMAKE_HOME_DIRECTORY:INTERNAL', '/')).resolve() != REPO:
+        home = Path(values.get('CMAKE_HOME_DIRECTORY:INTERNAL', '/')).resolve()
+        if home != REPO and not (role.startswith('vision.') and home == VISION):
             fail(f'{role}: build is not from this checkout: {build}')
         stamp = build / 'BUILD_COMMIT'
-        if not stamp.is_file() or stamp.read_text().strip() != head:
-            fail(f'{role}: missing or stale BUILD_COMMIT: {build}')
-        backend = 'hip' if values.get('STRATA_ENABLE_HIP:BOOL') == 'ON' else 'cuda' if values.get('STRATA_ENABLE_CUDA:BOOL') == 'ON' else 'host'
+        if not stamp.is_file():
+            fail(f'{role}: no BUILD_COMMIT in {build} (write `git rev-parse HEAD` there after a successful build)')
+        built = stamp.read_text().strip()
+        if built != head and source_changed(built, head):
+            fail(f'{role}: stale build: the sources changed since {built[:12]} ({build})')
+        stamps[role] = built
+        if home == VISION:
+            backend = 'vision-hip' if values.get('STRATA_VISION_HIP:BOOL') == 'ON' else 'vision-cpu'
+        else:
+            backend = 'hip' if values.get('STRATA_ENABLE_HIP:BOOL') == 'ON' else 'cuda' if values.get('STRATA_ENABLE_CUDA:BOOL') == 'ON' else 'host'
         builds[role] = (build, backend)
         result = subprocess.run(['ldd', str(exe)], env=env, cwd=cwd, text=True, capture_output=True, timeout=20)
         if result.returncode:
@@ -74,8 +100,14 @@ def check_config(cfg):
         fail('host is not a HIP build')
     if fronts and (builds['front'][1] != 'cuda' or builds['front'][0] == host[0]):
         fail('front is not a separate CUDA build')
-    if any(build != host[0] for role, (build, _) in builds.items() if role not in ('host', 'front')):
-        fail('vision executables must be in the host build')
+    first = next(iter(stamps.values()))
+    if any(c != first and source_changed(first, c) for c in stamps.values()):   # (each is current, so this is a guard)
+        fail('the builds come from different sources: ' + ', '.join(f'{r} {c[:12]}' for r, c in sorted(stamps.items())))
+    for role, (build, backend) in builds.items():
+        if role.startswith('vision.') and build != host[0] and not backend.startswith('vision'):
+            fail(f'{role}: neither the host build nor a tools/vision build of this checkout: {build}')
+    if 'vision.exe' in builds and builds['vision.exe'][1] == 'vision-cpu' and cfg.get('vision', {}).get('gpu'):
+        fail('vision.exe: "gpu": true needs a STRATA_VISION_HIP build')
     return builds
 
 

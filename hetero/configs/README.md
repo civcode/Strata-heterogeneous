@@ -19,14 +19,16 @@ export STRATA_DATA=/home/chris/workspace/Strata-data \
 | `STRATA_DATA` | the pack and the MTP drafter |
 | `STRATA_MODEL_DIR` | the GGUF shards (and the vision projector) |
 | `STRATA_PROFILE` | the expert profile |
-| `STRATA_VANILLA` | the vanilla checkout, read only: control vector and vision engines (HIP-only config) |
+| `STRATA_VANILLA` | the vanilla checkout, read only: the control vector file (HIP-only config; data, not a program) |
 | `ROCM_LIB` | the ROCm libraries |
 
 The build trees named in `exe` and `--front-exe` are this checkout's `build-0070-hip` and `build-0070-cuda` (the
-toolchains in `.ai/PROJECT.md`). After building each tree from the current commit, record `git rev-parse HEAD >
-build-0070-hip/BUILD_COMMIT` (and likewise for CUDA). The launcher checks this stamp, CMake's checkout path and
-`ldd` before starting; rerun the builds and refresh the stamps after changing commits. The HIP-only example currently
-fails this check: its two vision executables are from the vanilla checkout, not the host build. Do not bypass the check.
+toolchains in `.ai/PROJECT.md`). After a successful build of each tree, write `git rev-parse HEAD` into its
+`BUILD_COMMIT` file. Before starting, the launcher (`check_launch.py`) checks that each executable comes from a build of
+this checkout, that its libraries come from that build or a system or toolkit path, and that the sources have not
+changed since the stamp. A commit that touches only notes, reports, run logs, docs or `*.md` files does not make a
+build stale. Vision helpers come from the host build or from a build of `tools/vision` in this checkout, stamped the
+same way (with `STRATA_VISION_HIP=ON` for `"gpu": true`). Do not bypass the check.
 Not supported in a mixed split yet: vision, control vectors, `--batch`, DFlash2,
 `--pipeline-windows`, `--layer-split auto`.
 

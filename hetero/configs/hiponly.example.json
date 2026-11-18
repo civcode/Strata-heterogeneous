@@ -31,11 +31,11 @@
  "gpus_asked": true,
  "layer_split": "auto",
  "vision": {
-  "exe": "${STRATA_VANILLA}/engine/strata-vision-hip",
+  "exe": "${STRATA_REPO}/build-vision-hip/strata-vision-hip",
   "mmproj": "${STRATA_MODEL_DIR}/mmproj-Qwen3.8-Flash-Next-BF16.gguf",
   "model": "${STRATA_MODEL_DIR}/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
   "gpu": true,
   "max_tokens": 1024,
-  "cpu_exe": "${STRATA_VANILLA}/engine/strata-vision"
+  "cpu_exe": "${STRATA_REPO}/build-vision-cpu/strata-vision"
  }
 }
