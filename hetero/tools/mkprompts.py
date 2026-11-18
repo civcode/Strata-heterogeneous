@@ -2,8 +2,9 @@
 """Token prompts for engine_drive.py:  mkprompts.py MODEL_GGUF OUT_JSON
 
 short, short2: one-turn chats.  long: about 4,900 tokens of this repository's docs to summarise (as in report 0068).
-A1 / B: the first turns of two conversations.  A2live: A1, its answer as generated, and a second user turn (resumes from
-the live session).  A2ck: A1, a different assistant reply, and the same second turn (resumes from A1's turn checkpoint).
+long2: the first 4,600 tokens of `long` and another question (resumes from a checkpoint at 4,096 with
+--prompt-cache-every 2048, a layer split's mid-prompt checkpoint).  A1 / B: the first turns of two conversations.  A2live: A1, its answer as generated, and a second user turn (resumes from
+the live session).  A2ck: A1, a different assistant reply, and the same second turn (resumes from A1's turn checkpoint).  A2ck5: the same with a longer answer asked for (50 tokens and more).
 """
 import json, os, sys
 
@@ -30,10 +31,14 @@ out = {
     "short": chat("Explain in three sentences why the sky is blue."),
     "short2": chat("Write a haiku about a lighthouse in winter."),
     "long": chat("Summarise the following document in five bullet points.\n\n" + body),
+    "long2": chat("Summarise the following document in five bullet points.\n\n" + body)[:4600] +
+             enc("\n\nWhich hardware does the text mention? One sentence.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"),
     "A1": chat("Explain in three sentences why the sky is blue."),
     "B": chat("List four uses of copper, one line each."),
     "A2live": [{"prompt": "A1"}, {"out": "A1"}, enc(TURN2)],
     "A2ck": [{"prompt": "A1"}, enc("The sky looks blue because air scatters short wavelengths most."), enc(TURN2)],
+    "A2ck5": [{"prompt": "A1"}, enc("The sky looks blue because air scatters short wavelengths most."),
+              enc(TURN2.replace("Answer in two sentences.", "Answer in five detailed sentences."))],
 }
 json.dump(out, open(sys.argv[2], "w"))
 print({k: (len(v) if v and isinstance(v[0], int) else "parts") for k, v in out.items()})
