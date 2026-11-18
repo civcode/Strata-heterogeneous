@@ -1,36 +1,43 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0077` (Tier 1), once the Human User hands it over.
+Turn holder: **Human User**: decide on pipelining in the mixed config and the next step (see Open decisions).
 
 ## Current milestone
 
-M7: pipelined decode windows in mixed mode (handoff 0077, Tier 1).
-
-Production measured (report 0076, `2f5255e3`). Both production mirrors serve at 262,144 tokens without fallback.
+M7 reached (report 0077, `f5eec160`): `--pipeline-windows 2` works in mixed mode and emits exactly the serial loop's
+token IDs.
 
 Chat AI's review:
-- **Memory:** the CUDA card holds 14.3 of 16 GB, the R9700s 19.2 and 20.6 GB in mixed mode (25.8 / 26.1 GB in
-  HIP-only). With `--mmap-experts`, about 50 GiB of RAM is available (page cache included), against about 19 GiB with
-  the RAM arena of reports 0069 to 0075. The RAM headroom concern is gone.
-- **Overlap:** `STRATA_SPLIT_OVERLAP=1` takes effect on the host's split in mixed mode (log: "overlapped").
-- **Caches:** a 16,093-token conversation was parked and restored from a checkpoint under the production cache
-  settings (`cache_n=16088`). A `cvec=0` request and a vision request both work.
-- **Mixed (no pipelined windows) against production (HIP-only with `--pipeline-windows 2`),** median of three:
-
-  | Prompt | Prefill, mixed / production | Decode, mixed / production |
-  | --- | --- | --- |
-  | Code (118 tokens) | 265 / 324 tok/s (−18%) | 117.8 / 107.9 (+9%) |
-  | Long (5,000) | 2,287 / 2,351 (−3%) | 118.7 / 122.7 (−3%) |
-  | 16K | 3,388 / 3,478 (−3%) | 131.2 / 132.2 (−1%) |
-
-  Decode is on par: the samples are small and the generated sequences differ. Prefill is about 3% behind on long
-  prompts and 18% on the short one, where the absolute gap is about 80 ms of first-token time. That looks like a fixed
-  per-request cost in mixed mode (session ops, Images, Steer, the front stage's synchronised prompt pass);
-  unconfirmed.
-- **`--layer-split auto` (K = 31) against the fixed 33:** no difference.
-- **No engine change; no faults, core dumps or reboots;** about 510 s of GPU time.
+- **Asynchronous front window** (`9d1546f5`): the link round trip fell from 3.36 to 0.10 ms per window, and the first
+  R9700 now waits about 3.7 ms on the ready word on its GPU. Token IDs are identical to before; decode +0.4 to +0.5%,
+  within noise.
+- **Pipelined windows** (`7a5fab5f`):
+  - token IDs identical to serial on code and long, also with `STRATA_PIPELINE_FORCE_MISS=3` (81 and 52 windows
+    undone) and for a seeded sampled request;
+  - a repetition penalty falls back to serial with vanilla's message;
+  - the server checks pass (streaming, cancel, a 16K two-turn conversation parked and restored, vision, `cvec=0`,
+    shutdown).
+- **Contract:** two hooks in `Verifier` (`pl_launch`, `pl_commit_async`) and one line in the decode loop's undo, all
+  guarded; vanilla's pipelined logic is unchanged. `check_off_is_vanilla.py` reports 6 of 6.
+- **Decode, median of three** (mixed serial / mixed pipelined / production): code 121.3 / 118.7 / 107.9; long
+  121.7 / 119.2 / 114.5; 16K 132.0 / 146.6 / 125.9.
+  - Pipelining gains +11% at 16K. Its −2% on code and long is within noise: production's own medians moved by up to 7%
+    between reports 0076 and 0077.
+  - Guesses are right 37 to 54% of the time (production 39 to 60%).
+  - Prefill is unchanged on long prompts and −6% on the short one.
+  - Mixed, serial or pipelined, now decodes faster than production on all three prompts.
+- **The mixed mirror config** now has `--pipeline-windows 2` with the two production variables (agent, task 6). The
+  agent leaves keeping it to the Human User.
+- **Open:**
+  - the front stage computes a window already judged wrong to its end (it is not told);
+  - `STRATA_SPLIT_TIMING` does not cover pipelined windows;
+  - `--pipeline-windows 1` is untested;
+  - the short-prompt fixed cost.
+- **Since report 0077,** by Chat AI: `.ai/DIVERGENCE.md` updated.
 
 ## History in short
+
+- M7 reached (report 0077): pipelined decode windows in mixed mode, exact; +11% decode at 16K.
 
 - Report 0076: production mirrors at 262,144 tokens; mixed without pipelining on par with production decode; prefill −3% long, −18% on a short prompt.
 
@@ -86,7 +93,15 @@ Chat AI's review:
 
 ## Open decisions for the Human User
 
-- None.
+- **Keep `--pipeline-windows 2` in `mixed.example.json`?** Chat AI recommends keeping it: it matches production, it
+  gains at long contexts, and the production settings (conversations parked from 8,192 tokens) point at long-context
+  use.
+- **The next step,** one of:
+  - telling the front stage when its window is judged wrong;
+  - the short-prompt fixed cost;
+  - prompt chunks across the edge;
+  - `--batch`;
+  - DFlash2.
 
 ## Next step
 
