@@ -1,0 +1,357 @@
+{
+ "mem_idle": {
+  "available_gib": 19.17,
+  "shmem_gib": 33.31,
+  "cached_gib": 52.02,
+  "engines": {
+   "740751": {
+    "RssAnon": 2.59,
+    "RssFile": 0.23,
+    "RssShmem": 33.22
+   },
+   "740757": {
+    "RssAnon": 1.15,
+    "RssFile": 0.24,
+    "RssShmem": 32.02
+   }
+  },
+  "nvidia_used_mib": [
+   15215
+  ],
+  "amd_used_mb": [
+   19216,
+   18403,
+   203
+  ]
+ },
+ "health": {
+  "health": 200,
+  "models": 200,
+  "model_ids": [
+   "qwen3.8-flash-next-q2_0"
+  ],
+  "engine": []
+ },
+ "stream": {
+  "status": 200,
+  "chunks": 120,
+  "first_chunk_s": 0.05,
+  "s": 1.33,
+  "content": "Sunlight contains many colors, but air molecules scatter shorter wavelengths more strongly than longer ones. Blue light ",
+  "engine": [
+   {
+    "prompt": 63,
+    "reused": 0,
+    "prefill_tps": 171.9,
+    "generated": 60,
+    "decode_tps": 114.7,
+    "prefill_ms": 367
+   },
+   {
+    "prompt": 141,
+    "reused": 122,
+    "prefill_tps": 258.3,
+    "generated": 42,
+    "decode_tps": 136.1,
+    "prefill_ms": 74
+   }
+  ]
+ },
+ "nonstream": {
+  "status": 200,
+  "s": 1.1,
+  "content": "Cold waves crash below  \nA lighthouse beam cuts through  \nSnow and winter night",
+  "usage": {
+   "prompt_tokens": 63,
+   "completion_tokens": 95,
+   "total_tokens": 158,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "engine": [
+   {
+    "prompt": 63,
+    "reused": 0,
+    "prefill_tps": 175.2,
+    "generated": 60,
+    "decode_tps": 131.1,
+    "prefill_ms": 360
+   },
+   {
+    "prompt": 141,
+    "reused": 122,
+    "prefill_tps": 260.9,
+    "generated": 17,
+    "decode_tps": 84.6,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "sampled": {
+  "status": 200,
+  "s": 1.41,
+  "content": "**Name:** *Drift*\n\n**Why:** \u201cDrift\u201d sounds light, calm, and easy-going\u2014perfect for a small sailing boat that moves gentl",
+  "usage": {
+   "prompt_tokens": 66,
+   "completion_tokens": 120,
+   "total_tokens": 186,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "engine": [
+   {
+    "prompt": 66,
+    "reused": 0,
+    "prefill_tps": 172.9,
+    "generated": 60,
+    "decode_tps": 107.8,
+    "prefill_ms": 382
+   },
+   {
+    "prompt": 144,
+    "reused": 125,
+    "prefill_tps": 262.9,
+    "generated": 42,
+    "decode_tps": 106.8,
+    "prefill_ms": 72
+   }
+  ]
+ },
+ "cancel": {
+  "status": 200,
+  "chunks": 8,
+  "first_chunk_s": 0.0,
+  "s": 0.42,
+  "content": "",
+  "engine": [
+   {
+    "prompt": 60,
+    "reused": 0,
+    "prefill_tps": 166.5,
+    "generated": 13,
+    "decode_tps": 157.9,
+    "prefill_ms": 360
+   }
+  ]
+ },
+ "after_cancel": {
+  "status": 200,
+  "s": 1.12,
+  "content": "Red, blue, and yellow.",
+  "usage": {
+   "prompt_tokens": 57,
+   "completion_tokens": 86,
+   "total_tokens": 143,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "engine": [
+   {
+    "prompt": 57,
+    "reused": 0,
+    "prefill_tps": 166.2,
+    "generated": 60,
+    "decode_tps": 97.5,
+    "prefill_ms": 343
+   },
+   {
+    "prompt": 135,
+    "reused": 116,
+    "prefill_tps": 261.2,
+    "generated": 8,
+    "decode_tps": 91.4,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "turn1": {
+  "status": 200,
+  "s": 1.36,
+  "content": "A refrigerator uses a refrigerant that absorbs heat from the air inside the compartment. The compressor then moves this ",
+  "usage": {
+   "prompt_tokens": 64,
+   "completion_tokens": 120,
+   "total_tokens": 184,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "engine": [
+   {
+    "prompt": 64,
+    "reused": 0,
+    "prefill_tps": 167.4,
+    "generated": 60,
+    "decode_tps": 107.4,
+    "prefill_ms": 382
+   },
+   {
+    "prompt": 142,
+    "reused": 123,
+    "prefill_tps": 260.6,
+    "generated": 42,
+    "decode_tps": 123.8,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "turn2": {
+  "status": 200,
+  "s": 1.12,
+  "content": "It hums because the compressor and fans run to maintain the temperature inside. At night, quieter surroundings make that",
+  "usage": {
+   "prompt_tokens": 110,
+   "completion_tokens": 106,
+   "total_tokens": 216,
+   "prompt_tokens_details": {
+    "cached_tokens": 59
+   }
+  },
+  "engine": [
+   {
+    "prompt": 110,
+    "reused": 59,
+    "prefill_tps": 195.1,
+    "generated": 60,
+    "decode_tps": 119.8,
+    "prefill_ms": 261
+   },
+   {
+    "prompt": 188,
+    "reused": 169,
+    "prefill_tps": 258.7,
+    "generated": 28,
+    "decode_tps": 103.7,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "fast_reader": {
+  "status": 200,
+  "chunks": 198,
+  "first_chunk_s": 0.01,
+  "s": 2.19,
+  "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho",
+  "engine": [
+   {
+    "prompt": 66,
+    "reused": 0,
+    "prefill_tps": 154.9,
+    "generated": 64,
+    "decode_tps": 117.5,
+    "prefill_ms": 426
+   },
+   {
+    "prompt": 148,
+    "reused": 129,
+    "prefill_tps": 261.1,
+    "generated": 118,
+    "decode_tps": 103.5,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "slow_reader": {
+  "status": 200,
+  "chunks": 198,
+  "first_chunk_s": 0.0,
+  "s": 9.96,
+  "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho",
+  "engine": [
+   {
+    "prompt": 66,
+    "reused": 61,
+    "prefill_tps": 142.0,
+    "generated": 64,
+    "decode_tps": 119.4,
+    "prefill_ms": 35
+   },
+   {
+    "prompt": 148,
+    "reused": 129,
+    "prefill_tps": 260.8,
+    "generated": 118,
+    "decode_tps": 103.7,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "fast_reader2": {
+  "status": 200,
+  "chunks": 198,
+  "first_chunk_s": 0.0,
+  "s": 1.78,
+  "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho",
+  "engine": [
+   {
+    "prompt": 66,
+    "reused": 61,
+    "prefill_tps": 141.6,
+    "generated": 64,
+    "decode_tps": 119.6,
+    "prefill_ms": 35
+   },
+   {
+    "prompt": 148,
+    "reused": 129,
+    "prefill_tps": 260.9,
+    "generated": 118,
+    "decode_tps": 103.8,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "slow_reader2": {
+  "status": 200,
+  "chunks": 198,
+  "first_chunk_s": 0.0,
+  "s": 9.96,
+  "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho",
+  "engine": [
+   {
+    "prompt": 66,
+    "reused": 61,
+    "prefill_tps": 142.1,
+    "generated": 64,
+    "decode_tps": 119.5,
+    "prefill_ms": 35
+   },
+   {
+    "prompt": 148,
+    "reused": 129,
+    "prefill_tps": 260.9,
+    "generated": 118,
+    "decode_tps": 103.8,
+    "prefill_ms": 73
+   }
+  ]
+ },
+ "mem_end": {
+  "available_gib": 17.6,
+  "shmem_gib": 33.33,
+  "cached_gib": 50.46,
+  "engines": {
+   "740751": {
+    "RssAnon": 3.37,
+    "RssFile": 0.23,
+    "RssShmem": 33.25
+   },
+   "740757": {
+    "RssAnon": 1.79,
+    "RssFile": 0.24,
+    "RssShmem": 32.02
+   }
+  },
+  "nvidia_used_mib": [
+   15215
+  ],
+  "amd_used_mb": [
+   19223,
+   18424,
+   203
+  ]
+ }
+}

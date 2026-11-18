@@ -58,8 +58,8 @@ def check_config(cfg):
         result = subprocess.run(['ldd', str(exe)], env=env, cwd=cwd, text=True, capture_output=True, timeout=20)
         if result.returncode:
             fail(f'{role}: ldd failed: {result.stderr.strip()}')
-        allowed = [build]
-        allowed += [p.resolve() for parent, pattern in ((Path('/opt'), 'rocm*'), (Path('/usr/local'), 'cuda*'), (Path('/usr'), 'lib*'), (Path('/'), 'lib*')) for p in parent.glob(pattern)]
+        allowed = [build] + [Path(p).resolve() for p in ('/lib', '/lib64', '/lib32', '/libx32')]
+        allowed += [p.resolve() for parent, pattern in ((Path('/opt'), 'rocm*'), (Path('/usr/local'), 'cuda*'), (Path('/usr'), 'lib*')) for p in parent.glob(pattern)]
         for line in result.stdout.splitlines():
             if 'not found' in line:
                 fail(f'{role}: unresolved library: {line.strip()}')

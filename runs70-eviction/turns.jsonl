@@ -1,0 +1,11 @@
+{"chat": "A", "turn": 1, "cached": 0, "prompt_tokens": 63, "answer": "Oceans cover more than 70% of Earth\u2019s surface and contain about 97% of the planet\u2019s water."}
+{"chat": "A", "turn": 2, "cached": 58, "prompt_tokens": 113, "answer": "The ocean"}
+{"chat": "B", "turn": 1, "cached": 0, "prompt_tokens": 64, "answer": "Volcanoes can create new land because lava cools and solidifies into rock, as seen in"}
+{"chat": "B", "turn": 2, "cached": 59, "prompt_tokens": 108, "answer": ""}
+{"chat": "C", "turn": 1, "cached": 0, "prompt_tokens": 65, "answer": "Rainforests contain an enormous variety of plant and animal species, many of which are found nowhere else on Earth."}
+{"chat": "C", "turn": 2, "cached": 60, "prompt_tokens": 112, "answer": "Rainforests receive heavy rainfall year-round"}
+{"chat": "D", "turn": 1, "cached": 0, "prompt_tokens": 64, "answer": "Deserts are defined by low precipitation rather than heat, so some are cold or even snowy."}
+{"chat": "D", "turn": 2, "cached": 59, "prompt_tokens": 107, "answer": "Deserts can be rocky, gravelly, or salty\u2014not just sandy."}
+{"chat": "B", "turn": 3, "cached": 103, "prompt_tokens": 123, "answer": ""}
+{"chat": "A", "turn": 3, "cached": 0, "prompt_tokens": 139, "answer": "The ocean produces about half of Earth\u2019s oxygen."}
+{"chat": "D", "turn": 3, "cached": 102, "prompt_tokens": 146, "answer": "Deserts cover about one-third of Earth\u2019s land surface."}
