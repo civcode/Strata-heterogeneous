@@ -1,0 +1,1 @@
+Nov 18 14:38:03 oberon kernel: Cannot map memory with base addr 0x7388ceeae000 and size of 0x7e9152 pages

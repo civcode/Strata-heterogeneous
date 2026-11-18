@@ -1,0 +1,2 @@
+Nov 18 14:38:36 oberon kernel: Cannot map memory with base addr 0x7e8c2aeae000 and size of 0x7e9152 pages
+Nov 18 14:39:06 oberon kernel: workqueue: svm_range_deferred_list_work [amdgpu] hogged CPU for >10000us 35 times, consider switching to WQ_UNBOUND

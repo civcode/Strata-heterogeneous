@@ -1,0 +1,82 @@
+{
+  "elapsed": 38.84318304500084,
+  "rc": 0,
+  "responses": [
+    {
+      "id": "chatcmpl-3837c198be9d436c86b146f6",
+      "object": "chat.completion",
+      "created": 1795009136,
+      "model": "qwen3.8-flash-next-q2_0",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "We need answer user: \"Write a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.\"\n\nNeed produce final with code and explanation. Need think thoroughly. Need likely provide Python implementation thread-safe LRU cache. Need type hints, docs, example usage. Explain design and edge cases.\n\nNeed decide implementation. Could use collections.OrderedDict and threading.Lock. Generic type. Need thread-safe. Need maybe support maxsize, optional get/set, clear, size, maybe __getitem__, __setitem__, __contains__, __len__, __iter__? Need complete. Need handle maxsize <=0? Edge cases: maxsize 0 means no caching? Or raise? Need decide. Thread-safe: lock around operations. Need avoid deadlock? Use RLock? If methods call each other? Could use Lock and internal _get_no_lock? Simpler: public methods acquire lock. If __getitem__ calls get, avoid double lock. Use internal methods without lock. Need type hints: Generic[K, V]. Use OrderedDict[K, V]. Need maybe cache key hashable. Need thread-safe with lock. Need maybe support maxsize None? Could allow maxsize=None unlimited? But LRU cache usually maxsize. Could allow maxsize=None for unlimited? But then not LRU? Could implement maxsize=None unlimited. But edge cases: maxsize <=0. Need maybe raise ValueError for maxsize"
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 83,
+        "completion_tokens": 300,
+        "total_tokens": 383,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 83,
+        "prompt_ms": 2366.6,
+        "prompt_per_token_ms": 28.513,
+        "prompt_per_second": 35.1,
+        "predicted_n": 300,
+        "predicted_ms": 2936.3,
+        "predicted_per_token_ms": 9.788,
+        "predicted_per_second": 102.2,
+        "draft_n": 181,
+        "draft_n_accepted": 132
+      }
+    },
+    {
+      "id": "chatcmpl-8d1c5377c2624f659c987e8d",
+      "object": "chat.completion",
+      "created": 1795009141,
+      "model": "qwen3.8-flash-next-q2_0",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "- The document explains how to run a single model across two or more GPUs using a layer split, where contiguous model layers are assigned to different cards, with NVIDIA as the main example and AMD covered separately.\n\n- Each GPU is assigned a role: Main runs the final output/draft/verification stage, Helper stores part of the model and expert cache, and Off is unused; the faster card is normally chosen as Main.\n\n- The split is pipeline parallelism rather than tensor parallelism: each card holds its own dense weights, session state, buffers, and expert cache for its assigned layers, with hand-offs through pinned RAM rather than NVLink.\n\n",
+            "reasoning_content": "We need answer user's request: Summarise document in five bullet points. Need produce final with five bullets. Need likely concise. Need ensure five bullet points. Could include key points: purpose, roles, split mechanics, tuning/pipeline, limits/short memory. Need maybe mention AMD? Let's craft five bullets.\n"
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4963,
+        "completion_tokens": 200,
+        "total_tokens": 5163,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 4963,
+        "prompt_ms": 2200.3,
+        "prompt_per_token_ms": 0.443,
+        "prompt_per_second": 2255.6,
+        "predicted_n": 200,
+        "predicted_ms": 1838.6,
+        "predicted_per_token_ms": 9.193,
+        "predicted_per_second": 108.8,
+        "draft_n": 180,
+        "draft_n_accepted": 110
+      }
+    }
+  ]
+}

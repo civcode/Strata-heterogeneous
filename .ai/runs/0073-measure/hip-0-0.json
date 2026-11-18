@@ -1,0 +1,82 @@
+{
+  "elapsed": 29.670777040999383,
+  "rc": 0,
+  "responses": [
+    {
+      "id": "chatcmpl-447ce1000bcc401da05e9389",
+      "object": "chat.completion",
+      "created": 1795008888,
+      "model": "qwen3.8-flash-next-q2_0",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "We need answer user: \"Write a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.\"\n\nNeed produce final with code and explanation. Need think thoroughly. Need implement thread-safe LRU cache. Could use collections.OrderedDict and threading.Lock. Type hints. Need complete implementation. Consider edge cases: maxsize <=0? thread safety, concurrent get/set, eviction, capacity, key hashability, thread-safe iteration? Maybe support get/set, clear, size, contains? Need avoid race conditions. Use lock for all operations. Could implement __getitem__? Maybe simple API: get(key, default=None), set(key, value), clear(), size(), __contains__, __len__. Need type hints generic. Use typing Generic, Any, Optional. Need ensure thread-safe: lock protects OrderedDict. But if get returns value while another thread evicts? Since lock held during get, returns value; after return, value object may be mutated by user but cache eviction doesn't affect returned object. Fine.\n\nPotential issue: using OrderedDict move_to_end on get. Need lock. For set: if key exists update and move to end; else insert and evict oldest if len > maxsize. If maxsize <=0 maybe no caching? Could raise ValueError or allow 0? LRU cache with maxsize 0 could be no-op. Better raise ValueError for maxsize <=0? But edge case"
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 83,
+        "completion_tokens": 300,
+        "total_tokens": 383,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 83,
+        "prompt_ms": 295.7,
+        "prompt_per_token_ms": 3.563,
+        "prompt_per_second": 280.7,
+        "predicted_n": 300,
+        "predicted_ms": 3168.9,
+        "predicted_per_token_ms": 10.563,
+        "predicted_per_second": 94.7,
+        "draft_n": 190,
+        "draft_n_accepted": 133
+      }
+    },
+    {
+      "id": "chatcmpl-2b53af3f8cc940859de82b8a",
+      "object": "chat.completion",
+      "created": 1795008891,
+      "model": "qwen3.8-flash-next-q2_0",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "- Strata can run one model across two or more GPUs using a \u201clayer split,\u201d where contiguous model layers are assigned to different cards; this increases available VRAM capacity but does not necessarily increase speed.\n- Each GPU is assigned a role: one Main card runs the final output/draft/verification stage, Helper cards hold model layers and expert caches, and Off cards are ignored; the faster",
+            "reasoning_content": "We need answer user's request: Summarise document in five bullet points. Need produce final with five bullets. Need likely concise but enough. Need ensure five bullet points. Document about Strata layer split on multiple GPUs. Need summarize key points: purpose, roles, how split works, tuning/limits, pipeline windows/two models? Need five bullets. Need maybe mention supported cards, roles, memory, auto split, pipeline windows, two models. Need not too long. Ensure exactly five bullet points. Could use markdown bullets. Need maybe include caveats. Let's craft.\n"
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4963,
+        "completion_tokens": 200,
+        "total_tokens": 5163,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 4963,
+        "prompt_ms": 2326.8,
+        "prompt_per_token_ms": 0.469,
+        "prompt_per_second": 2133.0,
+        "predicted_n": 200,
+        "predicted_ms": 1976.3,
+        "predicted_per_token_ms": 9.881,
+        "predicted_per_second": 101.2,
+        "draft_n": 169,
+        "draft_n_accepted": 107
+      }
+    }
+  ]
+}

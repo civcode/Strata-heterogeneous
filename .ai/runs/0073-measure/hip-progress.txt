@@ -1,0 +1,6 @@
+0 0 rc 0 elapsed 29.7 total 223.9
+1 2 rc 0 elapsed 29.6 total 253.5
+2 2 rc 0 elapsed 29.2 total 282.7
+3 0 rc 0 elapsed 29.7 total 312.5
+4 0 rc 0 elapsed 29.2 total 341.7
+5 2 rc 0 elapsed 29.6 total 371.3
