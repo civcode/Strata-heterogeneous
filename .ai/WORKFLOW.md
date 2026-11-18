@@ -1,11 +1,13 @@
 # AI-Assisted Rapid Prototyping Workflow
 
-**Version:** 1.2  
+**Version:** 1.3  
 **Purpose:** A practical operating protocol for a Human User, a Chat AI, and a local Coding Agent collaborating through a shared GitHub repository.
 
 **Changes in 1.1:** The Coding Agent now runs in one of two performance tiers, chosen per handoff (Section 4, "Coding Agent tiers").
 
 **Changes in 1.2:** Chat AI implements what it can adequately check (rule 1). New standing project file `.ai/PROJECT.md` and Chat AI status file `.ai/STATUS.md` (Section 3). Open handoffs can be cancelled only by the Human User (Section 5). Section 11 is now a general example split. Hardware test runtime is limited by project stage (Section 12).
+
+**Changes in 1.3:** Effort estimates are given only when the Human User asks, in agent turns, GPU minutes and the Human User's involvement, never in days (Section 13).
 
 ## 1. Objective
 
@@ -454,6 +456,20 @@ The **overall prototype** is done when the Human User accepts the outcome or cho
 
 If Chat AI cannot write to the repository, it must say so and provide usable implementation/handoff content through available means; it must **not** pretend a GitHub file or commit exists. If the Coding Agent lacks required hardware, credentials, or authorization, it should seek a practical local alternative or accurately report a genuine blocker.
 
+### Effort estimates
+
+- **Only on request.** An estimate of agent turns or effort is given only when the Human User explicitly asks for one.
+  Handoffs, reports, plans, roadmaps and individual tasks, fixes or changes do not carry one otherwise. A handoff's
+  hardware test budget (Section 12) is a limit, not an estimate, and stays as before.
+- **Units, when asked.** Give the number of agent turns with their tier, the wall-clock time per turn, the GPU minutes,
+  and the Human User's involvement (minutes per turn and the decisions needed). Never use days, person-days or other
+  human working-time units.
+- **Three kinds of time, kept apart.** Agent time is one Coding Agent turn from handoff to pushed report (builds, edits,
+  hardware runs). Human User time is relaying prompts and reports, reading results and deciding; it is usually the
+  scarcest. Chat AI time is review and handoff writing; it is short, but nothing moves between Chat AI turns.
+- **Basis.** Base an estimate on the recorded handoff and report times of earlier turns where there are any. Name the
+  main uncertainty, for example a likely fix-up turn after a first hardware run.
+
 ## 14. Instructions for an AI Receiving This Document
 
 **Adopt this protocol immediately.** Infer ordinary implementation details and avoid unnecessary clarification. Ask for missing essentials (for example repository identity or access) only when they genuinely block progress.
@@ -470,6 +486,7 @@ If Chat AI cannot write to the repository, it must say so and provide usable imp
 - **Name the tier in every handoff.** Default to Tier 2; justify Tier 1 in the handoff.
 - Include tier, exact branch, handoff path, and commit ID in the agent prompt.
 - On return, inspect the matching report, resume coding, and delegate again only when worthwhile.
+- Give an effort estimate only when the Human User asks for one, in agent turns, GPU minutes and the Human User's involvement (Section 13).
 
 **If you are Coding Agent:**
 
