@@ -1,6 +1,6 @@
 {
  "//": "HIP-only on Oberon (two R9700, plain vanilla layer split), the report 0067 configuration: vision and the scaled control vector over layers 4 to 44. Start with hetero/tools/serve_mixed.py; ${NAME} placeholders: hetero/configs/README.md.",
- "exe": "${STRATA_REPO}/build-0067-hip/strata",
+ "exe": "${STRATA_REPO}/build-0070-hip/strata",
  "args": [
   "--pack", "${STRATA_DATA}/packs/q2_0",
   "--native", "${STRATA_MODEL_DIR}/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",

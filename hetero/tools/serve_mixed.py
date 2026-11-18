@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 from hetero_common import expand, shared_arena  # noqa: E402
+from check_launch import check_config  # noqa: E402
 
 
 def main():
@@ -39,6 +40,10 @@ def main():
     names["RUN_DIR"] = run_dir
     os.makedirs(run_dir, exist_ok=True)
     cfg = expand(json.load(open(a.config)), names)
+    try:
+        check_config(cfg)
+    except (ValueError, OSError) as e:
+        raise SystemExit(f"launch check: {e}") from e
     args = [str(x) for x in cfg.get("args", [])]
     if "--front-exe" in args and not a.no_shared_arena and "--shared-expert-arena" not in args:
         path = shared_arena(inheritable=True)

@@ -1,6 +1,6 @@
 {
  "//": "Mixed split on Oberon: CUDA layers [0,15) (front stage, the CUDA build), HIP [15,33) + [33,48) (host, the HIP build). Start with hetero/tools/serve_mixed.py; ${NAME} placeholders: hetero/configs/README.md.",
- "exe": "${STRATA_REPO}/build-0067-hip/strata",
+ "exe": "${STRATA_REPO}/build-0070-hip/strata",
  "args": [
   "--pack", "${STRATA_DATA}/packs/q2_0",
   "--native", "${STRATA_MODEL_DIR}/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
@@ -14,7 +14,7 @@
   "--max-context", "196608",
   "--kv", "int8",
   "--vram-reserve-mib", "700",
-  "--front-exe", "${STRATA_REPO}/build-0067-cuda/strata",
+  "--front-exe", "${STRATA_REPO}/build-0070-cuda/strata",
   "--front-layers", "15"
  ],
  "cwd": "${STRATA_REPO}",
