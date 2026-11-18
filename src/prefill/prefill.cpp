@@ -2403,7 +2403,7 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
     cudaGetDevice(&m.device);
     if (stage_le_ < 0) stage_le_ = g.n_layers;
     if (stage_lb_ < 0 || stage_lb_ >= stage_le_ || stage_le_ > g.n_layers || (stage_le_ < g.n_layers) != (next_ != nullptr
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                                                                                                            || remote_out_ != nullptr   // (the next stage is in another process)
 #endif
                                                                                                            )) {
@@ -4149,7 +4149,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         for (size_t i = 0; i < tap_local_.size(); ++i) tap_slot[(size_t) tap_local_[i]] = (int) i;
     }
 #endif
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     // MIXED SPLIT: the rows of each chunk come from the front stage's process (set_remote_in).  `hand_in_` is set per
     // chunk and cleared again, so everything outside the chunk's read sees the first stage this path is here.
     struct RemoteIn {
@@ -4164,7 +4164,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
 #endif
     for (int64_t c0 = 0; c0 < n; c0 += C) {
         if (should_stop && should_stop()) { err = "cancelled"; return false; }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (remote_fill_) hand_in_ = nullptr;
 #endif
         // the first stage: end the run before this chunk (every chunk before it is handed on; the caller's drain
@@ -4184,7 +4184,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         }
         const int64_t T = std::min(C, n - c0), p0 = pos0 + c0;
         int64_t hand_c0 = c0;   // the chunk's first row in hand_in_
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (remote_fill_) {
             if (!remote_fill_(tokens + c0, T, p0, c0 + T >= n, err)) return false;
             hand_in_ = remote_in_;   // the front stage wrote this chunk's rows from row 0
@@ -7242,14 +7242,14 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         stats_.tokens += T;
         core::progress_at("reading the prompt (batched): finishing the chunk from token", p0);
         pt.mark(kPfStart, cs);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         const bool remote_out = remote_out_ != nullptr;
 #else
         constexpr bool remote_out = false;
 #endif
         if (next_ != nullptr || remote_out) {
             // The current hand-off slot was used two chunks ago.
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
             float* h = remote_out ? remote_out_ + (size_t) c0 * D : m.hand[hand_buf_];
 #else
             float* h = m.hand[hand_buf_];

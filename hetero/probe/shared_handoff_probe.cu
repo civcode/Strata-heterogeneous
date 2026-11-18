@@ -5,8 +5,8 @@
 // of each build on the same file:
 //
 //   truncate -s 8M /dev/shm/strata-hetero-probe
-//   <cuda build>/hetero_shared_probe      writer /dev/shm/strata-hetero-probe 0 &
-//   <hip build>/hip_hetero_shared_probe   reader /dev/shm/strata-hetero-probe 0
+//   <cuda build>/mixed_split_shared_probe      writer /dev/shm/strata-hetero-probe 0 &
+//   <hip build>/hip_mixed_split_shared_probe   reader /dev/shm/strata-hetero-probe 0
 //
 // (second argument: the file; third: the device ordinal in that runtime).  Then the other way round.
 //

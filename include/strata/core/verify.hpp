@@ -223,7 +223,7 @@ public:
     /// The next stage: `run` and `commit` continue into it (its pool calls get `next_user`); sampling settings
     /// and `final_R` are the last stage's.
     void set_next(Verifier* next, void* next_user) { next_ = next; next_user_ = next_user; }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     /// MIXED SPLIT (.ai/SEAM.md): the layers before this stage's first run in another process (the mirror image of
     /// set_next).  `run` hands that process the window before it launches its own, which reads the hand-off the
     /// front stage wrote; `commit` has it commit before this stage does.  Either failing fails the call.
@@ -621,7 +621,7 @@ private:
     bool chain_overlap() const;          ///< this stage hands off through a flag to a next stage that waits on it
     Verifier* next_ = nullptr;
     void* next_user_ = nullptr;
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     FrontCalls front_;                   ///< set_front
 #endif
     bool ple_stage() const { return lb_ <= 1 && 1 < le_; }   ///< holds layer 1, where the PLE block runs

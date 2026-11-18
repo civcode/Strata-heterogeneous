@@ -217,7 +217,7 @@ bool draft_vocab_whole_head();       // STRATA_METAL_DRAFT_VOCAB=full
 #include <set>
 #include <unordered_map>
 #include <vector>
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
 #include "strata/hetero/front_link.hpp"
 #include "strata/hetero/front_session.hpp"
 #include "strata/hetero/worker_process.hpp"
@@ -1114,7 +1114,7 @@ struct Options {
     /// when K is not accepted as guessed).  0 = off (the stages take turns).
     /// -1 (not asked for) = 2 on gfx12 (HIP) layer splits of 3 or more stages, else 0; --pipeline-windows N asks for it.
     int pipeline_windows = -1;
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     // MIXED SPLIT (.ai/SEAM.md): the layers [0, front_layers) run in another process, the `front_exe` engine (a
     // build for the other make of card), which this one starts with --front-stage.
     std::string front_exe;                 ///< --front-exe: the other build's strata (absolute path)
@@ -1643,7 +1643,7 @@ void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int
     drive_pool_split_impl(u, x, ids, n, k, out, l, strata::kernels::cpu::NativeArithmetic::WindowInvariant);
 }
 
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
 // ================================ MIXED SPLIT (.ai/SEAM.md) ================================
 /// The host's end of the front link: the worker process, the shared hand-off memory and the calls the first local
 /// stage forwards.  Declared before everything that uses the GPU, so it ends after it: the destructor closes the
@@ -4150,7 +4150,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-publish-kernel") o.no_publish_kernel = true;
         else if (a == "--no-fused-gdn") o.no_fused_gdn = true;
         else if (a == "--no-fast-select") o.no_fast_select = true;
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         else if (a == "--front-exe") o.front_exe = next("--front-exe");
         else if (a == "--front-layers") o.front_layers = std::atoi(next("--front-layers"));
         else if (a == "--front-arg") o.front_args.push_back(next("--front-arg"));
@@ -4579,7 +4579,7 @@ int main(int argc, char** argv) {
         return n > 0 ? n : 0;
     }();
     strata::core::set_primary_device(primary_device);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     // ---- MIXED SPLIT (.ai/SEAM.md).  `front_lb` > 0: this process is the host and its first stage starts at that
     // layer (the layers before it run in the front stage's process).  `front_le` > 0: this process IS the front
     // stage and runs layers [0, front_le), then serves the front link instead of the serve protocol.
@@ -12339,7 +12339,7 @@ int main(int argc, char** argv) {
         // hold (no allocation, no VRAM: the slots ARE the drafter's bytes) - and a prompt takes it by moving that
         // path's ring count (set_ring_room_active), so any later rebuild here re-carves it the same way.
         strata::prefill::Prefill* room_path = nullptr;
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         // ---- MIXED SPLIT: THE SHARED HAND-OFF.  Vanilla's stage hand-off between two cards of one process is mapped
         // pinned host memory (cudaHostAlloc); between the two processes it is a shared mapping that each registers with
         // its own runtime.  Slot 0: the window hand-off (the rows a verify window hands the next stage), slot 1: its
@@ -12442,7 +12442,7 @@ int main(int argc, char** argv) {
                 }
             }
             if (multi_gpu) sp.set_stage(front_lb, split_at[0], &stages[0]->sp);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
             if (front_lb > 0)   // MIXED SPLIT: each chunk's rows come from the front stage's process
                 sp.set_remote_in(het_rows_h, [&hetero, het_rows_cap](const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& e) {
                     if (n > het_rows_cap) { e = "mixed split: a prompt chunk larger than the shared hand-off"; return false; }
@@ -12759,7 +12759,7 @@ int main(int argc, char** argv) {
             split_drive.n = n_stages;
             for (int st = 0; st < n_stages; ++st) {
                 // (MIXED SPLIT: the first stage starts at front_lb and reads the front stage's hand-off)
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                 const float* const hand_first = front_lb > 0 ? het_hand_d : nullptr;
 #else
                 const float* const hand_first = nullptr;
@@ -12812,7 +12812,7 @@ int main(int argc, char** argv) {
                 }
             }
             for (int st = 0; st + 1 < n_stages; ++st) stage_ver(st).set_next(&stage_ver(st + 1), &split_drive);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
             if (front_lb > 0) {
                 // MIXED SPLIT: the first local stage's window waits (bounded) on the front stage's ready word, and its
                 // run / commit go to the front stage first - the mirror image of set_next
@@ -12895,7 +12895,7 @@ int main(int argc, char** argv) {
         if (use_df2) ver.set_taps(df2.tap_layers());
         if (batch_df2) ver.set_batch_taps(true);
 #endif
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (front_le > 0) {   // MIXED SPLIT: this process is the front stage: layers [0, front_le), the hand-off out, no head
             ver.set_stage(0, front_le, nullptr, het_hand_d);
             ver.set_handoff_flags(nullptr, nullptr, het_flag_h, het_flag_d);
@@ -13289,7 +13289,7 @@ int main(int argc, char** argv) {
         strata::core::ConversationCache conversations(
             o.prompt_cache > 0 ? (size_t) o.conversation_cache_mib * 1024 * 1024 : 0,
             (size_t) o.conversation_cache_slots, o.conversation_cache_min_tokens);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (hetero.on())   // MIXED SPLIT: the front stage keeps a parked copy only while this cache keeps the conversation
             conversations.on_drop = [&hetero](const strata::core::SavedConversation& c) {
                 std::string fe;
@@ -13713,7 +13713,7 @@ int main(int argc, char** argv) {
                                  (long long) o.conversation_cache_min_free_mib, ram_note(mem_after).c_str());
                     return true;
                 }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                 // MIXED SPLIT: the front stage parks its part of the main session (a batch slot's: no --batch here)
                 if (hetero.on() && &src.session == &ss &&
                     !hetero.at(strata::hetero::SessionOp::Park, src.ids.data(), (int64_t) src.ids.size(), err))
@@ -13929,7 +13929,7 @@ int main(int argc, char** argv) {
                                  (long long) L, sync_ms, save_ms, stages.size() + 1);
                 }
             }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
             if (parts == nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part (a split's parts: on_stage_chunk)
                 std::string fe;
                 if (!hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, fe)) { ckpt_why = ": " + fe; return false; }
@@ -14099,7 +14099,7 @@ int main(int argc, char** argv) {
                         part_at[done].resize(stages.size() + 1);   // (marks the set as seen; its empty parts make it incomplete)
                         return true;
                     }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                     // MIXED SPLIT: the front stage saves its part with the first local stage's.  It has read exactly this far:
                     // the first local stage asks it for each chunk before reading that chunk itself
                     if (i == 0 && hetero.on() && !hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, e)) return false;
@@ -15544,7 +15544,7 @@ int main(int argc, char** argv) {
             }
         }
         g_gpu_pause_idle.idle(gpu_pause_now());   // AMD on Linux: the gap before the first request starts here (the start-up's own pauses are not a "between")
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (front_le > 0) {
             // ---- MIXED SPLIT: THE FRONT STAGE SERVES THE LINK instead of the serve protocol.  Each call is the call the
             // loop below makes on its own first stage: a window (Verifier::run), its commit, a prompt chunk (Prefill::run),
@@ -18319,7 +18319,7 @@ int main(int argc, char** argv) {
                                  mtp.kv_state().kv_mode, "ram",
                                  (long long) (mtp.kv_state().n_slots * strata::kernels::qsa_real_shapes().page_size));
                 }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                 if (hetero.on()) {   // MIXED SPLIT: the front stage's parked part of this conversation
                     std::string fe;
                     if (!hetero.at(strata::hetero::SessionOp::Unpark, incoming->live.ids.data(), (int64_t) incoming->live.ids.size(), fe)) {
@@ -18386,7 +18386,7 @@ int main(int argc, char** argv) {
             if (resume == 0) {
                 strata::core::session_zero(ss, g, nullptr, main_cs);
                 cudaStreamSynchronize(main_stream);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                 if (hetero.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
                     std::string fe;
                     if (!hetero.reset(fe)) {
@@ -18420,7 +18420,7 @@ int main(int argc, char** argv) {
                     // checkpoint missed shows up as a difference.
                     strata::core::session_zero(ss, g, nullptr, main_cs);
                     cudaStreamSynchronize(main_stream);
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                     if (hetero.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
                         std::string fe;
                         if (!hetero.reset(fe)) {
@@ -18449,7 +18449,7 @@ int main(int argc, char** argv) {
                     std::printf("ERR restoring a conversation checkpoint failed\n");
                     return 1;
                 }
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
                 if (reread_to < 0 && c != nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part of the checkpoint
                     std::string fe;
                     if (!hetero.at(strata::hetero::SessionOp::Restore, c->ids.data(), (int64_t) c->ids.size(), fe)) {

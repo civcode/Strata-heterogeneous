@@ -1,6 +1,6 @@
 // Drives a front stage worker without a host engine (bring-up step 1 of handoff 0066; .ai/SEAM.md).
 //
-//   hetero_front_client <front strata> --pack DIR --native SHARD [--native SHARD ..] [--layers 15] [--context N]
+//   mixed_split_front_client <front strata> --pack DIR --native SHARD [--native SHARD ..] [--layers 15] [--context N]
 //                       [--chunk 2048] [--prompt 1000] [--windows 8] -- <the front engine's arguments>
 //
 // Starts the engine with `--front-stage K` appended, sends the hello with a fresh shared region, then: a new

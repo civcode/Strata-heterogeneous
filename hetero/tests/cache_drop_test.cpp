@@ -1,10 +1,10 @@
-// The mixed split's hook in vanilla's conversation cache (ConversationCache::on_drop, STRATA_HETERO): the host tells the
+// The mixed split's hook in vanilla's conversation cache (ConversationCache::on_drop, STRATA_MIXED_SPLIT): the host tells the
 // front stage about every parked conversation the cache lets go, so the front stage's copy goes too.  It must fire for
 // an eviction, a refused put and a clear, and must not fire for take(), which hands a conversation out to be restored
 // (the front stage restores its copy right after).
 
-#ifndef STRATA_HETERO
-#define STRATA_HETERO 1
+#ifndef STRATA_MIXED_SPLIT
+#define STRATA_MIXED_SPLIT 1
 #endif
 #include "strata/core/conversation_cache.hpp"
 

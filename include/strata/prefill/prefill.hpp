@@ -294,7 +294,7 @@ public:
     /// run `init`.
     bool set_stage_helper(Prefill* helper, std::string& err);
 
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     /// MIXED SPLIT (.ai/SEAM.md): the stage after this one runs in another process.  A stage that does not end at
     /// the last layer and has no `next` copies each chunk's rows to `rows` (pinned host memory both processes map;
     /// room for `cap_rows` rows) instead: a run's rows land at their offset in the run, so one run fills it once.
@@ -401,7 +401,7 @@ private:
     const void* hand_ev_ = nullptr;
     int hand_pieces_ = 0;
 
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     float* remote_out_ = nullptr;       ///< set_remote_out
     int64_t remote_cap_ = 0;
     const float* remote_in_ = nullptr;  ///< set_remote_in

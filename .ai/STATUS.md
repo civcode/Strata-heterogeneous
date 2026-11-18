@@ -15,7 +15,7 @@ branch changes 5 engine files (`generate.cpp`, `verify.cpp/.hpp`, `prefill.cpp/.
 Checked by Chat AI without a GPU:
 - The mixed engine changes equal the hardened line's, except the two hardening arena lines and one vanilla-form
   allocation.
-- `hetero_tests` and `hetero_cache_drop_test` pass.
+- `mixed_split_tests` and `mixed_split_cache_drop_test` pass.
 - The engine files syntax-check with only vanilla's own build-define errors.
 - Reports 0067 to 0069 were measured with the hardening in.
 

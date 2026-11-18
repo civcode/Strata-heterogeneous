@@ -1,5 +1,5 @@
 // CPU tests of the mixed-split seam: shared hand-off memory, the front link, and the worker process.
-// Usage: hetero_tests <absolute path of hetero_mock_worker>
+// Usage: mixed_split_tests <absolute path of mixed_split_mock_worker>
 
 #include "stub_backend.hpp"
 #include "strata/hetero/worker_process.hpp"

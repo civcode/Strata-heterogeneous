@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
 #include <functional>
 #endif
 #include <memory>
@@ -450,7 +450,7 @@ public:
     // may carry the poison.  Returns how many were parked.
     size_t clear() {
         const size_t n = entries_.size();
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (on_drop) for (const auto& e : entries_) on_drop(e);
 #endif
         entries_.clear();
@@ -556,7 +556,7 @@ public:
         return true;
     }
 
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
     // MIXED SPLIT: told of each parked conversation this cache lets go (evicted, superseded, cleared, or refused by
     // put), not of one take() hands out to be restored.  The front stage drops its copy of it.
     std::function<void(const SavedConversation&)> on_drop;
@@ -564,7 +564,7 @@ public:
 
 private:
     bool refused(const SavedConversation& image) {
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (on_drop) on_drop(image);
 #else
         (void) image;
@@ -591,7 +591,7 @@ private:
         return false;
     }
     void erase(size_t index, bool dropped = true) {
-#if defined(STRATA_HETERO)
+#if defined(STRATA_MIXED_SPLIT)
         if (dropped && on_drop) on_drop(entries_[index]);
 #else
         (void) dropped;
