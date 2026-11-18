@@ -1,24 +1,31 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0072` (Tier 2) open.
+Turn holder: **Coding Agent**, handoff `0073` (Tier 2) open.
 
 ## Current milestone
 
-Re-check of the rebuilt branch, last part (handoff 0072), then M5.
+M5 reached (Chat AI, `7f4f8ca6`): with `STRATA_MIXED_SPLIT` off, the engine sources are vanilla 0.2.15 line for line.
+`hetero/tools/check_off_is_vanilla.py` checks this (6 of 6 changed files), and `.ai/DIVERGENCE.md` lists the seam, the
+options mixed mode refuses and the vanilla findings. The branch adds 713 lines to 7 vanilla files and deletes none.
 
-Report 0071 was Partial: the budget ran out in the test suites (`d8861b91`). Chat AI's review:
-- **Builds:** all five pass, including both vision helpers built from this checkout. The committed HIP-only config
-  passes the launch check.
-- **HIP tests:** 272 passed, 15 skipped, 2 failed out of 289. One failure is the known vanilla
-  `conversation_copy_streams_test`; the other is `ple_parity`, which did not find its model file (a test input). No
-  mixed-split defect.
-- **CUDA tests:** 170 passed, 2 skipped (Windows-only), out of 172 run; the rest were not run.
-- **Kernel log:** two `Cannot map memory` lines of 0x10 pages appeared during the CUDA tests, cause not established.
-  No faults, crashes or reboots.
-- **Why the budget ran out:** the handoff asked for the whole GPU test set first, which took most of it. Handoff 0072
-  puts serving and the prefill A/B first.
+Next: pipelined windows for the mixed split (Human User, 2026-11-18: after the base is stable). Handoff 0073 measures
+first: vanilla's `--pipeline-windows 2` gain on this rig, and the per-window time of each stage and of the link in a
+mixed run.
+
+The re-check of the rebuilt branch is complete (report 0072, `114affa0`). Chat AI's review:
+- **HIP-only serving:** through the launch check, with vision helpers from this checkout. Reuse of 140 tokens; the
+  image request works.
+- **Prefill A/B, current against hardened line, three samples each:** median 2,260.8 against 2,251.5 tok/s, decode
+  113.7 against 113.8. The hardening removal costs nothing; the 1,787 sample of report 0070 was an outlier.
+- **Open test items, both vanilla:** `ple_parity` needs captured fixtures this repository does not have, and
+  `cuda_spill_guard` has no sm_89 baseline. Our branch changes no GPU kernel source. Both are in `.ai/DIVERGENCE.md`
+  as upstream candidates; no Tier 1 needed.
+- **Since report 0072,** by Chat AI: every mixed-split line in a vanilla file is guarded (a refused park is now
+  reported by the cache's caller). Syntax-checked and CPU-tested only; handoff 0073 rebuilds first.
 
 ## History in short
+
+- Report 0072: HIP-only serving with vision; the hardening removal has no prefill or decode cost (A/B, 3 samples each).
 
 - Report 0071: GPU test suites on the rebuilt branch (HIP 272/289, CUDA 170/172 run), no mixed-split defect.
 
@@ -47,6 +54,7 @@ Report 0071 was Partial: the budget ran out in the test suites (`d8861b91`). Cha
 - 2026-11-18: rename the build option to `STRATA_MIXED_SPLIT`, with related defines, tests and targets.
 - 2026-11-18: a standing GPU allowance of 30 minutes per handoff; a larger budget is announced and allowed unless
   the Human User refuses it.
+- 2026-11-18: pipelined windows for the mixed split, once the base functionality is stable.
 
 ## Open decisions for the Human User
 
@@ -54,8 +62,8 @@ Report 0071 was Partial: the budget ran out in the test suites (`d8861b91`). Cha
 
 ## Next step
 
-After report 0070: M5. That means a short divergence list (the seam, the guarded hooks, the options mixed mode still
-refuses, and why), then the remaining performance items (the front stage's 2048-token prompt chunks, the edge cost per
-window).
+After report 0073: if the front stage plus the link leave enough to hide, Chat AI writes the Tier 1 handoff for
+pipelined windows. In it the link carries a second, guessed window; the front stage uses vanilla's second verifier and
+state snapshot; and the draft layer's place is decided.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
