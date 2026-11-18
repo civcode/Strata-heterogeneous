@@ -29,10 +29,30 @@ def _meminfo():
     return out
 
 
+def engine_processes():
+    """pid -> {RssAnon, RssFile, RssShmem} in GiB for every running `strata` executable (the engines rename their
+    threads, so the executable path decides)."""
+    out = {}
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            with open(f"/proc/{d}/cmdline", "rb") as f:
+                argv0 = f.read().split(b"\0")[0].decode(errors="replace")
+            if os.path.basename(argv0) != "strata":
+                continue
+            with open(f"/proc/{d}/status") as f:
+                st = dict(l.split(":", 1) for l in f if ":" in l)
+        except OSError:
+            continue
+        out[d] = {k: round(int(st[k].split()[0]) / 2**20, 2) for k in ("RssAnon", "RssFile", "RssShmem") if k in st}
+    return out
+
+
 def mem_sample():
     m = _meminfo()
     s = {"available_gib": round(m["MemAvailable"] / 2**30, 2), "shmem_gib": round(m["Shmem"] / 2**30, 2),
-         "cached_gib": round(m["Cached"] / 2**30, 2)}
+         "cached_gib": round(m["Cached"] / 2**30, 2), "engines": engine_processes()}
     try:
         nv = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
                             capture_output=True, text=True, timeout=20).stdout.split()
