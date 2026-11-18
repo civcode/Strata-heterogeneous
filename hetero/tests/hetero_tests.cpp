@@ -138,7 +138,7 @@ void test_two_step_accept() {
         CHECK(front.session(SessionOp::Abandon, 0, 0, err));
         CHECK(front.run(2, toks, 0, err));
         CHECK(front.commit(2, err));
-        CHECK(!front.session((SessionOp) 7, 0, 0, err));
+        CHECK(!front.session((SessionOp) 9, 0, 0, err));
         CHECK(front.shutdown(err));
         worker.join();
         CHECK(rc == 0);
@@ -402,9 +402,94 @@ void test_worker_process(const std::string& mock) {
     }
 }
 
+// token_key: the host's int64 prompt tokens and int32 checkpoint ids give the same key; length and order count.
+void test_token_key() {
+    const int64_t a64[4] = {248045, 846, 198, 7};
+    const int32_t a32[4] = {248045, 846, 198, 7};
+    const int32_t b32[4] = {248045, 846, 7, 198};
+    CHECK(token_key(a64, 4) == token_key(a32, 4));
+    CHECK(token_key(a32, 4) != token_key(b32, 4));
+    CHECK(token_key(a32, 3) != token_key(a32, 4));
+    CHECK(token_key(a32, 0) > 0);
+}
+
+// The session operations the host sends for vanilla's checkpoints and conversation cache (Snapshot, Restore, Park,
+// Unpark), through the link to the front stage's bookkeeping: the keys travel, a state is restored only for the tokens
+// it was saved at, and anything out of step is refused with a message.
+void test_session_ops() {
+    Pair s;
+    test::BookBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;
+    CHECK(make_region(region));
+    RemoteFrontStage front(s.host, 5000);
+    std::string err;
+    CHECK(front.hello(test_identity(), region, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    // turn 1: a prompt of 5, a window of 3 that keeps 2 -> the session holds 7 tokens
+    std::vector<int32_t> conv = {1, 2, 3, 4, 5};
+    CHECK(front.prefill(conv.data(), 5, 0, true, err));
+    CHECK(front.session(SessionOp::Snapshot, token_key(conv.data(), 5), 5, err));          // Snapshot (mid-prompt)
+    const int32_t win[3] = {6, 7, 99};
+    CHECK(!front.run(3, win, 4, err));                                                     // not where the session is
+    CHECK(err.find("out of step") != std::string::npos);
+    CHECK(front.run(3, win, 5, err));
+    CHECK(front.commit(2, err));
+    conv.push_back(6);
+    conv.push_back(7);
+    CHECK(!front.session(SessionOp::Snapshot, token_key(conv.data(), 6), 6, err));         // wrong length
+    std::vector<int32_t> other = conv;
+    other[2] = 33;
+    CHECK(!front.session(SessionOp::Snapshot, token_key(other.data(), 7), 7, err));        // other tokens
+    CHECK(err.find("other tokens") != std::string::npos);
+    CHECK(front.session(SessionOp::Snapshot, token_key(conv.data(), 7), 7, err));          // Snapshot (turn)
+    CHECK(backend.book.parts() == 2);
+    // Park the conversation (with its two checkpoints), start another one, Unpark the first: it is back at 7 tokens
+    CHECK(!front.session(SessionOp::Park, token_key(conv.data(), 5), 5, err));             // not what it holds
+    CHECK(front.session(SessionOp::Park, token_key(conv.data(), 7), 7, err));
+    CHECK(backend.book.images() == 1);
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    const int32_t p2[4] = {40, 41, 42, 43};
+    CHECK(front.prefill(p2, 4, 0, true, err));
+    CHECK(front.session(SessionOp::Snapshot, token_key(p2, 4), 4, err));
+    CHECK(front.session(SessionOp::Snapshot, token_key(p2, 2), 2, err) == false);          // (the session holds 4)
+    CHECK(!front.session(SessionOp::Unpark, token_key(conv.data(), 6), 6, err));           // no such copy
+    CHECK(front.session(SessionOp::Unpark, token_key(conv.data(), 7), 7, err));            // Unpark
+    CHECK(backend.book.history() == conv);
+    CHECK(backend.state == test::BookBackend::text(conv));
+    CHECK(backend.book.images() == 0);                                                     // taken, as the host takes it
+    CHECK(!front.session(SessionOp::Unpark, token_key(conv.data(), 7), 7, err));
+    // Restore the mid-prompt checkpoint (it came back with the image even after the parts store moved on)
+    CHECK(front.session(SessionOp::Restore, token_key(conv.data(), 5), 5, err));           // Restore
+    CHECK(backend.book.history() == std::vector<int32_t>(conv.begin(), conv.begin() + 5));
+    CHECK(backend.state == "1,2,3,4,5,");
+    const int32_t nxt[1] = {8};
+    CHECK(front.prefill(nxt, 1, 5, true, err));                                            // continues from 5
+    CHECK(!front.session(SessionOp::Restore, token_key(conv.data(), 6), 6, err));          // never saved
+    // the parts store keeps the 3 most recently used
+    for (int k = 1; k <= 4; ++k) {
+        CHECK(front.session(SessionOp::Reset, 0, 0, err));
+        const int32_t t[1] = {100 + k};
+        CHECK(front.prefill(t, 1, 0, true, err));
+        CHECK(front.session(SessionOp::Snapshot, token_key(t, 1), 1, err));
+    }
+    CHECK(backend.book.parts() == 3);
+    CHECK(!front.session(SessionOp::Restore, token_key(conv.data(), 5), 5, err));          // evicted: refused
+    CHECK(!front.session(SessionOp::Rollback, 0, 0, err));                                 // no call site: refused
+    CHECK(!front.session(SessionOp::Truncate, 0, 0, err));
+    CHECK(!front.broken());
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    test_token_key();
+    test_session_ops();
     test_shared_region();
     test_link_round_trip();
     test_link_rules();

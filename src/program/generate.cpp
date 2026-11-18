@@ -219,6 +219,7 @@ bool draft_vocab_whole_head();       // STRATA_METAL_DRAFT_VOCAB=full
 #include <vector>
 #if defined(STRATA_HETERO)
 #include "strata/hetero/front_link.hpp"
+#include "strata/hetero/front_session.hpp"
 #include "strata/hetero/worker_process.hpp"
 #include <fcntl.h>
 #include <unistd.h>
@@ -1677,6 +1678,16 @@ struct HeteroHost {
     bool reset(std::string& err) {
         window_open = false;
         return link->session(strata::hetero::SessionOp::Reset, 0, 0, err);
+    }
+    /// A save or restore of the first stage's session, repeated on the front stage's for the same tokens `ids[0, n)`:
+    /// Snapshot / Restore (a checkpoint), Park / Unpark (the conversation cache).  The front stage refuses it when its
+    /// session does not hold those tokens.
+    template <class T>
+    bool at(strata::hetero::SessionOp op, const T* ids, int64_t n, std::string& err) {
+        if (!drop_window(err)) return false;
+        if (link->session(op, strata::hetero::token_key(ids, n), n, err)) return true;
+        err = "mixed split: the front stage: " + err;
+        return false;
     }
     ~HeteroHost() {
         if (!worker.started()) return;
@@ -4568,6 +4579,7 @@ int main(int argc, char** argv) {
     // stage and runs layers [0, front_le), then serves the front link instead of the serve protocol.
     const int64_t front_lb = o.front_exe.empty() ? 0 : o.front_layers;
     const int64_t front_le = o.front_stage;
+    size_t front_parts_cap = 0, front_images_cap = 0;   // the front stage's session store (set below)
     HeteroHost hetero;
     if (!o.front_exe.empty() || o.front_layers != 0) {
         const char* no = !o.serve ? "it needs --serve"
@@ -4590,17 +4602,15 @@ int main(int argc, char** argv) {
             return 2;
         }
         o.pipeline_windows = 0;   // (the default would turn the pipelined windows on for a layer split on gfx12)
-        if (o.prompt_cache != 0 || o.conversation_cache_mib != 0)
-            std::fprintf(stderr, "strata serve: mixed split: the prompt checkpoints and the conversation cache are off in this version "
-                                 "(the front stage's session is not saved or restored yet): every request reads its prompt from token 0\n");
-        o.prompt_cache = 0;
-        o.conversation_cache_mib = 0;
+        // the prompt checkpoints and the conversation cache stay as asked: each save and restore of the first stage's
+        // session is repeated on the front stage's (HeteroHost::at).  The front stage gets --prompt-cache and
+        // --conversation-cache-slots too, to size its store of them.
         // the front stage: this engine's own arguments without the host's options, as its first stage [0, K)
         std::vector<std::string> wa;
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
             static const char* const with_value[] = {"--front-exe", "--front-layers", "--front-arg", "--layer-split", "--split-device",
-                                                     "--mtp", "--pipeline-windows", "--prompt-cache", "--conversation-cache-mib",
+                                                     "--mtp", "--pipeline-windows", "--conversation-cache-mib",
                                                      "--gpu", "--vram-reserve-later-mib", "--draft"};
             bool skip_it = false;
             for (const char* w : with_value) if (a == w) { ++i; skip_it = true; }
@@ -4639,11 +4649,14 @@ int main(int argc, char** argv) {
         // its windows are a layer split's: at most kVerifyNarrowT rows (the shared hand-off's), so no lookup windows past
         // them unless asked for (vanilla's default for a layer split, default_lookup_max_t)
         if (o.lookup_max_t < 0) o.lookup_max_t = 0;
-        // its experts are read from the file mapping (--mmap-experts), not copied into a RAM arena of the whole model:
-        // the host holds that arena already, and two copies do not fit the RAM (report 0068); the front stage's few
-        // layers are mostly in its expert cache
-        o.mmap_experts = true;
-        o.prompt_cache = 0;
+        // its experts: from the host's arena when both name one --shared-expert-arena (one copy in RAM), else from the
+        // file mapping (--mmap-experts): two private arenas of the whole model do not fit the RAM (report 0068)
+        if (o.shared_expert_arena.empty()) o.mmap_experts = true;
+        // the host's checkpoints and parked conversations, one front part each (FrontSessionBook): as many as the host
+        // keeps - its checkpoint chain and each parked conversation's - and one more of each for a save the host skips
+        front_parts_cap = (size_t) std::max(o.prompt_cache, 0) * (size_t) (std::max(o.conversation_cache_slots, 0) + 1) + 2;
+        front_images_cap = (size_t) std::max(o.conversation_cache_slots, 0) + 1;
+        o.prompt_cache = 0;   // (its own serve loop does not run)
         o.conversation_cache_mib = 0;
     }
 #else
@@ -8036,7 +8049,7 @@ int main(int argc, char** argv) {
     if (wo == nullptr) { std::fprintf(stderr, "strata generate: output.weight is missing\n"); return 1; }
     const int64_t n_vocab = wo->ne1;
     strata::core::NativeHead native_head;
-    if (!o.native_head_gguf.empty() && !multi_gpu) {   // a layer split's head is on its last stage
+    if (!o.native_head_gguf.empty() && !multi_gpu && front_le == 0) {   // a layer split's head is on its last stage (a mixed split's front stage has none)
         const auto head_t0 = std::chrono::steady_clock::now();
         if (!native_head.load(o.native_head_shards, g.n_embd, n_vocab, err)) {
             std::fprintf(stderr, "strata generate: %s%s%s\n", err.c_str(), vram_free_note().c_str(), vram_batch_hint(err, o.batch).c_str());
@@ -13686,6 +13699,12 @@ int main(int argc, char** argv) {
                                  (long long) o.conversation_cache_min_free_mib, ram_note(mem_after).c_str());
                     return true;
                 }
+#if defined(STRATA_HETERO)
+                // MIXED SPLIT: the front stage parks its part of the main session (a batch slot's: no --batch here)
+                if (hetero.on() && &src.session == &ss &&
+                    !hetero.at(strata::hetero::SessionOp::Park, src.ids.data(), (int64_t) src.ids.size(), err))
+                    return false;
+#endif
                 const size_t snapshot_bytes = image.bytes();
                 const bool stored = conversations.put(std::move(image), held);
                 std::fprintf(stderr, "strata serve: conversation cache: %s %zu tokens%s in %.1f ms; parked=%zu bytes=%zu evictions=%zu snapshot_bytes=%zu reused_kv_bytes=%zu\n",
@@ -13896,6 +13915,12 @@ int main(int argc, char** argv) {
                                  (long long) L, sync_ms, save_ms, stages.size() + 1);
                 }
             }
+#if defined(STRATA_HETERO)
+            if (parts == nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part (a split's parts: on_stage_chunk)
+                std::string fe;
+                if (!hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, fe)) { ckpt_why = ": " + fe; return false; }
+            }
+#endif
             c.used = ++check_clock;
             if (seg_plan.chunk > 0 && L > seg_plan.from && L < seg_plan.to) c.plan = seg_plan;   // inside a planned segment
             if (as_tail) {   // only one tail checkpoint stays alive: the previous request's goes
@@ -14060,6 +14085,11 @@ int main(int argc, char** argv) {
                         part_at[done].resize(stages.size() + 1);   // (marks the set as seen; its empty parts make it incomplete)
                         return true;
                     }
+#if defined(STRATA_HETERO)
+                    // MIXED SPLIT: the front stage saves its part with the first local stage's.  It has read exactly this far:
+                    // the first local stage asks it for each chunk before reading that chunk itself
+                    if (i == 0 && hetero.on() && !hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, e)) return false;
+#endif
                     std::lock_guard<std::mutex> lk(part_mu);
                     auto& v = part_at[done];
                     v.resize(stages.size() + 1);
@@ -15509,25 +15539,86 @@ int main(int argc, char** argv) {
             HeteroFrontBackend fb;
             std::vector<int32_t> f_out((size_t) strata::kernels::kVerifyLongT, 0);
             std::vector<int64_t> f_ids;
+            // the tokens this session holds, and its parts of the host's checkpoints and parked conversations
+            strata::hetero::FrontSessionBook<ConvCheckpoint, strata::core::SavedConversation> book(front_parts_cap, front_images_cap);
+            auto key_of = [](const ConvCheckpoint& c) { return strata::hetero::token_key(c.ids.data(), (int64_t) c.ids.size()); };
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
                 if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
+                if (!book.on_run(tokens, T, pos0, e)) return false;
                 if (!ver.run(T, tokens, pos0, win_pool_fn, win_pool_user, f_out.data(), e)) return false;
                 if (drive.d.failed) { e = "the front stage's expert pool failed"; return false; }
                 return true;
             };
-            fb.f_commit = [&](int n_keep, std::string& e) { return ver.commit(n_keep, e); };
+            fb.f_commit = [&](int n_keep, std::string& e) {
+                if (!ver.commit(n_keep, e)) return false;
+                book.on_commit(n_keep);
+                return true;
+            };
             fb.f_prefill = [&](const int32_t* tokens, int64_t n, int64_t pos0, bool, std::string& e) {
                 if (!ver.wait_commit(e)) return false;
+                book.on_abandon();   // (a window nobody committed: the prompt runs over it, as in vanilla)
+                if (!book.on_prefill(tokens, n, pos0, e)) return false;
                 f_ids.assign(tokens, tokens + n);
                 return sp.run(f_ids.data(), n, pos0, e);
             };
-            fb.f_session = [&](strata::hetero::SessionOp op, int64_t, int64_t, std::string& e) {
+            // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
+            static const std::vector<strata::core::ConversationImageKey> f_no_imgs;
+            fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
+                using Op = strata::hetero::SessionOp;
                 if (!ver.wait_commit(e)) return false;
-                if (op == strata::hetero::SessionOp::Abandon) return true;   // (the next window runs over the dropped one)
-                if (op != strata::hetero::SessionOp::Reset) { e = "the front stage does not save or restore its session yet"; return false; }
-                strata::core::session_zero(ss, g, nullptr, main_cs);
-                if (cudaStreamSynchronize(main_stream) != cudaSuccess) { e = "zeroing the front stage's session failed"; return false; }
-                return true;
+                book.on_abandon();   // every session operation ends a window that was not committed
+                switch (op) {
+                case Op::Abandon: return true;   // (the next window runs over the dropped one)
+                case Op::Reset:
+                    strata::core::session_zero(ss, g, nullptr, main_cs);
+                    if (cudaStreamSynchronize(main_stream) != cudaSuccess) { e = "zeroing the front stage's session failed"; return false; }
+                    book.on_reset();
+                    return true;
+                case Op::Snapshot: {   // checkpoint_at / a split's checkpoint part: conversation_checkpoint_save
+                    if (!book.check(a, b, "a checkpoint", e)) return false;
+                    if (cudaDeviceSynchronize() != cudaSuccess) { e = "the front stage's GPU before a checkpoint"; return false; }
+                    ConvCheckpoint part;
+                    part.ids = book.history();
+                    if (!strata::core::conversation_checkpoint_save(part, ss, g, e)) return false;
+                    book.put_part(a, b, std::move(part));
+                    return true;
+                }
+                case Op::Restore: {   // mounting a checkpoint: conversation_checkpoint_restore
+                    ConvCheckpoint* part = book.find_part(a, b);
+                    if (part == nullptr) { e = "no checkpoint at " + std::to_string((long long) b) + " tokens is kept here"; return false; }
+                    if (!strata::core::conversation_checkpoint_restore(*part, ss, g, e)) return false;
+                    book.set_history(part->ids);
+                    return true;
+                }
+                case Op::Park: {   // the conversation cache's park: conversation_snapshot_save, without the draft layer (a later stage's form)
+                    if (!book.check(a, b, "a park", e)) return false;
+                    const std::vector<ConvCheckpoint> checks_here = book.parts_on(book.history(), b, key_of);
+                    const strata::core::ConversationView view{book.history(), f_no_imgs, checks_here, false};
+                    strata::core::SavedConversation image;
+                    if (!strata::core::conversation_snapshot_save(image, view, ss, g, (const strata::core::QsaState*) nullptr, e)) return false;
+                    book.put_image(a, b, std::move(image));
+                    return true;
+                }
+                case Op::Unpark: {   // the conversation cache's restore: conversation_snapshot_restore
+                    std::optional<strata::core::SavedConversation> image = book.take_image(a, b);
+                    if (!image) { e = "no parked copy of those " + std::to_string((long long) b) + " tokens is kept here"; return false; }
+                    if (strata::core::conversation_snapshot_restore(*image, ss, g, (const strata::core::QsaState*) nullptr, e) !=
+                        strata::core::ConversationRestore::restored) {
+                        book.on_reset();   // (the session may be half written: only a Reset or a Restore goes on from here)
+                        book.set_history({-1});
+                        return false;
+                    }
+                    book.set_history(image->live.ids);
+                    for (ConvCheckpoint& c : image->checkpoints) {   // its checkpoints are this session's again
+                        const int64_t k = key_of(c), n = (int64_t) c.ids.size();
+                        book.put_part(k, n, std::move(c));
+                    }
+                    return true;
+                }
+                default:
+                    e = "the session operation " + std::to_string((int) op) + " has no call site in this version";
+                    return false;
+                }
             };
             std::fprintf(stderr, "strata serve: front stage: layers 0-%lld ready, serving the link\n", (long long) front_le - 1);
             std::string fe;
@@ -18208,6 +18299,16 @@ int main(int argc, char** argv) {
                                  mtp.kv_state().kv_mode, "ram",
                                  (long long) (mtp.kv_state().n_slots * strata::kernels::qsa_real_shapes().page_size));
                 }
+#if defined(STRATA_HETERO)
+                if (hetero.on()) {   // MIXED SPLIT: the front stage's parked part of this conversation
+                    std::string fe;
+                    if (!hetero.at(strata::hetero::SessionOp::Unpark, incoming->live.ids.data(), (int64_t) incoming->live.ids.size(), fe)) {
+                        std::printf("ERR restoring parked conversation: %s\n", fe.c_str());
+                        std::fflush(stdout);
+                        return 1;
+                    }
+                }
+#endif
                 live = std::move(incoming->live.ids);
                 live_imgs = std::move(incoming->live.imgs);
                 if (stages.empty()) {
@@ -18299,6 +18400,16 @@ int main(int argc, char** argv) {
                     // checkpoint missed shows up as a difference.
                     strata::core::session_zero(ss, g, nullptr, main_cs);
                     cudaStreamSynchronize(main_stream);
+#if defined(STRATA_HETERO)
+                    if (hetero.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
+                        std::string fe;
+                        if (!hetero.reset(fe)) {
+                            std::printf("ERR mixed split: the front stage could not start a new sequence: %s\n", fe.c_str());
+                            std::fflush(stdout);
+                            return 1;
+                        }
+                    }
+#endif
                     for (auto& st : stages) {
                         const strata::core::OnDevice on(st->dev);
                         strata::core::session_zero(st->ss, g, nullptr, (void*) st->stream);
@@ -18318,6 +18429,16 @@ int main(int argc, char** argv) {
                     std::printf("ERR restoring a conversation checkpoint failed\n");
                     return 1;
                 }
+#if defined(STRATA_HETERO)
+                if (reread_to < 0 && c != nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part of the checkpoint
+                    std::string fe;
+                    if (!hetero.at(strata::hetero::SessionOp::Restore, c->ids.data(), (int64_t) c->ids.size(), fe)) {
+                        std::printf("ERR restoring a conversation checkpoint failed: %s\n", fe.c_str());
+                        std::fflush(stdout);
+                        return 1;
+                    }
+                }
+#endif
                 if (lent && lent_slot == admit_slot) {
                     // the slot this request continues in drops its checkpoints at the admission: this one moves back
                     // into the chain (and on into the slot then: moved_in)

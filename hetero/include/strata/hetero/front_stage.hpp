@@ -19,12 +19,15 @@ namespace strata::hetero {
 /// into the engine.
 enum class SessionOp : int32_t {
     Reset = 1,      ///< a new sequence: the session is zeroed
-    Rollback = 2,   ///< the state goes back to position `a`
-    Snapshot = 3,   ///< save the state as checkpoint `a` (length `b`)
-    Restore = 4,    ///< restore checkpoint `a`
-    Truncate = 5,   ///< drop the state past position `a`
+    Rollback = 2,   ///< the state goes back to position `a` (no call site in vanilla's serve loop: refused)
+    Snapshot = 3,   ///< save a checkpoint of the state, which holds the `b` tokens whose token_key is `a`
+    Restore = 4,    ///< restore the checkpoint of the `b` tokens whose token_key is `a`
+    Truncate = 5,   ///< drop the state past position `a` (no call site in vanilla's serve loop: refused)
     Abandon = 6,    ///< the last window is dropped without a commit (vanilla runs the next window over it)
+    Park = 7,       ///< park the whole session (K/V, state, checkpoints) of the `b` tokens whose token_key is `a`
+    Unpark = 8,     ///< restore (and drop) the parked session of the `b` tokens whose token_key is `a`
 };
+constexpr SessionOp kLastSessionOp = SessionOp::Unpark;
 
 class FrontStage {
 public:
