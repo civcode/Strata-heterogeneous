@@ -25,7 +25,9 @@ def load(d):
     replays = {}
     for f in sorted(glob.glob(os.path.join(d, 'probes', '*-replay.json'))):
         r = json.load(open(f))
-        replays[r['why']] = r['equal']
+        verdict = r.get('verdict')
+        replays[r['why']] = (verdict.get('verdict') if isinstance(verdict, dict) else verdict) or (
+            'equal' if r['equal'] else 'DIFFERENT')
     return dict(name=os.path.basename(os.path.normpath(d)), rows=rows, sess=sess, samples=samples, replays=replays)
 
 
@@ -83,8 +85,7 @@ def summary(runs, bucket):
     # probes
     whys = sorted({w for r in runs for w in r['replays']} | {x['kind'][6:] for r in runs for x in r['rows']
                                                               if x['kind'].startswith('probe-')})
-    lines = [[w] + [{True: 'equal', False: 'DIFFERENT', None: 'not replayed'}[r['replays'].get(w)] for r in runs]
-             for w in whys]
+    lines = [[w] + [r['replays'].get(w, 'not replayed') for r in runs] for w in whys]
     parts.append('### Probes (fresh-server replay)\n\n' + table(['probe', *[r['name'] for r in runs]], lines))
     # resources
     lines = []
@@ -93,8 +94,15 @@ def summary(runs, bucket):
         if not s:
             lines.append([r['name'], 'no samples'] + [None] * 4)
             continue
-        c0_end = max((x['t_start'] for x in r['rows'] if x['cycle'] == 0), default=None)
-        base = next((x for x in s if c0_end and x['t'] >= c0_end), s[0])
+        comp = next((x for x in r['rows'] if x['cycle'] == 0 and x['kind'] == 'compaction' and not x.get('error')), None)
+        c0_end = comp['t_start'] + (comp.get('wall_s') or 0) if comp else None
+        base = next((x for x in s if c0_end and x['t'] >= c0_end), None)
+        if base is None:
+            avail = [x.get('mem_available_mib') for x in s if x.get('mem_available_mib') is not None]
+            lines.append([r['name'], 'first cycle incomplete / no post-cycle sample', None,
+                          s[-1].get('mem_available_mib'), min(avail) if avail else None,
+                          max((x.get('swap_used_mib') or 0) for x in s)])
+            continue
         end = s[-1]
         vb, ve = vram(base), vram(end)
         growth = {k: round(100 * (ve[k] - vb[k]) / vb[k], 2) for k in vb if k in ve and vb[k]}

@@ -1,0 +1,34 @@
+{
+ "probe": ".ai/runs/0090-mixed-replay-pruned/probe.json",
+ "why": "pruned",
+ "equal": false,
+ "verdict": {
+  "field": "content",
+  "char": 33,
+  "token_index": 6,
+  "fresh_token": " serve",
+  "fresh_logprob": -0.866257,
+  "live_token": " **",
+  "live_logprob": -0.880388,
+  "gap_nats": 0.014,
+  "verdict": "near-tie"
+ },
+ "error": null,
+ "live": {
+  "content": "The most recent output came from **`serve/test_tool_call_unclosed.py`**, which is a unit test for the streaming tool-call parser (`OutputParser`). It feeds a text containing `<tool_call>` / `<function=...>` markers in small chunks (steps of 1, 3, 7, ",
+  "reasoning": "",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "The most recent output came from serve/test_tool_call_unclosed.py, a Python unit test for the server's streaming tool-call parser. It builds a tiny two-tool schema (read/write) and feeds a response text to OutputParser in small chunks (step 1, 3, 7, 409",
+  "reasoning": "",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh_logprobs": true,
+ "prompt_tokens": 29563,
+ "wall_s": 9.806
+}

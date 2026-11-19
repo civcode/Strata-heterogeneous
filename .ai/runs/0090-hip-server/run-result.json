@@ -1,0 +1,8 @@
+{
+  "elapsed": 1420.7506221310005,
+  "client_rc": 1,
+  "server_rc": 0,
+  "stop": [
+    "non-finite logits: strata serve: non-finite logits (#879) in a prompt window at position 74438 (row 0): its tokens are not emitted, the request ends (DONE nonfinite) and the next request reads its prompt from token 0"
+  ]
+}

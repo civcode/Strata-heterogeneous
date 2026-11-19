@@ -1,0 +1,17 @@
+2026-11-19T20:00:49+01:00 watcher started
+2026-11-19T20:06:00+01:00 KERNEL 2026-11-19T20:06:00+01:00 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
+2026-11-19T20:06:00+01:00 KERNEL 2026-11-19T20:06:00+01:00 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+2026-11-19T20:06:13+01:00 ENGINE strata serve: the graphics driver paused the GPU for 15140 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:09:40+01:00 KERNEL 2026-11-19T20:09:39+01:00 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
+2026-11-19T20:09:40+01:00 KERNEL 2026-11-19T20:09:39+01:00 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 7 times, consider switching to WQ_UNBOUND
+2026-11-19T20:09:57+01:00 KERNEL 2026-11-19T20:09:57+01:00 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 7 times, consider switching to WQ_UNBOUND
+2026-11-19T20:09:59+01:00 ENGINE strata serve: the graphics driver paused the GPU for 7467 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:10:25+01:00 ENGINE strata serve: the graphics driver paused the GPU for 247 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:10:34+01:00 ENGINE strata serve: the graphics driver paused the GPU for 560 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:10:35+01:00 KERNEL 2026-11-19T20:10:35+01:00 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 11 times, consider switching to WQ_UNBOUND
+2026-11-19T20:10:36+01:00 ENGINE strata serve: the graphics driver paused the GPU for 528 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:11:13+01:00 KERNEL 2026-11-19T20:11:13+01:00 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 11 times, consider switching to WQ_UNBOUND
+2026-11-19T20:11:23+01:00 ENGINE strata serve: the graphics driver paused the GPU for 1146 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:11:56+01:00 ENGINE strata serve: the graphics driver paused the GPU for 742 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:12:05+01:00 ENGINE strata serve: the graphics driver paused the GPU for 478 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:16:25+01:00 watcher stopped

@@ -1,0 +1,9 @@
+2026-11-19T20:18:08+01:00 watcher started
+2026-11-19T20:23:35+01:00 ENGINE strata serve: the graphics driver paused the GPU for 103 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:34:06+01:00 ENGINE strata serve: the graphics driver paused the GPU for 551 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:35:27+01:00 ENGINE strata serve: the graphics driver paused the GPU for 436 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:36:23+01:00 ENGINE strata serve: the graphics driver paused the GPU for 311 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T20:41:31+01:00 ENGINE strata serve: non-finite logits (#879) in a prompt window at position 74438 (row 0): its tokens are not emitted, the request ends (DONE nonfinite) and the next request reads its prompt from token 0
+2026-11-19T20:41:31+01:00 ENGINE strata serve: after non-finite logits (#879): dropped the live session, 6 checkpoints, 3 parked conversations and 0 idle slots (0 running slots not kept after their reply); reading this prompt from token 0
+2026-11-19T20:41:31+01:00 ENGINE strata serve: after non-finite logits in a prompt window (#3465): this request reads its whole prompt through the batched path, none of it through the verify windows
+2026-11-19T20:41:49+01:00 watcher stopped

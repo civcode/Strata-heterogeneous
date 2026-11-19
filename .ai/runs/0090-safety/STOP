@@ -1,0 +1,1 @@
+2026-11-19T20:41:31+01:00 non-finite logits: strata serve: non-finite logits (#879) in a prompt window at position 74438 (row 0): its tokens are not emitted, the request ends (DONE nonfinite) and the next request reads its prompt from token 0

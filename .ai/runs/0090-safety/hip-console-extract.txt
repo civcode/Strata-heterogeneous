@@ -1,0 +1,15 @@
+1418: [strata] answering: 17 of max 128 tokens, 68.0 tok/s, 1 s
+1419: [strata] done: 45 tokens in 1 s (69.0 tok/s) (stop, cancel=False)
+1420: # 359 c1 t 58 tool           prompt 70059 cached 68963 gen 45 ttft 0.824 pp 1409.1 dec 69.0
+1421: [strata] reading the prompt: 74,438 of 74,445 tokens, 2 s so far
+1422: [strata] the engine's logits became non-finite before the first token (#879); it dropped its cached state: sending the request again once
+1423: [strata] reading the prompt: 8,192 of 74,445 tokens, 4 s so far
+1424: [strata] reading the prompt: 18,148 of 74,445 tokens, 8 s so far
+1425: [strata] reading the prompt: 26,340 of 74,445 tokens, 9 s so far
+1426: [strata] reading the prompt: 34,532 of 74,445 tokens, 10 s so far
+1431: [strata] reading the prompt: 74,438 of 74,445 tokens, 18 s so far
+1432: [strata] done: 56 tokens in 18 s (120.5 tok/s) (stop, cancel=False)
+1433: # 360 c1 t 59 answer         prompt 74445 cached 0 gen 56 ttft 17.733 pp 4675.3 dec 120.5
+1434:
+1435: [strata] stopping (Ctrl+C again to end the engine at once) ...
+1436: [strata] stopped

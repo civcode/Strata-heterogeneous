@@ -1,0 +1,10 @@
+943: # 249 c0 t246 tool           prompt 203358 cached 201576 gen 53 ttft 1.175 pp 1633.7 dec 85.5
+944: [strata] reading the prompt: 207,732 of 207,739 tokens, 2 s so far
+945: [strata] done: 106 tokens in 3 s (114.3 tok/s) (stop, cancel=False)
+946: # 250 c0 t247 tool           prompt 207739 cached 203351 gen 106 ttft 2.364 pp 1925.4 dec 114.3
+947: [strata] the engine reported an error: restoring a conversation checkpoint failed: mixed split: the front stage: no checkpoint at 9956 tokens is kept here
+948: [strata] done: 0 tokens in 1 s (no speed) (error, cancel=False)
+949: # 251 c0 t248 tool           prompt None cached None gen None ttft None pp None dec None ERROR {'type': 'server_error', 'message': 'restoring a conversation checkpoint failed: mixed split: the front stage: no checkpoint at 9956 tokens is kept here'}
+950:
+951: [strata] stopping (Ctrl+C again to end the engine at once) ...
+952: [strata] stopped

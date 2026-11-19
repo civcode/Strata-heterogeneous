@@ -1,0 +1,40 @@
+570: strata serve: conversation cache: parked 114487 tokens in 305.6 ms; parked=2 bytes=4639919512 evictions=9 snapshot_bytes=2581377312 reused_kv_bytes=0
+571: strata serve: conversation cache: restored 42724 tokens (checkpoint) in 148.7 ms; parked=2 bytes=6063031392
+572: strata serve: prompt 75042 tokens = 42724 reused + 32318 read in 7984 ms (4047.7 tok/s), 71 generated in 545 ms (130.2 tok/s), drafts accepted 49 of 56, 4 checkpoints
+573: strata serve: the graphics driver paused the GPU for 103 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+574: strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 33976.6 MB read
+575: strata serve: file tier I/O this request: the OS read 123.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+576: strata serve: suffix drafts: 1 windows, 2 of 5 drafts accepted
+1319: strata serve: suffix drafts: 2 windows, 8 of 8 drafts accepted
+1320: strata serve: conversation cache: parked 207798 tokens in 672.1 ms; parked=2 bytes=7905045568 evictions=25 snapshot_bytes=4010232904 reused_kv_bytes=0
+1321: strata serve: prompt 153374 tokens = 9956 reused + 143418 read in 27287 ms (5255.9 tok/s), 59 generated in 614 ms (96.1 tok/s), drafts accepted 33 of 48, 6 checkpoints
+1322: strata serve: the graphics driver paused the GPU for 551 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+1323: strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 33976.6 MB read
+1324: strata serve: file tier I/O this request: the OS read 3055.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+1325: strata serve: conversation cache: the reply this request replaces is not parked (65 tokens past the turn checkpoint at 153367)
+1394: strata serve: suffix drafts: 2 windows, 3 of 8 drafts accepted
+1395: strata serve: conversation cache: parked 189897 tokens in 570.9 ms; parked=2 bytes=7506165616 evictions=27 snapshot_bytes=3735784712 reused_kv_bytes=0
+1396: strata serve: prompt 164842 tokens = 124644 reused + 40198 read in 10066 ms (3993.6 tok/s), 40 generated in 469 ms (85.3 tok/s), drafts accepted 19 of 30, 5 checkpoints
+1397: strata serve: the graphics driver paused the GPU for 436 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+1398: strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 33976.6 MB read
+1399: strata serve: file tier I/O this request: the OS read 90.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+1400: strata serve: suffix drafts: 1 windows, 2 of 3 drafts accepted
+1471: strata serve: suffix drafts: 1 windows, 1 of 3 drafts accepted
+1472: strata serve: conversation cache: parked 178515 tokens in 497.9 ms; parked=2 bytes=7333948992 evictions=29 snapshot_bytes=3561811072 reused_kv_bytes=0
+1473: strata serve: prompt 175809 tokens = 124644 reused + 51165 read in 12111 ms (4224.6 tok/s), 70 generated in 730 ms (95.9 tok/s), drafts accepted 41 of 65, 6 checkpoints
+1474: strata serve: the graphics driver paused the GPU for 311 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+1475: strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 33976.6 MB read
+1476: strata serve: file tier I/O this request: the OS read 650.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+1477: strata serve: conversation cache: the reply this request replaces is not parked (76 tokens past the turn checkpoint at 175802)
+1818: strata serve: file tier I/O this request: the OS read 22.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+1819: strata serve: suffix drafts: 2 windows, 1 of 6 drafts accepted
+1820: strata serve: conversation cache: the reply this request replaces is not parked (51 tokens past the turn checkpoint at 70052)
+1821: strata serve: non-finite logits (#879) in a prompt window at position 74438 (row 0): its tokens are not emitted, the request ends (DONE nonfinite) and the next request reads its prompt from token 0
+1822: strata serve: prompt 74445 tokens = 70052 reused + 4386 of 4393 read in 1751 ms (2504.6 tok/s), 0 generated in 0 ms (0.0 tok/s), drafts accepted 0 of 0, 6 checkpoints (cancelled)
+1823: strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 33976.6 MB read
+1824: strata serve: file tier I/O this request: the OS read 66.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+1825: strata serve: after non-finite logits (#879): dropped the live session, 6 checkpoints, 3 parked conversations and 0 idle slots (0 running slots not kept after their reply); reading this prompt from token 0
+1826: strata serve: after non-finite logits in a prompt window (#3465): this request reads its whole prompt through the batched path, none of it through the verify windows
+1827: strata serve: prompt 74445 tokens = 0 reused + 74445 read in 15923 ms (4675.3 tok/s), 56 generated in 465 ms (120.5 tok/s), drafts accepted 36 of 40, 6 checkpoints
+1828: strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 33976.6 MB read
+1829: strata serve: file tier I/O this request: the OS read 388.1 MB from storage (0 major faults) for 0.0 MB of expert reads

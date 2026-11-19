@@ -1,0 +1,34 @@
+{
+ "probe": ".ai/runs/0090-mixed-replay-deep/probe.json",
+ "why": "deep",
+ "equal": false,
+ "verdict": {
+  "field": "content",
+  "char": 163,
+  "token_index": 39,
+  "fresh_token": " projections",
+  "fresh_logprob": -0.669915,
+  "live_token": " weights",
+  "live_logprob": -0.833632,
+  "gap_nats": 0.164,
+  "verdict": "near-tie"
+ },
+ "error": null,
+ "live": {
+  "content": "The most recent output came from `src/kernels/cuda/native_mmvq.cu`, the CUDA/HIP translation unit that implements Strata's native MMVQ kernels for dense quantized weights. It defines the GGUF block structs (Q4_K, Q5_K, Q6_K, Q3_K",
+  "reasoning": "",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "The most recent output came from `src/kernels/cuda/native_mmvq.cu`, the CUDA/HIP translation unit that implements Strata's native MMVQ kernels for dense quantized projections. It defines the GGUF block structs (Q4_K, Q5_K, Q6_K, Q3_K",
+  "reasoning": "",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh_logprobs": true,
+ "prompt_tokens": 200183,
+ "wall_s": 40.639
+}

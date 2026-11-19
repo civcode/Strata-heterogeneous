@@ -1,0 +1,13 @@
+2026-11-19T20:18:03+01:00
+
+BOOT ID
+ffcbbb74-121f-46fa-a930-ca08f55e881c
+
+FREE
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3609       18186           2       40824       58332
+Swap:          16383         626       15757
+
+SWAPON
+NAME      TYPE SIZE   USED PRIO
+/swap.img file  16G 626.7M   -1
