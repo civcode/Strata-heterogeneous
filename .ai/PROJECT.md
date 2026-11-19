@@ -102,6 +102,19 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   - **After any pause in a turn** (a usage limit, a wait for the Human User), compare the boot ID before the next GPU
     run. A different boot ID means the machine was restarted: run nothing more, and report it.
   - A new GPU fault line, a crash outside the run, or a reboot ends the handoff.
+- **Starting and stopping GPU processes** (report 0087: a session's end hung because the server ignored SIGINT):
+  - A command started in the background by a shell (`cmd &`, `nohup`, a tool runner's background job) inherits SIGINT
+    ignored, and so does every process it starts; the server's cooperative stop then does nothing. Start servers and
+    engines only through the tools in `mixed_split/tools/` (they reset that first: `reset_ignored_signals`), or from a
+    Python script that calls `mixed_split_common.reset_ignored_signals()` before starting them. Never start a server
+    or engine directly with `&` or `nohup`.
+  - Stop them with `mixed_split_common.stop_cooperatively`: SIGINT and the drain, then SIGTERM. Never SIGKILL, and never
+    a `subprocess` timeout that kills (`subprocess.call/run(timeout=...)` sends SIGKILL to the child when it expires).
+  - Every command that runs a GPU job returns when the job ends: run it in the foreground with a timeout longer than
+    the job, not as a background job you poll. After it returns, `pgrep -af 'strata|server.py'` must show nothing
+    of the run before the next GPU job starts.
+  - A command that seems to hang: check the processes first (`pgrep -af`, `ps -o pid,stat,cmd`). Stop what is left
+    cooperatively as above. If something still runs after SIGINT and SIGTERM, start no further GPU job and report it.
 - Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
 - Long-duration tests (soak, long context, capacity sweeps) are **on hold** since the 19 November host crash (Human User
   decision needed to resume). Before the crash: allowed for the release-candidate qualification (`.ai/RC.md`), with

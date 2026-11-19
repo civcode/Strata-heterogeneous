@@ -15,7 +15,7 @@ tokens, memory samples at READY and at the end).  The engine is never signalled:
 import json, os, subprocess, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mixed_split_common import force_sdma_off, mem_sample, shared_arena  # noqa: E402
+from mixed_split_common import force_sdma_off, mem_sample, reset_ignored_signals, shared_arena  # noqa: E402
 
 
 def main():
@@ -23,6 +23,7 @@ def main():
         raise SystemExit(__doc__)
     own, argv = sys.argv[1:sys.argv.index("--")], sys.argv[sys.argv.index("--") + 1:]
     out_prefix, pj, reqs = own[0], own[1], own[2]
+    reset_ignored_signals()                              # the engine must answer SIGINT (mixed_split_common)
     env = dict(os.environ)
     i = 3
     arena = None

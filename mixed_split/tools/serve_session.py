@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
 sys.path.insert(0, HERE)
-from mixed_split_common import force_sdma_off  # noqa: E402
+from mixed_split_common import force_sdma_off, reset_ignored_signals, stop_cooperatively  # noqa: E402
 FAULTS = ('xid', 'gfxhub', 'gcvm', 'gpu fault', 'page fault', 'amdgpu: ring', 'gpu reset', 'bad page', 'oops', 'general protection')
 DEFAULTS = dict(STRATA_DATA='/home/chris/workspace/Strata-data', STRATA_MODEL_DIR='/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF',
                 STRATA_PROFILE='/home/chris/workspace/Strata/data/expert-profile.bin', STRATA_VANILLA='/home/chris/workspace/Strata',
@@ -124,6 +124,7 @@ def main():
     a = ap.parse_args()
     run = os.path.abspath(a.run)
     os.makedirs(run, exist_ok=True)
+    reset_ignored_signals()                              # the server must answer SIGINT (mixed_split_common)
     env = force_sdma_off(dict(DEFAULTS, **os.environ))   # .ai/PROJECT.md, the first rule
     from strata_tokenizer import Tokenizer
     tk = Tokenizer.from_gguf(env['STRATA_MODEL_DIR'] + '/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf')
@@ -234,13 +235,9 @@ def main():
         except Exception as e:  # noqa: BLE001
             out['error'] = repr(e)
         finally:
-            if p and p.poll() is None:
-                p.send_signal(signal.SIGINT)
             if p:
-                try:
-                    p.wait(timeout=80)
-                except subprocess.TimeoutExpired:
-                    out['drain_error'] = f'process {p.pid} still running'
+                if stop_cooperatively(p) is None:            # SIGINT and drain, then SIGTERM; never SIGKILL
+                    out['drain_error'] = f'process {p.pid} still running after SIGINT and SIGTERM: no further GPU job'
                 out['rc'] = p.poll()
     out['elapsed'] = time.monotonic() - t
     tot_p = os.path.join(run, 'gpu-seconds.txt')

@@ -15,7 +15,7 @@ import json, os, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
-from mixed_split_common import expand, force_sdma_off  # noqa: E402
+from mixed_split_common import expand, force_sdma_off, reset_ignored_signals, stop_cooperatively  # noqa: E402
 from check_launch import check_config  # noqa: E402
 
 FAULTS = ('xid', 'gfxhub', 'gcvm', 'gpu fault', 'page fault', 'amdgpu: ring', 'gpu reset')
@@ -74,7 +74,14 @@ def main():
     base = kernel()
     t0 = time.monotonic()
     with open(os.path.join(run, name + '.driver.log'), 'w') as log:
-        rc = subprocess.call(own + ['--'] + argv, env=env, stdout=log, stderr=subprocess.STDOUT, cwd=REPO, timeout=170)
+        # (not subprocess.call(timeout=...): on its timeout Python kills the child with SIGKILL, which .ai/PROJECT.md forbids)
+        reset_ignored_signals()
+        drv = subprocess.Popen(own + ['--'] + argv, env=env, stdout=log, stderr=subprocess.STDOUT, cwd=REPO)
+        try:
+            rc = drv.wait(timeout=170)
+        except subprocess.TimeoutExpired:
+            rc = stop_cooperatively(drv)
+            rc = 'still running after 170 s, SIGINT and SIGTERM' if rc is None else f'stopped after 170 s (exit {rc})'
     el = time.monotonic() - t0
     tot_p = os.path.join(run, 'gpu-seconds.txt')
     tot = (float(open(tot_p).read()) if os.path.exists(tot_p) else 0.0) + el

@@ -10,6 +10,9 @@ Standard library only.  The server is never killed: SIGINT, then wait.
 """
 import argparse, json, os, signal, subprocess, sys, time, urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mixed_split_common import force_sdma_off, reset_ignored_signals, stop_cooperatively  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -56,7 +59,8 @@ def main():
     ap.add_argument("--ready-timeout", type=float, default=100.0)
     ap.add_argument("--temperature", type=float, default=0.0)
     a = ap.parse_args()
-    env = dict(os.environ, HSA_ENABLE_SDMA="0")
+    reset_ignored_signals()                              # the server must answer SIGINT (mixed_split_common)
+    env = force_sdma_off(dict(os.environ))
     t_start = time.time()
     srv = subprocess.Popen([sys.executable, os.path.join(ROOT, "serve", "server.py"), "--engine", "strata", "--config",
                             a.config, "--port", str(a.port)], cwd=ROOT, env=env)
@@ -85,12 +89,9 @@ def main():
                     print(json.dumps({"request": spec, "error": repr(e)}), flush=True)
                     rc = 1
     finally:
-        if srv.poll() is None:
-            srv.send_signal(signal.SIGINT)
-        try:
-            srv.wait(timeout=120)
-        except subprocess.TimeoutExpired:
-            print(json.dumps({"server": "still running after 120 s; left alone", "pid": srv.pid}), flush=True)
+        if stop_cooperatively(srv) is None:              # SIGINT and drain, then SIGTERM; never SIGKILL
+            print(json.dumps({"server": "still running after SIGINT and SIGTERM; left alone, no further GPU job",
+                              "pid": srv.pid}), flush=True)
             rc = 1
         print(json.dumps({"server_exit": srv.returncode, "alive_s": round(time.time() - t_start, 1)}), flush=True)
     return rc

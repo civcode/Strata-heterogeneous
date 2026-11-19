@@ -1,7 +1,7 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0087 (the pinned snapshot readback on the cards: builds, its GPU tests, short
-park/restore checks). Budget 30 minutes. Handoff 0086 ended in the 19 November host crash; the RC is blocked.
+Turn holder: **Coding Agent**, handoff 0088 (are report 0087's probe differences vanilla's? HIP-only control).
+Budget 20 minutes.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -126,8 +126,13 @@ qualification uses a synthetic workload shaped like it; model, measurements and 
 
 ## Next step
 
-Handoff 0087 (Coding Agent): the pinned readback on the cards. Then Chat AI reviews and proposes, with the Human User,
-how to qualify again (swap off or low swappiness, the audit of host buffers the GPUs write in mixed mode). The setup
-integration (`./setup.sh` answer 3, `--backend mixed_split`) waits on branch `chat/setup-mixed-split`.
+Report 0087 (the pinned readback on the cards): builds pass; the patch's GPU tests pass (HIP 14, CUDA 11 + 3 skipped:
+one CUDA device); HIP-only and mixed park/restore checks pass, also at 32K; no safety lines, no swap. Open: all three
+live-versus-fresh probes of the scaled session differ (early, near-tie-like), and the scaled session never restored a
+parked conversation. A hang at the end of a session (server started from a background shell, SIGINT ignored) led to
+the start/stop rule in `PROJECT.md` and to `reset_ignored_signals` / `stop_cooperatively` in the tools.
+
+Handoff 0088 (Coding Agent): fresh-against-fresh and HIP-only probe controls. Then Chat AI decides the probe
+criterion and, with the Human User, how to resume long runs. The setup integration waits on `chat/setup-mixed-split`.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn

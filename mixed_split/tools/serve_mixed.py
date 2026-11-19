@@ -18,7 +18,7 @@ import argparse, json, os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
-from mixed_split_common import expand, force_sdma_off, shared_arena  # noqa: E402
+from mixed_split_common import expand, force_sdma_off, reset_ignored_signals, shared_arena  # noqa: E402
 from check_launch import check_config  # noqa: E402
 
 
@@ -60,6 +60,7 @@ def main():
     out = os.path.join(run_dir, name + ".json")
     with open(out, "w") as f:
         json.dump(cfg, f, indent=1)
+    reset_ignored_signals(for_exec=True)            # the server must answer SIGINT (mixed_split_common)
     force_sdma_off(os.environ)                      # .ai/PROJECT.md, the first rule (and the config says it: check_config)
     py = os.path.join(REPO, ".venv", "bin", "python")
     argv = [py, os.path.join(REPO, "serve", "server.py"), "--engine", "strata", "--config", out]

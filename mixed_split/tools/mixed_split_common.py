@@ -97,3 +97,32 @@ def force_sdma_off(env):
         raise SystemExit(f"HSA_ENABLE_SDMA={v}: refused. " + SDMA_RULE)
     env["HSA_ENABLE_SDMA"] = "0"
     return env
+
+
+def reset_ignored_signals(for_exec=False):
+    """Undo an inherited "ignore SIGINT/SIGQUIT".  A command a non-interactive shell starts in the background (`cmd &`,
+    a tool runner's background job) gets both ignored, and so does everything it starts: exec keeps an ignored signal
+    ignored, and a Python started that way installs no KeyboardInterrupt handler.  The server's cooperative stop
+    (SIGINT, then the drain) then does nothing, and whoever waits for it waits for ever.  Every tool that starts a GPU
+    process calls this first (`for_exec`: before replacing itself, the default action instead of Python's handler)."""
+    import signal
+    for s in (signal.SIGINT, signal.SIGQUIT):
+        if signal.getsignal(s) == signal.SIG_IGN:
+            signal.signal(s, signal.SIG_DFL if (for_exec or s == signal.SIGQUIT) else signal.default_int_handler)
+
+
+def stop_cooperatively(p, drain_s=120, term_s=60):
+    """Stop a server or engine the way it expects: SIGINT and its drain, then SIGTERM (also a cooperative stop) if it
+    is still running.  Never SIGKILL (.ai/PROJECT.md).  Returns the exit status, or None when the process is still
+    running after both: the caller reports it and starts no other GPU job."""
+    import signal
+    import subprocess
+    for sig, wait_s in ((signal.SIGINT, drain_s), (signal.SIGTERM, term_s)):
+        if p.poll() is not None:
+            return p.returncode
+        p.send_signal(sig)
+        try:
+            return p.wait(timeout=wait_s)
+        except subprocess.TimeoutExpired:
+            continue
+    return p.poll()
