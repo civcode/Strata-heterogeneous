@@ -1,6 +1,7 @@
 # Status
 
-Turn holder: **Chat AI**, waiting for the Human User's decision on how to resume long runs.
+Turn holder: **Coding Agent**, handoff 0089 (RC long sessions: mixed full 256K session first, then production).
+Budget about 4 hours of GPU time, announced.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -131,8 +132,9 @@ changed `.ai/RC.md` criterion 2 to "equal or a near-tie" (live token in the fres
 no non-finite-logits line; `agent_session.py replay` now asks for top-5 logprobs and judges (selftest 18/18). The
 driver now turns thinking off for `--reasoning-budget 0` (report 0088).
 
-Open decision for the Human User: how to resume long runs after the 19 November crash (swap setting, order of
-HIP-only and mixed long sessions, `HSA_USERPTR_FOR_PAGED_MEM`). The setup integration waits on
+Human User's decisions (2026-11-19): long runs resume; swap stays on, the crash case documented and monitored
+(`PROJECT.md`); the mixed session first; `HSA_USERPTR_FOR_PAGED_MEM` held in reserve. Handoff 0089 runs the two long
+sessions with a log watcher that stops on non-finite logits or a safety line. The setup integration waits on
 `chat/setup-mixed-split`.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn

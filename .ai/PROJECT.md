@@ -116,7 +116,20 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   - A command that seems to hang: check the processes first (`pgrep -af`, `ps -o pid,stat,cmd`). Stop what is left
     cooperatively as above. If something still runs after SIGINT and SIGTERM, start no further GPU job and report it.
 - Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
-- Long-duration tests (soak, long context, capacity sweeps) are **on hold** since the 19 November host crash (Human User
-  decision needed to resume). Before the crash: allowed for the release-candidate qualification (`.ai/RC.md`), with
-  each long run's length and the turn's total budget in the handoff.
+- Long-duration tests (soak, long context, capacity sweeps) are allowed again for the release-candidate qualification
+  (`.ai/RC.md`; Human User, 2026-11-19, after the 19 November crash), with each long run's length and the turn's total
+  budget in the handoff. Swap stays as configured (on).
+- **The 19 November crash case** (documented, Human User's decision to keep swap on): the host crashed in a long mixed
+  session at a 214K-token context, while Linux was swapping (about 8 GB written out, about 39 GB still available) and
+  the AMD driver kept restoring GPU-mapped host memory. Its signs, in the order they appeared:
+  - kernel: `workqueue: amdgpu_amdkfd_restore_userptr_worker ... hogged CPU` and `svm_range_restore_work ... hogged CPU`;
+  - engine: `the graphics driver paused the GPU for N ms ... while Linux moved memory the GPU uses` (up to 23 s);
+  - swap use growing during the run;
+  - engine: `non-finite logits` after a conversation restore;
+  - kernel: `BUG: Bad page map`, an `Oops`, RCU stalls; the boot ended uncleanly.
+
+  Every long run records the first three (the kernel lines, the engine's pause lines, swap use from the sampler) and
+  reports them with their times. A `non-finite logits` line, or any kernel line matching the safety patterns, ends
+  the run cooperatively at once. The carried pinned-readback patch (`.ai/HARDENING.md`) is this project's response;
+  `HSA_USERPTR_FOR_PAGED_MEM=0` (vanilla's `docs/AMD_HIP.md`) is held in reserve.
 - Never compare a traced run with an untraced one.
