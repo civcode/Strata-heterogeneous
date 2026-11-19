@@ -1,35 +1,30 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0079` (Tier 1), once the Human User hands it over.
+Turn holder: **Human User**: choose the next direction (see Open decisions).
 
 ## Current milestone
 
-M8 reached (report 0078, `5b82ad6d`).
+M8 closed (report 0079, `ad6e06e7`). No engine change in the end; `check_off_is_vanilla.py` reports 6 of 6.
 
 Chat AI's review:
-- **Reboot:** the machine was shut down cleanly at 23:37 on 18 November, while the turn was paused, and booted at 08:01.
-  The agent missed it at resume and ran about 14 more GPU minutes before noticing at the final check: no faults, no
-  core dumps. `.ai/PROJECT.md` now checks the boot ID after any pause. The Human User confirmed the shutdown was
-  theirs (2026-11-19), so the results stand.
-- **Wrong-guess notice:** measured and correctly not added. The front window is always launched before the verdict;
-  82 to 89% of wrong guesses find it already ended; the host's undo never waited for it.
-- **Short prompts:** the gap is the CUDA card's own prompt compute, 8.5 ms per layer against about 3.6 ms on an R9700.
-  - Report 0076's 80 ms was a first-request effect: every server measurement starts a fresh server.
-  - Pipelined against serial costs only on the first request (+33 ms); warm requests are equal.
-  - An MMQ build of the front stage helps short prompts (+13% warm) but costs 6 to 14% on long ones: not adopted.
-- **Prompt chunks across the link** (`2fb7f403`): exact. Prefill +12.7% at 16K and +16.2% at 32K.
-  `--prefill-pipe 700` now gives +27.6% on 5K prompts but −5.4% at 32K: it stays off.
-- **Mixed against production, final:**
-  - prefill −22.5% on the code prompt, −2.4% on long, +11.4% at 16K;
-  - decode +12.7%, +7.3%, +16.5%.
-- **Contract:** guarded hooks; `Prefill::set_remote_in`'s callback now gets the next chunk's size and returns its
-  buffer. `check_off_is_vanilla.py` reports 6 of 6.
-- **Found by Chat AI in review (from the code, not reproduced):** a cancel between prompt chunks leaves the front stage
-  a chunk ahead of the host, and nothing marks its session invalid. A continuation would then be refused. Handoff 0079
-  reproduces and fixes it.
-- **Since report 0078,** by Chat AI: `.ai/DIVERGENCE.md` updated; the standing safety rule added to `.ai/PROJECT.md`.
+- **The read-ahead desync Chat AI suspected does not happen,** reproduced on the cards with cancels at 8,192 and 24,576
+  tokens. Vanilla already refuses to continue a session after a prompt read stops partway (`pp_exact` / `live_ok`), so
+  the next request starts from a Reset or a Restore, which the front stage takes without checking its history. Chat
+  AI's reading of the code was wrong. `serve_session.py` keeps the cancel suite.
+- **Checkpoint overlap:** built, exact, and no gain. Running at the same time, the two copies slow each other down
+  (host 17 → 24.5 ms, front 11.5 → 20.5 ms). Reverted, which is the right call; history keeps it as `d172f54e`.
+- **Safety:** boot ID unchanged throughout; no faults or core dumps; 214 s of GPU time.
+- **Process note:** the agent's first push was rejected because of Chat AI's status commit after the shutdown
+  confirmation, pushed as the handoff was being handed over. Rebased without conflicts.
+
+**Vanilla 0.2.16 is out** (tag of 18 November, 864 commits after 0.2.15):
+- The repository is restructured: the engine moved under `engine/` (and `app/`, `terminal/`, `tools/`).
+- Our seam files changed moderately in content: `generate.cpp` +1,337 / −141, `verify.cpp` +174 / −37,
+  `conversation_cache.hpp` +33 / −1, `verify.hpp` +12, `prefill.cpp` +28 / −1, `prefill.hpp` unchanged.
 
 ## History in short
+
+- Report 0079: no desync after a cancel (vanilla routes it to Reset / Restore); checkpoint overlap without gain, reverted.
 
 - M8 reached (report 0078): prompt chunks across the link (+12.7% / +16.2% at 16K / 32K); mixed decodes 7 to 17% faster than production.
 
@@ -92,11 +87,15 @@ Chat AI's review:
 
 ## Open decisions for the Human User
 
-- None.
+- **The next direction.** Chat AI recommends re-pinning to vanilla 0.2.16 first: the longer it waits, the more there
+  is to carry over. Alternatives:
+  - `--batch`;
+  - DFlash2;
+  - short prompts (an MMQ front stage, or fewer front layers: both trade against long prompts);
+  - a release-candidate qualification with long-duration runs.
 
 ## Next step
 
-After report 0079: Chat AI reviews it. Then the next direction: `--batch`, DFlash2, or a release-candidate
-qualification with a long-duration run (`.ai/WORKFLOW.md` Section 12).
+Depends on the decision above.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
