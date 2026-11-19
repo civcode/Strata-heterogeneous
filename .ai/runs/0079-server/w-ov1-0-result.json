@@ -1,0 +1,120 @@
+{
+ "ready_s": 8.017514264000056,
+ "warm0": {
+  "id": "chatcmpl-2298734bfda64a89b37fb711",
+  "object": "chat.completion",
+  "created": 1795074681,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. User: \"Warm ov1-0 "
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 121,
+   "completion_tokens": 16,
+   "total_tokens": 137,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 121,
+   "prompt_ms": 482.9,
+   "prompt_per_token_ms": 3.991,
+   "prompt_per_second": 250.6,
+   "predicted_n": 16,
+   "predicted_ms": 115.6,
+   "predicted_per_token_ms": 7.225,
+   "predicted_per_second": 138.4,
+   "draft_n": 15,
+   "draft_n_accepted": 10
+  }
+ },
+ "warm1": {
+  "id": "chatcmpl-786734ae6c83409d8d6987c8",
+  "object": "chat.completion",
+  "created": 1795074682,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm ov1-0 1."
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 121,
+   "completion_tokens": 16,
+   "total_tokens": 137,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 121,
+   "prompt_ms": 336.2,
+   "prompt_per_token_ms": 2.779,
+   "prompt_per_second": 359.9,
+   "predicted_n": 16,
+   "predicted_ms": 109.5,
+   "predicted_per_token_ms": 6.844,
+   "predicted_per_second": 146.1,
+   "draft_n": 13,
+   "draft_n_accepted": 10
+  }
+ },
+ "warm2": {
+  "id": "chatcmpl-f00bb7eb9df84e8ab42bab57",
+  "object": "chat.completion",
+  "created": 1795074682,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. User says: \"Warm ov1-0"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 121,
+   "completion_tokens": 16,
+   "total_tokens": 137,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 121,
+   "prompt_ms": 335.5,
+   "prompt_per_token_ms": 2.773,
+   "prompt_per_second": 360.7,
+   "predicted_n": 16,
+   "predicted_ms": 117.9,
+   "predicted_per_token_ms": 7.369,
+   "predicted_per_second": 135.7,
+   "draft_n": 15,
+   "draft_n_accepted": 10
+  }
+ },
+ "rc": 0,
+ "elapsed": 10.590424655000334,
+ "fault_lines": []
+}

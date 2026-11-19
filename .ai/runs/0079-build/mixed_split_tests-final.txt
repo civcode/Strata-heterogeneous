@@ -1,0 +1,3 @@
+build-0071-host: hetero tests passed
+build-0071-hip: hetero tests passed
+build-0071-cuda: hetero tests passed

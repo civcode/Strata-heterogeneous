@@ -1,0 +1,120 @@
+{
+ "ready_s": 8.017433754999729,
+ "warm0": {
+  "id": "chatcmpl-05ffc3d187b74bf8b59f250c",
+  "object": "chat.completion",
+  "created": 1795074913,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm final 0. Write a complete"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 118,
+   "completion_tokens": 16,
+   "total_tokens": 134,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 118,
+   "prompt_ms": 472.0,
+   "prompt_per_token_ms": 4.0,
+   "prompt_per_second": 250.0,
+   "predicted_n": 16,
+   "predicted_ms": 134.2,
+   "predicted_per_token_ms": 8.387,
+   "predicted_per_second": 119.2,
+   "draft_n": 15,
+   "draft_n_accepted": 9
+  }
+ },
+ "warm1": {
+  "id": "chatcmpl-8e75d6fa8cc04931a8c0c766",
+  "object": "chat.completion",
+  "created": 1795074913,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm final 1. Write a complete"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 118,
+   "completion_tokens": 16,
+   "total_tokens": 134,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 118,
+   "prompt_ms": 322.4,
+   "prompt_per_token_ms": 2.732,
+   "prompt_per_second": 366.0,
+   "predicted_n": 16,
+   "predicted_ms": 133.3,
+   "predicted_per_token_ms": 8.331,
+   "predicted_per_second": 120.0,
+   "draft_n": 15,
+   "draft_n_accepted": 9
+  }
+ },
+ "warm2": {
+  "id": "chatcmpl-fa5cccf48c254943a40de311",
+  "object": "chat.completion",
+  "created": 1795074914,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm final 2. Write a complete"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 118,
+   "completion_tokens": 16,
+   "total_tokens": 134,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 118,
+   "prompt_ms": 347.7,
+   "prompt_per_token_ms": 2.947,
+   "prompt_per_second": 339.4,
+   "predicted_n": 16,
+   "predicted_ms": 131.0,
+   "predicted_per_token_ms": 8.188,
+   "predicted_per_second": 122.1,
+   "draft_n": 16,
+   "draft_n_accepted": 9
+  }
+ },
+ "rc": 0,
+ "elapsed": 10.600112744999933,
+ "fault_lines": []
+}

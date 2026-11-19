@@ -1,0 +1,121 @@
+{
+ "ready_s": 8.517676384000424,
+ "cancel_sent_s": 4.404663623000033,
+ "cancel_log": [
+  "strata trace: prompt chunk 0 of 32088 stage [15,31) 0.0 ms",
+  "strata trace: prompt chunk 0 of 8192 stage [0,15) 0.0 ms",
+  "strata trace: prompt chunk 2048 of 8192 stage [0,15) 350.8 ms",
+  "strata trace: prompt chunk 4096 of 8192 stage [0,15) 560.6 ms",
+  "strata trace: prompt chunk 6144 of 8192 stage [0,15) 771.6 ms",
+  "strata trace: prompt chunk 0 of 8192 stage [0,15) 986.0 ms",
+  "strata trace: prompt chunk 2048 of 8192 stage [0,15) 1283.5 ms",
+  "strata trace: prompt chunk 4096 of 8192 stage [0,15) 1495.2 ms",
+  "strata trace: prompt chunk 6144 of 8192 stage [0,15) 1709.7 ms",
+  "strata trace: prompt chunk 8192 of 32088 stage [15,31) 1800.9 ms",
+  "strata trace: prompt chunk 0 of 8192 stage [31,48) 1802.3 ms",
+  "strata trace: prompt chunk 16384 of 32088 stage [15,31) 3032.9 ms",
+  "strata trace: prompt chunk 0 of 8192 stage [31,48) 3032.9 ms",
+  "strata trace: prompt chunk 0 of 8192 stage [0,15) 3034.8 ms",
+  "strata trace: prompt chunk 2048 of 8192 stage [0,15) 3324.7 ms",
+  "strata trace: prompt chunk 4096 of 8192 stage [0,15) 3540.7 ms",
+  "strata trace: prompt chunk 6144 of 8192 stage [0,15) 3755.3 ms",
+  "strata trace: prompt chunk 0 of 7512 stage [0,15) 3973.7 ms",
+  "strata trace: prompt chunk 2048 of 7512 stage [0,15) 4257.0 ms",
+  "strata trace: prompt chunk 4096 of 7512 stage [0,15) 4473.2 ms",
+  "strata trace: prompt chunk 6144 of 7512 stage [0,15) 4695.7 ms",
+  "strata trace: prompt chunk 0 of 8192 stage [31,48) 4878.0 ms",
+  "strata serve: prompt 32093 tokens = 0 reused + 24576 of 32093 read in 6105 ms (4025.7 tok/s), 0 generated in 0 ms (0.0 tok/s), drafts accepted 0 of 0, 1 checkpoints (cancelled)",
+  "strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 23359.8 MB read",
+  "strata serve: file tier I/O this request: the OS read 17.7 MB from storage (0 major faults) for 23359.8 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room -1.00 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), open, closed in 0 windows so far, 0 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)"
+ ],
+ "continue": {
+  "id": "chatcmpl-977e61433a0542d7aa62bddc",
+  "object": "chat.completion",
+  "created": 1795074190,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Answer in one sentence instead.\" They previously asked summarize document in five bullet points, then says answer in one sentence instead."
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 32118,
+   "completion_tokens": 32,
+   "total_tokens": 32150,
+   "prompt_tokens_details": {
+    "cached_tokens": 16384
+   }
+  },
+  "timings": {
+   "cache_n": 16384,
+   "prompt_n": 15734,
+   "prompt_ms": 4180.8,
+   "prompt_per_token_ms": 0.266,
+   "prompt_per_second": 3763.4,
+   "predicted_n": 32,
+   "predicted_ms": 292.3,
+   "predicted_per_token_ms": 9.134,
+   "predicted_per_second": 109.5,
+   "draft_n": 28,
+   "draft_n_accepted": 17
+  }
+ },
+ "continue_log": [
+  "strata serve: prompt 32118 tokens = 16384 reused + 15734 read in 4181 ms (3763.4 tok/s), 32 generated in 292 ms (109.5 tok/s), drafts accepted 17 of 28, 2 checkpoints",
+  "strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 23359.8 MB read",
+  "strata serve: file tier I/O this request: the OS read 0.2 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room -1.00 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), open, closed in 0 windows so far, 0 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)"
+ ],
+ "unrelated": {
+  "id": "chatcmpl-1d7a188e48d24043b12f225d",
+  "object": "chat.completion",
+  "created": 1795074195,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user: \"What is a mutex?\" Need provide explanation. Need final concise but thorough. Define mutex mutual exclusion, synchronization primitive, lock/unlock"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 57,
+   "completion_tokens": 32,
+   "total_tokens": 89,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 57,
+   "prompt_ms": 344.9,
+   "prompt_per_token_ms": 6.051,
+   "prompt_per_second": 165.3,
+   "predicted_n": 32,
+   "predicted_ms": 243.2,
+   "predicted_per_token_ms": 7.6,
+   "predicted_per_second": 131.6,
+   "draft_n": 26,
+   "draft_n_accepted": 18
+  }
+ },
+ "unrelated_log": [
+  "strata serve: conversation cache: parked 32149 tokens in 136.5 ms; parked=1 bytes=614821044 evictions=0 snapshot_bytes=614821044 reused_kv_bytes=0",
+  "strata serve: prompt 57 tokens = 0 reused + 57 read in 345 ms (165.3 tok/s), 32 generated in 243 ms (131.6 tok/s), drafts accepted 18 of 26, 1 checkpoints",
+  "strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 23359.8 MB read",
+  "strata serve: file tier I/O this request: the OS read 0.0 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room -1.00 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), open, closed in 0 windows so far, 0 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)"
+ ],
+ "rc": 0,
+ "elapsed": 23.227892248000444,
+ "fault_lines": []
+}

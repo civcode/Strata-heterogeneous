@@ -1,0 +1,120 @@
+{
+ "ready_s": 8.517833819000316,
+ "warm0": {
+  "id": "chatcmpl-60eab832c53e44f3b65258a4",
+  "object": "chat.completion",
+  "created": 1795074757,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm t1 0.\n<"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 482.3,
+   "prompt_per_token_ms": 4.053,
+   "prompt_per_second": 246.7,
+   "predicted_n": 16,
+   "predicted_ms": 127.0,
+   "predicted_per_token_ms": 7.938,
+   "predicted_per_second": 126.0,
+   "draft_n": 16,
+   "draft_n_accepted": 9
+  }
+ },
+ "warm1": {
+  "id": "chatcmpl-a93d501dbd2c48cfb888805b",
+  "object": "chat.completion",
+  "created": 1795074758,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm t1 1.\n<"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 328.4,
+   "prompt_per_token_ms": 2.76,
+   "prompt_per_second": 362.4,
+   "predicted_n": 16,
+   "predicted_ms": 116.2,
+   "predicted_per_token_ms": 7.263,
+   "predicted_per_second": 137.7,
+   "draft_n": 9,
+   "draft_n_accepted": 9
+  }
+ },
+ "warm2": {
+  "id": "chatcmpl-3325c07b53f4409a8f78aa83",
+  "object": "chat.completion",
+  "created": 1795074759,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm t1 2.\n<"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 325.8,
+   "prompt_per_token_ms": 2.738,
+   "prompt_per_second": 365.3,
+   "predicted_n": 16,
+   "predicted_ms": 122.2,
+   "predicted_per_token_ms": 7.638,
+   "predicted_per_second": 130.9,
+   "draft_n": 14,
+   "draft_n_accepted": 9
+  }
+ },
+ "rc": 0,
+ "elapsed": 11.09494054400011,
+ "fault_lines": []
+}
