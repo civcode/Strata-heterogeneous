@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0084-cuda
+Test project /home/chris/workspace/Strata-mixed-native/build-0084-cuda
+    Start 170: cuda_device_selftest
+1/1 Test #170: cuda_device_selftest .............   Passed    0.50 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.50 sec

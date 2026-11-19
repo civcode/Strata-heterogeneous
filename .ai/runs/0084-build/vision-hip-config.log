@@ -1,0 +1,15 @@
+-- strata-vision: portable build (AVX2 baseline, runs on other PCs)
+-- The HIP compiler identification is Clang 24.0.0
+-- Detecting HIP compiler ABI info
+-- Detecting HIP compiler ABI info - done
+-- Check for working HIP compiler: /opt/rocm/core-10.1/lib/llvm/bin/clang++ - skipped
+-- Detecting HIP compile features
+-- Detecting HIP compile features - done
+-- HIP: Using hipcc from relative path: /opt/rocm/core-10.1/bin/hipcc
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- HIP: Using hipcc from relative path: /opt/rocm/core-10.1/bin/hipcc
+-- Configuring done (0.7s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/chris/workspace/Strata-mixed-native/build-0084-vision-hip

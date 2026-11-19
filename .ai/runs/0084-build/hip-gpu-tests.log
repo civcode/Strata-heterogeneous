@@ -1,0 +1,20 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-mixed-native/build-0084-hip
+Test project /home/chris/workspace/Strata-mixed-native/build-0084-hip
+    Start  77: hip_prefill_gemm
+1/7 Test  #77: hip_prefill_gemm .................   Passed    3.30 sec
+    Start  79: hip_q2_zero
+2/7 Test  #79: hip_q2_zero ......................   Passed    0.09 sec
+    Start  84: hip_handoff
+3/7 Test  #84: hip_handoff ......................   Passed    0.10 sec
+    Start  85: hip_mapped_alias
+4/7 Test  #85: hip_mapped_alias .................   Passed    0.06 sec
+    Start 162: hip_device_selftest
+5/7 Test #162: hip_device_selftest ..............   Passed    0.06 sec
+    Start 229: hip_prefill_fused_iq
+6/7 Test #229: hip_prefill_fused_iq .............   Passed   70.39 sec
+    Start 239: hip_prefill_decode_golden
+7/7 Test #239: hip_prefill_decode_golden ........   Passed    0.09 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =  74.09 sec
