@@ -227,10 +227,10 @@ bool draft_vocab_whole_head();       // STRATA_METAL_DRAFT_VOCAB=full
 #include <unordered_map>
 #include <vector>
 #if defined(STRATA_MIXED_SPLIT)
-#include "strata/hetero/front_link.hpp"
-#include "strata/hetero/front_runner.hpp"
-#include "strata/hetero/front_session.hpp"
-#include "strata/hetero/worker_process.hpp"
+#include "strata/mixed_split/front_link.hpp"
+#include "strata/mixed_split/front_runner.hpp"
+#include "strata/mixed_split/front_session.hpp"
+#include "strata/mixed_split/worker_process.hpp"
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -1670,7 +1670,7 @@ void drive_pool_split_invariant(void* u, const float* x, const int32_t* ids, int
 
 // ================================ MIXED SPLIT (.ai/SEAM.md) ================================
 /// STRATA_SPLIT_TIMING: a running sum and the part since the last report.
-struct HeteroSum {
+struct MixedSplitSum {
     double ms = 0.0, ms0 = 0.0;
     int64_t n = 0, n0 = 0;
     void add(double v) { ms += v; ++n; }
@@ -1682,23 +1682,23 @@ struct HeteroSum {
 /// STRATA_SPLIT_TIMING, --pipeline-windows: the front stage's record of its last pipelined window of a parity, in the
 /// shared memory both processes map (32 bytes into the parity's ready-word slot; the GPU reads only the word at its
 /// start).  The front stage writes it, the host reads it at a wrong guess's verdict.  Logging only.
-struct HeteroPlMark {
+struct MixedSplitPlMark {
     std::atomic<int64_t> pos0;     ///< the window's first position (-1: none)
     std::atomic<int64_t> end_ns;   ///< steady_clock (CLOCK_MONOTONIC, the same in both processes) at its end; 0: running
 };
-inline HeteroPlMark* hetero_pl_mark(void* ready_slot) { return reinterpret_cast<HeteroPlMark*>((uint8_t*) ready_slot + 32); }
-inline int64_t hetero_now_ns() {
+inline MixedSplitPlMark* mixed_split_pl_mark(void* ready_slot) { return reinterpret_cast<MixedSplitPlMark*>((uint8_t*) ready_slot + 32); }
+inline int64_t mixed_split_now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 /// STRATA_SPLIT_TIMING (logging only): one stage's GPU time per window, from two events on the stream that does the
 /// work (Verifier::set_launch_mark, or a wait the host queues).  A pair is read when the next one is recorded or at a
 /// report; by then the stream has passed it (the window was synced), so the read does not wait.
-struct HeteroGpuSpan {
+struct MixedSplitGpuSpan {
     cudaEvent_t ev[2] = {nullptr, nullptr};
     int dev = -1;
     bool open = false;      ///< the first event of a pair is recorded
     bool pending = false;   ///< a whole pair is recorded and not read yet
-    HeteroSum sum;          ///< the pairs read
+    MixedSplitSum sum;          ///< the pairs read
     void mark(cudaStream_t cs, bool second) {
         if (!second) {
             collect();
@@ -1723,7 +1723,7 @@ struct HeteroGpuSpan {
         else (void) cudaGetLastError();
     }
 };
-inline bool hetero_timing() {
+inline bool mixed_split_timing() {
     static const bool on = std::getenv("STRATA_SPLIT_TIMING") != nullptr;
     return on;
 }
@@ -1731,10 +1731,10 @@ inline bool hetero_timing() {
 /// The host's end of the front link: the worker process, the shared hand-off memory and the calls the first local
 /// stage forwards.  Declared before everything that uses the GPU, so it ends after it: the destructor closes the
 /// socket (the worker's cue to end) and waits for the worker; it never signals it.
-struct HeteroHost {
-    strata::hetero::WorkerProcess worker;
-    strata::hetero::SharedRegion region;
-    std::unique_ptr<strata::hetero::RemoteFrontStage> link;
+struct MixedSplitHost {
+    strata::mixed_split::WorkerProcess worker;
+    strata::mixed_split::SharedRegion region;
+    std::unique_ptr<strata::mixed_split::RemoteFrontStage> link;
     bool window_open = false;          ///< the front stage holds a window that was neither committed nor dropped
     std::vector<int32_t> tok32;
     bool on() const { return link != nullptr; }
@@ -1742,31 +1742,31 @@ struct HeteroHost {
         pf_buf = -1;   // (any other call ends a prompt chunk read ahead: the front stage waits for it first)
         if (!window_open) return true;
         window_open = false;   // (vanilla runs the next window over a window nobody committed)
-        return timed(kTSession, [&] { return link->session(strata::hetero::SessionOp::Abandon, 0, 0, err); });
+        return timed(kTSession, [&] { return link->session(strata::mixed_split::SessionOp::Abandon, 0, 0, err); });
     }
     // STRATA_SPLIT_TIMING (logging only): the link's round trips, the first local stage's wait on the front stage's
     // ready word (a bounded wait queued on its stream just before its window graph, between two events), every local
     // stage's window graph on its GPU (Verifier::set_launch_mark)
     const uint32_t* t_flag_d = nullptr;   ///< the front stage's ready word, as that device sees it
     uint32_t *t_err_h = nullptr, *t_err_d = nullptr;
-    HeteroSum t_run, t_commit;
-    HeteroGpuSpan t_wait;
-    std::vector<std::unique_ptr<HeteroGpuSpan>> t_stage;   ///< one per local stage
+    MixedSplitSum t_run, t_commit;
+    MixedSplitGpuSpan t_wait;
+    std::vector<std::unique_ptr<MixedSplitGpuSpan>> t_stage;   ///< one per local stage
     // STRATA_SPLIT_TIMING: every other link call's round trip (per request), and with --pipeline-windows the first local
     // stage's wait on each parity's ready word, the verdicts on wrong guesses against the front stage's window end
     enum { kTImages, kTSteer, kTReset, kTSession, kTPrefill, kTPfStart, kTPlRun, kTPlCommit, kTPlUndo, kTN };
-    HeteroSum t_op[kTN];
+    MixedSplitSum t_op[kTN];
     strata::core::Verifier* t_pl_ver[2] = {nullptr, nullptr};   ///< the first local stage's verifier of each parity
     const uint32_t* t_pl_flag_d[2] = {nullptr, nullptr};        ///< each parity's ready word, as that device sees it
-    HeteroPlMark* t_pl_mark[2] = {nullptr, nullptr};            ///< the front stage's window records (shared memory)
-    HeteroGpuSpan t_pl_wait[2];
+    MixedSplitPlMark* t_pl_mark[2] = {nullptr, nullptr};            ///< the front stage's window records (shared memory)
+    MixedSplitGpuSpan t_pl_wait[2];
     int64_t t_pl_wait_n = 0, t_pl_wait_held = 0, t_pl_wait_n0 = 0, t_pl_wait_held0 = 0;   ///< waits read, of them > 0.1 ms
-    HeteroSum t_doom_before;    ///< wrong guesses whose front window had ended at the verdict: how long before
-    HeteroSum t_doom_after;     ///< ... still running at the verdict: how long it ran on after it
+    MixedSplitSum t_doom_before;    ///< wrong guesses whose front window had ended at the verdict: how long before
+    MixedSplitSum t_doom_after;     ///< ... still running at the verdict: how long it ran on after it
     int t_doom_q = -1;          ///< a wrong guess judged while its front window ran: its parity (read at the undo)
     int64_t t_doom_pos = -1, t_doom_at = 0;
     template <class F> bool timed(int k, F&& f) {
-        if (!hetero_timing()) return f();
+        if (!mixed_split_timing()) return f();
         const auto t0 = std::chrono::steady_clock::now();
         const bool ok = f();
         t_op[k].add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
@@ -1785,7 +1785,7 @@ struct HeteroHost {
             t_pl_flag_d[0] = t_pl_flag_d[1] = nullptr;
             return;
         }
-        HeteroGpuSpan& sp = t_pl_wait[q];
+        MixedSplitGpuSpan& sp = t_pl_wait[q];
         const int64_t before = sp.sum.n;
         const double ms_before = sp.sum.ms;
         sp.mark(v->stream(), false);   // (reads the pair of this parity's window before: long done)
@@ -1799,8 +1799,8 @@ struct HeteroHost {
     /// --pipeline-windows: the decode loop judged the guess of the speculative window of parity `q` at `pos0` wrong.
     /// STRATA_SPLIT_TIMING: whether the front stage's window had ended then (logging only).
     void pl_doomed(int q, int64_t pos0) {
-        if (!hetero_timing() || t_pl_mark[q] == nullptr) return;
-        const int64_t now = hetero_now_ns();
+        if (!mixed_split_timing() || t_pl_mark[q] == nullptr) return;
+        const int64_t now = mixed_split_now_ns();
         const int64_t p = t_pl_mark[q]->pos0.load(std::memory_order_acquire), end = t_pl_mark[q]->end_ns.load(std::memory_order_acquire);
         if (p == pos0 && end > 0) t_doom_before.add((double) (now - end) / 1e6);
         else if (p == pos0) { t_doom_q = q; t_doom_pos = pos0; t_doom_at = now; }
@@ -1810,14 +1810,14 @@ struct HeteroHost {
         const auto t0 = std::chrono::steady_clock::now();
         if (!link->run(T, tokens, pos0, err)) return false;
         window_open = true;
-        if (hetero_timing()) t_run.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        if (mixed_split_timing()) t_run.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
         return true;
     }
     bool commit(int n_keep, std::string& err) {
         window_open = false;
         const auto t0 = std::chrono::steady_clock::now();
         const bool ok = link->commit(n_keep, err);
-        if (hetero_timing()) t_commit.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        if (mixed_split_timing()) t_commit.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
         return ok;
     }
     // --pipeline-windows: the first stage's verifier of parity `q` launches / commits (Verifier::FrontCalls), and the
@@ -1825,7 +1825,7 @@ struct HeteroHost {
     bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) {
         if (!drop_window(err)) return false;
         if (timed(kTPlRun, [&] { return link->pl_run(q, T, tokens, pos0, err); })) {
-            if (hetero_timing()) time_pl_wait(q);
+            if (mixed_split_timing()) time_pl_wait(q);
             return true;
         }
         err = "mixed split: the front stage: " + err;
@@ -1852,11 +1852,11 @@ struct HeteroHost {
     }
     /// STRATA_SPLIT_TIMING: the per-window averages since the last report (one line; a request's decode windows).
     void timing_report() {
-        if (!hetero_timing() || link == nullptr) return;
+        if (!mixed_split_timing() || link == nullptr) return;
         t_wait.collect();
         std::string st;
         for (size_t i = 0; i < t_stage.size(); ++i) {
-            HeteroGpuSpan& sp = *t_stage[i];
+            MixedSplitGpuSpan& sp = *t_stage[i];
             sp.collect();
             char b[96];
             std::snprintf(b, sizeof b, "%sstage %zu GPU %.3f ms (%lld)", i ? ", " : "", i, sp.sum.avg_new(), (long long) sp.sum.n_new());
@@ -1884,7 +1884,7 @@ struct HeteroHost {
         if (!calls.empty()) std::fprintf(stderr, "strata serve: mixed split timing (STRATA_SPLIT_TIMING), link calls since the last report: %s\n", calls.c_str());
         t_pl_wait[0].collect();
         t_pl_wait[1].collect();
-        HeteroSum w;   // both parities
+        MixedSplitSum w;   // both parities
         w.ms = t_pl_wait[0].sum.sum_new() + t_pl_wait[1].sum.sum_new();
         w.n = t_pl_wait[0].sum.n_new() + t_pl_wait[1].sum.n_new();
         if (w.n > 0 || t_doom_before.n_new() > 0 || t_doom_after.n_new() > 0)
@@ -1902,9 +1902,9 @@ struct HeteroHost {
     /// STRATA_SPLIT_TIMING: time every local stage's window graphs (the stage's Verifier::set_launch_mark).
     /// The first local stage (`first`) also gets the wait on the ready word, queued before its graph.
     void time_stage(strata::core::Verifier& v, bool first) {
-        if (!hetero_timing()) return;
-        t_stage.push_back(std::make_unique<HeteroGpuSpan>());
-        HeteroGpuSpan* sp = t_stage.back().get();
+        if (!mixed_split_timing()) return;
+        t_stage.push_back(std::make_unique<MixedSplitGpuSpan>());
+        MixedSplitGpuSpan* sp = t_stage.back().get();
         v.set_launch_mark([this, sp, first](cudaStream_t cs, bool after) {
             if (first && !after && t_flag_d != nullptr) {
                 if (t_err_h == nullptr && (cudaHostAlloc((void**) &t_err_h, 64, cudaHostAllocMapped) != cudaSuccess ||
@@ -1980,7 +1980,7 @@ struct HeteroHost {
     bool reset(std::string& err) {
         window_open = false;
         pf_buf = -1;
-        return timed(kTReset, [&] { return link->session(strata::hetero::SessionOp::Reset, 0, 0, err); });
+        return timed(kTReset, [&] { return link->session(strata::mixed_split::SessionOp::Reset, 0, 0, err); });
     }
     /// A save or restore of the first stage's session, repeated on the front stage's for the same tokens `ids[0, n)`:
     /// Snapshot / Restore (a checkpoint), Park / Unpark (the conversation cache).  The front stage refuses it when its
@@ -1988,9 +1988,9 @@ struct HeteroHost {
     /// `steer`: the control-vector switch the state was computed with (vanilla's cvec_cached / SavedConversation::cvec;
     /// true without a vector).  `imgs`: the state's pictures (vanilla's ConversationCheckpoint::imgs; those below n count).
     template <class T, class K>
-    bool at(strata::hetero::SessionOp op, const T* ids, int64_t n, bool steer, const std::vector<K>& imgs, std::string& err) {
+    bool at(strata::mixed_split::SessionOp op, const T* ids, int64_t n, bool steer, const std::vector<K>& imgs, std::string& err) {
         if (!drop_window(err)) return false;
-        if (timed(kTSession, [&] { return link->session(op, strata::hetero::state_key(ids, n, steer, imgs), n, err); })) return true;
+        if (timed(kTSession, [&] { return link->session(op, strata::mixed_split::state_key(ids, n, steer, imgs), n, err); })) return true;
         err = "mixed split: the front stage: " + err;
         return false;
     }
@@ -1998,7 +1998,7 @@ struct HeteroHost {
     /// session change on either side).
     template <class T, class K>
     bool drop(const T* ids, int64_t n, bool steer, const std::vector<K>& imgs, std::string& err) {
-        return link->session(strata::hetero::SessionOp::Drop, strata::hetero::state_key(ids, n, steer, imgs), n, err);
+        return link->session(strata::mixed_split::SessionOp::Drop, strata::mixed_split::state_key(ids, n, steer, imgs), n, err);
     }
     /// The request's image input, as vanilla built it for its own stages: the position table (`mrope`, null for a text
     /// request), the image rows the prompt path reads (`row_ptr`, by prompt position) and the picture keys.  The front
@@ -2007,7 +2007,7 @@ struct HeteroHost {
     bool images(int64_t n, const std::vector<K>& keys, const std::vector<const float*>* row_ptr, const std::vector<int32_t>* mrope,
                 int64_t n_embd, std::string& err) {
         if (!drop_window(err)) return false;
-        strata::hetero::FrontImages im;
+        strata::mixed_split::FrontImages im;
         im.n = n;
         if (mrope != nullptr && row_ptr != nullptr && !keys.empty()) {
             im.mrope = *mrope;
@@ -2030,11 +2030,11 @@ struct HeteroHost {
     /// The request's control-vector switch (vanilla's cvec_set_enabled), repeated on the front stage.
     bool steer(bool on, std::string& err) {
         if (!drop_window(err)) return false;
-        if (timed(kTSteer, [&] { return link->session(strata::hetero::SessionOp::Steer, on ? 1 : 0, 0, err); })) return true;
+        if (timed(kTSteer, [&] { return link->session(strata::mixed_split::SessionOp::Steer, on ? 1 : 0, 0, err); })) return true;
         err = "mixed split: the front stage: " + err;
         return false;
     }
-    ~HeteroHost() {
+    ~MixedSplitHost() {
         if (!worker.started()) return;
         std::string e;
         if (link && !link->broken()) (void) link->shutdown(e);
@@ -2046,12 +2046,12 @@ struct HeteroHost {
 };
 
 /// The front stage's side of the link: the forwarded calls on this process's own first-stage objects.
-struct HeteroFrontBackend final : strata::hetero::FrontBackend {
+struct MixedSplitFrontBackend final : strata::mixed_split::FrontBackend {
     std::function<bool(int, const int32_t*, int64_t, std::string&)> f_run;
     std::function<bool(int, std::string&)> f_commit;
     std::function<bool(const int32_t*, int64_t, int64_t, bool, std::string&)> f_prefill;
-    std::function<bool(strata::hetero::SessionOp, int64_t, int64_t, std::string&)> f_session;
-    std::function<bool(strata::hetero::FrontImages&, std::string&)> f_images;
+    std::function<bool(strata::mixed_split::SessionOp, int64_t, int64_t, std::string&)> f_session;
+    std::function<bool(strata::mixed_split::FrontImages&, std::string&)> f_images;
     std::function<bool(int, int, const int32_t*, int64_t, std::string&)> f_pl_run;
     std::function<bool(int, int, std::string&)> f_pl_commit;
     std::function<bool(int, std::string&)> f_pl_undo;
@@ -2064,7 +2064,7 @@ struct HeteroFrontBackend final : strata::hetero::FrontBackend {
     bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override { return f_pl_run(q, T, tokens, pos0, err); }
     bool pl_commit(int q, int n_keep, std::string& err) override { return f_pl_commit(q, n_keep, err); }
     bool pl_undo(int q, std::string& err) override { return f_pl_undo(q, err); }
-    bool attach(const strata::hetero::LinkIdentity&, strata::hetero::SharedRegion&&, std::string& err) override {
+    bool attach(const strata::mixed_split::LinkIdentity&, strata::mixed_split::SharedRegion&&, std::string& err) override {
         err = "the hand-off memory is attached already";
         return false;
     }
@@ -2073,8 +2073,8 @@ struct HeteroFrontBackend final : strata::hetero::FrontBackend {
     bool prefill(const int32_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) override {
         return f_prefill(tokens, n, pos0, last, err);
     }
-    bool session(strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& err) override { return f_session(op, a, b, err); }
-    bool images(strata::hetero::FrontImages& im, std::string& err) override { return f_images(im, err); }
+    bool session(strata::mixed_split::SessionOp op, int64_t a, int64_t b, std::string& err) override { return f_session(op, a, b, err); }
+    bool images(strata::mixed_split::FrontImages& im, std::string& err) override { return f_images(im, err); }
 };
 
 #endif
@@ -4976,7 +4976,7 @@ int main(int argc, char** argv) {
     const int64_t front_le = o.front_stage;
     size_t front_parts_cap = 0, front_images_cap = 0;   // the front stage's session store (set below)
     bool front_pipe = false;   // the front stage of a host with --pipeline-windows: a verifier per window parity (set below)
-    HeteroHost hetero;
+    MixedSplitHost mixed_host;
     if (!o.front_exe.empty() || o.front_layers != 0) {
         const char* no = !o.serve ? "it needs --serve"
                        : o.front_exe.empty() || o.front_exe[0] != '/' ? "--front-exe needs the absolute path of the other build's strata"
@@ -4996,7 +4996,7 @@ int main(int argc, char** argv) {
         }
         if (o.pipeline_windows < 0) o.pipeline_windows = 0;   // (the default would turn them on for a layer split on gfx12; asked for, they run)
         // the prompt checkpoints and the conversation cache stay as asked: each save and restore of the first stage's
-        // session is repeated on the front stage's (HeteroHost::at).  The front stage gets --prompt-cache and
+        // session is repeated on the front stage's (MixedSplitHost::at).  The front stage gets --prompt-cache and
         // --conversation-cache-slots too, to size its store of them.
         // the front stage: this engine's own arguments without the host's options, as its first stage [0, K)
         std::vector<std::string> wa;
@@ -5013,12 +5013,12 @@ int main(int argc, char** argv) {
         wa.push_back(std::to_string(o.front_layers));
         for (const std::string& a : o.front_args) wa.push_back(a);
         std::string werr;
-        if (!strata::hetero::WorkerProcess::launch(o.front_exe, wa, /*drain_ms=*/60000, hetero.worker, werr)) {
+        if (!strata::mixed_split::WorkerProcess::launch(o.front_exe, wa, /*drain_ms=*/60000, mixed_host.worker, werr)) {
             std::fprintf(stderr, "strata serve: mixed split: %s\n", werr.c_str());
             return 1;
         }
         std::fprintf(stderr, "strata serve: mixed split: front stage started (PID %ld, %s): layers 0-%d there, %d-... here\n",
-                     (long) hetero.worker.pid(), o.front_exe.c_str(), o.front_layers - 1, o.front_layers);
+                     (long) mixed_host.worker.pid(), o.front_exe.c_str(), o.front_layers - 1, o.front_layers);
     }
     if (front_le > 0) {
         if (!o.serve || front_le < 2 || !o.layer_split.empty() || o.batch != 0 || !o.mtp.empty()) {
@@ -12941,64 +12941,64 @@ int main(int argc, char** argv) {
         // ready word, slot 2: the prompt path's chunk rows, slots 3 and 4: the odd windows' hand-off and ready word (a pipelined
         // window's, --pipeline-windows; the even windows and the serial loop use slots 0 and 1), slot 5: the second prompt row buffer (a chunk read ahead).  The host creates it and sends it with the hello; the front
         // stage waits for the hello here, before its window graphs are captured with the hand-off's device address.
-        float* het_hand_d = nullptr;        // slot 0 as the device sees it
-        uint32_t *het_flag_h = nullptr, *het_flag_d = nullptr;
-        float* het_hand_b_d = nullptr;      // --pipeline-windows: the odd windows' hand-off (slot 3) and ready word (slot 4)
-        uint32_t *het_flag_b_h = nullptr, *het_flag_b_d = nullptr;
-        float* het_rows_h = nullptr;        // slot 2 (host address: the prompt path copies to / from it)
-        float* het_rows_b_h = nullptr;      // slot 5: the second prompt row buffer (a chunk read ahead, HeteroHost::prefill)
-        int64_t het_rows_cap = 0;
-        strata::hetero::LinkIdentity het_id;
-        strata::hetero::SharedRegion het_region;   // the front stage's mapping (the host's is in `hetero`)
+        float* mixed_hand_d = nullptr;        // slot 0 as the device sees it
+        uint32_t *mixed_flag_h = nullptr, *mixed_flag_d = nullptr;
+        float* mixed_hand_b_d = nullptr;      // --pipeline-windows: the odd windows' hand-off (slot 3) and ready word (slot 4)
+        uint32_t *mixed_flag_b_h = nullptr, *mixed_flag_b_d = nullptr;
+        float* mixed_rows_h = nullptr;        // slot 2 (host address: the prompt path copies to / from it)
+        float* mixed_rows_b_h = nullptr;      // slot 5: the second prompt row buffer (a chunk read ahead, MixedSplitHost::prefill)
+        int64_t mixed_rows_cap = 0;
+        strata::mixed_split::LinkIdentity mixed_id;
+        strata::mixed_split::SharedRegion mixed_region;   // the front stage's mapping (the host's is in `mixed_host`)
         if (front_lb > 0 || front_le > 0) {
             const size_t HB = (size_t) strata::core::Verifier::handoff_floats(g) * sizeof(float);
             const size_t DB = (size_t) g.hc * (size_t) g.n_embd * sizeof(float);
-            het_id.model_fingerprint = strata::hetero::model_fingerprint(o.pack, o.native_shards);
-            het_id.n_layers = (int32_t) g.n_layers;
-            het_id.front_end = (int32_t) (front_lb > 0 ? front_lb : front_le);
-            het_id.hc = (int32_t) g.hc;
-            het_id.n_embd = (int32_t) g.n_embd;
-            het_id.max_rows = strata::kernels::kVerifyNarrowT;
-            het_id.max_context = o.max_context;
-            strata::hetero::SharedRegion* region = nullptr;
+            mixed_id.model_fingerprint = strata::mixed_split::model_fingerprint(o.pack, o.native_shards);
+            mixed_id.n_layers = (int32_t) g.n_layers;
+            mixed_id.front_end = (int32_t) (front_lb > 0 ? front_lb : front_le);
+            mixed_id.hc = (int32_t) g.hc;
+            mixed_id.n_embd = (int32_t) g.n_embd;
+            mixed_id.max_rows = strata::kernels::kVerifyNarrowT;
+            mixed_id.max_context = o.max_context;
+            strata::mixed_split::SharedRegion* region = nullptr;
             std::string he;
             if (front_lb > 0) {
-                het_rows_cap = o.prefill_chunk;
-                if (!strata::hetero::SharedRegion::create({(size_t) het_id.max_rows * HB, 64, (size_t) het_rows_cap * DB, (size_t) het_id.max_rows * HB, 64,
-                                                           (size_t) het_rows_cap * DB},
-                                                          hetero.region, he)) {
+                mixed_rows_cap = o.prefill_chunk;
+                if (!strata::mixed_split::SharedRegion::create({(size_t) mixed_id.max_rows * HB, 64, (size_t) mixed_rows_cap * DB, (size_t) mixed_id.max_rows * HB, 64,
+                                                           (size_t) mixed_rows_cap * DB},
+                                                          mixed_host.region, he)) {
                     std::fprintf(stderr, "strata serve: mixed split: %s\n", he.c_str());
                     return 1;
                 }
-                region = &hetero.region;
-                hetero.link = std::make_unique<strata::hetero::RemoteFrontStage>(hetero.worker.socket(), /*timeout_ms=*/180000);
+                region = &mixed_host.region;
+                mixed_host.link = std::make_unique<strata::mixed_split::RemoteFrontStage>(mixed_host.worker.socket(), /*timeout_ms=*/180000);
                 std::fprintf(stderr, "strata serve: mixed split: waiting for the front stage to load and take the hand-off memory\n");
-                if (!hetero.link->hello(het_id, hetero.region, he)) {
+                if (!mixed_host.link->hello(mixed_id, mixed_host.region, he)) {
                     std::fprintf(stderr, "strata serve: mixed split: %s\n", he.c_str());
                     return 1;
                 }
             } else {
-                strata::hetero::LinkIdentity got;
+                strata::mixed_split::LinkIdentity got;
                 uint64_t seq = 0;
-                const strata::hetero::Recv r = strata::hetero::front_accept(strata::hetero::kWorkerSocketFd, got, het_region, seq, he);
-                if (r != strata::hetero::Recv::Ok) {
-                    std::fprintf(stderr, "strata serve: front stage: %s\n", r == strata::hetero::Recv::Eof ? "the host closed the link before its hello" : he.c_str());
-                    return r == strata::hetero::Recv::Eof ? 0 : 1;
+                const strata::mixed_split::Recv r = strata::mixed_split::front_accept(strata::mixed_split::kWorkerSocketFd, got, mixed_region, seq, he);
+                if (r != strata::mixed_split::Recv::Ok) {
+                    std::fprintf(stderr, "strata serve: front stage: %s\n", r == strata::mixed_split::Recv::Eof ? "the host closed the link before its hello" : he.c_str());
+                    return r == strata::mixed_split::Recv::Eof ? 0 : 1;
                 }
                 std::string why;
-                if (got != het_id)
-                    why = got.model_fingerprint != het_id.model_fingerprint ? "the two engines did not load the same model files"
+                if (got != mixed_id)
+                    why = got.model_fingerprint != mixed_id.model_fingerprint ? "the two engines did not load the same model files"
                                                                             : "the two engines differ in the model's shape, the split layer or the context";
-                else if (het_region.slots() != 6 || het_region.slot_bytes(0) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(1) < 4 ||
-                         het_region.slot_bytes(2) < DB || het_region.slot_bytes(3) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(4) < 4 ||
-                         het_region.slot_bytes(5) != het_region.slot_bytes(2))
+                else if (mixed_region.slots() != 6 || mixed_region.slot_bytes(0) != (size_t) mixed_id.max_rows * HB || mixed_region.slot_bytes(1) < 4 ||
+                         mixed_region.slot_bytes(2) < DB || mixed_region.slot_bytes(3) != (size_t) mixed_id.max_rows * HB || mixed_region.slot_bytes(4) < 4 ||
+                         mixed_region.slot_bytes(5) != mixed_region.slot_bytes(2))
                     why = "the hand-off memory has another layout";
-                if (!strata::hetero::front_accept_reply(strata::hetero::kWorkerSocketFd, seq, why.empty(), why, he) || !why.empty()) {
+                if (!strata::mixed_split::front_accept_reply(strata::mixed_split::kWorkerSocketFd, seq, why.empty(), why, he) || !why.empty()) {
                     std::fprintf(stderr, "strata serve: front stage: %s\n", why.empty() ? he.c_str() : why.c_str());
                     return 1;
                 }
-                het_rows_cap = (int64_t) (het_region.slot_bytes(2) / DB);
-                region = &het_region;
+                mixed_rows_cap = (int64_t) (mixed_region.slot_bytes(2) / DB);
+                region = &mixed_region;
             }
             // (registered, never unregistered: it lives as long as the process, as vanilla's hand-off does)
             void* base_d = nullptr;
@@ -13009,16 +13009,16 @@ int main(int argc, char** argv) {
                 return 1;
             }
             auto dev_of = [&](size_t slot) { return (uint8_t*) base_d + ((uint8_t*) region->slot(slot) - (uint8_t*) region->base()); };
-            het_hand_d = (float*) dev_of(0);
-            het_flag_h = (uint32_t*) region->slot(1);
-            het_flag_d = (uint32_t*) dev_of(1);
-            het_rows_h = (float*) region->slot(2);
-            het_rows_b_h = (float*) region->slot(5);
-            het_hand_b_d = (float*) dev_of(3);
-            het_flag_b_h = (uint32_t*) region->slot(4);
-            het_flag_b_d = (uint32_t*) dev_of(4);
+            mixed_hand_d = (float*) dev_of(0);
+            mixed_flag_h = (uint32_t*) region->slot(1);
+            mixed_flag_d = (uint32_t*) dev_of(1);
+            mixed_rows_h = (float*) region->slot(2);
+            mixed_rows_b_h = (float*) region->slot(5);
+            mixed_hand_b_d = (float*) dev_of(3);
+            mixed_flag_b_h = (uint32_t*) region->slot(4);
+            mixed_flag_b_d = (uint32_t*) dev_of(4);
             std::fprintf(stderr, "strata serve: mixed split: shared hand-off memory %.1f MiB (%d window rows, %lld prompt rows), %s\n",
-                         (double) region->bytes() / 1048576.0, het_id.max_rows, (long long) het_rows_cap,
+                         (double) region->bytes() / 1048576.0, mixed_id.max_rows, (long long) mixed_rows_cap,
                          front_lb > 0 ? "the front stage has it" : "attached");
         }
 #endif
@@ -13055,16 +13055,16 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
             if (front_lb > 0)   // MIXED SPLIT: each chunk's rows come from the front stage's process
             {
-                hetero.pf_rows[0] = het_rows_h;
-                hetero.pf_rows[1] = het_rows_b_h;
-                hetero.pf_cap = het_rows_cap;
-                sp.set_remote_in([&hetero](const int64_t* tokens, int64_t n, int64_t pos0, bool last, int64_t next_n, std::string& e) {
-                    return hetero.prefill(tokens, n, pos0, last, next_n, e);
+                mixed_host.pf_rows[0] = mixed_rows_h;
+                mixed_host.pf_rows[1] = mixed_rows_b_h;
+                mixed_host.pf_cap = mixed_rows_cap;
+                sp.set_remote_in([&mixed_host](const int64_t* tokens, int64_t n, int64_t pos0, bool last, int64_t next_n, std::string& e) {
+                    return mixed_host.prefill(tokens, n, pos0, last, next_n, e);
                 });
             }
             if (front_le > 0) {   // MIXED SPLIT: this process is the front stage; its rows leave through the shared hand-off
                 sp.set_stage(0, front_le, nullptr);
-                sp.set_remote_out(het_rows_h, het_rows_cap);
+                sp.set_remote_out(mixed_rows_h, mixed_rows_cap);
             }
 #endif
             if (share_pool) sp.set_cpu_pool(&pool);
@@ -13374,7 +13374,7 @@ int main(int argc, char** argv) {
             for (int st = 0; st < n_stages; ++st) {
 #if defined(STRATA_MIXED_SPLIT)
                 // (MIXED SPLIT: the first stage starts at front_lb and reads the front stage's hand-off)
-                const float* const hand_first = front_lb > 0 ? het_hand_d : nullptr;
+                const float* const hand_first = front_lb > 0 ? mixed_hand_d : nullptr;
                 stage_ver(st).set_stage(st == 0 ? front_lb : split_at[(size_t) st - 1], st + 1 < n_stages ? split_at[(size_t) st] : -1,
                                         st == 0 ? hand_first : hand[(size_t) st - 1], st + 1 < n_stages ? hand[(size_t) st] : nullptr);
 #else
@@ -13431,20 +13431,20 @@ int main(int argc, char** argv) {
             if (front_lb > 0) {
                 // MIXED SPLIT: the first local stage's window waits (bounded) on the front stage's ready word, and its
                 // run / commit go to the front stage first - the mirror image of set_next
-                ver.set_handoff_flags(het_flag_h, het_flag_d, overlap ? hflag_h[0] : nullptr, overlap ? hflag_d[0] : nullptr);
+                ver.set_handoff_flags(mixed_flag_h, mixed_flag_d, overlap ? hflag_h[0] : nullptr, overlap ? hflag_d[0] : nullptr);
                 strata::core::Verifier::FrontCalls fc;
-                fc.run = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.run(T, tokens, pos0, e); };
-                fc.commit = [&hetero](int n_keep, std::string& e) { return hetero.commit(n_keep, e); };
-                fc.pl_launch = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.pl_run(0, T, tokens, pos0, e); };
-                fc.pl_commit = [&hetero](int n_keep, std::string& e) { return hetero.pl_commit(0, n_keep, e); };
+                fc.run = [&mixed_host](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return mixed_host.run(T, tokens, pos0, e); };
+                fc.commit = [&mixed_host](int n_keep, std::string& e) { return mixed_host.commit(n_keep, e); };
+                fc.pl_launch = [&mixed_host](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return mixed_host.pl_run(0, T, tokens, pos0, e); };
+                fc.pl_commit = [&mixed_host](int n_keep, std::string& e) { return mixed_host.pl_commit(0, n_keep, e); };
                 ver.set_front(std::move(fc));
-                if (hetero_timing()) {   // STRATA_SPLIT_TIMING: the wait on the ready word and every local stage's windows
-                    hetero.t_flag_d = het_flag_d;
-                    hetero.t_pl_ver[0] = &ver;   // (--pipeline-windows: the even windows' verifier, its ready word, the record)
-                    hetero.t_pl_flag_d[0] = het_flag_d;
-                    hetero.t_pl_mark[0] = hetero_pl_mark(het_flag_h);
-                    hetero.t_stage.clear();
-                    for (int st = 0; st < n_stages; ++st) hetero.time_stage(stage_ver(st), st == 0);
+                if (mixed_split_timing()) {   // STRATA_SPLIT_TIMING: the wait on the ready word and every local stage's windows
+                    mixed_host.t_flag_d = mixed_flag_d;
+                    mixed_host.t_pl_ver[0] = &ver;   // (--pipeline-windows: the even windows' verifier, its ready word, the record)
+                    mixed_host.t_pl_flag_d[0] = mixed_flag_d;
+                    mixed_host.t_pl_mark[0] = mixed_split_pl_mark(mixed_flag_h);
+                    mixed_host.t_stage.clear();
+                    for (int st = 0; st < n_stages; ++st) mixed_host.time_stage(stage_ver(st), st == 0);
                 }
             }
 #endif
@@ -13476,17 +13476,17 @@ int main(int argc, char** argv) {
                 std::memset(hh, 0, hb);
             }
 #if defined(STRATA_MIXED_SPLIT)
-            ver_b.set_stage(front_lb, split_at[0], front_lb > 0 ? het_hand_b_d : nullptr, hand_b[0]);
+            ver_b.set_stage(front_lb, split_at[0], front_lb > 0 ? mixed_hand_b_d : nullptr, hand_b[0]);
             if (front_lb > 0) {   // MIXED SPLIT: the odd windows' hand-off from the front stage, its ready word, its calls
-                ver_b.set_handoff_flags(het_flag_b_h, het_flag_b_d, nullptr, nullptr);
+                ver_b.set_handoff_flags(mixed_flag_b_h, mixed_flag_b_d, nullptr, nullptr);
                 strata::core::Verifier::FrontCalls fc;
-                fc.pl_launch = [&hetero](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return hetero.pl_run(1, T, tokens, pos0, e); };
-                fc.pl_commit = [&hetero](int n_keep, std::string& e) { return hetero.pl_commit(1, n_keep, e); };
+                fc.pl_launch = [&mixed_host](int T, const int32_t* tokens, int64_t pos0, std::string& e) { return mixed_host.pl_run(1, T, tokens, pos0, e); };
+                fc.pl_commit = [&mixed_host](int n_keep, std::string& e) { return mixed_host.pl_commit(1, n_keep, e); };
                 ver_b.set_front(std::move(fc));
-                if (hetero_timing()) {   // STRATA_SPLIT_TIMING: the odd windows' wait on their ready word, the front's record
-                    hetero.t_pl_ver[1] = &ver_b;
-                    hetero.t_pl_flag_d[1] = het_flag_b_d;
-                    hetero.t_pl_mark[1] = hetero_pl_mark(het_flag_b_h);
+                if (mixed_split_timing()) {   // STRATA_SPLIT_TIMING: the odd windows' wait on their ready word, the front's record
+                    mixed_host.t_pl_ver[1] = &ver_b;
+                    mixed_host.t_pl_flag_d[1] = mixed_flag_b_d;
+                    mixed_host.t_pl_mark[1] = mixed_split_pl_mark(mixed_flag_b_h);
                 }
             }
 #else
@@ -13552,17 +13552,17 @@ int main(int argc, char** argv) {
             cudaEvent_t pre[2] = {nullptr, nullptr}, ev[2] = {nullptr, nullptr};
             bool taken[2] = {false, false};
             int32_t ple[2][2] = {{-1, -1}, {-1, -1}};   // ss.ple_prev at the launch (the undo's undo_ple)
-        } het_snap;
-        cudaStream_t het_pl_stream = nullptr;
+        } mixed_snap;
+        cudaStream_t mixed_pl_stream = nullptr;
         if (front_le > 0) {   // MIXED SPLIT: this process is the front stage: layers [0, front_le), the hand-off out, no head
-            ver.set_stage(0, front_le, nullptr, het_hand_d);
-            ver.set_handoff_flags(nullptr, nullptr, het_flag_h, het_flag_d);
+            ver.set_stage(0, front_le, nullptr, mixed_hand_d);
+            ver.set_handoff_flags(nullptr, nullptr, mixed_flag_h, mixed_flag_d);
             if (front_pipe) {
-                if (cudaStreamCreateWithFlags(&het_pl_stream, cudaStreamNonBlocking) != cudaSuccess) {
+                if (cudaStreamCreateWithFlags(&mixed_pl_stream, cudaStreamNonBlocking) != cudaSuccess) {
                     std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: stream creation failed\n");
                     return 1;
                 }
-                ver.set_stream(het_pl_stream);
+                ver.set_stream(mixed_pl_stream);
                 ver.set_always_publish(true);
             }
         }
@@ -13577,30 +13577,30 @@ int main(int argc, char** argv) {
         if (prefill_head_alias_bound) mtp.set_window_R(ver.final_R_all());
 #if defined(STRATA_MIXED_SPLIT)
         if (front_le > 0 && front_pipe) {   // MIXED SPLIT: the front stage's odd windows' verifier and its GDN snapshots
-            ver_b.set_stream(het_pl_stream);
+            ver_b.set_stream(mixed_pl_stream);
             ver_b.set_always_publish(true);
-            ver_b.set_stage(0, front_le, nullptr, het_hand_b_d);
-            ver_b.set_handoff_flags(nullptr, nullptr, het_flag_b_h, het_flag_b_d);
+            ver_b.set_stage(0, front_le, nullptr, mixed_hand_b_d);
+            ver_b.set_handoff_flags(nullptr, nullptr, mixed_flag_b_h, mixed_flag_b_d);
             if (!ver_b.init(wt, g, ss, vh, nullptr, std::min<int>(ver.max_t(), strata::kernels::kVerifyNarrowT), err)) {
                 std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: the second verifier: %s\n", err.c_str());
                 return 1;
             }
             ver_b.set_split(o.spec_split);   // (as `ver`'s, below)
             ver_b.set_pcie_mode(o.pcie_mode == "dma" ? 0 : o.pcie_mode == "direct" ? 1 : 2);
-            het_snap.bytes = gdn_snapshot_bytes(ss);
-            het_snap.state = (void*) ss.gdn_state;
-            bool ok_s = cudaStreamCreateWithFlags(&het_snap.side, cudaStreamNonBlocking) == cudaSuccess;
+            mixed_snap.bytes = gdn_snapshot_bytes(ss);
+            mixed_snap.state = (void*) ss.gdn_state;
+            bool ok_s = cudaStreamCreateWithFlags(&mixed_snap.side, cudaStreamNonBlocking) == cudaSuccess;
             for (int i = 0; i < 2 && ok_s; ++i)
-                ok_s = cudaMalloc((void**) &het_snap.buf[i], het_snap.bytes) == cudaSuccess &&
-                       cudaEventCreateWithFlags(&het_snap.pre[i], cudaEventDisableTiming) == cudaSuccess &&
-                       cudaEventCreateWithFlags(&het_snap.ev[i], cudaEventDisableTiming) == cudaSuccess;
+                ok_s = cudaMalloc((void**) &mixed_snap.buf[i], mixed_snap.bytes) == cudaSuccess &&
+                       cudaEventCreateWithFlags(&mixed_snap.pre[i], cudaEventDisableTiming) == cudaSuccess &&
+                       cudaEventCreateWithFlags(&mixed_snap.ev[i], cudaEventDisableTiming) == cudaSuccess;
             if (!ok_s) {
                 std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: the GDN snapshots (2 x %.1f MiB) do not fit\n",
-                             (double) het_snap.bytes / 1048576.0);
+                             (double) mixed_snap.bytes / 1048576.0);
                 return 1;
             }
             std::fprintf(stderr, "strata serve: front stage: --pipeline-windows: two verifiers, GDN snapshots of 2 x %.1f MiB\n",
-                         (double) het_snap.bytes / 1048576.0);
+                         (double) mixed_snap.bytes / 1048576.0);
         }
 #endif
 #if defined(STRATA_HAVE_DFLASH2)
@@ -13984,10 +13984,10 @@ int main(int argc, char** argv) {
             o.prompt_cache > 0 ? (size_t) o.conversation_cache_mib * 1024 * 1024 : 0,
             (size_t) o.conversation_cache_slots, o.conversation_cache_min_tokens);
 #if defined(STRATA_MIXED_SPLIT)
-        if (hetero.on())   // MIXED SPLIT: the front stage keeps a parked copy only while this cache keeps the conversation
-            conversations.on_drop = [&hetero](const strata::core::SavedConversation& c) {
+        if (mixed_host.on())   // MIXED SPLIT: the front stage keeps a parked copy only while this cache keeps the conversation
+            conversations.on_drop = [&mixed_host](const strata::core::SavedConversation& c) {
                 std::string fe;
-                if (!hetero.drop(c.live.ids.data(), (int64_t) c.live.ids.size(), c.cvec, c.live.imgs, fe))
+                if (!mixed_host.drop(c.live.ids.data(), (int64_t) c.live.ids.size(), c.cvec, c.live.imgs, fe))
                     std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
             };
 #endif
@@ -14580,16 +14580,16 @@ int main(int argc, char** argv) {
                 }
 #if defined(STRATA_MIXED_SPLIT)
                 // MIXED SPLIT: the front stage parks its part of the main session (a batch slot's: no --batch here)
-                if (hetero.on() && &src.session == &ss &&
-                    !hetero.at(strata::hetero::SessionOp::Park, src.ids.data(), (int64_t) src.ids.size(), src.cvec, src.imgs, err))
+                if (mixed_host.on() && &src.session == &ss &&
+                    !mixed_host.at(strata::mixed_split::SessionOp::Park, src.ids.data(), (int64_t) src.ids.size(), src.cvec, src.imgs, err))
                     return false;
 #endif
                 const size_t snapshot_bytes = image.bytes();
                 const bool stored = conversations.put(std::move(image), held);
 #if defined(STRATA_MIXED_SPLIT)
-                if (!stored && hetero.on() && &src.session == &ss) {   // MIXED SPLIT: the front stage parked a copy above
+                if (!stored && mixed_host.on() && &src.session == &ss) {   // MIXED SPLIT: the front stage parked a copy above
                     std::string fe;
-                    if (!hetero.drop(src.ids.data(), (int64_t) src.ids.size(), src.cvec, src.imgs, fe))
+                    if (!mixed_host.drop(src.ids.data(), (int64_t) src.ids.size(), src.cvec, src.imgs, fe))
                         std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
                 }
 #endif
@@ -14803,9 +14803,9 @@ int main(int argc, char** argv) {
                 }
             }
 #if defined(STRATA_MIXED_SPLIT)
-            if (parts == nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part (a split's parts: on_stage_chunk)
+            if (parts == nullptr && mixed_host.on()) {   // MIXED SPLIT: the front stage's part (a split's parts: on_stage_chunk)
                 std::string fe;
-                if (!hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, cvec_cached, c.imgs, fe)) { ckpt_why = ": " + fe; return false; }
+                if (!mixed_host.at(strata::mixed_split::SessionOp::Snapshot, c.ids.data(), L, cvec_cached, c.imgs, fe)) { ckpt_why = ": " + fe; return false; }
             }
 #endif
             c.used = ++check_clock;
@@ -14975,7 +14975,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                     // MIXED SPLIT: the front stage saves its part with the first local stage's.  It has read exactly this far:
                     // the first local stage asks it for each chunk before reading that chunk itself
-                    if (i == 0 && hetero.on() && !hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, cvec_cached, imgs_below(req_imgs, done), e))
+                    if (i == 0 && mixed_host.on() && !mixed_host.at(strata::mixed_split::SessionOp::Snapshot, cur.data(), done, cvec_cached, imgs_below(req_imgs, done), e))
                         return false;
 #endif
                     std::lock_guard<std::mutex> lk(part_mu);
@@ -14987,8 +14987,8 @@ int main(int argc, char** argv) {
             }
 #if defined(STRATA_MIXED_SPLIT)
             // MIXED SPLIT: where the first stage saves its part (the rule above), the front stage reads no chunk ahead
-            if (hetero.on())
-                hetero.pf_snapshot_due = [&](int64_t done) { return o.prompt_cache > 0 && o.prompt_cache_every > 0 && done >= part_next[0]; };
+            if (mixed_host.on())
+                mixed_host.pf_snapshot_due = [&](int64_t done) { return o.prompt_cache > 0 && o.prompt_cache_every > 0 && done >= part_next[0]; };
 #endif
         }
         drive.d.plan = ver.plan_sink();
@@ -16449,18 +16449,18 @@ int main(int argc, char** argv) {
             // loop below makes on its own first stage: a window (Verifier::run), its commit, a prompt chunk (Prefill::run),
             // a new sequence (session_zero).  When the host closes the link the loop below finds its input ended and the
             // engine ends as after any serve.
-            HeteroFrontBackend fb;
+            MixedSplitFrontBackend fb;
             std::vector<int32_t> f_out((size_t) strata::kernels::kVerifyLongT, 0);
             std::vector<int64_t> f_ids;
             // the tokens this session holds, and its parts of the host's checkpoints and parked conversations
-            strata::hetero::FrontSessionBook<ConvCheckpoint, strata::core::SavedConversation> book(front_parts_cap, front_images_cap);
+            strata::mixed_split::FrontSessionBook<ConvCheckpoint, strata::core::SavedConversation> book(front_parts_cap, front_images_cap);
             // a part's key: its tokens, the control-vector switch its state was computed with and its pictures (state_key)
             auto key_with = [](const ConvCheckpoint& c, bool steer) {
-                return strata::hetero::state_key(c.ids.data(), (int64_t) c.ids.size(), steer, c.imgs);
+                return strata::mixed_split::state_key(c.ids.data(), (int64_t) c.ids.size(), steer, c.imgs);
             };
             auto held_imgs = [&]() {   // the session's pictures, as vanilla's checkpoints and parked conversations hold them
                 std::vector<strata::core::ConversationImageKey> v;
-                for (const strata::hetero::ImageKey& k : book.images_held()) v.push_back({k.start, k.hash});
+                for (const strata::mixed_split::ImageKey& k : book.images_held()) v.push_back({k.start, k.hash});
                 return v;
             };
             // --vision: the request's image positions and rows, as the host built them (vanilla's per-request setup)
@@ -16471,22 +16471,22 @@ int main(int argc, char** argv) {
             // STRATA_SPLIT_TIMING (logging only): this stage's window on its GPU (two events around the graph launch)
             // and the time each forwarded call takes here; one line per request (at its image input, the host's first
             // call of a request) and at the end
-            HeteroGpuSpan f_gpu;
-            HeteroSum f_run_ms, f_commit_ms;
+            MixedSplitGpuSpan f_gpu;
+            MixedSplitSum f_run_ms, f_commit_ms;
             // ... and the pipelined windows: each parity's window on the GPU (events around pl_launch on the stream both
             // verifiers share), split into the windows kept and the ones a wrong guess undid (the window of the other
             // parity than the undo's), the undo's wait for the window, the window records the host reads
-            // (HeteroPlMark); the other calls' time here (count, ms)
-            HeteroGpuSpan f_plg[2];
+            // (MixedSplitPlMark); the other calls' time here (count, ms)
+            MixedSplitGpuSpan f_plg[2];
             bool f_pl_undone[2] = {false, false};
-            HeteroSum f_pl_right, f_pl_wrong, f_undo_wait, f_pl_run_ms, f_pl_commit_ms;
+            MixedSplitSum f_pl_right, f_pl_wrong, f_undo_wait, f_pl_run_ms, f_pl_commit_ms;
             int64_t f_undo_busy = 0, f_undo_busy0 = 0;
             enum { kFPrefill, kFImages, kFSteer, kFReset, kFSession, kFN };
-            HeteroSum f_op[kFN];
-            HeteroPlMark* const f_mark[2] = {hetero_pl_mark(het_flag_h), hetero_pl_mark(het_flag_b_h)};
-            for (HeteroPlMark* m : f_mark) { m->pos0.store(-1); m->end_ns.store(0); }
+            MixedSplitSum f_op[kFN];
+            MixedSplitPlMark* const f_mark[2] = {mixed_split_pl_mark(mixed_flag_h), mixed_split_pl_mark(mixed_flag_b_h)};
+            for (MixedSplitPlMark* m : f_mark) { m->pos0.store(-1); m->end_ns.store(0); }
             auto f_pl_collect = [&](int q) {   // the window of parity q before, into its class
-                HeteroGpuSpan& sp = f_plg[q];
+                MixedSplitGpuSpan& sp = f_plg[q];
                 const int64_t n0 = sp.sum.n;
                 const double ms0 = sp.sum.ms;
                 sp.collect();
@@ -16494,7 +16494,7 @@ int main(int argc, char** argv) {
                 f_pl_undone[q] = false;
             };
             auto f_timed = [&](int k, const auto& fn) -> bool {
-                if (!hetero_timing()) return fn();
+                if (!mixed_split_timing()) return fn();
                 const auto t0 = std::chrono::steady_clock::now();
                 const bool ok = fn();
                 f_op[k].add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
@@ -16503,11 +16503,11 @@ int main(int argc, char** argv) {
             // the window in flight (WindowRunner): the run call is answered once the window graph is launched (the launch
             // mark after it); vanilla's Verifier::run serves the window to its end on the runner's thread, and every later
             // call waits for it first (settle).  The host's first stage waits on the ready word on its GPU meanwhile.
-            strata::hetero::WindowRunner runner;
+            strata::mixed_split::WindowRunner runner;
             const std::function<void()>* f_launched = nullptr;   // the job's launched(), on the runner's thread
             std::vector<int32_t> f_tok((size_t) strata::kernels::kVerifyLongT, 0);
             ver.set_launch_mark([&f_gpu, &f_launched](cudaStream_t cs, bool after) {
-                if (hetero_timing()) f_gpu.mark(cs, after);
+                if (mixed_split_timing()) f_gpu.mark(cs, after);
                 if (after && f_launched != nullptr) (*f_launched)();
             });
             // --pipeline-windows (the host's first stage's two verifiers, mirrored): pipelined work queued since the last
@@ -16519,7 +16519,7 @@ int main(int argc, char** argv) {
                 drive.d.plan = ver.plan_sink();   // (an odd window's plans went to ver_b's)
                 if (!f_pl_used) return true;
                 f_pl_used = false;
-                if (cudaStreamSynchronize(het_pl_stream) != cudaSuccess || cudaStreamSynchronize(het_snap.side) != cudaSuccess) {
+                if (cudaStreamSynchronize(mixed_pl_stream) != cudaSuccess || cudaStreamSynchronize(mixed_snap.side) != cudaSuccess) {
                     e = std::string("the front stage's pipelined windows: ") + cudaGetErrorString(cudaGetLastError());
                     return false;
                 }
@@ -16533,7 +16533,7 @@ int main(int argc, char** argv) {
                 }
             }
             auto f_timing_report = [&](const char* when) {
-                if (!hetero_timing()) return;
+                if (!mixed_split_timing()) return;
                 f_gpu.collect();
                 if (f_run_ms.n_new() > 0)
                     std::fprintf(stderr, "strata serve: front stage timing (STRATA_SPLIT_TIMING), per window %s: %lld windows; "
@@ -16568,7 +16568,7 @@ int main(int argc, char** argv) {
                     std::fprintf(stderr, "strata serve: front stage timing (STRATA_SPLIT_TIMING), calls %s: %s\n", when, calls.c_str());
             };
             fb.f_run = [&](int T, const int32_t* tokens, int64_t pos0, std::string& e) {
-                if (T > ver.max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
+                if (T > ver.max_t() || T > mixed_id.max_rows) { e = "the window is larger than the front stage's (the two engines need the same --spec)"; return false; }
                 if (!settle(e)) return false;
                 if (!book.on_run(tokens, T, pos0, e)) return false;
                 const auto t0 = std::chrono::steady_clock::now();
@@ -16580,14 +16580,14 @@ int main(int argc, char** argv) {
                     if (r && drive.d.failed) { je = "the front stage's expert pool failed"; return false; }
                     return r;
                 }, e);
-                if (hetero_timing()) f_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+                if (mixed_split_timing()) f_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 return ok;
             };
             fb.f_commit = [&](int n_keep, std::string& e) {
                 if (!settle(e)) return false;   // the window ended without an error
                 const auto t0 = std::chrono::steady_clock::now();
                 if (!ver.commit(n_keep, e)) return false;
-                if (hetero_timing()) f_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+                if (mixed_split_timing()) f_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 book.on_commit(n_keep);
                 return true;
             };
@@ -16595,39 +16595,39 @@ int main(int argc, char** argv) {
             // pl_commit_async) and the undo of its decode loop, here on this stage's own verifier of that parity
             fb.f_pl_run = [&](int q, int T, const int32_t* tokens, int64_t pos0, std::string& e) {
                 if (!front_pipe) { e = "a pipelined window, but the front stage was started without --pipeline-windows"; return false; }
-                if (T > f_pv[q]->max_t() || T > het_id.max_rows) { e = "the window is larger than the front stage's"; return false; }
+                if (T > f_pv[q]->max_t() || T > mixed_id.max_rows) { e = "the window is larger than the front stage's"; return false; }
                 if (!runner.settle(e)) return false;
                 if (!book.on_pl_run(q, tokens, T, pos0, e)) return false;
                 // snap_take: the GDN state the window reads, copied on the side stream behind the stream's work so far
-                if (cudaEventRecord(het_snap.pre[q], het_pl_stream) != cudaSuccess ||
-                    cudaStreamWaitEvent(het_snap.side, het_snap.pre[q], 0) != cudaSuccess ||
-                    cudaMemcpyAsync(het_snap.buf[q], het_snap.state, het_snap.bytes, cudaMemcpyDeviceToDevice, het_snap.side) != cudaSuccess ||
-                    cudaEventRecord(het_snap.ev[q], het_snap.side) != cudaSuccess) {
+                if (cudaEventRecord(mixed_snap.pre[q], mixed_pl_stream) != cudaSuccess ||
+                    cudaStreamWaitEvent(mixed_snap.side, mixed_snap.pre[q], 0) != cudaSuccess ||
+                    cudaMemcpyAsync(mixed_snap.buf[q], mixed_snap.state, mixed_snap.bytes, cudaMemcpyDeviceToDevice, mixed_snap.side) != cudaSuccess ||
+                    cudaEventRecord(mixed_snap.ev[q], mixed_snap.side) != cudaSuccess) {
                     e = "the GDN snapshot failed";
                     return false;
                 }
-                (void) cudaStreamQuery(het_snap.side);
-                het_snap.taken[q] = true;
-                het_snap.ple[q][0] = ss.ple_prev[0];
-                het_snap.ple[q][1] = ss.ple_prev[1];
+                (void) cudaStreamQuery(mixed_snap.side);
+                mixed_snap.taken[q] = true;
+                mixed_snap.ple[q][0] = ss.ple_prev[0];
+                mixed_snap.ple[q][1] = ss.ple_prev[1];
                 f_pl_used = true;
                 drive.d.plan = f_pv[q]->plan_sink();
                 const auto t0 = std::chrono::steady_clock::now();
-                if (hetero_timing()) {   // (logging only)
+                if (mixed_split_timing()) {   // (logging only)
                     f_pl_collect(q);
                     f_mark[q]->end_ns.store(0, std::memory_order_relaxed);
                     f_mark[q]->pos0.store(pos0, std::memory_order_release);
-                    f_plg[q].mark(het_pl_stream, false);
+                    f_plg[q].mark(mixed_pl_stream, false);
                 }
                 if (!f_pv[q]->pl_launch(T, tokens, pos0, e)) return false;
-                if (hetero_timing()) f_plg[q].mark(het_pl_stream, true);
+                if (mixed_split_timing()) f_plg[q].mark(mixed_pl_stream, true);
                 strata::core::Verifier* const v = f_pv[q];
                 const bool ok = runner.start([&, v, q](const std::function<void()>& launched, std::string& je) {
                     launched();
                     for (;;) {   // the window served and polled to its end (the pipelined loop's pump)
                         if (v->service(win_pool_fn, win_pool_user, je) < 0) return false;
                         if (v->done(je)) {
-                            if (hetero_timing()) f_mark[q]->end_ns.store(hetero_now_ns(), std::memory_order_release);
+                            if (mixed_split_timing()) f_mark[q]->end_ns.store(mixed_split_now_ns(), std::memory_order_release);
                             if (!v->pl_finish(nullptr, je)) return false;
                             if (drive.d.failed) { je = "the front stage's expert pool failed"; return false; }
                             return true;
@@ -16636,7 +16636,7 @@ int main(int argc, char** argv) {
                         std::this_thread::yield();
                     }
                 }, e);
-                if (hetero_timing()) f_pl_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+                if (mixed_split_timing()) f_pl_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 return ok;
             };
             fb.f_pl_commit = [&](int q, int n_keep, std::string& e) {
@@ -16644,30 +16644,30 @@ int main(int argc, char** argv) {
                 if (!runner.settle(e)) return false;   // the window ended without an error
                 if (!book.on_pl_commit(q, n_keep, e)) return false;
                 // the commit changes the state: after the window's snapshot copy
-                if (het_snap.taken[q] && cudaStreamWaitEvent(het_pl_stream, het_snap.ev[q], 0) != cudaSuccess) { e = "the GDN snapshot failed"; return false; }
+                if (mixed_snap.taken[q] && cudaStreamWaitEvent(mixed_pl_stream, mixed_snap.ev[q], 0) != cudaSuccess) { e = "the GDN snapshot failed"; return false; }
                 f_pl_used = true;
                 const auto t0 = std::chrono::steady_clock::now();
                 const bool ok = f_pv[q]->pl_commit_async(n_keep, e);
-                if (hetero_timing()) f_pl_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+                if (mixed_split_timing()) f_pl_commit_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
                 return ok;
             };
             fb.f_pl_undo = [&](int q, std::string& e) {
-                if (!front_pipe || !het_snap.taken[q]) { e = "no GDN snapshot of that window to restore"; return false; }
-                if (hetero_timing()) {   // (logging only) the wrong window is the other parity's
+                if (!front_pipe || !mixed_snap.taken[q]) { e = "no GDN snapshot of that window to restore"; return false; }
+                if (mixed_split_timing()) {   // (logging only) the wrong window is the other parity's
                     f_pl_undone[1 - q] = true;
                     if (runner.busy()) ++f_undo_busy;
                 }
                 const auto tw = std::chrono::steady_clock::now();
                 if (!runner.settle(e)) return false;   // the wrong window has stopped
-                if (hetero_timing()) f_undo_wait.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tw).count());
+                if (mixed_split_timing()) f_undo_wait.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tw).count());
                 if (!book.on_pl_undo(q, e)) return false;
-                if (cudaStreamWaitEvent(het_pl_stream, het_snap.ev[q], 0) != cudaSuccess ||
-                    cudaMemcpyAsync(het_snap.state, het_snap.buf[q], het_snap.bytes, cudaMemcpyDeviceToDevice, het_pl_stream) != cudaSuccess) {
+                if (cudaStreamWaitEvent(mixed_pl_stream, mixed_snap.ev[q], 0) != cudaSuccess ||
+                    cudaMemcpyAsync(mixed_snap.state, mixed_snap.buf[q], mixed_snap.bytes, cudaMemcpyDeviceToDevice, mixed_pl_stream) != cudaSuccess) {
                     e = "restoring the GDN snapshot failed";
                     return false;
                 }
-                ss.ple_prev[0] = het_snap.ple[q][0];
-                ss.ple_prev[1] = het_snap.ple[q][1];
+                ss.ple_prev[0] = mixed_snap.ple[q][0];
+                ss.ple_prev[1] = mixed_snap.ple[q][1];
                 f_pl_used = true;
                 return true;
             };
@@ -16677,7 +16677,7 @@ int main(int argc, char** argv) {
                 if (sp.embd_rows != nullptr && pos0 + n > (int64_t) f_row_ptr.size()) { e = "a prompt chunk past the image request's prompt"; return false; }
                 if (!book.on_prefill(tokens, n, pos0, e)) return false;
                 f_ids.assign(tokens, tokens + n);
-                sp.set_remote_out(het_rows_h, het_rows_cap);
+                sp.set_remote_out(mixed_rows_h, mixed_rows_cap);
                 return f_timed(kFPrefill, [&] { return sp.run(f_ids.data(), n, pos0, e); });
             };
             // a chunk read ahead (PfStart): the same read on the runner's thread into prompt row buffer `buf`, answered at
@@ -16687,10 +16687,10 @@ int main(int argc, char** argv) {
                 if (!settle(e) || !ver.wait_commit(e)) return false;
                 book.on_abandon();
                 if (sp.embd_rows != nullptr && pos0 + n > (int64_t) f_row_ptr.size()) { e = "a prompt chunk past the image request's prompt"; return false; }
-                if (n > het_rows_cap) { e = "a prompt chunk larger than the shared hand-off"; return false; }
+                if (n > mixed_rows_cap) { e = "a prompt chunk larger than the shared hand-off"; return false; }
                 if (!book.on_prefill(tokens, n, pos0, e)) return false;
                 f_pf_ids[buf].assign(tokens, tokens + n);
-                sp.set_remote_out(buf == 0 ? het_rows_h : het_rows_b_h, het_rows_cap);
+                sp.set_remote_out(buf == 0 ? mixed_rows_h : mixed_rows_b_h, mixed_rows_cap);
                 return runner.start([&, buf, n, pos0](const std::function<void()>& launched, std::string& je) {
                     launched();
                     return f_timed(kFPrefill, [&] { return sp.run(f_pf_ids[buf].data(), n, pos0, je); });
@@ -16698,7 +16698,7 @@ int main(int argc, char** argv) {
             };
             fb.f_pf_wait = [&](int, std::string& e) { return settle(e); };
             // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
-            fb.f_images = [&](strata::hetero::FrontImages& im, std::string& e) {
+            fb.f_images = [&](strata::mixed_split::FrontImages& im, std::string& e) {
                 const bool settled = settle(e);
                 f_timing_report("since the last request");
                 if (!settled || !ver.wait_commit(e)) return false;
@@ -16719,7 +16719,7 @@ int main(int argc, char** argv) {
                         mrope_host[(size_t) c * 3] = mrope_host[(size_t) c * 3 + 1] = mrope_host[(size_t) c * 3 + 2] = (int32_t) c;
                 };
                 sp.embd_rows = nullptr;
-                book.set_request_images(strata::hetero::images_below(im.images, im.n));
+                book.set_request_images(strata::mixed_split::images_below(im.images, im.n));
                 if (im.images.empty()) {   // a text request: the identity table again
                     f_row_ptr.clear();
                     f_img_rows.clear();
@@ -16739,7 +16739,7 @@ int main(int argc, char** argv) {
                 f_img_rows = std::move(im.rows);
                 f_row_ptr.assign((size_t) im.n, nullptr);
                 size_t r = 0;
-                for (const strata::hetero::ImageSpan& sp_im : im.images)
+                for (const strata::mixed_split::ImageSpan& sp_im : im.images)
                     for (int64_t j = 0; j < sp_im.rows; ++j, ++r) f_row_ptr[(size_t) (sp_im.start + j)] = f_img_rows.data() + r * (size_t) g.n_embd;
                 mrope_host = std::move(im.mrope);
                 cudaDeviceSynchronize();
@@ -16755,8 +16755,8 @@ int main(int argc, char** argv) {
                 sp.embd_rows = f_row_ptr.data();
                 return true;
             };
-            fb.f_session = [&](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
-                using Op = strata::hetero::SessionOp;
+            fb.f_session = [&](strata::mixed_split::SessionOp op, int64_t a, int64_t b, std::string& e) {
+                using Op = strata::mixed_split::SessionOp;
                 if (op == Op::Steer) {   // the request's control-vector switch (vanilla's cvec_set_enabled; it synchronizes)
                     if (!settle(e) || !ver.wait_commit(e)) return false;
                     book.on_abandon();
@@ -16830,20 +16830,20 @@ int main(int argc, char** argv) {
                     return false;
                 }
             };
-            if (hetero_timing()) {   // STRATA_SPLIT_TIMING: the time the image input and the session operations take here
+            if (mixed_split_timing()) {   // STRATA_SPLIT_TIMING: the time the image input and the session operations take here
                 auto images_op = fb.f_images;
-                fb.f_images = [&f_timed, images_op](strata::hetero::FrontImages& im, std::string& e) {
+                fb.f_images = [&f_timed, images_op](strata::mixed_split::FrontImages& im, std::string& e) {
                     return f_timed(kFImages, [&] { return images_op(im, e); });
                 };
                 auto session_op = fb.f_session;
-                fb.f_session = [&f_timed, session_op](strata::hetero::SessionOp op, int64_t a, int64_t b, std::string& e) {
-                    using Op = strata::hetero::SessionOp;
+                fb.f_session = [&f_timed, session_op](strata::mixed_split::SessionOp op, int64_t a, int64_t b, std::string& e) {
+                    using Op = strata::mixed_split::SessionOp;
                     return f_timed(op == Op::Steer ? kFSteer : op == Op::Reset ? kFReset : kFSession, [&] { return session_op(op, a, b, e); });
                 };
             }
             std::fprintf(stderr, "strata serve: front stage: layers 0-%lld ready, serving the link\n", (long long) front_le - 1);
             std::string fe;
-            const int frc = strata::hetero::serve_front_greeted(strata::hetero::kWorkerSocketFd, fb, het_id, fe);
+            const int frc = strata::mixed_split::serve_front_greeted(strata::mixed_split::kWorkerSocketFd, fb, mixed_id, fe);
             std::fprintf(stderr, "strata serve: front stage: the link ended%s%s\n", frc == 0 ? " cleanly" : ": ", frc == 0 ? "" : fe.c_str());
             if (!settle(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
             if (!ver.wait_commit(fe)) std::fprintf(stderr, "strata serve: front stage: %s\n", fe.c_str());
@@ -16853,12 +16853,12 @@ int main(int argc, char** argv) {
         }
         if (front_lb > 0) {   // the front stage's session starts empty, as this one's; this also waits until it serves
             std::string fe;
-            if (!hetero.reset(fe)) {
+            if (!mixed_host.reset(fe)) {
                 std::fprintf(stderr, "strata serve: mixed split: the front stage is not ready: %s\n", fe.c_str());
                 return 1;
             }
             std::fprintf(stderr, "strata serve: mixed split: the front stage is ready\n");
-            hetero.timing_report();   // STRATA_SPLIT_TIMING: the warm-up's windows, so each request's line is its own
+            mixed_host.timing_report();   // STRATA_SPLIT_TIMING: the warm-up's windows, so each request's line is its own
         }
 #endif
         std::printf("READY %lld stop hold holdb\n", (long long) o.max_context);   // "stop": this engine honours STOP; "hold": GEN hold=N:ID; "holdb": the --batch slots end at the hold too (BDONE hold)
@@ -19300,9 +19300,9 @@ int main(int argc, char** argv) {
             }
             sp.embd_rows = geni ? row_ptr.data() : nullptr;
 #if defined(STRATA_MIXED_SPLIT)
-            if (hetero.on()) {   // MIXED SPLIT: the front stage's layers read this request's positions and image rows too
+            if (mixed_host.on()) {   // MIXED SPLIT: the front stage's layers read this request's positions and image rows too
                 std::string fe;
-                if (!hetero.images(n, req_imgs, geni ? &row_ptr : nullptr, geni ? &mrope_host : nullptr, (int64_t) g.n_embd, fe)) {
+                if (!mixed_host.images(n, req_imgs, geni ? &row_ptr : nullptr, geni ? &mrope_host : nullptr, (int64_t) g.n_embd, fe)) {
                     std::printf("ERR %s\n", fe.c_str());
                     std::fflush(stdout);
                     return 1;
@@ -19868,7 +19868,7 @@ int main(int argc, char** argv) {
                     if (!conversations.put(std::move(retry))) {
                         std::fprintf(stderr, "strata serve: conversation cache: could not return the skipped snapshot\n");
                         std::string fe;
-                        if (hetero.on() && !hetero.drop(retry_ids.data(), (int64_t) retry_ids.size(), retry_cvec, retry_imgs, fe))
+                        if (mixed_host.on() && !mixed_host.drop(retry_ids.data(), (int64_t) retry_ids.size(), retry_cvec, retry_imgs, fe))
                             std::fprintf(stderr, "strata serve: mixed split: the front stage did not drop its parked copy: %s\n", fe.c_str());
                     }
 #else
@@ -20153,9 +20153,9 @@ int main(int argc, char** argv) {
                                  (long long) (mtp.kv_state().n_slots * strata::kernels::qsa_real_shapes().page_size));
                 }
 #if defined(STRATA_MIXED_SPLIT)
-                if (hetero.on()) {   // MIXED SPLIT: the front stage's parked part of this conversation
+                if (mixed_host.on()) {   // MIXED SPLIT: the front stage's parked part of this conversation
                     std::string fe;
-                    if (!hetero.at(strata::hetero::SessionOp::Unpark, incoming->live.ids.data(), (int64_t) incoming->live.ids.size(), incoming->cvec,
+                    if (!mixed_host.at(strata::mixed_split::SessionOp::Unpark, incoming->live.ids.data(), (int64_t) incoming->live.ids.size(), incoming->cvec,
                                    incoming->live.imgs, fe)) {
                         std::printf("ERR restoring parked conversation: %s\n", fe.c_str());
                         std::fflush(stdout);
@@ -20195,9 +20195,9 @@ int main(int argc, char** argv) {
             }
             if (strata::kernels::cvec().loaded()) strata::kernels::cvec_set_enabled(want_cvec);
 #if defined(STRATA_MIXED_SPLIT)
-            if (hetero.on() && strata::kernels::cvec().loaded()) {   // MIXED SPLIT: the front stage's layers follow the switch
+            if (mixed_host.on() && strata::kernels::cvec().loaded()) {   // MIXED SPLIT: the front stage's layers follow the switch
                 std::string fe;
-                if (!hetero.steer(want_cvec, fe)) {
+                if (!mixed_host.steer(want_cvec, fe)) {
                     std::printf("ERR %s\n", fe.c_str());
                     std::fflush(stdout);
                     return 1;
@@ -20231,9 +20231,9 @@ int main(int argc, char** argv) {
                 strata::core::session_zero(ss, g, nullptr, main_cs);
                 cudaStreamSynchronize(main_stream);
 #if defined(STRATA_MIXED_SPLIT)
-                if (hetero.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
+                if (mixed_host.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
                     std::string fe;
-                    if (!hetero.reset(fe)) {
+                    if (!mixed_host.reset(fe)) {
                         std::printf("ERR mixed split: the front stage could not start a new sequence: %s\n", fe.c_str());
                         std::fflush(stdout);
                         return 1;
@@ -20265,9 +20265,9 @@ int main(int argc, char** argv) {
                     strata::core::session_zero(ss, g, nullptr, main_cs);
                     cudaStreamSynchronize(main_stream);
 #if defined(STRATA_MIXED_SPLIT)
-                    if (hetero.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
+                    if (mixed_host.on()) {   // MIXED SPLIT: the front stage's session starts over with this one
                         std::string fe;
-                        if (!hetero.reset(fe)) {
+                        if (!mixed_host.reset(fe)) {
                             std::printf("ERR mixed split: the front stage could not start a new sequence: %s\n", fe.c_str());
                             std::fflush(stdout);
                             return 1;
@@ -20294,9 +20294,9 @@ int main(int argc, char** argv) {
                     return 1;
                 }
 #if defined(STRATA_MIXED_SPLIT)
-                if (reread_to < 0 && c != nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part of the checkpoint
+                if (reread_to < 0 && c != nullptr && mixed_host.on()) {   // MIXED SPLIT: the front stage's part of the checkpoint
                     std::string fe;
-                    if (!hetero.at(strata::hetero::SessionOp::Restore, c->ids.data(), (int64_t) c->ids.size(), cvec_cached, c->imgs, fe)) {
+                    if (!mixed_host.at(strata::mixed_split::SessionOp::Restore, c->ids.data(), (int64_t) c->ids.size(), cvec_cached, c->imgs, fe)) {
                         std::printf("ERR restoring a conversation checkpoint failed: %s\n", fe.c_str());
                         std::fflush(stdout);
                         return 1;
@@ -22357,7 +22357,7 @@ int main(int argc, char** argv) {
                             }
 #if defined(STRATA_MIXED_SPLIT)
                             // MIXED SPLIT: the front stage (part of stage 0) restores its own snapshot of the window
-                            if (st == 0 && hetero.on() && !hetero.pl_undo(undo_w.seq & 1, err)) return die(err);
+                            if (st == 0 && mixed_host.on() && !mixed_host.pl_undo(undo_w.seq & 1, err)) return die(err);
 #endif
                             if (undo_keep > 0 && !VF(st, undo_w).pl_commit_async(undo_keep, err)) return die(err);   // 0: the window was dropped (stop_skip)
                         }
@@ -22704,7 +22704,7 @@ int main(int argc, char** argv) {
                             undo_w = A;
                             undo_keep = a + 1;
 #if defined(STRATA_MIXED_SPLIT)
-                            if (hetero.on()) hetero.pl_doomed(D.seq & 1, D.p);   // MIXED SPLIT: the front stage's window of D
+                            if (mixed_host.on()) mixed_host.pl_doomed(D.seq & 1, D.p);   // MIXED SPLIT: the front stage's window of D
 #endif
                         }
                         // B is D now (or dropped): never pump it twice (whichever copy saw the window complete first
@@ -24069,7 +24069,7 @@ int main(int argc, char** argv) {
                                  (long long) v.windows, v.ms_wait / w, v.ms_pool / w, v.ms_host / w, v.ms_commit / w);
                 }
 #if defined(STRATA_MIXED_SPLIT)
-            hetero.timing_report();   // MIXED SPLIT, STRATA_SPLIT_TIMING: this request's windows across the two processes
+            mixed_host.timing_report();   // MIXED SPLIT, STRATA_SPLIT_TIMING: this request's windows across the two processes
 #endif
             if (g.n_qsa_layers() > 0 && ss.qsa_states[ss.qsa_primary()].kv_mode == 1) {
                 // KV streaming, cumulative over the process: blocks the selections named vs blocks read from RAM
