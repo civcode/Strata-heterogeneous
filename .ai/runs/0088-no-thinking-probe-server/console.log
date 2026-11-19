@@ -1,0 +1,24 @@
+serve_mixed: /home/chris/workspace/Strata-heterogeneous/.venv/bin/python /home/chris/workspace/Strata-heterogeneous/serve/server.py --engine strata --config /home/chris/workspace/Strata-heterogeneous/.ai/runs/0088-no-thinking-probe-server/hiponly.json --port 8096
+loading the vision encoder ...
+loading the model (the first start takes a minute or two) ...
+[strata] layer split across GPUs [0, 1] (auto)
+[strata] Drafting: MTP (DFlash2 isn't available in this mode)
+[strata] starting the engine: reading the model's weights ...
+[strata] engine priority: nice +5 (this PC has built-in Radeon graphics that usually draw the desktop; STRATA_ENGINE_NICE=0 turns it off)
+[strata] mapping the experts from the model files (about 38 GB, --mmap-experts): they are not loaded into RAM - the OS file cache reads them as the GPU's expert cache fills and as requests need them.
+         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.
+         Please wait and don't close this window; the server says when it is ready.
+[strata] filling the GPU's expert cache (12288 experts, 15.82 GiB of VRAM) ...
+[strata] almost ready ...
+ready: http://127.0.0.1:8096/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 262144 tokens, images on)
+       open http://127.0.0.1:8096/ in a browser to chat; close this window to stop the model
+[strata] reading the prompt: 2,340 of 2,701 tokens, 1 s so far
+[strata] done: 54 tokens in 2 s (130.0 tok/s) (stop, cancel=False)
+#   1 c0 t  0 tool           prompt 2701 cached 0 gen 54 ttft 1.768 pp 1604.7 dec 130.0
+[strata] done: 54 tokens in 1 s (139.7 tok/s) (stop, cancel=False)
+#   2 c0 t  0 probe-deep     prompt 2732 cached 2694 gen 54 ttft 0.226 pp 240.7 dec 139.7
+[strata] done: 34 tokens in 1 s (122.6 tok/s) (stop, cancel=False)
+#   3 c0 t  1 tool           prompt 3279 cached 2694 gen 34 ttft 0.633 pp 1036.9 dec 122.6
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped

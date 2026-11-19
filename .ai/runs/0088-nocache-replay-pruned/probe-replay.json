@@ -1,0 +1,22 @@
+{
+ "probe": ".ai/runs/0088-nocache-replay-pruned/probe.json",
+ "why": "pruned",
+ "equal": true,
+ "error": null,
+ "live": {
+  "content": "",
+  "reasoning": "The user asks a probe question: name the file the most recent tool output came from and describe what the code in it does.\n\nThe most recent tool output: the `read` tool with path \"include/strata/core/kfd_quiet.hpp\" — but the output shown was actually content from \"tools/v",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "",
+  "reasoning": "The user asks a probe question: name the file the most recent tool output came from and describe what the code in it does.\n\nThe most recent tool output: the `read` tool with path \"include/strata/core/kfd_quiet.hpp\" — but the output shown was actually content from \"tools/v",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "prompt_tokens": 12543,
+ "wall_s": 4.652
+}

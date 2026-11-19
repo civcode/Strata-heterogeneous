@@ -1,0 +1,22 @@
+{
+ "probe": ".ai/runs/0088-hip-replay-compacted/probe.json",
+ "why": "compacted",
+ "equal": false,
+ "error": null,
+ "live": {
+  "content": "",
+  "reasoning": "The most recent tool call was an edit on `serve/test_web_api_key.py`, but the output shown was a read of `tools/test_setup_gpu_fit.py` — the tool output content came from `tools/test_setup_gpu_fit.py`. The probe asks: \"name the file the most recent tool output came from and",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "",
+  "reasoning": "The user asks a probe question: name the file the most recent tool output came from and say what the code in it does.\n\nThe most recent tool output was the `edit` tool on `serve/test_web_api_key.py`, but the output shown was actually a read of `tools/test_setup_gpu_fit.py`",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "prompt_tokens": 4694,
+ "wall_s": 2.98
+}

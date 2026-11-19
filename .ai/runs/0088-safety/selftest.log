@@ -1,0 +1,17 @@
+EQUAL pruned: /tmp/agent_session_selftest_nw0ers0d/s0/probes/probe-pruned-replay.json
+EQUAL compacted: /tmp/agent_session_selftest_nw0ers0d/s0/probes/probe-compacted-replay.json
+EQUAL deep: /tmp/agent_session_selftest_nw0ers0d/s0/probes/probe-deep-replay.json
+ok    identical request sequences for one seed
+ok    at least one pruning step removed outputs
+ok    1 compaction(s)
+ok    ends one request after the last compaction
+ok    no request over the cap
+ok    a compaction only at or above the trigger
+ok    probes pruned, compacted and deep saved
+ok    every turn after a pruning step reuses less than the one before it at least once
+ok    reasoning budget 0 request
+ok    reasoning budget 20 request
+ok    replay pruned equal on the stub
+ok    replay compacted equal on the stub
+ok    replay deep equal on the stub
+requests 37, prunes 3 (8 outputs), compactions 1, cut outputs 1, max prompt 30396; files in /tmp/agent_session_selftest_nw0ers0d

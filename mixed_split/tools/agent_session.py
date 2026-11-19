@@ -64,7 +64,8 @@ def add_model_flags(p):
     g.add_argument('--answer-script-tokens', type=int, default=400, help='scripted text of an answer turn')
     g.add_argument('--probe-deep', type=float, default=200000 / 262144, help='probe once prompt_tokens reach this fraction')
     g.add_argument('--probe-tokens', type=int, default=64)
-    g.add_argument('--reasoning-budget', type=int, default=0, help='reasoning_budget_tokens of every request')
+    g.add_argument('--reasoning-budget', type=int, default=0,
+                   help='thinking token limit; 0 disables thinking via the chat template')
     g.add_argument('--max-requests', type=int, default=0, help='stop after this many requests (0: no limit)')
     g.add_argument('--max-cycle-min', type=float, default=90, help='stop after a cycle exceeding this many minutes (0: no limit)')
 
@@ -161,6 +162,9 @@ class Session:
         body = dict(model='strata', messages=messages, tools=self.tools, temperature=0, seed=0, max_tokens=max_tokens,
                     reasoning_budget_tokens=self.a.reasoning_budget, stream=True,
                     stream_options={'include_usage': True})
+        if self.a.reasoning_budget == 0:
+            # A zero budget means *unlimited* in the server, not thinking off.
+            body['chat_template_kwargs'] = {'enable_thinking': False}
         raw = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
         self.n_req += 1
         r = self.send(raw)
@@ -550,6 +554,15 @@ def cmd_selftest(a):
         'every turn after a pruning step reuses less than the one before it at least once':
             any(r['cached_tokens'] < r['prompt_tokens'] * 0.9 for r in rows if r['kind'] in ('tool', 'answer')),
     }
+    for budget in (0, 20):
+        captured = []
+        args = finish_flags(p.parse_args(['run', 'x', '--scaled', '--reasoning-budget', str(budget)]))
+        session = Session(args, lambda raw: captured.append(json.loads(raw)) or {})
+        session.request([{'role': 'user', 'content': 'hello'}], 16, 'tool')
+        body = captured[0]
+        checks[f'reasoning budget {budget} request'] = (body['reasoning_budget_tokens'] == budget and
+            (body.get('chat_template_kwargs') == {'enable_thinking': False} if budget == 0
+             else 'chat_template_kwargs' not in body))
     for w in ('pruned', 'compacted', 'deep'):
         if not os.path.exists(os.path.join(tmp, 's0', 'probes', f'probe-{w}.json')):
             continue

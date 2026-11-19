@@ -1,0 +1,22 @@
+{
+ "probe": ".ai/runs/0088-hip-replay-deep/probe.json",
+ "why": "deep",
+ "equal": false,
+ "error": null,
+ "live": {
+  "content": "",
+  "reasoning": "The most recent tool output was a read of src/split/src/card_split.hpp (the bash call with path src/split/src/card_split.hpp returned content starting with \"// How one layer divides over n cards...\" and then continued into src/split/src/df2_bridge.cpp and df2_bridge.hpp).\n\nSo the",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "",
+  "reasoning": "The most recent tool output was a `write` call on `src/kernels/mmvq_il_parity.cpp`, but the output it returned was the content of `src/split/src/card_split.hpp` (and then df2_bridge.cpp / df2_bridge.hpp). Hmm — the pattern here: each tool call",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "prompt_tokens": 26198,
+ "wall_s": 8.113
+}
