@@ -1,0 +1,120 @@
+{
+ "ready_s": 9.01906182100015,
+ "code": {
+  "id": "chatcmpl-5176a9d14f4549c5845d9f1d",
+  "object": "chat.completion",
+  "created": 1795073021,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "\"\n\nWe need produce final answer likely code and explanation. Need think in English. Need ensure complete Python implementation thread-safe LRU cache with type hints, docs, example usage, explain design and edge cases. Need maybe include code block. Need be careful thread-safe: use threading.Lock, OrderedDict. Generic type. Maybe support maxsize, optional ttl? User asks LRU cache. Could implement simple thread-safe LRU. Need include type hints. Need maybe handle maxsize <=0? Edge cases: maxsize 0, negative? thread safety, concurrent get/set, eviction, duplicate keys, missing keys, recursion? Maybe use sentinel for missing. Need avoid exposing internal lock? Could implement class ThreadSafeLRUCache[K, V]. Use OrderedDict. get(key, default=None) returns default if missing and does not mark as used? Usually get should mark as used if hit. If miss no effect. set(key, value) evicts if full. delete? maybe clear? size? Could include __len__, __contains__, __iter__? Need complete.\n\nPotential issue: Python's OrderedDict move_to_end is thread",
+     "reasoning_content": "We need answer user's request: \"Measurement 0 code.\n<|im_start|>user\nWrite a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 118,
+   "completion_tokens": 300,
+   "total_tokens": 418,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 118,
+   "prompt_ms": 363.7,
+   "prompt_per_token_ms": 3.082,
+   "prompt_per_second": 324.4,
+   "predicted_n": 300,
+   "predicted_ms": 2733.1,
+   "predicted_per_token_ms": 9.11,
+   "predicted_per_second": 109.8,
+   "draft_n": 228,
+   "draft_n_accepted": 150
+  }
+ },
+ "long": {
+  "id": "chatcmpl-eba69f503a9441fa811b6fd3",
+  "object": "chat.completion",
+  "created": 1795073024,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "- Strata can run one model across two or more GPUs using a layer split, where contiguous model layers are assigned to each card; NVIDIA is covered here, with AMD details in a separate document.\n- Each GPU has a role: Main runs the final output/draft/verification stage, Helper stores part of the model and expert cache, and Off is unused; the faster card is normally chosen as Main.\n- The split",
+     "reasoning_content": "We need answer user's request. User says: \"Measurement 0 long.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# Strata on two or more GPUs (layer split)\n...\"\nNeed produce final answer with five bullet points summarizing document. Need likely concise. Need ensure five bullets. Could mention key points: purpose, roles, how split works, tuning/limits, pipeline windows/two models. Need maybe no extra. Need final only. Ensure five bullet points.\n"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 5000,
+   "completion_tokens": 200,
+   "total_tokens": 5200,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 5000,
+   "prompt_ms": 2103.9,
+   "prompt_per_token_ms": 0.421,
+   "prompt_per_second": 2376.5,
+   "predicted_n": 200,
+   "predicted_ms": 1777.4,
+   "predicted_per_token_ms": 8.887,
+   "predicted_per_second": 112.5,
+   "draft_n": 177,
+   "draft_n_accepted": 111
+  }
+ },
+ "long16k": {
+  "id": "chatcmpl-c427f05d29314b9583696b14",
+  "object": "chat.completion",
+  "created": 1795073028,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "\"\n\nNeed produce final answer: five bullet points summarizing document. Need likely concise but enough. Need ensure five bullets. Need maybe mention key points: objective, baseline, exhausted levers, bottleneck, next steps. Need not include analysis. Need final only. Ensure five bullet points",
+     "reasoning_content": "We need answer user's request: \"Measurement 0 long16k.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# A770 decode optimization specification ... [long document] ... <|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 16102,
+   "completion_tokens": 128,
+   "total_tokens": 16230,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 16102,
+   "prompt_ms": 4594.9,
+   "prompt_per_token_ms": 0.285,
+   "prompt_per_second": 3504.3,
+   "predicted_n": 128,
+   "predicted_ms": 1017.3,
+   "predicted_per_token_ms": 7.948,
+   "predicted_per_second": 125.8,
+   "draft_n": 100,
+   "draft_n_accepted": 77
+  }
+ },
+ "rc": 0,
+ "elapsed": 22.766098988000067,
+ "fault_lines": []
+}
