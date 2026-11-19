@@ -1,0 +1,12 @@
+Server-log matching ERR, refused, non-finite logits:
+
+Server driver pause lines:
+500:strata serve: the graphics driver paused the GPU for 418 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+
+Final server console lines:
+[strata] reading the prompt: 58,213 of 58,220 tokens, 11 s so far
+[strata] done: 55 tokens in 11 s (107.8 tok/s) (stop, cancel=False)
+#  58 c0 t 56 tool           prompt 58220 cached 9956 gen 55 ttft 10.652 pp 4549.6 dec 107.8
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped

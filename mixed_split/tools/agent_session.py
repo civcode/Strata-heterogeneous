@@ -23,7 +23,14 @@ Output in OUT_DIR: requests.jsonl (one line per request), samples.jsonl (every -
 RAM, swap, resident memory of processes matching --rss-match), probes/probe-*.json, session.json (totals; written at
 the end, also after an error).  Exit status 0 only when every request succeeded.
 """
-import argparse, hashlib, http.server, json, os, random, re, subprocess, sys, threading, time, urllib.request
+import argparse, hashlib, http.server, json, os, random, re, signal, subprocess, sys, threading, time, urllib.request
+
+stop_after_request = False
+
+
+def request_stop(signum, frame):
+    global stop_after_request
+    stop_after_request = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -239,19 +246,34 @@ class Session:
         end_after = None
         cycle_started = time.monotonic()
         while True:
+            if stop_after_request:
+                self.totals['stopped_after_request'] = True
+                return
             answer = self.turn % a.answer_every == a.answer_every - 1
             r, _ = self.request(clean(messages), a.answer_tokens if answer else a.tool_tokens,
                                 'answer' if answer else 'tool')
             log(r)
+            if stop_after_request:
+                self.totals['stopped_after_request'] = True
+                return
             if r.get('error') or (a.max_requests and self.n_req >= a.max_requests):
                 return
             pt = (r.get('usage') or {}).get('prompt_tokens') or 0
             if self.after_prune and self.totals['compactions'] == 0 and self.turn >= 2 * a.prune_every:
                 self.probe(messages, 'pruned', out_dir, log)
+            if stop_after_request:
+                self.totals['stopped_after_request'] = True
+                return
             if self.after_compaction:
                 self.probe(messages, 'compacted', out_dir, log)
+            if stop_after_request:
+                self.totals['stopped_after_request'] = True
+                return
             if pt >= self.deep:
                 self.probe(messages, 'deep', out_dir, log)
+            if stop_after_request:
+                self.totals['stopped_after_request'] = True
+                return
             self.after_prune = self.after_compaction = False
             if end_after is not None:
                 return
@@ -449,6 +471,9 @@ def cmd_run(a, send=None, quiet=False):
         th = threading.Thread(target=sampler, args=(os.path.join(a.out, 'samples.jsonl'), a.sample_s, a.rss_match, stop),
                               daemon=True)
         th.start()
+    global stop_after_request
+    stop_after_request = False
+    previous_signal = signal.signal(signal.SIGUSR1, request_stop) if hasattr(signal, 'SIGUSR1') else None
     s = Session(a, send)
     t0 = time.time()
     with open(os.path.join(a.out, 'requests.jsonl'), 'w') as h:
@@ -465,12 +490,14 @@ def cmd_run(a, send=None, quiet=False):
             s.run(a.out, log)
         finally:
             stop.set()
+            if previous_signal is not None:
+                signal.signal(signal.SIGUSR1, previous_signal)
             if th:
                 th.join(timeout=30)
             flags = {k: v for k, v in vars(a).items() if k not in ('func', 'dist')}
             with open(os.path.join(a.out, 'session.json'), 'w') as f:
                 json.dump(dict(totals=s.totals, wall_s=round(time.time() - t0, 1), flags=flags), f, indent=1)
-    return 0 if s.totals['errors'] == 0 else 1
+    return 0 if s.totals['errors'] == 0 and not s.totals.get('stopped_after_request') else 1
 
 
 NEAR_TIE_NATS = 1.0    # a live token this close to the fresh server's choice (log-probability) is a near-tie

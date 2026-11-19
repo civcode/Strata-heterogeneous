@@ -1,0 +1,4 @@
+2026-11-19T19:49:08+01:00 watcher started
+2026-11-19T19:52:33+01:00 KERNEL 2026-11-19T19:52:33+01:00 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+2026-11-19T19:52:43+01:00 ENGINE strata serve: the graphics driver paused the GPU for 418 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+2026-11-19T19:52:44+01:00 watcher stopped

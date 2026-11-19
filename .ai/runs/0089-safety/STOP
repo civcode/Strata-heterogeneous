@@ -1,0 +1,1 @@
+2026-11-19T19:52:33+01:00 kernel safety line: 2026-11-19T19:52:33+01:00 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
