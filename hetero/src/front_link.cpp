@@ -243,6 +243,7 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
     int window = 0;   // the rows of the window that waits for its commit
     int pl_t[2] = {0, 0};   // the rows of each parity's last pipelined window (0: none since the last other operation)
     std::vector<uint8_t> images;   // the image input received so far (Op::Images)
+    int pf_pending = -1;           // the prompt row buffer of the chunk read ahead and not waited for (-1: none)
     for (;;) {
         Frame f;
         int got = -1;
@@ -268,6 +269,7 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
         }
         if (!greeted) return fatal("an operation before the hello");
         bool ok = false;
+        if (f.op != Op::PfStart && f.op != Op::PfWait) pf_pending = -1;   // (the backend waits for the chunk first)
         switch (f.op) {
         case Op::Run: {
             const int64_t T = f.a, pos0 = f.b;
@@ -332,6 +334,27 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
             std::vector<int32_t> tok((size_t) n);
             std::memcpy(tok.data(), f.payload.data(), f.payload.size());
             ok = backend.prefill(tok.data(), n, pos0, f.c != 0, e);
+            break;
+        }
+        case Op::PfStart: {
+            const int64_t n = f.a, pos0 = f.b, buf = f.c;
+            if (n < 1 || f.payload.size() != (size_t) n * sizeof(int32_t) || pos0 < 0 || pos0 + n > id.max_context || buf < 0 || buf > 1) {
+                e = "bad prompt chunk";
+                break;
+            }
+            if (window != 0) { e = "a window is still waiting for its commit"; break; }
+            if (pf_pending >= 0) { e = "a prompt chunk is still in flight"; break; }
+            pl_t[0] = pl_t[1] = 0;
+            std::vector<int32_t> tok((size_t) n);
+            std::memcpy(tok.data(), f.payload.data(), f.payload.size());
+            ok = backend.prefill_start(tok.data(), n, pos0, (int) buf, e);
+            if (ok) pf_pending = (int) buf;
+            break;
+        }
+        case Op::PfWait: {
+            if (f.c < 0 || f.c > 1 || pf_pending != (int) f.c) { e = "no prompt chunk in flight in that buffer"; pf_pending = -1; break; }
+            pf_pending = -1;
+            ok = backend.prefill_wait((int) f.c, e);
             break;
         }
         case Op::Session: {
@@ -627,6 +650,30 @@ bool RemoteFrontStage::pl_undo(int parity, std::string& err) {
     Frame f;
     f.op = Op::PlUndo;
     f.c = parity;
+    return call(f, -1, err);
+}
+
+bool RemoteFrontStage::prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) {
+    if (!greeted_) { err = "front link: no hello yet"; return false; }
+    if (n < 1 || tokens == nullptr || buf < 0 || buf > 1 || (size_t) n * sizeof(int32_t) > kLinkMaxPayload) {
+        err = "front link: bad prompt chunk";
+        return false;
+    }
+    Frame f;
+    f.op = Op::PfStart;
+    f.a = n;
+    f.b = pos0;
+    f.c = buf;
+    f.payload.resize((size_t) n * sizeof(int32_t));
+    std::memcpy(f.payload.data(), tokens, f.payload.size());
+    return call(f, -1, err);
+}
+
+bool RemoteFrontStage::prefill_wait(int buf, std::string& err) {
+    if (!greeted_) { err = "front link: no hello yet"; return false; }
+    Frame f;
+    f.op = Op::PfWait;
+    f.c = buf;
     return call(f, -1, err);
 }
 

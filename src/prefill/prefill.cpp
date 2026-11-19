@@ -4188,8 +4188,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
 #if defined(STRATA_MIXED_SPLIT)
         int64_t hand_c0 = c0;   // the chunk's first row in hand_in_
         if (remote_fill_) {
-            if (!remote_fill_(tokens + c0, T, p0, c0 + T >= n, err)) return false;
-            hand_in_ = remote_in_;   // the front stage wrote this chunk's rows from row 0
+            hand_in_ = remote_fill_(tokens + c0, T, p0, c0 + T >= n, std::min(C, n - c0 - T), err);
+            if (hand_in_ == nullptr) return false;   // (the front stage wrote this chunk's rows from row 0)
             hand_c0 = 0;
         }
 #endif

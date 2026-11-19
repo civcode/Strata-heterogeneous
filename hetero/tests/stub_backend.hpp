@@ -77,6 +77,23 @@ struct StubBackend : FrontBackend {
         calls.push_back("pl_undo " + std::to_string(q));
         return true;
     }
+    /// a prompt chunk read ahead: buffer b is slot 2 (b = 0) or slot 5 (b = 1, a six-slot region); its first float is the
+    /// chunk's last token + 0.75.  `fail_next_pf`: the read fails, which only the wait reports (as a real worker's job)
+    bool fail_next_pf = false;
+    std::string pf_err;
+    bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string&) override {
+        calls.push_back("pf_start " + std::to_string(n) + " " + std::to_string(pos0) + " " + std::to_string(buf) + " " +
+                        std::to_string(tokens[n - 1]));
+        if (fail_next_pf) { fail_next_pf = false; pf_err = "stub prompt failure"; return true; }
+        const size_t slot = buf == 1 && region.slots() >= 6 ? 5 : 2;
+        static_cast<float*>(region.slot(slot))[0] = (float) tokens[n - 1] + 0.75f;
+        return true;
+    }
+    bool prefill_wait(int buf, std::string& err) override {
+        calls.push_back("pf_wait " + std::to_string(buf));
+        if (!pf_err.empty()) { err = pf_err; pf_err.clear(); return false; }
+        return true;
+    }
 };
 
 /// The front stage's session bookkeeping as the engine's front backend uses it, with a string for the session state:
@@ -104,6 +121,10 @@ struct BookBackend : StubBackend {
         if (!book.on_prefill(tokens, n, pos0, err)) return false;
         state = text(book.history());
         return StubBackend::prefill(tokens, n, pos0, last, err);
+    }
+    bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) override {
+        if (!book.on_prefill(tokens, n, pos0, err)) return false;
+        return StubBackend::prefill_start(tokens, n, pos0, buf, err);
     }
     bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override {
         return book.on_pl_run(q, tokens, T, pos0, err) && StubBackend::pl_run(q, T, tokens, pos0, err);

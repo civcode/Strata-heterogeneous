@@ -78,6 +78,20 @@ public:
     /// last chunk of the prompt.  Returns when the front stage has written the chunk's rows for the next stage.
     virtual bool prefill(const int32_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) = 0;
 
+    /// The same chunk read ahead (the host's first stage reads the chunk before meanwhile): start reading it into prompt
+    /// row buffer `buf` (0 or 1) and return once it is taken.  At most one chunk is in flight; any other call waits for
+    /// it first.  `prefill_wait(buf)` returns when its rows are in that buffer (true), or with its error.
+    virtual bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) {
+        (void) tokens; (void) n; (void) pos0; (void) buf;
+        err = "this front stage cannot read a prompt chunk ahead";
+        return false;
+    }
+    virtual bool prefill_wait(int buf, std::string& err) {
+        (void) buf;
+        err = "this front stage cannot read a prompt chunk ahead";
+        return false;
+    }
+
     /// Repeat a session operation on the front stage's session.
     virtual bool session(SessionOp op, int64_t a, int64_t b, std::string& err) = 0;
 

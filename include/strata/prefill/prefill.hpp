@@ -301,11 +301,12 @@ public:
     /// Set before `init`.
     void set_remote_out(float* rows, int64_t cap_rows) { remote_out_ = rows; remote_cap_ = cap_rows; }
     /// MIXED SPLIT: the stage before this one runs in another process.  Before each chunk `fill` has that process
-    /// read the chunk's tokens (it returns when the chunk's rows are in `rows`); the chunk is then read from them
-    /// as a later stage of a layer split reads the rows it is handed.
-    void set_remote_in(const float* rows,
-                       std::function<bool(const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err)> fill) {
-        remote_in_ = rows; remote_fill_ = std::move(fill);
+    /// read the chunk's tokens and returns the pinned host memory its rows are in (null: failed, `err`); the chunk is
+    /// then read from them as a later stage of a layer split reads the rows it is handed.  `next_n`: the tokens of the
+    /// run's next chunk, which follow this chunk's in `tokens` (0: none), so the other process may read it meanwhile.
+    void set_remote_in(std::function<const float*(const int64_t* tokens, int64_t n, int64_t pos0, bool last, int64_t next_n,
+                                                  std::string& err)> fill) {
+        remote_fill_ = std::move(fill);
     }
 #endif
 
@@ -404,8 +405,7 @@ private:
 
     float* remote_out_ = nullptr;       ///< set_remote_out
     int64_t remote_cap_ = 0;
-    const float* remote_in_ = nullptr;  ///< set_remote_in
-    std::function<bool(const int64_t*, int64_t, int64_t, bool, std::string&)> remote_fill_;
+    std::function<const float*(const int64_t*, int64_t, int64_t, bool, int64_t, std::string&)> remote_fill_;   ///< set_remote_in
 #endif
 
     std::string next_err_;

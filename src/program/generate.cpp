@@ -1716,6 +1716,7 @@ struct HeteroHost {
     std::vector<int32_t> tok32;
     bool on() const { return link != nullptr; }
     bool drop_window(std::string& err) {
+        pf_buf = -1;   // (any other call ends a prompt chunk read ahead: the front stage waits for it first)
         if (!window_open) return true;
         window_open = false;   // (vanilla runs the next window over a window nobody committed)
         return timed(kTSession, [&] { return link->session(strata::hetero::SessionOp::Abandon, 0, 0, err); });
@@ -1730,7 +1731,7 @@ struct HeteroHost {
     std::vector<std::unique_ptr<HeteroGpuSpan>> t_stage;   ///< one per local stage
     // STRATA_SPLIT_TIMING: every other link call's round trip (per request), and with --pipeline-windows the first local
     // stage's wait on each parity's ready word, the verdicts on wrong guesses against the front stage's window end
-    enum { kTImages, kTSteer, kTReset, kTSession, kTPrefill, kTPlRun, kTPlCommit, kTPlUndo, kTN };
+    enum { kTImages, kTSteer, kTReset, kTSession, kTPrefill, kTPfStart, kTPlRun, kTPlCommit, kTPlUndo, kTN };
     HeteroSum t_op[kTN];
     strata::core::Verifier* t_pl_ver[2] = {nullptr, nullptr};   ///< the first local stage's verifier of each parity
     const uint32_t* t_pl_flag_d[2] = {nullptr, nullptr};        ///< each parity's ready word, as that device sees it
@@ -1846,7 +1847,8 @@ struct HeteroHost {
                      (long long) t_wait.sum.n_new(), st.c_str());
         t_run.mark(); t_commit.mark(); t_wait.sum.mark();
         // the other link calls (count, total ms) and the pipelined windows
-        static const char* const names[kTN] = {"images", "steer", "reset", "other session", "prompt chunk", "PlRun", "PlCommit", "PlUndo"};
+        static const char* const names[kTN] = {"images", "steer", "reset", "other session", "prompt chunk (wait)", "PfStart", "PlRun",
+                                               "PlCommit", "PlUndo"};
         std::string calls;
         for (int k = 0; k < kTN; ++k) {
             if (t_op[k].n_new() == 0) continue;
@@ -1900,14 +1902,61 @@ struct HeteroHost {
             sp->mark(cs, after);
         });
     }
-    bool prefill(const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& err) {
-        if (!drop_window(err)) return false;
+    // ---- the prompt chunks (Prefill::set_remote_in): two row buffers in the shared memory.  The front stage reads a
+    // chunk into one of them (PfStart, answered once taken) and PfWait returns when its rows are there.  While the first
+    // local stage reads chunk c from one buffer, the front stage reads chunk c+1 of the same run into the other.
+    // Vanilla's chunk plan is unchanged: the front stage only starts each chunk earlier.  No chunk is read ahead past a
+    // position where the front stage must save its part of a checkpoint (`pf_snapshot_due`, the first stage's rule):
+    // it must hold exactly those tokens then.  STRATA_MIXED_PF_AHEAD=0: every chunk waits (no read ahead).
+    const float* pf_rows[2] = {nullptr, nullptr};
+    int64_t pf_cap = 0;
+    std::function<bool(int64_t done)> pf_snapshot_due;
+    int pf_buf = -1, pf_next = 0;        ///< the buffer of the chunk read ahead (-1: none); the buffer a new chunk takes
+    int64_t pf_pos = -1, pf_n = 0;
+    std::vector<int32_t> pf_tok;         ///< the chunk read ahead
+    static bool pf_ahead() {
+        static const bool on = [] { const char* v = std::getenv("STRATA_MIXED_PF_AHEAD"); return v == nullptr || std::atoi(v) != 0; }();
+        return on;
+    }
+    bool pf_start(const int64_t* tokens, int64_t n, int64_t pos0, int b, std::string& err) {
+        if (n > pf_cap) { err = "mixed split: a prompt chunk larger than the shared hand-off"; return false; }
         tok32.resize((size_t) n);
         for (int64_t i = 0; i < n; ++i) tok32[(size_t) i] = (int32_t) tokens[i];
-        return timed(kTPrefill, [&] { return link->prefill(tok32.data(), n, pos0, last, err); });
+        return timed(kTPfStart, [&] { return link->prefill_start(tok32.data(), n, pos0, b, err); });
+    }
+    const float* prefill(const int64_t* tokens, int64_t n, int64_t pos0, bool, int64_t next_n, std::string& err) {
+        int b = -1;
+        if (pf_buf >= 0) {   // read ahead: the same chunk?
+            bool same = pf_pos == pos0 && pf_n == n;
+            for (int64_t i = 0; same && i < n; ++i) same = pf_tok[(size_t) i] == (int32_t) tokens[i];
+            if (!same) {
+                pf_buf = -1;
+                err = "mixed split: the front stage read another prompt chunk ahead than the one the first stage reads";
+                return nullptr;
+            }
+            b = pf_buf;
+            pf_buf = -1;
+        } else {
+            if (!drop_window(err)) return nullptr;
+            b = pf_next;
+            if (!pf_start(tokens, n, pos0, b, err)) { err = "mixed split: the front stage: " + err; return nullptr; }
+        }
+        if (!timed(kTPrefill, [&] { return link->prefill_wait(b, err); })) { err = "mixed split: the front stage: " + err; return nullptr; }
+        pf_next = 1 - b;
+        if (next_n > 0 && pf_ahead() && !(pf_snapshot_due && pf_snapshot_due(pos0 + n))) {
+            // chunk c+1 into the other buffer: the first stage read the chunk before from it, and that chunk has
+            // finished (its stream was synchronized at the chunk's end) before this one starts
+            if (!pf_start(tokens + n, next_n, pos0 + n, pf_next, err)) { err = "mixed split: the front stage: " + err; return nullptr; }
+            pf_buf = pf_next;
+            pf_pos = pos0 + n;
+            pf_n = next_n;
+            pf_tok.assign(tok32.begin(), tok32.end());
+        }
+        return pf_rows[b];
     }
     bool reset(std::string& err) {
         window_open = false;
+        pf_buf = -1;
         return timed(kTReset, [&] { return link->session(strata::hetero::SessionOp::Reset, 0, 0, err); });
     }
     /// A save or restore of the first stage's session, repeated on the front stage's for the same tokens `ids[0, n)`:
@@ -1983,6 +2032,12 @@ struct HeteroFrontBackend final : strata::hetero::FrontBackend {
     std::function<bool(int, int, const int32_t*, int64_t, std::string&)> f_pl_run;
     std::function<bool(int, int, std::string&)> f_pl_commit;
     std::function<bool(int, std::string&)> f_pl_undo;
+    std::function<bool(const int32_t*, int64_t, int64_t, int, std::string&)> f_pf_start;
+    std::function<bool(int, std::string&)> f_pf_wait;
+    bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) override {
+        return f_pf_start(tokens, n, pos0, buf, err);
+    }
+    bool prefill_wait(int buf, std::string& err) override { return f_pf_wait(buf, err); }
     bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override { return f_pl_run(q, T, tokens, pos0, err); }
     bool pl_commit(int q, int n_keep, std::string& err) override { return f_pl_commit(q, n_keep, err); }
     bool pl_undo(int q, std::string& err) override { return f_pl_undo(q, err); }
@@ -12722,13 +12777,14 @@ int main(int argc, char** argv) {
         // pinned host memory (cudaHostAlloc); between the two processes it is a shared mapping that each registers with
         // its own runtime.  Slot 0: the window hand-off (the rows a verify window hands the next stage), slot 1: its
         // ready word, slot 2: the prompt path's chunk rows, slots 3 and 4: the odd windows' hand-off and ready word (a pipelined
-        // window's, --pipeline-windows; the even windows and the serial loop use slots 0 and 1).  The host creates it and sends it with the hello; the front
+        // window's, --pipeline-windows; the even windows and the serial loop use slots 0 and 1), slot 5: the second prompt row buffer (a chunk read ahead).  The host creates it and sends it with the hello; the front
         // stage waits for the hello here, before its window graphs are captured with the hand-off's device address.
         float* het_hand_d = nullptr;        // slot 0 as the device sees it
         uint32_t *het_flag_h = nullptr, *het_flag_d = nullptr;
         float* het_hand_b_d = nullptr;      // --pipeline-windows: the odd windows' hand-off (slot 3) and ready word (slot 4)
         uint32_t *het_flag_b_h = nullptr, *het_flag_b_d = nullptr;
         float* het_rows_h = nullptr;        // slot 2 (host address: the prompt path copies to / from it)
+        float* het_rows_b_h = nullptr;      // slot 5: the second prompt row buffer (a chunk read ahead, HeteroHost::prefill)
         int64_t het_rows_cap = 0;
         strata::hetero::LinkIdentity het_id;
         strata::hetero::SharedRegion het_region;   // the front stage's mapping (the host's is in `hetero`)
@@ -12746,7 +12802,8 @@ int main(int argc, char** argv) {
             std::string he;
             if (front_lb > 0) {
                 het_rows_cap = o.prefill_chunk;
-                if (!strata::hetero::SharedRegion::create({(size_t) het_id.max_rows * HB, 64, (size_t) het_rows_cap * DB, (size_t) het_id.max_rows * HB, 64},
+                if (!strata::hetero::SharedRegion::create({(size_t) het_id.max_rows * HB, 64, (size_t) het_rows_cap * DB, (size_t) het_id.max_rows * HB, 64,
+                                                           (size_t) het_rows_cap * DB},
                                                           hetero.region, he)) {
                     std::fprintf(stderr, "strata serve: mixed split: %s\n", he.c_str());
                     return 1;
@@ -12770,8 +12827,9 @@ int main(int argc, char** argv) {
                 if (got != het_id)
                     why = got.model_fingerprint != het_id.model_fingerprint ? "the two engines did not load the same model files"
                                                                             : "the two engines differ in the model's shape, the split layer or the context";
-                else if (het_region.slots() != 5 || het_region.slot_bytes(0) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(1) < 4 ||
-                         het_region.slot_bytes(2) < DB || het_region.slot_bytes(3) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(4) < 4)
+                else if (het_region.slots() != 6 || het_region.slot_bytes(0) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(1) < 4 ||
+                         het_region.slot_bytes(2) < DB || het_region.slot_bytes(3) != (size_t) het_id.max_rows * HB || het_region.slot_bytes(4) < 4 ||
+                         het_region.slot_bytes(5) != het_region.slot_bytes(2))
                     why = "the hand-off memory has another layout";
                 if (!strata::hetero::front_accept_reply(strata::hetero::kWorkerSocketFd, seq, why.empty(), why, he) || !why.empty()) {
                     std::fprintf(stderr, "strata serve: front stage: %s\n", why.empty() ? he.c_str() : why.c_str());
@@ -12793,6 +12851,7 @@ int main(int argc, char** argv) {
             het_flag_h = (uint32_t*) region->slot(1);
             het_flag_d = (uint32_t*) dev_of(1);
             het_rows_h = (float*) region->slot(2);
+            het_rows_b_h = (float*) region->slot(5);
             het_hand_b_d = (float*) dev_of(3);
             het_flag_b_h = (uint32_t*) region->slot(4);
             het_flag_b_d = (uint32_t*) dev_of(4);
@@ -12833,10 +12892,14 @@ int main(int argc, char** argv) {
 #endif
 #if defined(STRATA_MIXED_SPLIT)
             if (front_lb > 0)   // MIXED SPLIT: each chunk's rows come from the front stage's process
-                sp.set_remote_in(het_rows_h, [&hetero, het_rows_cap](const int64_t* tokens, int64_t n, int64_t pos0, bool last, std::string& e) {
-                    if (n > het_rows_cap) { e = "mixed split: a prompt chunk larger than the shared hand-off"; return false; }
-                    return hetero.prefill(tokens, n, pos0, last, e);
+            {
+                hetero.pf_rows[0] = het_rows_h;
+                hetero.pf_rows[1] = het_rows_b_h;
+                hetero.pf_cap = het_rows_cap;
+                sp.set_remote_in([&hetero](const int64_t* tokens, int64_t n, int64_t pos0, bool last, int64_t next_n, std::string& e) {
+                    return hetero.prefill(tokens, n, pos0, last, next_n, e);
                 });
+            }
             if (front_le > 0) {   // MIXED SPLIT: this process is the front stage; its rows leave through the shared hand-off
                 sp.set_stage(0, front_le, nullptr);
                 sp.set_remote_out(het_rows_h, het_rows_cap);
@@ -14588,6 +14651,11 @@ int main(int argc, char** argv) {
                     return true;
                 };
             }
+#if defined(STRATA_MIXED_SPLIT)
+            // MIXED SPLIT: where the first stage saves its part (the rule above), the front stage reads no chunk ahead
+            if (hetero.on())
+                hetero.pf_snapshot_due = [&](int64_t done) { return o.prompt_cache > 0 && o.prompt_cache_every > 0 && done >= part_next[0]; };
+#endif
         }
         drive.d.plan = ver.plan_sink();
         // Foresight swap space (STRATA_FS_SLOTS; unset = null and nothing changes)
@@ -16255,8 +16323,26 @@ int main(int argc, char** argv) {
                 if (sp.embd_rows != nullptr && pos0 + n > (int64_t) f_row_ptr.size()) { e = "a prompt chunk past the image request's prompt"; return false; }
                 if (!book.on_prefill(tokens, n, pos0, e)) return false;
                 f_ids.assign(tokens, tokens + n);
+                sp.set_remote_out(het_rows_h, het_rows_cap);
                 return f_timed(kFPrefill, [&] { return sp.run(f_ids.data(), n, pos0, e); });
             };
+            // a chunk read ahead (PfStart): the same read on the runner's thread into prompt row buffer `buf`, answered at
+            // once; PfWait (and every other call) waits for it (settle) and gets its result
+            std::vector<int64_t> f_pf_ids[2];
+            fb.f_pf_start = [&](const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& e) {
+                if (!settle(e) || !ver.wait_commit(e)) return false;
+                book.on_abandon();
+                if (sp.embd_rows != nullptr && pos0 + n > (int64_t) f_row_ptr.size()) { e = "a prompt chunk past the image request's prompt"; return false; }
+                if (n > het_rows_cap) { e = "a prompt chunk larger than the shared hand-off"; return false; }
+                if (!book.on_prefill(tokens, n, pos0, e)) return false;
+                f_pf_ids[buf].assign(tokens, tokens + n);
+                sp.set_remote_out(buf == 0 ? het_rows_h : het_rows_b_h, het_rows_cap);
+                return runner.start([&, buf, n, pos0](const std::function<void()>& launched, std::string& je) {
+                    launched();
+                    return f_timed(kFPrefill, [&] { return sp.run(f_pf_ids[buf].data(), n, pos0, je); });
+                }, e);
+            };
+            fb.f_pf_wait = [&](int, std::string& e) { return settle(e); };
             // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
             fb.f_images = [&](strata::hetero::FrontImages& im, std::string& e) {
                 const bool settled = settle(e);

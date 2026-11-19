@@ -829,9 +829,53 @@ void test_window_runner() {
 
 } // namespace
 
+/// PfStart / PfWait: a prompt chunk read ahead into one of two row buffers (link protocol 4).
+void test_prefill_ahead() {
+    Pair s;
+    test::BookBackend backend;
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;   // the engine's layout with the second prompt row buffer (slot 5)
+    std::string err;
+    CHECK(SharedRegion::create({8 * sizeof(float) * 16, 64, 4096, 8 * sizeof(float) * 16, 64, 4096}, region, err));
+    RemoteFrontStage front(s.host, 5000);
+    CHECK(front.hello(test_identity(), region, err));
+    const int32_t c0[3] = {1, 2, 3}, c1[2] = {4, 5}, c2[2] = {6, 7};
+    CHECK(!front.prefill_wait(0, err));                     // nothing in flight
+    CHECK(err == "no prompt chunk in flight in that buffer");
+    CHECK(!front.prefill_start(c0, 3, 0, 2, err));          // no such buffer (refused on the host)
+    CHECK(front.prefill_start(c0, 3, 0, 0, err));           // chunk 0 into buffer 0
+    CHECK(!front.prefill_start(c1, 2, 3, 1, err));          // one chunk in flight at a time
+    CHECK(err == "a prompt chunk is still in flight");
+    CHECK(!front.prefill_wait(1, err));                     // not the buffer in flight: that also ends it
+    CHECK(front.prefill_start(c1, 2, 3, 1, err));           // chunk 1 into buffer 1, ahead
+    CHECK(static_cast<float*>(region.slot(5))[0] == 5.75f && static_cast<float*>(region.slot(2))[0] == 3.75f);
+    CHECK(front.prefill_wait(1, err));
+    CHECK(!front.prefill_start(c2, 2, 4, 0, err));          // not where the session is
+    CHECK(err.find("out of step") != std::string::npos);
+    backend.fail_next_pf = true;                            // a failed read is reported by its wait
+    CHECK(front.prefill_start(c2, 2, 5, 0, err));
+    CHECK(!front.prefill_wait(0, err));
+    CHECK(err == "stub prompt failure");
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    CHECK(front.prefill_start(c0, 3, 0, 0, err));           // a chunk nobody waits for: the next operation ends it
+    CHECK(front.session(SessionOp::Abandon, 0, 0, err));
+    CHECK(!front.prefill_wait(0, err));
+    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3}));
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+    const std::vector<std::string> want = {"attach", "pf_start 3 0 0 3", "pf_start 2 3 1 5", "pf_wait 1", "pf_start 2 5 0 7",
+                                           "pf_wait 0", "session 1 0", "pf_start 3 0 0 3", "session 6 0"};
+    CHECK(backend.calls == want);
+    if (backend.calls != want) for (const std::string& c : backend.calls) std::fprintf(stderr, "  call: %s\n", c.c_str());
+}
+
 int main(int argc, char** argv) {
     test_token_key();
     test_pipelined_link();
+    test_prefill_ahead();
     test_window_runner();
     test_session_ops();
     test_session_drop();
