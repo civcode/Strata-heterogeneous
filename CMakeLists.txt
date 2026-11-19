@@ -798,11 +798,11 @@ if(STRATA_BUILD_SPLIT)
   add_subdirectory(src/split)
 endif()
 
-# ---- mixed NVIDIA + AMD layer split: the host-only seam between the two processes (hetero/, .ai/SEAM.md) ----
+# ---- mixed NVIDIA + AMD layer split: the host-only seam between the two processes (mixed_split/, .ai/SEAM.md) ----
 # OFF by default, Linux only, no GPU runtime is linked; no other target depends on it.
-option(STRATA_MIXED_SPLIT "Build the CUDA/HIP mixed-split seam library and its CPU tests (hetero/)" OFF)
+option(STRATA_MIXED_SPLIT "Build the CUDA/HIP mixed-split seam library and its CPU tests (mixed_split/)" OFF)
 if(STRATA_MIXED_SPLIT)
-  add_subdirectory(hetero)
+  add_subdirectory(mixed_split)
   # the engine's hooks for it (Verifier::set_front, Prefill::set_remote_in / set_remote_out, the --front-* options)
   if(TARGET strata_engine AND TARGET strata)
     target_compile_definitions(strata_engine PUBLIC STRATA_MIXED_SPLIT=1)

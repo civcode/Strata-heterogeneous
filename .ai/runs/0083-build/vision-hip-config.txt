@@ -1,0 +1,27 @@
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- strata-vision: portable build (AVX2 baseline, runs on other PCs)
+-- The HIP compiler identification is Clang 24.0.0
+-- Detecting HIP compiler ABI info
+-- Detecting HIP compiler ABI info - done
+-- Check for working HIP compiler: /opt/rocm/core-10.1/lib/llvm/bin/clang++ - skipped
+-- Detecting HIP compile features
+-- Detecting HIP compile features - done
+-- HIP: Using hipcc from relative path: /opt/rocm/core-10.1/bin/hipcc
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- HIP: Using hipcc from relative path: /opt/rocm/core-10.1/bin/hipcc
+-- Configuring done (0.8s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/chris/workspace/Strata-mixed-native/build-0083-vision-hip

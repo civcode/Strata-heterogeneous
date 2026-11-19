@@ -58,11 +58,11 @@ loop:
    embedding step). This is the part inside `generate.cpp` and is the Tier 1 work of handoff 0064.
 5. Transport, identity checks, all-owner commit acknowledgement and cooperative supervision of the worker.
 
-## What exists so far (`hetero/`, host-only, CPU-tested)
+## What exists so far (`mixed_split/`, host-only, CPU-tested)
 
 | File | What it is |
 | --- | --- |
-| `include/strata/hetero/front_stage.hpp` | `FrontStage`: the calls the first local stage forwards (run, commit, prefill, session) |
+| `include/strata/mixed_split/front_stage.hpp` | `FrontStage`: the calls the first local stage forwards (run, commit, prefill, session) |
 | `shared_region.hpp` | one memfd mapping with page-aligned slots for the hand-off buffers and ready words |
 | `front_link.hpp` | the socket protocol: `RemoteFrontStage` (host side), `serve_front` and `FrontBackend` (worker side), identity check |
 | `worker_process.hpp` | start the worker with its socket on descriptor 3; end it by closing the socket, never by a signal |

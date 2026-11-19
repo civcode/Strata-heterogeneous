@@ -1,33 +1,40 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0083` (Tier 1), once the Human User hands it over.
+Turn holder: **Human User**: the production version and the next direction (see Open decisions).
 
 ## Current milestone
 
-M10: re-pin to vanilla 0.2.16 (`v0.2.16`, `64524fb9`), by merging it into `feature/mixed-native` (handoff 0083).
+M10 closed: the branch is vanilla 0.2.16 plus the mixed split (report 0084, `1e6390da`; Partial only for the full
+option audit).
 
-The native-pack question is answered (report 0082, `9de3c43a`; Partial only because outputs differ between packs).
+Report 0084, Chat AI's review:
+- **The rename works on the cards:**
+  - every default target built in all five trees;
+  - host CTest 147/147; `mixed_split_tests` and `mixed_split_cache_drop_test` 2/2 on HIP and CUDA;
+  - the mixed mirror served the features suite (16K conversation restored, vision, `cvec=0`, clean shutdown);
+  - pipelined against serial exact.
+- **Vanilla 0.2.16 removed llama.cpp's MMQ prompt kernels** (`engine/CMakeLists.txt`, `docs/AMD_HIP_PERFORMANCE.md`):
+  the MMQ build options are now ignored. HIP-only, the same production arguments, warm blocks, six samples each:
 
-Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm servers):
-- **Prefill:** the native pack is faster everywhere.
-  - HIP-only: +10.4% / +19.7% / +13.6% (code / long / 16K).
-  - Mixed: +39.6% / +16.3% / +3.0%.
-  - Report 0080's −11.5% on code was a cold-start artefact.
-- **Decode:** the native pack is slower.
-  - Medians HIP-only: −2.6% / −7.4% / −0.6%. Mixed: −8.6% / −7.4% / −11.2%; in mixed mode the code ranges do not
-    overlap.
-  - Where both packs produced identical output, the cost is still there: HIP-only long, first measured request,
-    121.9 against 114.6 tok/s (−6%); mixed 16K, about 162 against 141 to 157 (−3 to −13%).
-  - So it is not just different text. In mixed mode it is larger, which points at the CUDA front stage's decode kernels
-    for the GGUF-form experts (not measured).
-- **Per turn the two cancel out:** for a turn with 5,000 new prompt tokens and 500 generated tokens, the production pack
-  takes 6.08 s and the native 6.12 s in HIP-only, and 5.70 against 5.71 s in mixed mode. Turns heavier in new prompt
-  favour native; turns heavier in output favour production.
-- **Report gaps:** drafts accepted per window are not given, but accepted/offered per request is, and acceptance is
-  similar between packs.
-- **Safety:** boot ID unchanged; no faults or core dumps; 547 s of GPU time. No engine change.
+  | Prompt | Prefill, 0.2.15 / 0.2.16 | Decode, 0.2.15 / 0.2.16 |
+  | --- | --- | --- |
+  | Long | 2,744 / 2,202 (−19.8%) | 106.4 / 117.3 (+10%) |
+  | 16K | 3,786 / 3,210 (−15.2%) | 117.7 / 116.2 (−1%) |
+
+  Beyond the spread. MMQ's removal is the likely cause (it was worth about 22% in report 0066), but not isolated. Per
+  turn:
+  - 5,000 new tokens and 500 generated: 6.52 s on 0.2.15, 6.53 s on 0.2.16;
+  - 16,000 and 500: 8.48 s against 9.28 s (+9%).
+- **The option audit** names every production argument's meaning on 0.2.16, but does not compare defaults across
+  versions. Found: `STRATA_SPLIT_OVERLAP=1` has no effect next to `--pipeline-windows 2`.
+- **Safety:** boot ID unchanged, no faults, no core dumps.
+- **Since report 0084, by Chat AI:** `.ai/PROJECT.md` notes the MMQ removal and the inert overlap variable.
 
 ## History in short
+
+- Report 0084: rename confirmed on the cards; vanilla 0.2.16 prefill 15 to 20% slower than 0.2.15 with MMQ (HIP-only), decode equal or better.
+
+- Report 0083: merged vanilla 0.2.16 (one small conflict); re-checks pass; then renamed `hetero` to `mixed_split`.
 
 - Report 0082: native pack prefill +3 to +40%, decode −1 to −11% (confirmed on identical outputs); per typical turn even.
 
@@ -99,15 +106,18 @@ Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm 
   first (production runs one conversation at a time), each with a go/no-go on HIP-only before implementing.
 - 2026-11-19: the NVIDIA Xid 79 is unrelated to this project. Next: the native-pack decode comparison.
 - 2026-11-19: re-pin to vanilla 0.2.16 next.
+- 2026-11-19: rename every `hetero` to `mixed_split` / `MIXED_SPLIT` in the project's own code.
 
 ## Open decisions for the Human User
 
-- **Native pack:** Chat AI recommends keeping the production pack (report 0082: even per turn). No action needed unless
-  the Human User wants to switch.
+- **Production on 0.2.15 or 0.2.16?** Vanilla's own change; about even for 5K-token turns, about 9% slower on 0.2.16
+  for 16K-token turns.
+- **Report the prefill drop upstream?** Chat AI can draft an issue, following vanilla's `CONTRIBUTING.md`
+  (`[Benchmark]`, a same-day comparison); the Human User posts it.
+- **The next direction:** a release-candidate qualification (long-duration runs), or more performance work.
 
 ## Next step
 
-After report 0083: Chat AI reviews the merge against the contract (`check_off_is_vanilla.py` against `v0.2.16`, the
-hooks' new places) and the re-checks. Then a release-candidate qualification, or the next performance step.
+Depends on the decisions above.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
