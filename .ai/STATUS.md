@@ -108,13 +108,12 @@ qualification uses a synthetic workload shaped like it; model, measurements and 
 
 ## Open decisions for the Human User
 
-- **The release candidate's workload:** how pi and its extension can be driven on Oberon, the compaction settings,
-  whether real sessions may be captured and replayed, and the time for long runs (Chat AI's questions,
-  2026-11-19).
+- **The workload numbers in `.ai/RC.md` are estimates** (tool-output sizes, pruning every 8 turns of outputs over
+  1,000 tokens, a summary of about 8,000 tokens). The Human User may correct them; each is a flag of the driver.
 
 ## Next step
 
-After the Human User's answers: Chat AI writes the release-candidate plan and its first handoff: fresh builds on 0.2.15,
-a workload driver for pi sessions, then the qualification runs.
+Handoff 0085 (Coding Agent). Then RC handoff 2: a soak of about three hours on the mixed configuration. Then Chat AI
+writes `mixed_split/README.md` and tags `mixed-split-rc1`.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
