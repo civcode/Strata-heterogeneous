@@ -12,16 +12,16 @@
 
 ## Commits
 
-- `e337221b3`: `serve_session.py` gets a `cancel` suite (task 3 driver).
-- `88a9ca70d`: task 5, the checkpoint overlap (link protocol 5, two hooks, a CPU test).
-- `969fa79d7`: `serve_session.py` gets a `warm` suite (task 5 measurement).
-- `0f72a4699`: revert of `88a9ca70d`, with the reason.
-- This commit: the report and the run evidence.
+- `40795177c`: `serve_session.py` gets a `cancel` suite (task 3 driver).
+- `d172f54ed`: task 5, the checkpoint overlap (link protocol 5, two hooks, a CPU test).
+- `bfb5d2431`: `serve_session.py` gets a `warm` suite (task 5 measurement).
+- `fce1f20c8`: revert of `d172f54ed`, with the reason.
+- `72d471957`: the report and the run evidence; this commit fixes the hashes after a rebase onto Chat AI's status note (`6c9d0034`). The revert's own message still names the pre-rebase hash `88a9ca70d` = `d172f54ed`.
 
 **Builds:** `build-0071-hip`, `build-0071-cuda` and both vision builds were rebuilt and stamped three times this turn:
 - at `8cde1265` for the task 3 runs;
-- at `88a9ca70d` for task 5;
-- at `0f72a4699` (the final state) for the last sanity run.
+- at `d172f54ed` for task 5;
+- at `fce1f20c8` (the final state) for the last sanity run.
 
 ## Task 3: a cancel while the front stage is a chunk ahead
 
@@ -64,7 +64,7 @@ two-turn conversation, `long16k_t2` (below).
 
 ## Task 5: the checkpoint overlap
 
-**What I built (`88a9ca70d`, now reverted):**
+**What I built (`d172f54ed`, now reverted):**
 - Link protocol 5:
   - **SnapStart** (`a` key, `b` n). The front stage runs Snapshot's check at once and refuses if its session does not
     hold those tokens. It then copies its state on the runner's thread and answers as soon as the copy is taken.
@@ -114,13 +114,13 @@ The first requests were 480 to 486 ms in both settings.
   grows by 8 ms and the front's copy nearly doubles.
 - Both copy GPU state into pageable host memory, so they share host-side resources. I did not dig further, because
   the outcome is what matters for the decision.
-- **Decision:** I reverted it (`0f72a4699`). Two hooks in a vanilla file and a protocol operation that save nothing
+- **Decision:** I reverted it (`fce1f20c8`). Two hooks in a vanilla file and a protocol operation that save nothing
   should not be carried. The commit stays in history if a later rig or a pinned-memory checkpoint path changes the
   picture.
 
 ## Vanilla files changed
 
-**None net.** `88a9ca70d` changed `src/program/generate.cpp` (`checkpoint_at`, the stages' `on_stage_chunk`,
+**None net.** `d172f54ed` changed `src/program/generate.cpp` (`checkpoint_at`, the stages' `on_stage_chunk`,
 `HeteroHost`, `HeteroFrontBackend` and the front's link serving), all inside `#if defined(STRATA_MIXED_SPLIT)`. The
 revert removed all of it. `check_off_is_vanilla.py` reports 6 of 6 at both commits.
 
