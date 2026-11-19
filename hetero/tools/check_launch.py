@@ -9,7 +9,8 @@ import sys
 from hetero_common import expand
 
 REPO = Path(__file__).resolve().parents[2]
-VISION = REPO / 'tools' / 'vision'
+VISION = REPO / 'terminal' / 'tools' / 'vision'
+ENGINE = REPO / 'engine'
 # what does not go into a build: notes, reports, run logs, docs, benchmark write-ups, and the mixed split's driver
 # scripts and run configs.  A commit that changes only
 # these does not make a build stale (rule 7 is about the code that runs).
@@ -69,7 +70,7 @@ def check_config(cfg):
         cache = (build / 'CMakeCache.txt').read_text().splitlines()
         values = dict(line.split('=', 1) for line in cache if '=' in line and not line.startswith(('#', '//')))
         home = Path(values.get('CMAKE_HOME_DIRECTORY:INTERNAL', '/')).resolve()
-        if home != REPO and not (role.startswith('vision.') and home == VISION):
+        if home != ENGINE and not (role.startswith('vision.') and home == VISION):
             fail(f'{role}: build is not from this checkout: {build}')
         stamp = build / 'BUILD_COMMIT'
         if not stamp.is_file():

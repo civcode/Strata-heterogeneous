@@ -11,7 +11,7 @@ repository's docs/*.md to summarise; long32k: the same with about 32,000 tokens.
 import json, os, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(REPO, "tools"))
+sys.path.insert(0, os.path.join(REPO, "terminal", "tools"))
 from strata_tokenizer import Tokenizer  # noqa: E402
 
 tk = Tokenizer.from_gguf(sys.argv[1])

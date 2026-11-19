@@ -2,7 +2,7 @@
 """With the mixed split off, the engine sources must be vanilla's, line for line.
 
 Resolves every `#if defined(STRATA_MIXED_SPLIT)` block as false in each file this branch changes outside `hetero/`
-and compares the result with the same file at the vanilla reference (default: c775728, vanilla 0.2.15).  Only the
+and compares the result with the same file at the vanilla reference (default: 64524fb9, vanilla 0.2.16).  Only the
 form `#if defined(STRATA_MIXED_SPLIT)` with an optional `#else` is handled; anything else is refused.  Needs no GPU
 and no build.
 
@@ -66,8 +66,8 @@ def resolve_off(macro, path):
 
 
 def main():
-    ref = sys.argv[1] if len(sys.argv) > 1 else 'c775728'
-    names = subprocess.run(['git', '-C', str(REPO), 'diff', '--name-only', ref, '--', 'src', 'include'],
+    ref = sys.argv[1] if len(sys.argv) > 1 else '64524fb9'
+    names = subprocess.run(['git', '-C', str(REPO), 'diff', '--name-only', ref, '--', 'engine/src', 'engine/include'],
                            text=True, capture_output=True, check=True).stdout.split()
     bad = 0
     for name in names:

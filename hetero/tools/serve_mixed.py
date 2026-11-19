@@ -62,7 +62,7 @@ def main():
         json.dump(cfg, f, indent=1)
     os.environ.setdefault("HSA_ENABLE_SDMA", "0")   # (the known-good vanilla run config's setting)
     py = os.path.join(REPO, ".venv", "bin", "python")
-    argv = [py, os.path.join(REPO, "serve", "server.py"), "--engine", "strata", "--config", out]
+    argv = [py, os.path.join(REPO, "terminal", "serve", "server.py"), "--engine", "strata", "--config", out]
     if a.port:
         argv += ["--port", str(a.port)]
     print("serve_mixed: " + " ".join(argv + extra), flush=True)

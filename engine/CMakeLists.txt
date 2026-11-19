@@ -791,7 +791,7 @@ endif()
 # OFF by default, Linux only, no GPU runtime is linked; no other target depends on it.
 option(STRATA_MIXED_SPLIT "Build the CUDA/HIP mixed-split seam library and its CPU tests (hetero/)" OFF)
 if(STRATA_MIXED_SPLIT)
-  add_subdirectory(hetero)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../hetero ${CMAKE_BINARY_DIR}/hetero)
   # the engine's hooks for it (Verifier::set_front, Prefill::set_remote_in / set_remote_out, the --front-* options)
   if(TARGET strata_engine AND TARGET strata)
     target_compile_definitions(strata_engine PUBLIC STRATA_MIXED_SPLIT=1)
