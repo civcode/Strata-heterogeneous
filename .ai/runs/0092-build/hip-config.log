@@ -1,0 +1,29 @@
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- strata: compiled geometry flash_next (default)
+-- Strata: verify / batch windows hold up to 16 rows
+-- The HIP compiler identification is Clang 24.0.0
+-- Detecting HIP compiler ABI info
+-- Detecting HIP compiler ABI info - done
+-- Check for working HIP compiler: /opt/rocm/core-10.1/lib/llvm/bin/clang++ - skipped
+-- Detecting HIP compile features
+-- Detecting HIP compile features - done
+CMake Error at cmake/hip_backend.cmake:58 (find_package):
+  Could not find a package configuration file provided by "hip" with any of
+  the following names:
+
+    hipConfig.cmake
+    hip-config.cmake
+
+  Add the installation prefix of "hip" to CMAKE_PREFIX_PATH or set "hip_DIR"
+  to a directory containing one of the above files.  If "hip" provides a
+  separate development package or SDK, be sure it has been installed.
+Call Stack (most recent call first):
+  CMakeLists.txt:179 (include)
+
+
+-- Configuring incomplete, errors occurred!

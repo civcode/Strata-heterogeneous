@@ -1,6 +1,6 @@
 {
  "//": "HIP-only on Oberon (two R9700, vanilla layer split): the Human User's production setup (2026-11-18), with ${NAME} placeholders for the paths. Start with mixed_split/tools/serve_mixed.py; placeholders: mixed_split/configs/README.md.",
- "exe": "${STRATA_REPO}/build-0087-hip/strata",
+ "exe": "${STRATA_REPO}/build-0092-hip/strata",
  "args": [
   "--pack",
   "${STRATA_DATA}/packs/q2_0",
@@ -65,12 +65,12 @@
  "gpus_asked": true,
  "layer_split": "auto",
  "vision": {
-  "exe": "${STRATA_REPO}/build-0087-vision-hip/bin/strata-vision-hip",
+  "exe": "${STRATA_REPO}/build-0092-vision-hip/bin/strata-vision-hip",
   "mmproj": "${STRATA_MODEL_DIR}/mmproj-Qwen3.8-Flash-Next-BF16.gguf",
   "model": "${STRATA_MODEL_DIR}/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
   "gpu": true,
   "max_tokens": 1024,
-  "cpu_exe": "${STRATA_REPO}/build-0087-vision-cpu/bin/strata-vision"
+  "cpu_exe": "${STRATA_REPO}/build-0092-vision-cpu/bin/strata-vision"
  },
  "env": {
   "HSA_ENABLE_SDMA": "0",

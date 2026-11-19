@@ -1,0 +1,2 @@
+Nov 19 21:30:31 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 19 times, consider switching to WQ_UNBOUND
+Nov 19 21:30:39 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 19 times, consider switching to WQ_UNBOUND

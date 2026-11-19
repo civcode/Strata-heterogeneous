@@ -1,0 +1,5 @@
+launch check OK: {'host': (PosixPath('/home/chris/workspace/Strata-heterogeneous/build-0092-hip'), 'hip'), 'front': (PosixPath('/home/chris/workspace/Strata-heterogeneous/build-0092-cuda'), 'cuda'), 'vision.exe': (PosixPath('/home/chris/workspace/Strata-heterogeneous/build-0092-vision-hip'), 'vision-hip'), 'vision.cpu_exe': (PosixPath('/home/chris/workspace/Strata-heterogeneous/build-0092-vision-cpu'), 'vision-cpu')}
+wrote /home/chris/workspace/Strata-heterogeneous/strata-iq3_xxs-mixed.json
+wrote /home/chris/workspace/Strata-heterogeneous/run-iq3_xxs-mixed.sh
+  note: added --mmap-experts (otherwise the host and the front stage would each load the experts into RAM)
+start: /home/chris/workspace/Strata-heterogeneous/run-iq3_xxs-mixed.sh   (stop: Ctrl-C, then wait for the drain)

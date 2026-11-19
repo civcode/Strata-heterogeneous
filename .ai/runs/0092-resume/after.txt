@@ -1,0 +1,365 @@
+2026-11-19T21:30:40+01:00
+ffcbbb74-121f-46fa-a930-ca08f55e881c
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3744       13509           2       45367       58198
+Swap:          16383         367       16016
+NAME      TYPE SIZE   USED PRIO
+/swap.img file  16G 367.1M   -1
+Nov 19 18:05:38 oberon kernel: NMI watchdog: Enabled. Permanently consumes one hw-PMU counter.
+Nov 19 18:05:38 oberon kernel: workingset: timestamp_bits=36 max_order=24 bucket_order=0
+Nov 19 18:05:38 oberon kernel: Estimated ratio of average max frequency by base frequency (times 1024): 1197
+Nov 19 18:05:38 oberon systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
+Nov 19 18:05:38 oberon systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
+Nov 19 18:05:38 oberon systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...
+Nov 19 18:05:38 oberon systemd-journald[669]: Collecting audit messages is disabled.
+Nov 19 18:05:38 oberon systemd[1]: Mounted dev-mqueue.mount - POSIX Message Queue File System.
+Nov 19 18:05:40 oberon kernel: amdgpu: Virtual CRAT table created for CPU
+Nov 19 18:05:40 oberon kernel: amdgpu: Topology: Add CPU node
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: enabling device (0006 -> 0007)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: initializing kernel modesetting (IP DISCOVERY 0x1002:0x7551 0x1458:0x242F 0xC0).
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: register mmio base: 0xDFC00000
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: register mmio size: 524288
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 0 <common_v1_0_0> (soc24_common)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 1 <gmc_v12_0_0> (gmc_v12_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 2 <ih_v7_0_0> (ih_v7_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 3 <psp_v14_0_0> (psp)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 4 <smu_v14_0_0> (smu)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 5 <dce_v1_0_0> (dm)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 6 <gfx_v12_0_0> (gfx_v12_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 7 <sdma_v7_0_0> (sdma_v7_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 8 <vcn_v5_0_0> (vcn_v5_0_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 9 <jpeg_v5_0_0> (jpeg_v5_0_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: detected ip block number 10 <mes_v12_0_0> (mes_v12_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: Fetched VBIOS from VFCT
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] ATOM BIOS: 113-R9700AT-F40
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: Trusted Memory Zone (TMZ) feature not supported
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: MEM ECC is active.
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: SRAM ECC is not presented.
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: RAS INFO: ras initialized successfully, hardware ability[101] ras_mask[101]
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: vm size is 262144 GB, 4 levels, block size is 9-bit, fragment size is 9-bit
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: VRAM: 32624M 0x0000008000000000 - 0x00000087F6FFFFFF (32624M used)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: GART: 512M 0x0000000000000000 - 0x000000001FFFFFFF
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] Detected VRAM RAM=32624M, BAR=32768M
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] RAM width 256bits GDDR6
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0:  32624M of VRAM memory ready
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0:  30971M of GTT memory ready.
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] GART: num cpu pages 131072, num gpu pages 131072
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] Loading DMUB firmware via PSP: version=0x0A000800
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [VCN instance 0] Found VCN firmware Version ENC: 1.12 DEC: 9 VEP: 0 Revision: 15
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: MES: vmid_mask_mmhub 0x0000ff00, vmid_mask_gfxhub 0x0000ff00
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: MES: gfx_hqd_mask 0x000000fe, compute_hqd_mask 0x0000000c, sdma_hqd_mask 0x000000fc
+Nov 19 18:05:40 oberon kernel: NVRM: loading NVIDIA UNIX x86_64 Kernel Module  580.178.04  Tue Jul  7 12:38:21 UTC 2026
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: SMU is initialized successfully!
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] Display Core v3.2.369 initialized on DCN 4.0.1
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] DP-HDMI FRL PCON supported
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:05:40 oberon kernel: snd_hda_intel 0000:03:00.1: bound 0000:03:00.0 (ops amdgpu_dm_audio_component_bind_ops [amdgpu])
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] DP-1: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] DP-2: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] DP-3: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] HDMI-A-1: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:05:40 oberon kernel: amdgpu: Virtual CRAT table created for GPU
+Nov 19 18:05:40 oberon kernel: amdgpu: Topology: Add GPU node [0x1002:0x7551]
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: SE 4, SH per SE 2, CU per SH 8, active_cu_number 64
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:05:40 oberon kernel: amdgpu: HMM registered 32624MB device memory
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: Using BACO for runtime pm
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] Registered 4 planes with drm panic
+Nov 19 18:05:40 oberon kernel: [drm] Initialized amdgpu 3.64.0 for 0000:03:00.0 on minor 1
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: enabling device (0006 -> 0007)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: initializing kernel modesetting (IP DISCOVERY 0x1002:0x7551 0x1458:0x242F 0xC0).
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: register mmio base: 0xDFA00000
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: register mmio size: 524288
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 0 <common_v1_0_0> (soc24_common)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 1 <gmc_v12_0_0> (gmc_v12_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 2 <ih_v7_0_0> (ih_v7_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 3 <psp_v14_0_0> (psp)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 4 <smu_v14_0_0> (smu)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 5 <dce_v1_0_0> (dm)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 6 <gfx_v12_0_0> (gfx_v12_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 7 <sdma_v7_0_0> (sdma_v7_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 8 <vcn_v5_0_0> (vcn_v5_0_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 9 <jpeg_v5_0_0> (jpeg_v5_0_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: detected ip block number 10 <mes_v12_0_0> (mes_v12_0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: VFCT bus number mismatch: table 3 != runtime 7, matching by device identity (vendor 0x1002 device 0x7551)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: Fetched VBIOS from VFCT
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] ATOM BIOS: 113-R9700AT-F40
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: Trusted Memory Zone (TMZ) feature not supported
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: MEM ECC is active.
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: SRAM ECC is not presented.
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: RAS INFO: ras initialized successfully, hardware ability[101] ras_mask[101]
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: vm size is 262144 GB, 4 levels, block size is 9-bit, fragment size is 9-bit
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: VRAM: 32624M 0x0000008000000000 - 0x00000087F6FFFFFF (32624M used)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: GART: 512M 0x0000000000000000 - 0x000000001FFFFFFF
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] Detected VRAM RAM=32624M, BAR=32768M
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] RAM width 256bits GDDR6
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0:  32624M of VRAM memory ready
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0:  30971M of GTT memory ready.
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] GART: num cpu pages 131072, num gpu pages 131072
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] Loading DMUB firmware via PSP: version=0x0A000800
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [VCN instance 0] Found VCN firmware Version ENC: 1.12 DEC: 9 VEP: 0 Revision: 15
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: MES: vmid_mask_mmhub 0x0000ff00, vmid_mask_gfxhub 0x0000ff00
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: MES: gfx_hqd_mask 0x000000fe, compute_hqd_mask 0x0000000c, sdma_hqd_mask 0x000000fc
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: SMU is initialized successfully!
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] Display Core v3.2.369 initialized on DCN 4.0.1
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] DP-HDMI FRL PCON supported
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:05:40 oberon kernel: snd_hda_intel 0000:07:00.1: bound 0000:07:00.0 (ops amdgpu_dm_audio_component_bind_ops [amdgpu])
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] DP-4: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] DP-5: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] DP-6: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: [drm] HDMI-A-2: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:05:40 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:05:41 oberon kernel: amdgpu: Virtual CRAT table created for GPU
+Nov 19 18:05:41 oberon kernel: amdgpu: Topology: Add GPU node [0x1002:0x7551]
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: SE 4, SH per SE 2, CU per SH 8, active_cu_number 64
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:05:41 oberon kernel: amdgpu: HMM registered 32624MB device memory
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: Using BACO for runtime pm
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: [drm] Registered 4 planes with drm panic
+Nov 19 18:05:41 oberon kernel: [drm] Initialized amdgpu 3.64.0 for 0000:07:00.0 on minor 3
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: enabling device (0006 -> 0007)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: initializing kernel modesetting (IP DISCOVERY 0x1002:0x13C0 0x1043:0x8877 0xC1).
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: register mmio base: 0xDF900000
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: register mmio size: 524288
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 0 <common_v1_0_0> (nv_common)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 1 <gmc_v10_0_0> (gmc_v10_0)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 2 <ih_v5_0_0> (navi10_ih)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 3 <psp_v13_0_0> (psp)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 4 <smu_v13_0_0> (smu)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 5 <dce_v1_0_0> (dm)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 6 <gfx_v10_0_0> (gfx_v10_0)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 7 <sdma_v5_2_0> (sdma_v5_2)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 8 <vcn_v3_0_0> (vcn_v3_0)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: detected ip block number 9 <jpeg_v3_0_0> (jpeg_v3_0)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: Fetched VBIOS from VFCT
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] ATOM BIOS: 102-RAPHAEL-008
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: vgaarb: deactivate vga console
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: Trusted Memory Zone (TMZ) feature disabled as experimental (default)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: vm size is 262144 GB, 4 levels, block size is 9-bit, fragment size is 9-bit
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: VRAM: 2048M 0x000000F400000000 - 0x000000F47FFFFFFF (2048M used)
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: GART: 1024M 0x0000000000000000 - 0x000000003FFFFFFF
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] Detected VRAM RAM=2048M, BAR=2048M
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] RAM width 128bits DDR5
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0:  2048M of VRAM memory ready
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0:  30971M of GTT memory ready.
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] GART: num cpu pages 262144, num gpu pages 262144
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] PCIE GART of 1024M enabled (table at 0x000000F47FC00000).
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] Loading DMUB firmware via PSP: version=0x05001C00
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] use_doorbell being set to: [true]
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [VCN instance 0] Found VCN firmware Version ENC: 1.30 DEC: 3 VEP: 0 Revision: 4
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: reserve 0xa00000 from 0xf47e000000 for PSP TMR
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: RAS: optional ras ta ucode is not available
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: SMU is initialized successfully!
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] Display Core v3.2.369 initialized on DCN 3.1.5
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] DP-HDMI FRL PCON supported
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] DMUB hardware initialized: version=0x05001C00
+Nov 19 18:05:41 oberon kernel: snd_hda_intel 0000:7e:00.1: bound 0000:7e:00.0 (ops amdgpu_dm_audio_component_bind_ops [amdgpu])
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] HDMI-A-3: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] DP-7: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] DP-8: PSR support 0, DC PSR ver -1, sink PSR ver 0 DPCD caps 0x0 su_y_granularity 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: kiq ring mec 2 pipe 1 q 0
+Nov 19 18:05:41 oberon kernel: amdgpu: Virtual CRAT table created for GPU
+Nov 19 18:05:41 oberon kernel: amdgpu: Topology: Add GPU node [0x1002:0x13c0]
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: SE 1, SH per SE 1, CU per SH 2, active_cu_number 2
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring gfx_0.1.0 uses VM inv eng 1 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.0.0 uses VM inv eng 4 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.1.0 uses VM inv eng 5 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.2.0 uses VM inv eng 6 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.3.0 uses VM inv eng 7 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.0.1 uses VM inv eng 8 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.1.1 uses VM inv eng 9 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.2.1 uses VM inv eng 10 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring comp_1.3.1 uses VM inv eng 11 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring kiq_0.2.1.0 uses VM inv eng 12 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring sdma0 uses VM inv eng 13 on hub 0
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring vcn_dec_0 uses VM inv eng 0 on hub 8
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring vcn_enc_0.0 uses VM inv eng 1 on hub 8
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring vcn_enc_0.1 uses VM inv eng 4 on hub 8
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: ring jpeg_dec uses VM inv eng 5 on hub 8
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: Runtime PM not available
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] Registered 4 planes with drm panic
+Nov 19 18:05:41 oberon kernel: [drm] Initialized amdgpu 3.64.0 for 0000:7e:00.0 on minor 4
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] Failed to setup vendor infoframe on connector HDMI-A-3: -22
+Nov 19 18:05:41 oberon kernel: fbcon: amdgpudrmfb (fb0) is primary device
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] REG_WAIT timeout 1us * 100000 tries - optc31_disable_crtc line:145
+Nov 19 18:05:41 oberon kernel: amdgpu 0000:7e:00.0: [drm] fb0: amdgpudrmfb frame buffer device
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: PSP is resuming...
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: SMU is resuming...
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: SMU is resumed successfully!
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: PSP is resuming...
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: SMU is resuming...
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: SMU is resumed successfully!
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:05:53 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: PSP is resuming...
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: SMU is resuming...
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: SMU is resumed successfully!
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: PSP is resuming...
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: SMU is resuming...
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: SMU is resumed successfully!
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:12:02 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: PSP is resuming...
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: SMU is resuming...
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: SMU is resumed successfully!
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:03:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: [drm] PCIE GART of 512M enabled (table at 0x00000087D6B00000).
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: PSP is resuming...
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: GECC is disabled, set amdgpu_ras_enable=1 to enable GECC in next boot cycle if needed
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: RAP: optional rap ta ucode is not available
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: SECUREDISPLAY: optional securedisplay ta ucode is not available
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: SMU is resuming...
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: smu driver if version = 0x0000002e, smu fw if version = 0x00000033, smu fw program = 0, smu fw version = 0x00684c00 (104.76.0)
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: SMU is resumed successfully!
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0x4000000
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: program CP_MES_CNTL : 0xc000000
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: [drm] DMUB hardware initialized: version=0x0A000800
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring sdma0 uses VM inv eng 9 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring sdma1 uses VM inv eng 10 on hub 0
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring vcn_unified_0 uses VM inv eng 0 on hub 8
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: ring jpeg_dec uses VM inv eng 1 on hub 8
+Nov 19 18:37:03 oberon kernel: amdgpu 0000:07:00.0: [drm] Cannot find any crtc or sizes
+Nov 19 19:52:33 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+Nov 19 20:06:00 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
+Nov 19 20:06:00 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+Nov 19 20:09:39 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
+Nov 19 20:09:39 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 7 times, consider switching to WQ_UNBOUND
+Nov 19 20:09:57 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 7 times, consider switching to WQ_UNBOUND
+Nov 19 20:10:35 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 11 times, consider switching to WQ_UNBOUND
+Nov 19 20:11:13 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 11 times, consider switching to WQ_UNBOUND
+Nov 19 21:26:56 oberon kernel: workqueue: mmput_async_fn hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+Nov 19 21:27:13 oberon kernel: workqueue: mmput_async_fn hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
+Nov 19 21:30:31 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 19 times, consider switching to WQ_UNBOUND
+Nov 19 21:30:39 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 19 times, consider switching to WQ_UNBOUND
+No coredumps found.
