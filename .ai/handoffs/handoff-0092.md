@@ -53,10 +53,23 @@ Handoff 0091 is deferred (Human User, 2026-11-19); do not run it.
    `-DSTRATA_PREFILL_MMQ=ON -DSTRATA_MMQ=ON`; both vision helpers; `-DSTRATA_MIXED_SPLIT=ON`; 28 jobs). Stamp each
    `BUILD_COMMIT`. `mixed_split_tests` (including `test_session_root_kept`) in both trees through
    `ctest_sdma_off.sh`. Point the example configs in `mixed_split/configs/` at `build-0092-*`.
-5. **The IQ3_XXS files:** find vanilla's IQ3_XXS run config in `/home/chris/workspace/Strata` (read only; something
-   like `strata-iq3_xxs.json`; report its name and its args), then
-   `.venv/bin/python mixed_split/tools/make_mixed_config.py <that file> --build-tag 0092`. Report the two files'
-   paths, the tool's notes, and the generated config in full.
+5. **The IQ3_XXS files.** The model's files on Oberon (Human User, 21:17):
+   - shards: `/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf`
+     and `...-00002-of-00002.gguf` (both with `.done` marks);
+   - pack: `/home/chris/workspace/Strata-data/packs/iq3_xxs` (a native pack: `dense.bin`, `index.txt`,
+     `native_experts.txt`, `tokenizer/`; no `experts.bin`);
+   - shared with Q2_0: the drafter `/home/chris/workspace/Strata-data/mtp/rt`, the vision projector
+     `/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/mmproj-Qwen3.8-Flash-Next-BF16.gguf`.
+
+   **The tool's input:** vanilla's IQ3_XXS run config in `/home/chris/workspace/Strata` if there is one (read only;
+   `strata-iq3_xxs*.json`; report its name and args). If there is none: copy vanilla's production Q2_0 run config
+   (`strata-q2_0.json` there) to `/tmp/strata-iq3_xxs.json` and change in the copy only the model's own fields, to the
+   files above: `--pack` -> `packs/iq3_xxs`, `--native` -> the first IQ3_XXS shard, `--ple-gguf` -> the second,
+   `"tokenizer"` -> `packs/iq3_xxs/tokenizer`, `"model_name"` -> `qwen3.8-flash-next-iq3_xxs`, `"vision"."model"` ->
+   the first IQ3_XXS shard. Nothing else; report the diff against the Q2_0 file.
+
+   Then `.venv/bin/python mixed_split/tools/make_mixed_config.py <the input> --build-tag 0092 --name iq3_xxs-mixed`.
+   Report the two files' paths, the tool's notes, and the generated config in full.
 6. **A short start** (GPU, under 10 minutes): start `run-iq3_xxs-mixed.sh` from a Python parent that calls
    `mixed_split_common.reset_ignored_signals()` first; wait for the server; send one short chat request and one of
    about 8K tokens; stop it with `stop_cooperatively`. Report the server log's start lines (both stages, the layer
