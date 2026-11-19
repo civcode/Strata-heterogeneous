@@ -9,6 +9,7 @@ SUITE:
             parked and restored), a request with cvec=0 (experimental_speed_projection false) and a PNG vision request
   measure   the code, long and long16k prompts (300 / 200 / 128 tokens), each with "Measurement TAG NAME." in front, so
             no request reuses another's prefix (report 0076)
+  pack-block  handoff 0082: code, long and long16k, each once warm-up then twice measured, greedy and uncached
   cancel    report 0079: a streamed long32k request whose client leaves while the host's first stage reads the chunk
             at --cancel-at (default 0; seen in the server log's STRATA_TRACE lines, so run it with STRATA_TRACE=1),
             --cancel-after seconds (default 2.0) after that chunk's trace line; then the same conversation with one
@@ -219,6 +220,12 @@ def main():
                 out['concurrent'] = concurrent_load(port, tk, prompts, a.tag, a.clients, a.rounds)
                 if any('error' in r for r in out['concurrent']['requests']):
                     out['error'] = 'a concurrent request failed'
+            elif a.suite == 'pack-block':
+                # Identical inputs across packs and blocks, distinct prefixes within a block to avoid cache reuse.
+                for k, n in [('code', 300), ('long', 200), ('long16k', 128)]:
+                    out[k] = []
+                    for i in range(3):
+                        out[k].append(req([{'role': 'user', 'content': f'Pack comparison {i} {k}.\n' + tk.decode(prompts[k])}], n))
             elif a.suite == 'measure':
                 for k, n in [('code', 300), ('long', 200), ('long16k', 128)]:
                     out[k] = req([{'role': 'user', 'content': f'Measurement {a.tag} {k}.\n' + tk.decode(prompts[k])}], n)
@@ -250,7 +257,9 @@ def main():
               % (c['wall_s'], c['decode_busy_s'], c['generated'], c['aggregate_decode_tps'] or 0, c['aggregate_output_tps']), flush=True)
     for k in ('warm0', 'warm1', 'warm2', 'code', 'long', 'long16k', 'first', 'second', 'interference', 'vision', 'cvec_off'):
         if k in out:
-            print('  %-12s %s' % (k, out[k].get('timings')), flush=True)
+            values = out[k] if isinstance(out[k], list) else [out[k]]
+            for value in values:
+                print('  %-12s %s' % (k, value.get('timings')), flush=True)
     bad = out.get('error') or out.get('fault_lines') or out.get('rc') != 0 or out['elapsed'] >= 120 or out.get('checks_errors') or out.get('checks_rc')
     sys.exit(1 if bad else 0)
 

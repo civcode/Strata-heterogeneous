@@ -1,0 +1,104 @@
+
+ mixed
+start: [('a0', 9.0), ('b1', 11.0), ('b2', 10.0), ('a3', 9.5), ('a4', 8.0), ('b5', 11.0)]
+elapsed: [('a0', 43.5), ('b1', 46.0), ('b2', 45.4), ('a3', 44.8), ('a4', 43.2), ('b5', 46.4)]
+
+ code
+A
+predicted_per_second median 120.6 range 118.6 129.6 samples [129.6, 129.2, 121.2, 120.0, 119.9, 118.6]
+prompt_per_second median 364.29999999999995 range 362.9 367.1 samples [367.1, 364.9, 363.4, 365.8, 362.9, 363.7]
+accepted/offered [(145, 201), (148, 214), (145, 201), (148, 214), (145, 201), (148, 214)]
+B
+predicted_per_second median 110.25 range 109.0 111.0 samples [111.0, 109.0, 110.9, 109.6, 111.0, 109.1]
+prompt_per_second median 508.65 range 507.2 510.3 samples [509.2, 510.3, 508.1, 510.3, 507.5, 507.2]
+accepted/offered [(139, 210), (139, 215), (139, 210), (139, 215), (139, 210), (139, 215)]
+output 0 reasoning_content identical 282
+output 0 content first differing character zero-based 199 lengths 1032 1043
+output 1 reasoning_content identical 293
+output 1 content first differing character zero-based 65 lengths 1039 1027
+output 2 reasoning_content identical 272
+output 2 content first differing character zero-based 321 lengths 1044 1027
+
+ long
+A
+predicted_per_second median 136.45 range 126.3 146.1 samples [146.1, 136.4, 136.1, 126.3, 146.0, 136.5]
+prompt_per_second median 2452.6000000000004 range 2441.2 2470.7 samples [2469.0, 2470.7, 2451.2, 2451.4, 2453.8, 2441.2]
+accepted/offered [(117, 148), (108, 147), (117, 148), (108, 147), (117, 148), (108, 147)]
+B
+predicted_per_second median 126.35 range 115.3 140.0 samples [124.3, 140.0, 115.3, 128.4, 116.0, 129.8]
+prompt_per_second median 2852.45 range 2841.0 2862.8 samples [2862.8, 2856.6, 2860.3, 2848.3, 2841.3, 2841.0]
+accepted/offered [(109, 171), (114, 141), (109, 171), (114, 141), (109, 171), (114, 141)]
+output 0 reasoning_content first differing character zero-based 182 lengths 225 471
+output 0 content first differing character zero-based 0 lengths 602 394
+output 1 reasoning_content first differing character zero-based 309 lengths 868 634
+output 1 content first differing character zero-based 0 lengths 0 255
+output 2 reasoning_content first differing character zero-based 404 lengths 869 891
+output 2 content identical 0
+
+ long16k
+A
+predicted_per_second median 159.4 range 155.9 162.6 samples [162.6, 156.2, 162.4, 156.5, 162.3, 155.9]
+prompt_per_second median 3951.05 range 3905.0 3979.8 samples [3974.7, 3979.8, 3945.1, 3952.7, 3905.0, 3949.4]
+accepted/offered [(79, 97), (79, 100), (79, 97), (79, 100), (79, 97), (79, 100)]
+B
+predicted_per_second median 141.55 range 136.7 157.1 samples [157.1, 150.3, 141.7, 136.7, 141.4, 136.9]
+prompt_per_second median 4069.05 range 4039.9 4083.2 samples [4083.2, 4078.6, 4072.6, 4039.9, 4065.5, 4061.2]
+accepted/offered [(79, 96), (79, 103), (79, 96), (79, 103), (79, 96), (79, 103)]
+output 0 reasoning_content first differing character zero-based 201 lengths 581 563
+output 0 content identical 0
+output 1 reasoning_content identical 274
+output 1 content identical 227
+output 2 reasoning_content identical 274
+output 2 content identical 210
+
+ hiponly
+start: [('a0', 9.5), ('b1', 12.0), ('b2', 10.5), ('a3', 10.0), ('a4', 8.5), ('b5', 12.0)]
+elapsed: [('a0', 46.4), ('b1', 46.9), ('b2', 45.5), ('a3', 46.9), ('a4', 45.5), ('b5', 46.9)]
+
+ code
+A
+predicted_per_second median 111.44999999999999 range 109.1 113.5 samples [113.4, 109.6, 113.5, 109.3, 113.3, 109.1]
+prompt_per_second median 473.6 range 472.2 477.1 samples [472.2, 473.3, 473.9, 477.1, 472.2, 474.7]
+accepted/offered [(148, 194), (142, 198), (148, 194), (142, 198), (148, 194), (142, 198)]
+B
+predicted_per_second median 108.6 range 106.5 110.7 samples [110.6, 106.6, 110.7, 106.5, 110.6, 106.5]
+prompt_per_second median 522.95 range 521.9 525.6 samples [523.1, 524.0, 521.9, 525.6, 521.9, 522.8]
+accepted/offered [(154, 202), (149, 201), (154, 202), (149, 201), (154, 202), (149, 201)]
+output 0 reasoning_content identical 282
+output 0 content first differing character zero-based 335 lengths 1083 1016
+output 1 reasoning_content identical 293
+output 1 content first differing character zero-based 319 lengths 1031 1018
+output 2 reasoning_content first differing character zero-based 19 lengths 272 282
+output 2 content first differing character zero-based 432 lengths 1120 1041
+
+ long
+A
+predicted_per_second median 117.7 range 113.5 122.0 samples [121.9, 114.0, 122.0, 114.0, 121.4, 113.5]
+prompt_per_second median 2733.55 range 2719.0 2739.5 samples [2737.4, 2739.5, 2736.1, 2731.0, 2720.3, 2719.0]
+accepted/offered [(114, 153), (112, 170), (114, 153), (112, 170), (114, 153), (112, 170)]
+B
+predicted_per_second median 109.0 range 103.3 114.6 samples [114.6, 103.3, 114.6, 103.4, 114.6, 103.4]
+prompt_per_second median 3272.4 range 3257.6 3281.5 samples [3281.5, 3274.0, 3270.8, 3257.6, 3275.7, 3266.3]
+accepted/offered [(116, 157), (106, 173), (116, 157), (106, 173), (116, 157), (106, 173)]
+output 0 reasoning_content identical 476
+output 0 content identical 403
+output 1 reasoning_content identical 864
+output 1 content identical 0
+output 2 reasoning_content first differing character zero-based 209 lengths 674 597
+output 2 content first differing character zero-based 200 lengths 200 276
+
+ long16k
+A
+predicted_per_second median 144.35000000000002 range 142.1 146.1 samples [142.8, 146.1, 142.1, 145.9, 142.5, 145.9]
+prompt_per_second median 3795.95 range 3782.4 3801.2 samples [3799.0, 3801.2, 3797.3, 3794.6, 3789.6, 3782.4]
+accepted/offered [(75, 93), (79, 101), (75, 93), (79, 101), (75, 93), (79, 101)]
+B
+predicted_per_second median 143.45 range 128.3 150.1 samples [150.1, 143.5, 132.0, 128.3, 149.9, 143.4]
+prompt_per_second median 4312.85 range 4304.7 4317.9 samples [4317.9, 4314.3, 4309.4, 4304.7, 4315.1, 4311.4]
+accepted/offered [(82, 95), (80, 97), (82, 95), (80, 97), (82, 95), (80, 97)]
+output 0 reasoning_content first differing character zero-based 201 lengths 582 550
+output 0 content identical 0
+output 1 reasoning_content first differing character zero-based 201 lengths 562 274
+output 1 content first differing character zero-based 0 lengths 0 227
+output 2 reasoning_content first differing character zero-based 201 lengths 562 274
+output 2 content first differing character zero-based 0 lengths 0 210

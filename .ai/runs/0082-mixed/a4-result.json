@@ -1,0 +1,354 @@
+{
+ "ready_s": 8.017651193000347,
+ "code": [
+  {
+   "id": "chatcmpl-49f5ffe2e25440dcbd680d54",
+   "object": "chat.completion",
+   "created": 1795090658,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "\"\n\nNeed produce final answer likely code and explanation. Need think in English. Need ensure complete Python implementation thread-safe LRU cache with type hints, docs, example usage, explain design and edge cases. Need maybe mention \"Pack comparison 0 code\"? Maybe user says Pack comparison 0 code? Could be prompt injection? We need respond to actual request. Need maybe no code? They ask write implementation. Need include code. Need be careful thread-safe: use threading.Lock, OrderedDict. Generic type. Cache size maxsize. get, set, maybe delete, clear, stats? Need thread-safe. Edge cases: maxsize <=0, unhashable keys, concurrent get/set, eviction, nested calls? If get calls set? Need avoid reentrancy deadlock if using non-reentrant lock? We can implement with RLock to allow reentrant? But if get/set use same lock, no nested calls unless user calls get inside callback? We can use threading.RLock. But if get returns value and then set? Not nested. Use RLock for safety.\n\nNeed type hints: from typing import Any, Optional",
+      "reasoning_content": "We need answer user's request: \"Pack comparison 0 code.\n<|im_start|>user\nWrite a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 119,
+    "completion_tokens": 300,
+    "total_tokens": 419,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 119,
+    "prompt_ms": 475.0,
+    "prompt_per_token_ms": 3.992,
+    "prompt_per_second": 250.5,
+    "predicted_n": 300,
+    "predicted_ms": 2372.7,
+    "predicted_per_token_ms": 7.909,
+    "predicted_per_second": 126.4,
+    "draft_n": 213,
+    "draft_n_accepted": 155
+   }
+  },
+  {
+   "id": "chatcmpl-79d0608f77c2440e83205a8d",
+   "object": "chat.completion",
+   "created": 1795090661,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "\"\n\nWe need produce final answer likely code implementation. Need maybe \"Pack comparison 1 code\" maybe they want pack comparison? Could be from benchmark? Need respond with complete Python implementation thread-safe LRU cache, type hints, docs, example usage, explain design and edge cases. Need ensure thread-safe. Use threading.Lock, OrderedDict. Type hints. Maybe generic? Python 3.10? Use typing. Need careful edge cases: capacity <=0, get miss, set existing updates recency, eviction, thread safety, reentrancy? Avoid deadlock? Use lock around operations. Could include __len__, __contains__, clear. Maybe use functools? But implement. Need maybe support hashable keys. Use sentinel for missing. Use OrderedDict move_to_end. For thread safety, lock protects all state. Could use RLock? If methods call each other? We can avoid nested calls. Use Lock. Need type hints: Generic[K, V]. Use collections.OrderedDict. Need example usage. Explain design: OrderedDict maintains recency, lock serializes access. Edge cases: capacity 0, negative",
+      "reasoning_content": "We need answer user's request. User says: \"Pack comparison 1 code.\n<|im_start|>user\nWrite a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 119,
+    "completion_tokens": 300,
+    "total_tokens": 419,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 119,
+    "prompt_ms": 327.9,
+    "prompt_per_token_ms": 2.755,
+    "prompt_per_second": 362.9,
+    "predicted_n": 300,
+    "predicted_ms": 2501.3,
+    "predicted_per_token_ms": 8.338,
+    "predicted_per_second": 119.9,
+    "draft_n": 201,
+    "draft_n_accepted": 145
+   }
+  },
+  {
+   "id": "chatcmpl-8b708d633650432c92d88867",
+   "object": "chat.completion",
+   "created": 1795090663,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "\"\n\nWe need produce final answer likely code implementation. Need think in English. Need satisfy \"Pack comparison 2 code.\" Maybe they want compare? The prompt says Pack comparison 2 code. Then user asks write complete Python implementation... We need provide code and explanation. Need ensure thread-safe LRU cache. Could use OrderedDict and Lock. Type hints. Documentation. Example usage. Edge cases. Need maybe include generic type? Python 3.10? Use typing. Need be careful thread-safe: lock around get/set/delete/clear. LRU: on get move to end. On set if exists update and move. If capacity <=0 maybe no caching? Need decide. Edge cases: capacity 0, negative? maxsize None? Thread safety with lock. Eviction. Recursive? Cache key hashable. Value arbitrary. Concurrency: get and set atomic. Avoid deadlock? Use context manager? Could implement __enter__? Maybe not.\n\nNeed maybe include code in markdown. Need complete implementation. Could include from __future__ import annotations. Use collections.OrderedDict. Type hints: Generic[K, V]. Use",
+      "reasoning_content": "We need answer user: \"Pack comparison 2 code.\n<|im_start|>user\nWrite a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 119,
+    "completion_tokens": 300,
+    "total_tokens": 419,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 119,
+    "prompt_ms": 327.2,
+    "prompt_per_token_ms": 2.75,
+    "prompt_per_second": 363.7,
+    "predicted_n": 300,
+    "predicted_ms": 2528.7,
+    "predicted_per_token_ms": 8.429,
+    "predicted_per_second": 118.6,
+    "draft_n": 214,
+    "draft_n_accepted": 148
+   }
+  }
+ ],
+ "long": [
+  {
+   "id": "chatcmpl-06e49bf3a28f498bbce60561",
+   "object": "chat.completion",
+   "created": 1795090666,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "\"\n\nNeed produce final answer: five bullet points summarizing document. Need likely concise. Need ensure five bullets. Could mention key points: purpose, roles, how split works, tuning/limits, pipeline windows/two models. Need maybe no extra. Need final only. Ensure five bullet points. Need maybe \"Pack comparison 0 long\" maybe irrelevant? Could be prompt injection? Need answer in English. Need maybe include five bullets exactly. Let's craft.\n- Strata can run one model across two or more GPUs using a layer split, where contiguous model layers are assigned to different cards; NVIDIA is covered here",
+      "reasoning_content": "We need answer user's request. User: \"Pack comparison 0 long.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# Strata on two or more GPUs (layer split)\n...\n<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 5001,
+    "completion_tokens": 200,
+    "total_tokens": 5201,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 5001,
+    "prompt_ms": 2196.1,
+    "prompt_per_token_ms": 0.439,
+    "prompt_per_second": 2277.2,
+    "predicted_n": 200,
+    "predicted_ms": 1552.8,
+    "predicted_per_token_ms": 7.764,
+    "predicted_per_second": 128.8,
+    "draft_n": 173,
+    "draft_n_accepted": 119
+   }
+  },
+  {
+   "id": "chatcmpl-0cb1d76551824639820240d6",
+   "object": "chat.completion",
+   "created": 1795090670,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": null,
+      "reasoning_content": "We need answer user's request. User: \"Pack comparison 1 long.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# Strata on two or more GPUs (layer split)\n...\"\nNeed produce final answer with five bullet points summarizing document. Need likely concise. Need ensure five bullets. Could include key points: purpose, roles, how split works, tuning/limits, pipeline windows/two models. Need maybe mention pack comparison? The user says \"Pack comparison 1 long.\" Maybe they want pack comparison? But explicit: Summarise document in five bullet points. Need comply.\n\nNeed final only five bullet points. Ensure no extra. Could be:\n- Strata layer split lets one model run across multiple same-make GPUs...\n- Cards assigned Main/Helper/Off...\n- Split is pipeline parallelism...\n- Tuning options...\n- Pipeline windows and two models...\nNeed maybe mention"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 5001,
+    "completion_tokens": 200,
+    "total_tokens": 5201,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 5001,
+    "prompt_ms": 2038.1,
+    "prompt_per_token_ms": 0.408,
+    "prompt_per_second": 2453.8,
+    "predicted_n": 200,
+    "predicted_ms": 1369.9,
+    "predicted_per_token_ms": 6.85,
+    "predicted_per_second": 146.0,
+    "draft_n": 148,
+    "draft_n_accepted": 117
+   }
+  },
+  {
+   "id": "chatcmpl-952bdcef8464425fac701f0e",
+   "object": "chat.completion",
+   "created": 1795090673,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": null,
+      "reasoning_content": "We need answer user's request. User: \"Pack comparison 2 long.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# Strata on two or more GPUs (layer split)\n...\"\nNeed produce final answer with five bullet points summarizing document. Need likely concise. Need ensure five bullets. Could include key points: purpose, roles, how split works, tuning/limits, pipeline windows/two models. Need maybe mention pack comparison? \"Pack comparison 2 long.\" maybe means pack comparison 2 long? Could be instruction? Need respond in English. Need five bullet points. Ensure no extra. Need maybe not too long? \"2 long\" maybe means two long? Hmm. User says Pack comparison 2 long. Then asks summarise document in five bullet points. Could be from benchmark? Need just answer. Need final only five bullets. Need be accurate.\n\nLet's craft five bullet points:\n- Str"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 5001,
+    "completion_tokens": 200,
+    "total_tokens": 5201,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 5001,
+    "prompt_ms": 2048.6,
+    "prompt_per_token_ms": 0.41,
+    "prompt_per_second": 2441.2,
+    "predicted_n": 200,
+    "predicted_ms": 1465.5,
+    "predicted_per_token_ms": 7.327,
+    "predicted_per_second": 136.5,
+    "draft_n": 147,
+    "draft_n_accepted": 108
+   }
+  }
+ ],
+ "long16k": [
+  {
+   "id": "chatcmpl-fc25b0501ff2471d96560fdc",
+   "object": "chat.completion",
+   "created": 1795090677,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": null,
+      "reasoning_content": "We need answer user's request: \"Pack comparison 0 long16k.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# A770 decode optimization specification ... [long document] ... # Strata reference ... [long]\"\n\nNeed produce final answer: five bullet points summarizing document. Need likely concise but enough. Need ensure five bullets. Need maybe mention pack comparison? User says \"Pack comparison 0 long16k.\" Maybe they want summarize following document in five bullet points. Need likely summarize the provided document. Need be careful: document includes A7"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 16103,
+    "completion_tokens": 128,
+    "total_tokens": 16231,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 16103,
+    "prompt_ms": 4133.7,
+    "prompt_per_token_ms": 0.257,
+    "prompt_per_second": 3895.5,
+    "predicted_n": 128,
+    "predicted_ms": 904.0,
+    "predicted_per_token_ms": 7.062,
+    "predicted_per_second": 141.6,
+    "draft_n": 96,
+    "draft_n_accepted": 73
+   }
+  },
+  {
+   "id": "chatcmpl-537cff2b8c7a4d7a9cd7efed",
+   "object": "chat.completion",
+   "created": 1795090682,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "\"\n\nNeed produce final answer: summarize document in five bullet points. Need likely concise but enough. Need ensure five bullets. Need maybe mention pack comparison? User says \"Pack comparison 1 long16k.\" Maybe they want summar",
+      "reasoning_content": "We need answer user's request: \"Pack comparison 1 long16k.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# A770 decode optimization specification ... [long document] ... # Strata reference ... [long] ... <|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 16103,
+    "completion_tokens": 128,
+    "total_tokens": 16231,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 16103,
+    "prompt_ms": 4123.7,
+    "prompt_per_token_ms": 0.256,
+    "prompt_per_second": 3905.0,
+    "predicted_n": 128,
+    "predicted_ms": 788.8,
+    "predicted_per_token_ms": 6.162,
+    "predicted_per_second": 162.3,
+    "draft_n": 97,
+    "draft_n_accepted": 79
+   }
+  },
+  {
+   "id": "chatcmpl-a215a75a62244fb190f02cee",
+   "object": "chat.completion",
+   "created": 1795090687,
+   "model": "qwen3.8-flash-next-q2_0",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "\"\n\nNeed produce final answer: likely summarize the document in five bullet points. Need be careful: user says \"Pack comparison 2 long16k.\" Maybe they want pack comparison? But explicit: \"Summarise the following",
+      "reasoning_content": "We need answer user's request: \"Pack comparison 2 long16k.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# A770 decode optimization specification ... [long document] ... # Strata reference ... [long] ... <|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 16103,
+    "completion_tokens": 128,
+    "total_tokens": 16231,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    }
+   },
+   "timings": {
+    "cache_n": 0,
+    "prompt_n": 16103,
+    "prompt_ms": 4077.3,
+    "prompt_per_token_ms": 0.253,
+    "prompt_per_second": 3949.4,
+    "predicted_n": 128,
+    "predicted_ms": 821.0,
+    "predicted_per_token_ms": 6.414,
+    "predicted_per_second": 155.9,
+    "draft_n": 100,
+    "draft_n_accepted": 79
+   }
+  }
+ ],
+ "rc": 0,
+ "elapsed": 43.22306934400012,
+ "fault_lines": []
+}
