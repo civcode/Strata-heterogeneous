@@ -1,8 +1,10 @@
 # Status
 
-Turn holder: **Human User**: the native-pack decision and the next direction (see Open decisions).
+Turn holder: **Coding Agent**, handoff `0083` (Tier 1), once the Human User hands it over.
 
 ## Current milestone
+
+M10: re-pin to vanilla 0.2.16 (`v0.2.16`, `64524fb9`), by merging it into `feature/mixed-native` (handoff 0083).
 
 The native-pack question is answered (report 0082, `9de3c43a`; Partial only because outputs differ between packs).
 
@@ -96,17 +98,16 @@ Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm 
 - 2026-11-19: do `--batch` and DFlash2 in mixed mode now; the re-pin to vanilla 0.2.16 waits. Chat AI orders DFlash2
   first (production runs one conversation at a time), each with a go/no-go on HIP-only before implementing.
 - 2026-11-19: the NVIDIA Xid 79 is unrelated to this project. Next: the native-pack decode comparison.
+- 2026-11-19: re-pin to vanilla 0.2.16 next.
 
 ## Open decisions for the Human User
 
-- **Native pack:** Chat AI recommends keeping the production pack. Per turn it is even; a switch costs a cold start and
-  changes outputs. Switch only if turns carry much more new prompt than generated text.
-- **The next direction:** the re-pin to vanilla 0.2.16 (Chat AI's recommendation), or a release-candidate
-  qualification.
+- **Native pack:** Chat AI recommends keeping the production pack (report 0082: even per turn). No action needed unless
+  the Human User wants to switch.
 
 ## Next step
 
-After report 0082: Chat AI lays out the native-pack decision. Then the re-pin to vanilla 0.2.16 (Chat AI's
-recommendation), or a release-candidate qualification.
+After report 0083: Chat AI reviews the merge against the contract (`check_off_is_vanilla.py` against `v0.2.16`, the
+hooks' new places) and the re-checks. Then a release-candidate qualification, or the next performance step.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
