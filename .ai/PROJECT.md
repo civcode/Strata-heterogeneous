@@ -51,8 +51,10 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
 
 - Cards: one NVIDIA RTX 4070 Ti SUPER (16 GB, CUDA, sm_89) and two AMD Radeon AI PRO R9700 (HIP, gfx1201).
 - HIP toolchain: ROCm at `/opt/rocm/core-10.1` (`ROCM_PATH`, `HIP_PLATFORM=amd`), Ninja, `-DCMAKE_HIP_ARCHITECTURES=gfx1201
-  -DSTRATA_PREFILL_MMQ=ON -DSTRATA_MMQ=ON -DCMAKE_BUILD_RPATH=/opt/rocm/lib`. The MMQ prompt kernels need both MMQ
-  options (shown on 0.2.15); report 0066 measured about 22% faster prefill with them (2641 against 2163 tok/s, one sample).
+  -DCMAKE_BUILD_RPATH=/opt/rocm/lib`. Vanilla 0.2.16 removed llama.cpp's MMQ prompt kernels: `-DSTRATA_MMQ` and
+  `-DSTRATA_PREFILL_MMQ` are ignored (CMake warns), and every build uses Strata's own prompt kernels. On 0.2.15 they gave
+  about 22% faster prefill (report 0066); report 0084 measured 0.2.16 HIP-only prefill 19.8% / 15.2% slower than 0.2.15
+  with MMQ (long / 16K).
 - CUDA toolchain: CUDA 13.0 at `/usr/local/cuda-13.0` (vanilla 0.2.15 and 0.2.16 build with CUDA 13.0; driver 580.178.04).
   Configure the CUDA tree with `-DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=89`.
   `/usr/local/cuda` still points at CUDA 12.0, which the frozen branch was built with: leave it. nvcc 12.0 cannot
@@ -66,6 +68,7 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   - Caches: `--prompt-cache 6 --prompt-cache-spread`, `--conversation-cache-slots 4`,
     `--conversation-cache-min-tokens 8192`.
   - Environment: `HSA_ENABLE_SDMA=0`, `STRATA_SPLIT_OVERLAP=1`, `STRATA_PIPELINE_AUTO=0`, `STRATA_MTP_STAGE0=0`.
+    `STRATA_SPLIT_OVERLAP=1` has no effect next to `--pipeline-windows 2` (vanilla turns it off; report 0084).
   - Performance comparisons are made against this mirror. The older known-good config
     (`/home/chris/workspace/Strata/strata-q2_0.json`, context 196608, report 0064) is not the production setup.
 - Use the same build toolchain as vanilla Strata and the same checkout-local `.venv` setup. Do not use a system or

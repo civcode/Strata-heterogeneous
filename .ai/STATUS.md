@@ -1,36 +1,38 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0084` (Tier 2), once the Human User hands it over.
+Turn holder: **Human User**: the production version and the next direction (see Open decisions).
 
 ## Current milestone
 
-M10: re-pinned to vanilla 0.2.16 (report 0083, `a4d3f434`; Partial). Handoff 0084 finishes it and checks the rename on
-the cards.
+M10 closed: the branch is vanilla 0.2.16 plus the mixed split (report 0084, `1e6390da`; Partial only for the full
+option audit).
 
-Report 0083, Chat AI's review:
-- **The merge** (`50450647`, no force-push; the pre-merge head is archived as `archive/mixed-native-0.2.15`) had one
-  conflict: the `<functional>` include in `conversation_cache.hpp`, which vanilla 0.2.16 now includes itself. Git
-  carried every guarded block into `engine/`. With the option off, the six changed vanilla files are vanilla 0.2.16
-  (`check_off_is_vanilla.py`, also run by Chat AI). The branch adds 1,534 lines to 7 vanilla files and deletes none.
-- **Checks passed:**
-  - `mixed_split_tests` 2/2 in every tree;
-  - both mirrors serve;
-  - pipelined against serial exact (300/300 and 200/200), also with forced misses;
-  - the server suites, with a 16K conversation parked and restored, vision and `cvec=0`.
-- **Mixed against production on 0.2.16** (first requests, fresh servers, median of three):
-  - prefill −7.7% / +3.4% / +16.0% (code / long / 16K);
-  - decode +7.4% / +22.8% / +13.2%.
-- **Open:**
-  - all-target builds;
-  - a full audit of the production options on 0.2.16;
-  - prompt reading looks slower on 0.2.16 than in reports 0078 / 0082 (HIP-only long 1,975 against 2,372 tok/s), but
-    under other conditions. Handoff 0084 measures it controlled.
-- **Since report 0083, by Chat AI:**
-  - the rename to `mixed_split` (Human User's request, `740e2bea`). Checked without a GPU: CPU tests, off = vanilla
-    0.2.16, syntax with the option on, the Python tools;
-  - `.ai/PROJECT.md` updated for the 0.2.16 base and layout.
+Report 0084, Chat AI's review:
+- **The rename works on the cards:**
+  - every default target built in all five trees;
+  - host CTest 147/147; `mixed_split_tests` and `mixed_split_cache_drop_test` 2/2 on HIP and CUDA;
+  - the mixed mirror served the features suite (16K conversation restored, vision, `cvec=0`, clean shutdown);
+  - pipelined against serial exact.
+- **Vanilla 0.2.16 removed llama.cpp's MMQ prompt kernels** (`engine/CMakeLists.txt`, `docs/AMD_HIP_PERFORMANCE.md`):
+  the MMQ build options are now ignored. HIP-only, the same production arguments, warm blocks, six samples each:
+
+  | Prompt | Prefill, 0.2.15 / 0.2.16 | Decode, 0.2.15 / 0.2.16 |
+  | --- | --- | --- |
+  | Long | 2,744 / 2,202 (−19.8%) | 106.4 / 117.3 (+10%) |
+  | 16K | 3,786 / 3,210 (−15.2%) | 117.7 / 116.2 (−1%) |
+
+  Beyond the spread. MMQ's removal is the likely cause (it was worth about 22% in report 0066), but not isolated. Per
+  turn:
+  - 5,000 new tokens and 500 generated: 6.52 s on 0.2.15, 6.53 s on 0.2.16;
+  - 16,000 and 500: 8.48 s against 9.28 s (+9%).
+- **The option audit** names every production argument's meaning on 0.2.16, but does not compare defaults across
+  versions. Found: `STRATA_SPLIT_OVERLAP=1` has no effect next to `--pipeline-windows 2`.
+- **Safety:** boot ID unchanged, no faults, no core dumps.
+- **Since report 0084, by Chat AI:** `.ai/PROJECT.md` notes the MMQ removal and the inert overlap variable.
 
 ## History in short
+
+- Report 0084: rename confirmed on the cards; vanilla 0.2.16 prefill 15 to 20% slower than 0.2.15 with MMQ (HIP-only), decode equal or better.
 
 - Report 0083: merged vanilla 0.2.16 (one small conflict); re-checks pass; then renamed `hetero` to `mixed_split`.
 
@@ -108,12 +110,14 @@ Report 0083, Chat AI's review:
 
 ## Open decisions for the Human User
 
-- **Native pack:** Chat AI recommends keeping the production pack (report 0082: even per turn). No action needed unless
-  the Human User wants to switch.
+- **Production on 0.2.15 or 0.2.16?** Vanilla's own change; about even for 5K-token turns, about 9% slower on 0.2.16
+  for 16K-token turns.
+- **Report the prefill drop upstream?** Chat AI can draft an issue, following vanilla's `CONTRIBUTING.md`
+  (`[Benchmark]`, a same-day comparison); the Human User posts it.
+- **The next direction:** a release-candidate qualification (long-duration runs), or more performance work.
 
 ## Next step
 
-After report 0084: Chat AI reviews it, and lays out what 0.2.16 means for the production setup. Then a release-candidate
-qualification (`.ai/WORKFLOW.md` Section 12: long-duration runs), or the next performance step.
+Depends on the decisions above.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
