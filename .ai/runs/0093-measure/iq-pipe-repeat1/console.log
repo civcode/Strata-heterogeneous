@@ -1,0 +1,45 @@
+serve_mixed: /home/chris/workspace/Strata-heterogeneous/.venv/bin/python /home/chris/workspace/Strata-heterogeneous/serve/server.py --engine strata --config /home/chris/workspace/Strata-heterogeneous/.ai/runs/0093-measure/iq-pipe-repeat1/config.json --port 18093
+loading the vision encoder ...
+loading the model (the first start takes a minute or two) ...
+[strata] layer split across GPUs [0, 1] (auto)
+[strata] Drafting: MTP (DFlash2 isn't available in this mode)
+[strata] starting the engine: reading the model's weights ...
+[strata] engine priority: nice +5 (this PC has built-in Radeon graphics that usually draw the desktop; STRATA_ENGINE_NICE=0 turns it off)
+[strata] mapping the experts from the model files (about 47 GB, --mmap-experts): they are not loaded into RAM - the OS file cache reads them as the GPU's expert cache fills and as requests need them.
+         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.
+         Please wait and don't close this window; the server says when it is ready.
+[strata] filling the GPU's expert cache (7510 experts, 10.47 GiB of VRAM) ...
+[strata] almost ready ...
+[strata] still starting (24 s) - please wait ...
+ready: http://127.0.0.1:18093/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 262144 tokens, images on)
+       open http://127.0.0.1:18093/ in a browser to chat; close this window to stop the model
+[strata] thinking: 13 of max 300 tokens, 28.4 tok/s, 1 s
+[strata] thinking: 50 of max 300 tokens, 34.1 tok/s, 2 s
+[strata] thinking: 75 of max 300 tokens, 30.0 tok/s, 3 s
+[strata] thinking: 102 of max 300 tokens, 29.0 tok/s, 4 s
+[strata] thinking: 128 of max 300 tokens, 28.3 tok/s, 5 s
+[strata] thinking: 144 of max 300 tokens, 26.0 tok/s, 6 s
+[strata] thinking: 159 of max 300 tokens, 24.2 tok/s, 7 s
+[strata] thinking: 182 of max 300 tokens, 23.9 tok/s, 8 s
+[strata] thinking: 217 of max 300 tokens, 25.2 tok/s, 9 s
+[strata] thinking: 252 of max 300 tokens, 26.1 tok/s, 10 s
+[strata] thinking: 283 of max 300 tokens, 26.5 tok/s, 11 s
+[strata] done: 300 tokens in 12 s (27.0 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+[strata] reading the prompt: 8,192 of 11,155 tokens, 3 s so far
+[strata] thinking: 24 of max 300 tokens, 48.8 tok/s, 4 s
+[strata] thinking: 61 of max 300 tokens, 40.1 tok/s, 5 s
+[strata] thinking: 91 of max 300 tokens, 35.3 tok/s, 6 s
+[strata] thinking: 116 of max 300 tokens, 32.0 tok/s, 7 s
+[strata] thinking: 137 of max 300 tokens, 29.0 tok/s, 8 s
+[strata] thinking: 157 of max 300 tokens, 27.1 tok/s, 9 s
+[strata] thinking: 183 of max 300 tokens, 26.7 tok/s, 10 s
+[strata] thinking: 200 of max 300 tokens, 25.5 tok/s, 11 s
+[strata] thinking: 234 of max 300 tokens, 26.4 tok/s, 12 s
+[strata] thinking: 264 of max 300 tokens, 26.7 tok/s, 13 s
+[strata] thinking: 291 of max 300 tokens, 26.5 tok/s, 15 s
+[strata] done: 300 tokens in 15 s (26.4 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped

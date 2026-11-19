@@ -1,0 +1,75 @@
+iq-first server-start 2026-11-19 23:06:05
+  strata serve: the graphics driver paused the GPU for 518 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 333 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-first-final-new server-start 2026-11-19 23:26:06
+  strata serve: the graphics driver paused the GPU for 1187 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-first-new-repeat1 server-start 2026-11-19 23:47:14
+  strata serve: the graphics driver paused the GPU for 1032 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1052 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-first-new-repeat2 server-start 2026-11-19 23:51:01
+  strata serve: the graphics driver paused the GPU for 599 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1636 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-first-repeat2 server-start 2026-11-19 23:42:43
+  strata serve: the graphics driver paused the GPU for 610 ms between requests while Linux moved memory the GPU uses
+  strata serve: the graphics driver paused the GPU for 2472 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1588 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe server-start 2026-11-19 23:05:15
+  strata serve: the graphics driver paused the GPU for 748 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-new server-start 2026-11-19 23:17:54
+  strata serve: the graphics driver paused the GPU for 2938 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 3570 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-new-pool4 server-start 2026-11-19 23:19:11
+  strata serve: the graphics driver paused the GPU for 535 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-new-repeat1 server-start 2026-11-19 23:46:26
+  strata serve: the graphics driver paused the GPU for 209 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-new-repeat2 server-start 2026-11-19 23:50:12
+  strata serve: the graphics driver paused the GPU for 2685 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-repeat2 server-start 2026-11-19 23:41:38
+  strata serve: the graphics driver paused the GPU for 146 ms between requests while Linux moved memory the GPU uses
+  strata serve: the graphics driver paused the GPU for 3804 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1335 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-room server-start 2026-11-19 23:09:07
+  strata serve: the graphics driver paused the GPU for 760 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 980 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-pipe-tailoff server-start 2026-11-19 23:10:18
+  strata serve: the graphics driver paused the GPU for 2096 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-serial-lowcache server-start 2026-11-19 23:11:35
+  strata serve: the graphics driver paused the GPU for 879 ms between requests while Linux moved memory the GPU uses
+  strata serve: the graphics driver paused the GPU for 2321 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-serial-new server-start 2026-11-19 23:24:31
+  strata serve: the graphics driver paused the GPU for 794 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-serial-new-repeat1 server-start 2026-11-19 23:45:34
+  strata serve: the graphics driver paused the GPU for 1476 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1767 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-serial-new-repeat2 server-start 2026-11-19 23:49:20
+  strata serve: the graphics driver paused the GPU for 236 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1806 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-serial-repeat1 server-start 2026-11-19 23:36:27
+  strata serve: the graphics driver paused the GPU for 1038 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-serial-repeat2 server-start 2026-11-19 23:40:51
+  strata serve: the graphics driver paused the GPU for 658 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 1368 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+iq-vanilla-new server-start 2026-11-19 23:34:30
+  strata serve: the graphics driver paused the GPU for 143 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-first server-start 2026-11-19 23:08:05
+  strata serve: the graphics driver paused the GPU for 519 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-first-new server-start 2026-11-19 23:28:11
+  strata serve: the graphics driver paused the GPU for 750 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-first-repeat1 server-start 2026-11-19 23:40:29
+  strata serve: the graphics driver paused the GPU for 1066 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-first-repeat2 server-start 2026-11-19 23:45:03
+  strata serve: the graphics driver paused the GPU for 791 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-pipe server-start 2026-11-19 23:07:36
+  strata serve: the graphics driver paused the GPU for 758 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+  strata serve: the graphics driver paused the GPU for 958 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-pipe-new-repeat2 server-start 2026-11-19 23:53:01
+  strata serve: the graphics driver paused the GPU for 1220 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-pipe-repeat1 server-start 2026-11-19 23:39:53
+  strata serve: the graphics driver paused the GPU for 337 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+q2-serial server-start 2026-11-19 23:06:53
+  strata serve: the graphics driver paused the GPU for 494 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+pipe.err strata serve: the graphics driver paused the GPU for 431 ms between requests while Linux moved memory the GPU uses
+serial-equalcache.err strata serve: the graphics driver paused the GPU for 669 ms between requests while Linux moved memory the GPU uses
+serial-tailonly.err strata serve: the graphics driver paused the GPU for 468 ms between requests while Linux moved memory the GPU uses
+serial-tailonly.err strata serve: the graphics driver paused the GPU for 907 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much
+serial.err strata serve: the graphics driver paused the GPU for 734 ms between requests while Linux moved memory the GPU uses

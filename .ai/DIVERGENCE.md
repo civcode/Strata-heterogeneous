@@ -42,7 +42,9 @@ What `generate.cpp` adds:
   mirrors stage 0's two verifiers (one per window parity), snapshots its GDN state before each launch, and on a wrong
   guess restores it and replays the commit with the real count. One hook in the decode loop's undo; link protocol 3
   adds PlRun, PlCommit and PlUndo, with a hand-off buffer and ready word per parity. Vanilla's scheduling, guessing and
-  undo logic is unchanged.
+  undo logic is unchanged. The front worker defaults to a different host core from the host's first/last choice, so
+  its window runner does not compete with the host pipeline on one CPU (report 0093). An explicit
+  `--front-arg --host-core --front-arg first|last|sibling` overrides it; serial mode is unchanged.
 - **Asynchronous front window** (report 0077): the front stage answers a window call once its window is launched.
   Vanilla's `Verifier::run` runs to its end on a helper thread (`mixed_split/front_runner.hpp`), every later call waits for
   it, and the first R9700 waits on the ready word on its GPU.

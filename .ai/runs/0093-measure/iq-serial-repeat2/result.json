@@ -1,0 +1,73 @@
+{
+  "ready_s": 35.024921890999394,
+  "short": {
+    "start": 20149.652606498,
+    "first": 20150.176232551,
+    "last": 20153.244073065,
+    "end": 20153.244446867,
+    "usage": {
+      "prompt_tokens": 83,
+      "completion_tokens": 300,
+      "total_tokens": 383,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 501.7,
+      "prompt_per_token_ms": 6.045,
+      "prompt_per_second": 165.4,
+      "predicted_n": 300,
+      "predicted_ms": 3086.1,
+      "predicted_per_token_ms": 10.287,
+      "predicted_per_second": 97.2,
+      "draft_n": 212,
+      "draft_n_accepted": 145
+    },
+    "busy": {
+      "cuda": 21.0,
+      "hip0": 48.5,
+      "hip1": 86.5
+    },
+    "busy_samples": 4,
+    "text": "We need answer user: \"Write a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.\"\n\nNeed produce final with code, explanation. Need think thoroughly. Need likely provide Python implementation. Need decide approach. Thread-safe LRU cache. Could use OrderedDict + threading.Lock. Type hints. Documentation. Example usage. Edge cases: maxsize <=0, maxsize None, thread safety, reentrancy? If using lock, avoid recursive calls? Need maybe support get/set, decorator? Complete implementation. Could implement class ThreadSafeLRUCache with get, put, __getitem__, __setitem__, __contains__, __len__, clear, items, keys, values, maybe decorator. Need ensure thread-safe. Use OrderedDict move_to_end on get. Lock protects all operations. Need handle maxsize=0? If maxsize=0, no caching? Or raise ValueError? Common functools.lru_cache maxsize=0 means no caching? Actually lru_cache(maxsize=0) no caching? In Python 3.8? maxsize=0 means no caching? Let's check: lru_cache(maxsize=0) no caching? It returns uncached? I think maxsize=0 means no caching. But for cache class, maybe maxsize must be positive or None. Could allow maxsize=0 and treat as no storage. Need edge cases.\n\nNeed maybe use RLock"
+  },
+  "long": {
+    "start": 20153.244678212,
+    "first": 20157.01169424,
+    "last": 20159.976348108,
+    "end": 20159.976736608,
+    "usage": {
+      "prompt_tokens": 11155,
+      "completion_tokens": 300,
+      "total_tokens": 11455,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 11155,
+      "prompt_ms": 3736.5,
+      "prompt_per_token_ms": 0.335,
+      "prompt_per_second": 2985.4,
+      "predicted_n": 300,
+      "predicted_ms": 2979.9,
+      "predicted_per_token_ms": 9.933,
+      "predicted_per_second": 100.7,
+      "draft_n": 236,
+      "draft_n_accepted": 152
+    },
+    "busy": {
+      "cuda": 23.5,
+      "hip0": 47.0,
+      "hip1": 96.0
+    },
+    "busy_samples": 4,
+    "text": "We need answer user's request: \"Summarise the following document in five detailed bullet points.\" Need produce final with five detailed bullets. Need summarize document. It's a long doc about Strata layer split on GPUs plus README. Need likely focus on main content? User says following document, includes Strata on two or more GPUs and README. Need summarize in five detailed bullet points. Need likely cover key points: purpose/usage, roles, how split works, tuning/limits, performance/history/README? Need five bullets detailed. Ensure not too terse. Could mention Strata supports multi-GPU layer split, configuration, roles, pipeline, limits, measurements, and general project info. Need maybe include both docs? The document includes a page and README. Summarise entire document. Five detailed bullet points. Need maybe no citations. Need ensure five bullets exactly. Could be:\n- Strata enables layer splitting across multiple same-make GPUs to fit larger models, using desktop app, strata launch, source setup flags, config JSON, Docker; Main/Helper/Off roles and recommendations.\n- Split mechanics: contiguous layer ranges, pipeline parallelism, each card holds dense weights/session/expert cache, last card head/draft, auto/manual layer_split, card order, memory arithmetic, unsupported cards.\n- Tuning and advanced options: flags/env for split skip, own buffers, prefill help, MTP batch, VRAM reserve, pipeline windows, overlap, resident RAM"
+  },
+  "stop_return": 0,
+  "elapsed_s": 46.917017561998364
+}

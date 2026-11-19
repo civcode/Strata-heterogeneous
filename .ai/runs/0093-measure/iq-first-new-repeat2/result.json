@@ -1,0 +1,73 @@
+{
+  "ready_s": 37.02388808000251,
+  "short": {
+    "start": 20761.131539116,
+    "first": 20761.859743177,
+    "last": 20764.699948456,
+    "end": 20764.703883128,
+    "usage": {
+      "prompt_tokens": 83,
+      "completion_tokens": 300,
+      "total_tokens": 383,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 705.9,
+      "prompt_per_token_ms": 8.505,
+      "prompt_per_second": 117.6,
+      "predicted_n": 300,
+      "predicted_ms": 2858.5,
+      "predicted_per_token_ms": 9.528,
+      "predicted_per_second": 105.0,
+      "draft_n": 214,
+      "draft_n_accepted": 144
+    },
+    "busy": {
+      "cuda": 36.5,
+      "hip0": 86.5,
+      "hip1": 43.0
+    },
+    "busy_samples": 2,
+    "text": "We need answer user: Write complete Python implementation of thread-safe LRU cache, including type hints, documentation, example usage. Explain design and important edge cases.\n\nNeed produce final with code and explanation. Need think thoroughly. Need likely provide Python implementation. Need decide approach. Thread-safe LRU cache. Options: use collections.OrderedDict with threading.Lock. Need type hints. Could implement generic class with get/set, maybe __getitem__, __setitem__, __contains__, __len__, clear, items? Need thread-safe. Edge cases: maxsize <=0? key equality/hashability, thread reentrancy? If using lock and methods call each other, avoid nested locks. Need handle eviction. Maybe support default? Maybe thread-safe get_or_compute? Need avoid holding lock during expensive computation? Could provide get_or_compute with lock? But if compute under lock can serialize; alternative double-checked locking? Need careful.\n\nUser asks complete Python implementation of thread-safe LRU cache. Could include class ThreadSafeLRUCache with lock. Type hints. Documentation. Example usage. Explain design and edge cases.\n\nNeed ensure code correct. Let's design robust.\n\nImplementation:\n\nfrom __future__ import annotations\nfrom collections import OrderedDict\nfrom threading import RLock\nfrom typing import Generic, Hashable, Optional, TypeVar, Iterator, Tuple, Callable, Any\n\nK = TypeVar(\"K\", bound=Hashable)\nV = TypeVar(\"V\")\n\nclass ThreadSafe"
+  },
+  "long": {
+    "start": 20764.704060591,
+    "first": 20768.3376051,
+    "last": 20771.242402982,
+    "end": 20771.245313841,
+    "usage": {
+      "prompt_tokens": 11155,
+      "completion_tokens": 300,
+      "total_tokens": 11455,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 11155,
+      "prompt_ms": 3601.6,
+      "prompt_per_token_ms": 0.323,
+      "prompt_per_second": 3097.2,
+      "predicted_n": 300,
+      "predicted_ms": 2922.2,
+      "predicted_per_token_ms": 9.741,
+      "predicted_per_second": 102.7,
+      "draft_n": 225,
+      "draft_n_accepted": 154
+    },
+    "busy": {
+      "cuda": 32,
+      "hip0": 85,
+      "hip1": 40
+    },
+    "busy_samples": 3,
+    "text": "We need answer user's request: \"Summarise the following document in five detailed bullet points.\" Need produce final with five detailed bullets. Need summarize document. Document is about Strata on two or more GPUs (layer split) plus README. Need likely summarize entire document? It includes long docs page and README. Need five detailed bullet points. Need be concise but detailed. Need maybe cover main topic: Strata multi-GPU layer split, roles, how works, tuning, limits/history, plus README? The document includes both Strata layer split page and README. User says following document, likely entire provided text. Need summarize in five detailed bullet points. Need ensure five bullets only. Could include: 1) purpose and setup for multi-GPU layer split; 2) card roles and configuration; 3) technical mechanism pipeline parallelism and memory; 4) tuning options and pipeline windows; 5) limits, memory fallbacks, measurements, and broader Strata product/installation? Need detailed. Need maybe mention README: free open-source local AI, models, install, hardware, tools. But document is mostly docs page plus README. Five bullets can integrate. Need no citations? Could mention examples. Need ensure not too long? Desired oververbosity 9, detailed bullets. Need maybe use bullet points with subdetails? User asked five detailed bullet points. Could make each bullet a paragraph with details. Need avoid more than five bullets. Need maybe include headings? Bullets only"
+  },
+  "stop_return": 0,
+  "elapsed_s": 49.206359125000745
+}

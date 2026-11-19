@@ -1,0 +1,1 @@
+Nov 19 23:22:14 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 259 times, consider switching to WQ_UNBOUND

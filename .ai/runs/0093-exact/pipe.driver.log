@@ -1,0 +1,3 @@
+READY after 32.2 s; idle: {"available_gib": 49.2, "shmem_gib": 2.55, "cached_gib": 51.49, "engines": {"627703": {"RssAnon": 3.38, "RssFile": 13.99, "RssShmem": 2.21}, "627708": {"RssAnon": 2.03, "RssFile": 10.74, "RssShmem": 0.97}}, "nvidia_used_mib": [14803], "amd_used_mb": [19716, 24921, 183]}
+{"name": "code", "keys": "", "prompt": 43, "done": "DONE 300 43 340.5 2540.6 length 167 270 0 0 0 0 0 0.0 43 0 chunk=0 experts_streamed=0", "wall_s": 2.882519005001086, "first_token_s": 0.35648256900094566, "reused": 0, "prefill_tps": 126.2848751835536, "decode_tps": 118.08234275368024, "drafts": "167/270", "finish": "length", "prefill_ms": 340.5} first ids [2, 8487, 6027, 5468, 436, 34810, 18887, 303, 12654, 271, 550, 6765]
+engine rc 0 total 39.4 s

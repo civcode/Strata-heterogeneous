@@ -1,0 +1,73 @@
+{
+  "ready_s": 12.020269129003282,
+  "short": {
+    "start": 17964.158576566,
+    "first": 17964.643443688,
+    "last": 17967.484684236,
+    "end": 17967.485013174,
+    "usage": {
+      "prompt_tokens": 83,
+      "completion_tokens": 300,
+      "total_tokens": 383,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 464.1,
+      "prompt_per_token_ms": 5.592,
+      "prompt_per_second": 178.8,
+      "predicted_n": 300,
+      "predicted_ms": 2858.7,
+      "predicted_per_token_ms": 9.529,
+      "predicted_per_second": 104.9,
+      "draft_n": 209,
+      "draft_n_accepted": 145
+    },
+    "busy": {
+      "cuda": 22,
+      "hip0": 47,
+      "hip1": 83
+    },
+    "busy_samples": 3,
+    "text": "We need answer user: \"Write a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.\"\n\nNeed produce final with code, explanation. Need think thoroughly. Need likely provide Python implementation. Need decide approach. Thread-safe LRU cache. Could use OrderedDict + threading.Lock. Type hints. Documentation. Example usage. Edge cases: maxsize <=0, maxsize None, thread safety, reentrancy? If using lock, avoid recursive calls? Need maybe support get/set, decorator? Complete implementation. Could implement class ThreadSafeLRUCache with get, put, __getitem__, __setitem__, __contains__, __len__, clear, items, keys, values, maybe decorator. Need ensure thread-safe. Use OrderedDict move_to_end on get. Lock protects all operations. Need handle maxsize=0? If maxsize=0, no caching? Or raise ValueError? Common functools.lru_cache maxsize=0 means no caching? Actually lru_cache(maxsize=0) no caching? In Python 3.8? maxsize=0 means no caching? Let's check: lru_cache(maxsize=0) no caching? It returns uncached? I think maxsize=0 means no caching. But for cache class, maybe maxsize must be positive or None. Could allow maxsize=0 and treat as no storage. Need edge cases.\n\nNeed maybe use RLock"
+  },
+  "long": {
+    "start": 17967.485150542,
+    "first": 17971.001930241,
+    "last": 17973.865991467,
+    "end": 17973.86645082,
+    "usage": {
+      "prompt_tokens": 11155,
+      "completion_tokens": 300,
+      "total_tokens": 11455,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 11155,
+      "prompt_ms": 3486.9,
+      "prompt_per_token_ms": 0.313,
+      "prompt_per_second": 3199.1,
+      "predicted_n": 300,
+      "predicted_ms": 2879.3,
+      "predicted_per_token_ms": 9.598,
+      "predicted_per_second": 104.2,
+      "draft_n": 230,
+      "draft_n_accepted": 157
+    },
+    "busy": {
+      "cuda": 20,
+      "hip0": 53,
+      "hip1": 96
+    },
+    "busy_samples": 3,
+    "text": "We need answer user's request: \"Summarise the following document in five detailed bullet points.\" Need produce final with five detailed bullets. Need summarize document. It's a long doc about Strata layer split on GPUs plus README. Need likely focus on main content? User says following document, includes Strata on two or more GPUs and README. Need summarize in five detailed bullet points. Need likely cover key points: purpose/usage, roles, how split works, tuning/limits, performance/history/README? Need five bullets detailed. Ensure not too terse. Could mention Strata supports multi-GPU layer split, configuration, roles, pipeline, limits, measurements, and general product info. Need maybe include all major sections. Need final only five bullets. Need ensure detailed. Let's craft five bullets:\n1. Purpose and setup: Strata layer split for 2+ same-make GPUs, desktop/terminal/config flags, choose model fits combined memory, capacity not necessarily speed.\n2. Card roles and selection: Main/Helper/Off, recommendations, config fields, memory rules, unsupported cards/mixes.\n3. Technical mechanism: pipeline parallelism contiguous layer ranges, each card holds dense weights copy, KV, expert cache, last card head/draft, auto/manual split, card order, unequal cards.\n4. Tuning and features: flags/env variables, pipeline windows, resident RAM, WDDM, overlapped hand-off, small-card fallback steps, batching"
+  },
+  "stop_return": 0,
+  "elapsed_s": 23.09476700000232
+}

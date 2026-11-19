@@ -1,0 +1,73 @@
+{
+  "ready_s": 36.028744151000865,
+  "short": {
+    "start": 18773.401769498,
+    "first": 18773.939745032,
+    "last": 18777.970295671,
+    "end": 18777.971098059,
+    "usage": {
+      "prompt_tokens": 83,
+      "completion_tokens": 300,
+      "total_tokens": 383,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 517.8,
+      "prompt_per_token_ms": 6.239,
+      "prompt_per_second": 160.3,
+      "predicted_n": 300,
+      "predicted_ms": 4048.4,
+      "predicted_per_token_ms": 13.495,
+      "predicted_per_second": 74.1,
+      "draft_n": 214,
+      "draft_n_accepted": 144
+    },
+    "busy": {
+      "cuda": 37,
+      "hip0": 45,
+      "hip1": 47
+    },
+    "busy_samples": 5,
+    "text": "We need answer user: Write complete Python implementation of thread-safe LRU cache, including type hints, documentation, example usage. Explain design and important edge cases.\n\nNeed produce final with code and explanation. Need think thoroughly. Need likely provide Python implementation. Need decide approach. Thread-safe LRU cache. Options: use collections.OrderedDict with threading.Lock. Need type hints. Could implement generic class with get/set, maybe __getitem__, __setitem__, __contains__, __len__, clear, items? Need thread-safe. Edge cases: maxsize <=0? key equality/hashability, thread reentrancy? If using lock and methods call each other, avoid nested locks. Need handle eviction. Maybe support default? Maybe thread-safe get_or_compute? Need avoid holding lock during expensive computation? Could provide get_or_compute with lock? But if compute under lock can serialize; alternative double-checked locking? Need careful.\n\nUser asks complete Python implementation of thread-safe LRU cache. Could include class ThreadSafeLRUCache with lock. Type hints. Documentation. Example usage. Explain design and edge cases.\n\nNeed ensure code correct. Let's design robust.\n\nImplementation:\n\nfrom __future__ import annotations\nfrom collections import OrderedDict\nfrom threading import RLock\nfrom typing import Generic, Hashable, Optional, TypeVar, Iterator, Tuple, Callable, Any\n\nK = TypeVar(\"K\", bound=Hashable)\nV = TypeVar(\"V\")\n\nclass ThreadSafe"
+  },
+  "long": {
+    "start": 18777.97127399,
+    "first": 18781.838874727,
+    "last": 18785.721289157,
+    "end": 18785.72209909,
+    "usage": {
+      "prompt_tokens": 11155,
+      "completion_tokens": 300,
+      "total_tokens": 11455,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 11155,
+      "prompt_ms": 3835.4,
+      "prompt_per_token_ms": 0.344,
+      "prompt_per_second": 2908.4,
+      "predicted_n": 300,
+      "predicted_ms": 3899.8,
+      "predicted_per_token_ms": 12.999,
+      "predicted_per_second": 76.9,
+      "draft_n": 240,
+      "draft_n_accepted": 150
+    },
+    "busy": {
+      "cuda": 35.0,
+      "hip0": 53.0,
+      "hip1": 54.0
+    },
+    "busy_samples": 4,
+    "text": "We need answer user's request: \"Summarise the following document in five detailed bullet points.\" Need produce final with five detailed bullets. Need summarize document. It's a long doc about Strata layer split on GPUs plus README. Need likely focus on main content? User says following document, includes Strata on two or more GPUs and README. Need summarize in five detailed bullet points. Need likely cover key points: purpose/usage, roles, how split works, tuning/limits, performance/history/README? Need five bullets detailed. Ensure not too terse. Could mention Strata supports multi-GPU layer split, configuration, roles, pipeline, limits, measurements, and general product info. Need maybe include all major sections. Need final only five bullets. Need ensure detailed. Let's craft five bullets:\n1. Purpose and setup: Strata layer split for two+ same-make GPUs, desktop/terminal/config flags, choose model fits combined memory, capacity not necessarily speed.\n2. Card roles and selection: Main/Helper/Off, recommendations, config fields, memory rules, unsupported cards/mixes.\n3. Technical mechanism: pipeline parallelism contiguous layer ranges, each card holds dense weights copy, KV, expert cache, last card head/draft, auto/manual layer_split, card order, unequal cards.\n4. Tuning and advanced options: flags/env for split skip, own buffers, prefill help, MTP batch, VRAM reserve, pipeline windows,"
+  },
+  "stop_return": 0,
+  "elapsed_s": 50.01617801099928
+}

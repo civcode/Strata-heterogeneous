@@ -1,0 +1,73 @@
+{
+  "ready_s": 37.02471969600083,
+  "short": {
+    "start": 18318.930036209,
+    "first": 18319.502033329,
+    "last": 18332.742373987,
+    "end": 18332.781056767,
+    "usage": {
+      "prompt_tokens": 83,
+      "completion_tokens": 300,
+      "total_tokens": 383,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 509.5,
+      "prompt_per_token_ms": 6.139,
+      "prompt_per_second": 162.9,
+      "predicted_n": 300,
+      "predicted_ms": 13336.0,
+      "predicted_per_token_ms": 44.453,
+      "predicted_per_second": 22.5,
+      "draft_n": 181,
+      "draft_n_accepted": 117
+    },
+    "busy": {
+      "cuda": 78.0,
+      "hip0": 94.5,
+      "hip1": 21.0
+    },
+    "busy_samples": 14,
+    "text": "We need answer user: Write complete Python implementation of thread-safe LRU cache, including type hints, documentation, example usage. Explain design and important edge cases.\n\nNeed produce final with code and explanation. Need think thoroughly. Need likely provide Python implementation. Need decide approach. Thread-safe LRU cache. Options: use collections.OrderedDict with threading.Lock. Need type hints. Could implement generic class with get/set, maybe __getitem__, __setitem__, __contains__, __len__, clear, items? Need thread-safe. Need edge cases: maxsize <=0? maxsize None? key hashable? value None? sentinel for missing? reentrancy? lock granularity? eviction order on get vs set. Concurrency: get should move to end under lock. set should insert/update and evict. If maxsize 0? Could either no caching or raise ValueError. Need decide. Complete implementation maybe with optional maxsize, optional on_evict callback? Could include thread-safe with RLock? If callbacks call cache methods, RLock avoids deadlock but reentrancy can cause weird. Better use Lock and document callbacks should not call cache methods. But if on_evict called while holding lock, deadlock if callback calls cache. Could call callback outside lock? Need careful. Simpler: no callback. Or include optional on_evict but call outside lock? Need maintain thread safety. Could implement with Lock and if on_evict, collect evicted item and call after releasing lock. But"
+  },
+  "long": {
+    "start": 18332.781306526,
+    "first": 18336.446156434,
+    "last": 18347.744816742,
+    "end": 18347.746025684,
+    "usage": {
+      "prompt_tokens": 11155,
+      "completion_tokens": 300,
+      "total_tokens": 11455,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 11155,
+      "prompt_ms": 3590.6,
+      "prompt_per_token_ms": 0.322,
+      "prompt_per_second": 3106.7,
+      "predicted_n": 300,
+      "predicted_ms": 11354.4,
+      "predicted_per_token_ms": 37.848,
+      "predicted_per_second": 26.4,
+      "draft_n": 237,
+      "draft_n_accepted": 148
+    },
+    "busy": {
+      "cuda": 85.0,
+      "hip0": 95.5,
+      "hip1": 22.0
+    },
+    "busy_samples": 12,
+    "text": "We need answer user's request: \"Summarise the following document in five detailed bullet points.\" Need produce final with five detailed bullets. Need likely summarize the provided document, which is a Strata docs page about strata on two or more GPUs layer split, plus README appended. Need five detailed bullet points. Need ensure detailed. Could cover: purpose/setup, roles and config, how split works, tuning/pipeline windows, limits/performance/history. Need maybe include README? The document includes main page and README. User says following document; likely entire text. Need summarize in five detailed bullet points. Need maybe mention Strata app, models, install? But main content is layer split. Need five bullets detailed. Need no citations? Could include key details. Need be concise but detailed. Ensure five bullets exactly? likely yes. Need maybe avoid too long? Desired oververbosity 9, so detailed bullets. Need maybe include all major sections. Let's craft five bullets:\n1. Overview and setup: Strata layer split for multiple same-make GPUs, desktop/terminal/source flags, config fields, Docker, choose model fits combined memory, capacity not speed.\n2. Card roles and selection rules: Main/Helper/Off, Main last/faster, recommendations, memory thresholds, unsupported cards, config gpu_roles/gpu/gpu_order.\n3. Technical mechanism: pipeline parallelism contiguous layer ranges, each card holds dense weights copy, KV, expert cache, prompt buffers; last"
+  },
+  "stop_return": 0,
+  "elapsed_s": 67.2564094119989
+}

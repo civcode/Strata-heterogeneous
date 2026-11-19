@@ -1,0 +1,98 @@
+[
+ {
+  "t": 17913.597694115,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17914.550805245,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17915.503804315,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17916.467435531,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17917.451322184,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17918.483751402,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17919.46396234,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17920.443414351,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17921.419385081,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17922.390554701,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17923.368305015,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17924.325555152,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17925.287365888,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17926.237053686,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17927.187558129,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17928.132564111,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17929.098060241,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17930.055592237,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17931.002498169,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17931.952173484,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17932.897707157,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17933.845676257,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17934.791133907,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ },
+ {
+  "t": 17935.742423325,
+  "error": "TypeError(\"string indices must be integers, not 'str'\")"
+ }
+]

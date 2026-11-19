@@ -1,0 +1,7 @@
+same: include/strata/core/conversation_cache.hpp
+same: include/strata/core/verify.hpp
+same: include/strata/prefill/prefill.hpp
+same: src/core/verify.cpp
+same: src/prefill/prefill.cpp
+same: src/program/generate.cpp
+6 of 6 changed files are vanilla with STRATA_MIXED_SPLIT off

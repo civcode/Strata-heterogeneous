@@ -1,0 +1,19 @@
+[1/4] Building CXX object mixed_split/CMakeFiles/mixed_split_tests.dir/tests/mixed_split_tests.cpp.o
+[2/4] Linking CXX executable mixed_split/mixed_split_tests
+[3/4] Building CXX object CMakeFiles/strata.dir/src/program/generate.cpp.o
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp: In function ‘int main(int, char**)’:
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp:9410:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9410 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp:9436:21: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9436 |         const auto& lay = strata::kernels::cpu::expert_layout();
+      |                     ^~~
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp:9569:29: warning: unused variable ‘lay’ [-Wunused-variable]
+ 9569 |                 const auto& lay = strata::kernels::cpu::expert_layout();
+      |                             ^~~
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp: In lambda function:
+/home/chris/workspace/Strata-heterogeneous/src/program/generate.cpp:17916:30: warning: unused variable ‘w’ [-Wunused-variable]
+17916 |                 const double w = (double) bt_windows, wall = std::chrono::duration<double, std::milli>(Clock::now() - bt_start).count();
+      |                              ^
+[4/4] Linking CXX executable strata

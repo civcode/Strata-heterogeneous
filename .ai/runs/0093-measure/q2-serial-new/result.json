@@ -1,0 +1,73 @@
+{
+  "ready_s": 30.024397223998676,
+  "short": {
+    "start": 19307.388693306,
+    "first": 19307.833338818,
+    "last": 19310.540548221,
+    "end": 19310.540894912,
+    "usage": {
+      "prompt_tokens": 83,
+      "completion_tokens": 300,
+      "total_tokens": 383,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 83,
+      "prompt_ms": 424.0,
+      "prompt_per_token_ms": 5.108,
+      "prompt_per_second": 195.8,
+      "predicted_n": 300,
+      "predicted_ms": 2724.8,
+      "predicted_per_token_ms": 9.083,
+      "predicted_per_second": 110.1,
+      "draft_n": 180,
+      "draft_n_accepted": 132
+    },
+    "busy": {
+      "cuda": 22,
+      "hip0": 53,
+      "hip1": 95
+    },
+    "busy_samples": 3,
+    "text": "We need answer user: \"Write a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.\"\n\nNeed produce final with code and explanation. Need think thoroughly. Need implement thread-safe LRU cache. Could use collections.OrderedDict and threading.Lock. Type hints. Need complete implementation. Consider edge cases: maxsize <=0? thread safety, concurrent get/set, eviction, capacity, key hashability, thread-safe iteration? Maybe support get/set, clear, size, contains? Need avoid race conditions. Use lock for all operations. Could implement generic class with __getitem__? Need careful with __getitem__ raising KeyError? Maybe provide get(key, default=None). For LRU, get updates recency. set adds/updates. If maxsize <=0 maybe no caching? Could raise ValueError? Better support maxsize=0 as no cache? But LRU cache with maxsize 0 could be valid no caching. Need decide. For thread-safe, if maxsize <=0, maybe raise ValueError? Many caches require positive. But edge case: maxsize=0 should not store. Could implement maxsize=0 as no caching, but then get returns default. However if maxsize negative? raise ValueError. Need type hints: Generic[K, V]. Use OrderedDict[K, V]. Lock. Maybe use context manager? Could implement __len__, __contains__, __iter__? Iteration while holding"
+  },
+  "long": {
+    "start": 19310.541121528,
+    "first": 19314.06919891,
+    "last": 19316.879918841,
+    "end": 19316.880291732,
+    "usage": {
+      "prompt_tokens": 11155,
+      "completion_tokens": 300,
+      "total_tokens": 11455,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 11155,
+      "prompt_ms": 3499.1,
+      "prompt_per_token_ms": 0.314,
+      "prompt_per_second": 3188.0,
+      "predicted_n": 300,
+      "predicted_ms": 2824.5,
+      "predicted_per_token_ms": 9.415,
+      "predicted_per_second": 106.2,
+      "draft_n": 234,
+      "draft_n_accepted": 147
+    },
+    "busy": {
+      "cuda": 24,
+      "hip0": 52,
+      "hip1": 97
+    },
+    "busy_samples": 3,
+    "text": "We need answer user's request: \"Summarise the following document in five detailed bullet points.\" Need produce final with five detailed bullet points. Need likely summarize document about Strata layer split on GPUs plus README? The document includes long page about Strata on two or more GPUs and then README general. Need summarize in five detailed bullet points. Need be careful maybe include key points: purpose, roles, how split works, tuning/limits, performance/history. Need maybe mention general Strata? The document is a mix: main doc about layer split and README. User says following document, likely entire provided text. Need summarize in five detailed bullet points. Could focus on Strata multi-GPU layer split and general app info. Need detailed but concise. Ensure five bullets. No need citations. Need maybe mention supported hardware, models, install? Since document includes README. But likely main content is Strata layer split. Need include five detailed bullet points covering: 1) What layer split is and how to use it (desktop/terminal/config, roles). 2) How split works technically (pipeline parallelism, contiguous layers, Main/Helper/Off, memory, auto/manual). 3) Tuning options and pipeline windows (flags, overlap, prefill, resident RAM). 4) Limits and memory handling (requirements, unsupported, small cards fallback). 5) Performance measurements and general Strata context (supported hardware/models/install, benchmarks). Need maybe not too long but detailed."
+  },
+  "stop_return": 0,
+  "elapsed_s": 40.932707752999704
+}
