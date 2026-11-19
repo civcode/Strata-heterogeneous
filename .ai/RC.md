@@ -68,10 +68,18 @@ configurations see exactly the same requests.
    - after a compaction;
    - at a context of 200K tokens or more.
 
-   Each probe: the probe request (max_tokens 64, greedy), served with the cache as it stands, gives the same reply as
-   the same request sent to a freshly started server of the same configuration, with `STRATA_IQ_MT_MIN=1` on both.
-   "The same reply" is the same text (content, reasoning and tool-call arguments) and the same completion token count:
-   the 0.2.15 server's stream does not carry token IDs (report 0085).
+   Each probe (max_tokens 64, greedy, `STRATA_IQ_MT_MIN=1`) is served with the cache as it stands, then replayed on a
+   freshly started server of the same configuration with top-5 logprobs (`agent_session.py replay`). It passes when
+   the replies are equal, or when they first differ at a **near-tie**: the live reply's token there is among the fresh
+   server's top 5 and at most 1.0 nat below its choice. It fails when the live token is not among them, or is further
+   below. "Unjudged" (the fresh logprobs incomplete) is reported and repeated once.
+
+   Why not "equal": reports 0087 and 0088 found that a reply served from cached prefixes is not byte-identical to a
+   fresh one, on HIP-only (vanilla plus the carried patch) as on the mixed split; with prompt and conversation caches
+   off, the tested probe was equal, and two fresh mixed servers agreed with each other. Corruption (the 19 November
+   crash) shows as non-finite logits and garbage, not as a near-tie.
+
+   In addition, over the whole session: **no `non-finite logits` line** in either server's log.
 3. **Resources:** after the first cycle, VRAM per card grows by less than 1% and available RAM falls by less than
    2 GiB across the remaining cycles and the soak. No swap use.
 4. **Performance against production** on the same sessions: session wall time, and decode tok/s at 200K tokens or more.

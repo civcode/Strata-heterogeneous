@@ -324,7 +324,8 @@ def make_sender(url, api_key=None, timeout=3600):
             h['Authorization'] = 'Bearer ' + api_key
         req = urllib.request.Request(url.rstrip('/') + '/v1/chat/completions', data=raw, headers=h)
         t0 = time.monotonic()
-        res = dict(t_start=time.time(), content='', reasoning='', tool_args='', finish=None, usage=None, timings=None)
+        res = dict(t_start=time.time(), content='', reasoning='', tool_args='', finish=None, usage=None, timings=None,
+                   lp_content=[], lp_reasoning=[])
         first = last = None
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -339,6 +340,8 @@ def make_sender(url, api_key=None, timeout=3600):
                     res['timings'] = ev.get('timings') or res['timings']
                     for c in ev.get('choices') or []:
                         d = c.get('delta') or {}
+                        for k, field in (('content', 'lp_content'), ('reasoning_content', 'lp_reasoning')):
+                            res[field] += ((c.get('logprobs') or {}).get(k)) or []
                         got = False
                         for k, field in (('content', 'content'), ('reasoning_content', 'reasoning')):
                             if d.get(k):
@@ -470,18 +473,71 @@ def cmd_run(a, send=None, quiet=False):
     return 0 if s.totals['errors'] == 0 else 1
 
 
+NEAR_TIE_NATS = 1.0    # a live token this close to the fresh server's choice (log-probability) is a near-tie
+
+
+def near_tie(live: str, fresh: str, entries: list, max_gap: float = NEAR_TIE_NATS) -> dict:
+    """Where `live` first leaves `fresh` (one field of the reply), is the live reply's next token one the fresh server
+    nearly chose?  `entries`: the fresh server's logprobs entries for that field (OpenAI form, each with
+    top_logprobs).  Only the first difference is judged: after it the two replies are conditioned on different text."""
+    if live == fresh:
+        return {'verdict': 'equal'}
+    at = next((i for i, (x, y) in enumerate(zip(live, fresh)) if x != y), min(len(live), len(fresh)))
+    spelled = ''.join(e.get('token') or '' for e in entries)
+    if not entries or not fresh.startswith(spelled[:at + 1]) or len(spelled) <= at and len(fresh) > at:
+        return {'char': at, 'verdict': 'unjudged',
+                'why': 'the fresh logprobs do not spell the fresh text up to the difference (missing or incomplete entries)'}
+    pos = 0
+    for k, e in enumerate(entries):
+        tok = e.get('token') or ''
+        if pos + len(tok) > at or k == len(entries) - 1:
+            rest = live[pos:]
+            alts = [x for x in e.get('top_logprobs') or [] if x.get('token') and x['token'] != tok]
+            hit = max((x for x in alts if rest.startswith(x['token'])), key=lambda x: x['logprob'], default=None)
+            base = dict(char=at, token_index=k, fresh_token=tok, fresh_logprob=e.get('logprob'))
+            if hit is None:
+                return {**base, 'verdict': 'DIFFERENT', 'why': 'the live token is not in the fresh top logprobs'}
+            gap = float(e.get('logprob', 0.0)) - float(hit['logprob'])
+            return {**base, 'live_token': hit['token'], 'live_logprob': hit['logprob'], 'gap_nats': round(gap, 3),
+                    'verdict': 'near-tie' if gap <= max_gap else 'DIFFERENT'}
+        pos += len(tok)
+    return {'char': at, 'verdict': 'unjudged', 'why': 'no logprobs from the fresh server'}
+
+
+def judge(live: dict, fresh: dict, max_gap: float = NEAR_TIE_NATS) -> dict:
+    """The probe verdict: equal, near-tie (the first difference is a near-tie in the field that differs first: reasoning,
+    then content), or DIFFERENT.  Tool-call arguments come last and are compared only when the texts are equal."""
+    for field in ('reasoning', 'content'):
+        a, b = live.get(field) or '', fresh.get(field) or ''
+        if a != b:
+            return {'field': field, **near_tie(a, b, fresh.get('lp_' + field) or [], max_gap)}
+    if (live.get('tool_args') or '') != (fresh.get('tool_args') or ''):
+        return {'field': 'tool_args', 'verdict': 'DIFFERENT', 'why': 'equal text, different tool-call arguments'}
+    if live.get('completion_tokens') != fresh.get('completion_tokens'):
+        return {'field': 'completion_tokens', 'verdict': 'DIFFERENT', 'why': 'equal text, different token counts'}
+    return {'verdict': 'equal'}
+
+
 def cmd_replay(a):
+    """One saved probe on a (freshly started) server, with top logprobs, judged against the live reply (judge).  Exit 0
+    for equal or near-tie.  A non-finite-logits line in either server's log is a failure whatever this says: check the
+    logs (.ai/RC.md, criterion 2)."""
     p = json.load(open(a.probe))
+    req = dict(p['request'], logprobs=True, top_logprobs=5)
     r = make_sender(a.url, os.environ.get(a.api_key_env) if a.api_key_env else None)(
-        json.dumps(p['request'], ensure_ascii=False, sort_keys=True).encode())
+        json.dumps(req, ensure_ascii=False, sort_keys=True).encode())
     got, want = reply_of(r), p['reply']
-    same = not r.get('error') and all(got[k] == want[k] for k in ('content', 'reasoning', 'tool_args', 'completion_tokens'))
-    res = dict(probe=a.probe, why=p['why'], equal=same, error=r.get('error'), live=want, fresh=got,
+    got_lp = {**got, 'lp_reasoning': r.get('lp_reasoning') or [], 'lp_content': r.get('lp_content') or []}
+    v = {'verdict': 'DIFFERENT', 'why': f"replay error: {r['error']}"} if r.get('error') else judge(want, got_lp, a.max_gap)
+    same = v['verdict'] == 'equal'
+    res = dict(probe=a.probe, why=p['why'], equal=same, verdict=v, error=r.get('error'), live=want, fresh=got,
+               fresh_logprobs=bool(got_lp['lp_reasoning'] or got_lp['lp_content']),
                prompt_tokens=(r.get('usage') or {}).get('prompt_tokens'), wall_s=r.get('wall_s'))
     out = a.probe[:-5] + '-replay.json'
     json.dump(res, open(out, 'w'), indent=1, ensure_ascii=False)
-    print(('EQUAL' if same else 'DIFFERENT') + f" {p['why']}: {out}")
-    return 0 if same else 1
+    extra = f" (gap {v['gap_nats']} nats at token {v['token_index']})" if 'gap_nats' in v else (f" ({v['why']})" if 'why' in v else '')
+    print(f"{v['verdict'].upper() if v['verdict'] == 'equal' else v['verdict']} {p['why']}{extra}: {out}")
+    return 0 if v['verdict'] in ('equal', 'near-tie') else 1
 
 
 class StubHandler(http.server.BaseHTTPRequestHandler):
@@ -567,8 +623,22 @@ def cmd_selftest(a):
         if not os.path.exists(os.path.join(tmp, 's0', 'probes', f'probe-{w}.json')):
             continue
         StubHandler.prev = ''
-        ra = argparse.Namespace(probe=os.path.join(tmp, 's0', 'probes', f'probe-{w}.json'), url=url, api_key_env=None)
+        ra = argparse.Namespace(probe=os.path.join(tmp, 's0', 'probes', f'probe-{w}.json'), url=url, api_key_env=None, max_gap=NEAR_TIE_NATS)
         checks[f'replay {w} equal on the stub'] = cmd_replay(ra) == 0
+    # the near-tie judgement on made-up logprobs: the fresh reply says "The user asks", the live one "The user's"
+    ent = [{'token': 'The', 'logprob': -0.1, 'top_logprobs': []}, {'token': ' user', 'logprob': -0.2, 'top_logprobs': []},
+           {'token': ' asks', 'logprob': -0.6, 'top_logprobs': [{'token': ' asks', 'logprob': -0.6},
+                                                               {'token': "'s", 'logprob': -0.9}]}]
+    checks['near-tie: a close second choice'] = judge({'reasoning': "The user's query"},
+                                                      {'reasoning': 'The user asks', 'lp_reasoning': ent})['verdict'] == 'near-tie'
+    checks['DIFFERENT: a far second choice'] = judge({'reasoning': "The user's query"},
+                                                     {'reasoning': 'The user asks', 'lp_reasoning': ent}, 0.2)['verdict'] == 'DIFFERENT'
+    checks['DIFFERENT: not among the alternatives'] = judge({'reasoning': 'The user wants'},
+                                                            {'reasoning': 'The user asks', 'lp_reasoning': ent})['verdict'] == 'DIFFERENT'
+    checks['equal texts, different tool arguments'] = judge({'reasoning': 'a', 'tool_args': 'x'},
+                                                            {'reasoning': 'a', 'tool_args': 'y'})['verdict'] == 'DIFFERENT'
+    checks['unjudged: an entry missing before the difference'] = judge(
+        {'reasoning': "The user's query"}, {'reasoning': 'The user asks', 'lp_reasoning': [ent[0], ent[2]]})['verdict'] == 'unjudged'
     for k, v in checks.items():
         print(('ok    ' if v else 'FAIL  ') + k)
     print(f"requests {t['requests']}, prunes {t['prunes']} ({t['pruned_outputs']} outputs), compactions {t['compactions']}, "
@@ -599,6 +669,8 @@ def main():
         p.add_argument('probe')
         p.add_argument('--url', default='http://127.0.0.1:8096')
         p.add_argument('--api-key-env', default=None)
+        p.add_argument('--max-gap', type=float, default=NEAR_TIE_NATS,
+                       help='nats: a first difference this close to the fresh choice is a near-tie')
         return cmd_replay(p.parse_args())
     if cmd == 'stub':
         p = argparse.ArgumentParser()

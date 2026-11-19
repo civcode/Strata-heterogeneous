@@ -1,7 +1,6 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0088 (are report 0087's probe differences vanilla's? HIP-only control).
-Budget 20 minutes.
+Turn holder: **Chat AI**, waiting for the Human User's decision on how to resume long runs.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -126,13 +125,14 @@ qualification uses a synthetic workload shaped like it; model, measurements and 
 
 ## Next step
 
-Report 0087 (the pinned readback on the cards): builds pass; the patch's GPU tests pass (HIP 14, CUDA 11 + 3 skipped:
-one CUDA device); HIP-only and mixed park/restore checks pass, also at 32K; no safety lines, no swap. Open: all three
-live-versus-fresh probes of the scaled session differ (early, near-tie-like), and the scaled session never restored a
-parked conversation. A hang at the end of a session (server started from a background shell, SIGINT ignored) led to
-the start/stop rule in `PROJECT.md` and to `reset_ignored_signals` / `stop_cooperatively` in the tools.
+Report 0088: the live-versus-fresh probe differences occur on HIP-only too (vanilla plus the carried patch); with
+caches off the tested probe was equal; two fresh mixed servers agreed. So "equal" was too strict a criterion. Chat AI
+changed `.ai/RC.md` criterion 2 to "equal or a near-tie" (live token in the fresh top 5, at most 1.0 nat below), plus
+no non-finite-logits line; `agent_session.py replay` now asks for top-5 logprobs and judges (selftest 18/18). The
+driver now turns thinking off for `--reasoning-budget 0` (report 0088).
 
-Handoff 0088 (Coding Agent): fresh-against-fresh and HIP-only probe controls. Then Chat AI decides the probe
-criterion and, with the Human User, how to resume long runs. The setup integration waits on `chat/setup-mixed-split`.
+Open decision for the Human User: how to resume long runs after the 19 November crash (swap setting, order of
+HIP-only and mixed long sessions, `HSA_USERPTR_FOR_PAGED_MEM`). The setup integration waits on
+`chat/setup-mixed-split`.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
