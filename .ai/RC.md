@@ -40,7 +40,8 @@ configurations see exactly the same requests.
     tokens;
   - the next cycle starts from the fixed prefix, a scripted summary of about 8,000 tokens, and the last two turns.
 - **One session** runs until the second compaction is done and the third cycle has started (one request after it).
-  With pruning, one cycle is estimated at about 250 turns and 50 minutes. All the numbers above are estimates of the
+  Against the driver's stub, one full session is 589 requests (about 290 turns per cycle) and reads about 7 million
+  new tokens, most of them rereads after pruning. Estimated at about 1.5 hours per session on the cards. All the numbers above are estimates of the
   Human User's workload; the driver takes each of them as a flag, so they can be corrected without code changes.
 - **A scaled session** for smoke tests uses the same model with compaction at 92% of 32,768 tokens and two cycles.
 
@@ -67,8 +68,10 @@ configurations see exactly the same requests.
    - after a compaction;
    - at a context of 200K tokens or more.
 
-   Each probe: the probe request, served with the cache as it stands, gives the same first 64 token IDs as the same
-   request sent to a freshly started server, greedy with `STRATA_IQ_MT_MIN=1`. Both in mixed mode.
+   Each probe: the probe request (max_tokens 64, greedy), served with the cache as it stands, gives the same reply as
+   the same request sent to a freshly started server of the same configuration, with `STRATA_IQ_MT_MIN=1` on both.
+   "The same reply" is the same text (content, reasoning and tool-call arguments) and the same completion token count:
+   the 0.2.15 server's stream does not carry token IDs (report 0085).
 3. **Resources:** after the first cycle, VRAM per card grows by less than 1% and available RAM falls by less than
    2 GiB across the remaining cycles and the soak. No swap use.
 4. **Performance against production** on the same sessions: session wall time, and decode tok/s at 200K tokens or more.

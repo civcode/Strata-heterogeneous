@@ -1,7 +1,7 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0085 (RC qualification, part 1: builds, the pi-like session driver, one full
-256K session per configuration). Budget about 4 hours of GPU time, announced.
+Turn holder: **Coding Agent**, handoff 0086 (the GPU part of 0085: scaled and full pi-like sessions, probes).
+Budget about 4 hours of GPU time, announced.
 
 ## Current milestone
 
@@ -113,7 +113,8 @@ qualification uses a synthetic workload shaped like it; model, measurements and 
 
 ## Next step
 
-Handoff 0085 (Coding Agent). Then RC handoff 2: a soak of about three hours on the mixed configuration. Then Chat AI
-writes `mixed_split/README.md` and tags `mixed-split-rc1`.
+Handoff 0086 (Coding Agent). Report 0085 was partial: builds `build-0085-*` done, no driver, no GPU runs. Chat AI then
+wrote the driver `agent_session.py` and `agent_table.py` (self-test against a stub passes). Then RC handoff 2: a soak of
+about three hours on the mixed configuration; then `mixed_split/README.md` and the tag `mixed-split-rc1`.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
