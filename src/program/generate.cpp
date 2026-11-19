@@ -16280,7 +16280,8 @@ int main(int argc, char** argv) {
                             return true;
                         }
                         if (!je.empty()) return false;
-                        std::this_thread::yield();
+                        // Match the host pipeline's tight service pump: yielding here adds scheduler latency
+                        // to every front-stage doorbell when the expert cache is not fully resident.
                     }
                 }, e);
                 if (mixed_split_timing()) f_pl_run_ms.add(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
