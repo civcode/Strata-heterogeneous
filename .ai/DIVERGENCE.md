@@ -94,10 +94,24 @@ tests.
 - The rest of the `civcode/strata-dev-private` hardening (GPU ownership through shutdown, Phase 10E and 11B): withdrawn
   on 2026-11-18; archived on `archive/hardened-0069`.
 
+## Supported since report 0093: the front stage's CPU core in pipelined mode
+
+With `--pipeline-windows` asked for, the front stage pins its host thread to the other end of the CPU set from the
+host's (`--host-core`: host first or sibling -> front last; host last -> front first); an explicit front
+`--host-core` (`--front-arg`) wins; serial mode unchanged (`mixed_split/front_placement.hpp`). Both processes used to
+pin to CPU 0; when the front stage's expert cache was a little short of full (pipelining keeps 234 MiB out of it), its
+window graph needed CPU service and the two contended: the front window took 43 ms instead of 4, and IQ3_XXS
+pipelined decode fell to 26 tok/s (report 0093: 108.7 / 102.7 tok/s after, short / long).
+
 ## Known differences in output
 
 - Greedy output can differ from HIP-only at an early token. In reports 0068 and 0074 this was a near-tie: the
   CUDA-only build picks the same token as mixed.
+- Serial and pipelined mixed output can differ when the front stage's expert cache differs in size between the two
+  (pipelining keeps 234 MiB of the front card out of the cache: report 0093, IQ3_XXS, 7680 against 7510 slots, first
+  difference at token 29). With the caches matched, 300 of 300 tokens are identical, so the pipeline mirrors the
+  serial loop; the difference is which experts the front card holds (vanilla's pipelining also keeps VRAM out of
+  each card's cache).
 - With a control vector loaded but switched off, mixed output is not bit-identical to mixed without a vector. Report
   0074 traced it to layer 14, the front stage's last layer, where a covered layer's FFN write happens in another kernel.
   The likely cause is a rounding difference; not confirmed bit by bit.

@@ -1,7 +1,6 @@
 # Status
 
-Turn holder: **Coding Agent (Tier 1)**, handoff 0093 (mixed pipelined decode collapse on IQ3_XXS: 23 tok/s
-pipelined against about 101 serial). Budget about 1.5 hours, announced. Handoff 0091 still deferred.
+Turn holder: **Chat AI**, report 0093 reviewed; next: the Human User's agent run on the fixed build.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -157,5 +156,19 @@ User's agent work: mixed serial 106 tok/s median against vanilla HIP-only pipeli
 `--pipeline-windows 2` collapses to 23 tok/s (also with the right ROCm libraries; `make_mixed_config.py` now takes
 `lib_dirs` from the build and `check_launch.py` refuses a mismatched ROCm, `67a1f19a`). Handoff 0093 (Tier 1)
 investigates and fixes the pipelined collapse.
+
+Report 0093 (Tier 1, Partial): the collapse was CPU contention. Host and front stage both pinned their host threads
+to CPU 0; with the front cache a little short of full (pipelining's 234 MiB), its window graph needed CPU service and
+the front window took 43 ms instead of 4. Fix (`3fb31013`, reapplied `39bb4deb`): in pipelined mode the front stage
+takes the other end of the CPU set. IQ3_XXS pipelined 26.5 -> 108.7 tok/s short, 26.4 -> 102.7 long (serial 102.1 /
+92.8); Q2_0 pipelined 118.6 / 113.1. Same-day HIP-only (this branch) pipelined 97.7 / 108.5 traced. Busy % after:
+CUDA 28-32, HIP0 72-73, HIP1 70-72 (balanced, as the Human User's vanilla pipelined 70 / 85). Exactness: serial and
+pipelined differ at token 29 when the front caches differ in size (7680 / 7510); matched, 300/300 identical: recorded
+in DIVERGENCE as a known difference, not a defect. Also found: the front card's `--vram-reserve-mib 700` (setup's
+reserve for the picture reader, which runs on HIP0, not the front card) costs it 170 of 7680 expert slots; at 450
+MiB the front cache was full and decode 115.6 / 104.3 tok/s. The front card also drives the display (Xorg), so that
+reserve is the Human User's choice. Workqueue warnings kept rising (up to 515 times); no stop line.
+
+Human User's context for 0093 (22:56): vanilla 2x R9700 IQ3_XXS busy HIP0 45 / HIP1 98 serial, 70 / 85 pipelined.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
