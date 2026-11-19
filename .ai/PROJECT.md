@@ -72,6 +72,13 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   runs sequential, never two GPU jobs at once. Every single run stays under 2 minutes unless the handoff says otherwise.
 - A handoff that expects more than 30 minutes states its budget, and Chat AI tells the Human User when it hands it
   over. It is allowed by default; the Human User intervenes only to refuse it. A handoff may set a lower budget.
+- **Safety checks in every turn with GPU runs:**
+  - Before the first GPU run and after the last, record the kernel log lines matching
+    `amdgpu|gfxhub|GCVM|MES|page fault|segfault|general protection`, `coredumpctl list` since boot, and the boot ID
+    (`/proc/sys/kernel/random/boot_id`).
+  - **After any pause in a turn** (a usage limit, a wait for the Human User), compare the boot ID before the next GPU
+    run. A different boot ID means the machine was restarted: run nothing more, and report it.
+  - A new GPU fault line, a crash outside the run, or a reboot ends the handoff.
 - Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
 - Long-duration tests (soak, long context, capacity sweeps, the 160 tok/s qualification) wait for
   release-candidate state and an explicit request from the Human User.

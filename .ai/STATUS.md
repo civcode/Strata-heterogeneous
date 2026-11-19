@@ -1,43 +1,37 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0078` (Tier 1), once the Human User hands it over.
+Turn holder: **Coding Agent**, handoff `0079` (Tier 1), once the Human User hands it over and confirms the 18 November shutdown.
 
 ## Current milestone
 
-M8: mixed-mode performance (handoff 0078): the wrong-guess notice, the short-prompt cost, prompt chunks across the link.
-
-M7 reached (report 0077, `f5eec160`): `--pipeline-windows 2` works in mixed mode and emits exactly the serial loop's
-token IDs.
+M8 reached (report 0078, `5b82ad6d`), pending the Human User's confirmation of the shutdown during the turn.
 
 Chat AI's review:
-- **Asynchronous front window** (`9d1546f5`): the link round trip fell from 3.36 to 0.10 ms per window, and the first
-  R9700 now waits about 3.7 ms on the ready word on its GPU. Token IDs are identical to before; decode +0.4 to +0.5%,
-  within noise.
-- **Pipelined windows** (`7a5fab5f`):
-  - token IDs identical to serial on code and long, also with `STRATA_PIPELINE_FORCE_MISS=3` (81 and 52 windows
-    undone) and for a seeded sampled request;
-  - a repetition penalty falls back to serial with vanilla's message;
-  - the server checks pass (streaming, cancel, a 16K two-turn conversation parked and restored, vision, `cvec=0`,
-    shutdown).
-- **Contract:** two hooks in `Verifier` (`pl_launch`, `pl_commit_async`) and one line in the decode loop's undo, all
-  guarded; vanilla's pipelined logic is unchanged. `check_off_is_vanilla.py` reports 6 of 6.
-- **Decode, median of three** (mixed serial / mixed pipelined / production): code 121.3 / 118.7 / 107.9; long
-  121.7 / 119.2 / 114.5; 16K 132.0 / 146.6 / 125.9.
-  - Pipelining gains +11% at 16K. Its −2% on code and long is within noise: production's own medians moved by up to 7%
-    between reports 0076 and 0077.
-  - Guesses are right 37 to 54% of the time (production 39 to 60%).
-  - Prefill is unchanged on long prompts and −6% on the short one.
-  - Mixed, serial or pipelined, now decodes faster than production on all three prompts.
-- **The mixed mirror config** now has `--pipeline-windows 2` with the two production variables (agent, task 6). The
-  agent leaves keeping it to the Human User.
-- **Open:**
-  - the front stage computes a window already judged wrong to its end (it is not told);
-  - `STRATA_SPLIT_TIMING` does not cover pipelined windows;
-  - `--pipeline-windows 1` is untested;
-  - the short-prompt fixed cost.
-- **Since report 0077,** by Chat AI: `.ai/DIVERGENCE.md` updated.
+- **Reboot:** the machine was shut down cleanly at 23:37 on 18 November, while the turn was paused, and booted at 08:01.
+  The agent missed it at resume and ran about 14 more GPU minutes before noticing at the final check: no faults, no
+  core dumps. `.ai/PROJECT.md` now checks the boot ID after any pause. If the shutdown was the Human User's, the
+  results stand.
+- **Wrong-guess notice:** measured and correctly not added. The front window is always launched before the verdict;
+  82 to 89% of wrong guesses find it already ended; the host's undo never waited for it.
+- **Short prompts:** the gap is the CUDA card's own prompt compute, 8.5 ms per layer against about 3.6 ms on an R9700.
+  - Report 0076's 80 ms was a first-request effect: every server measurement starts a fresh server.
+  - Pipelined against serial costs only on the first request (+33 ms); warm requests are equal.
+  - An MMQ build of the front stage helps short prompts (+13% warm) but costs 6 to 14% on long ones: not adopted.
+- **Prompt chunks across the link** (`2fb7f403`): exact. Prefill +12.7% at 16K and +16.2% at 32K.
+  `--prefill-pipe 700` now gives +27.6% on 5K prompts but −5.4% at 32K: it stays off.
+- **Mixed against production, final:**
+  - prefill −22.5% on the code prompt, −2.4% on long, +11.4% at 16K;
+  - decode +12.7%, +7.3%, +16.5%.
+- **Contract:** guarded hooks; `Prefill::set_remote_in`'s callback now gets the next chunk's size and returns its
+  buffer. `check_off_is_vanilla.py` reports 6 of 6.
+- **Found by Chat AI in review (from the code, not reproduced):** a cancel between prompt chunks leaves the front stage
+  a chunk ahead of the host, and nothing marks its session invalid. A continuation would then be refused. Handoff 0079
+  reproduces and fixes it.
+- **Since report 0078,** by Chat AI: `.ai/DIVERGENCE.md` updated; the standing safety rule added to `.ai/PROJECT.md`.
 
 ## History in short
+
+- M8 reached (report 0078): prompt chunks across the link (+12.7% / +16.2% at 16K / 32K); mixed decodes 7 to 17% faster than production.
 
 - M7 reached (report 0077): pipelined decode windows in mixed mode, exact; +11% decode at 16K.
 
@@ -97,13 +91,11 @@ Chat AI's review:
 
 ## Open decisions for the Human User
 
-- None. (Handoff 0078's 40-minute budget is above the allowance; the Human User is told, and it stands unless refused.)
+- Confirm that the clean shutdown at 23:37 on 18 November was the Human User's.
 
 ## Next step
 
-After report 0078: Chat AI reviews the hooks, updates `.ai/DIVERGENCE.md`, and proposes the next step:
-- `--batch`;
-- DFlash2;
-- or a long-duration qualification run once the project nears a release candidate.
+After report 0079: Chat AI reviews it. Then the next direction: `--batch`, DFlash2, or a release-candidate
+qualification with a long-duration run (`.ai/WORKFLOW.md` Section 12).
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn

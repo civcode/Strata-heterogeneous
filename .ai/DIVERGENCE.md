@@ -6,7 +6,7 @@ Reference: vanilla Strata 0.2.15 (`c775728`). Kept current by Chat AI; checked w
 ## With `STRATA_MIXED_SPLIT` off (the default): vanilla
 
 Every change in a vanilla engine file sits inside `#if defined(STRATA_MIXED_SPLIT)`. With the option off, the six
-changed files read exactly as vanilla after the preprocessor. The branch deletes no vanilla line: it adds 1,252 lines to
+changed files read exactly as vanilla after the preprocessor. The branch deletes no vanilla line: it adds 1,537 lines to
 7 vanilla files. The only change outside a guard is the option itself in the top-level `CMakeLists.txt` (12 lines,
 default `OFF`).
 
@@ -16,10 +16,10 @@ default `OFF`).
 | --- | --- | ---: |
 | `CMakeLists.txt` | The option; `add_subdirectory(hetero)`; the define on `strata_engine`; links `strata_mixed_split` | 12 |
 | `include/strata/core/verify.hpp`, `src/core/verify.cpp` | `Verifier::set_front`: the first local stage forwards each window's run and commit to the front stage. `set_launch_mark`: events around the window graph's launch, for `STRATA_SPLIT_TIMING` only. With `--pipeline-windows`, `pl_launch` and `pl_commit_async` launch and commit the front stage's window of the same parity first | 39 |
-| `include/strata/prefill/prefill.hpp`, `src/prefill/prefill.cpp` | `Prefill::set_remote_out` / `set_remote_in`: a prompt chunk's rows go to, or come from, the shared hand-off instead of a stage in the same process | 69 |
+| `include/strata/prefill/prefill.hpp`, `src/prefill/prefill.cpp` | `Prefill::set_remote_out` / `set_remote_in`: a prompt chunk's rows go to, or come from, the shared hand-off instead of a stage in the same process. The fill callback gets the next chunk's size and returns the buffer its rows are in (read-ahead, report 0078) | 69 |
 | `include/strata/core/conversation_cache.hpp` | `ConversationCache::on_drop`: reports each parked conversation the cache lets go (not one taken for a restore) | 25 |
-| `src/program/generate.cpp` | See below | 1,107 |
-| `hetero/` | The seam library (shared region, front link, worker process), its CPU tests, the probe, run configs and tools | 4,471 |
+| `src/program/generate.cpp` | See below | 1,392 |
+| `hetero/` | The seam library (shared region, front link, worker process), its CPU tests, the probe, run configs and tools | 4,628 |
 
 What `generate.cpp` adds:
 - **Options:** `--front-exe`, `--front-layers`, `--front-arg` on the host; `--front-stage` on the front stage.
@@ -42,6 +42,10 @@ What `generate.cpp` adds:
 - **Asynchronous front window** (report 0077): the front stage answers a window call once its window is launched.
   Vanilla's `Verifier::run` runs to its end on a helper thread (`hetero/front_runner.hpp`), every later call waits for
   it, and the first R9700 waits on the ready word on its GPU.
+- **Prompt chunks across the link** (report 0078, link protocol 4: PfStart, PfWait): while the first R9700 reads chunk c,
+  the front stage reads chunk c+1 into a second row buffer (shared slot 5, 320 MiB). Vanilla's chunk plan is
+  unchanged. Nothing is read ahead across runs or past a checkpoint position. `STRATA_MIXED_PF_AHEAD=0` turns it off.
+- **Timing** also covers pipelined windows and every link call (`STRATA_SPLIT_TIMING`, logging only).
 - **Layer placement:** `--layer-split auto` runs vanilla's planner over the host's own layers `[front_lb, 48)`, through
   a starting layer added to the planner (report 0075).
 - **Timing** (`STRATA_SPLIT_TIMING`, logging only): GPU events for the front stage's window, the link round trips, the
