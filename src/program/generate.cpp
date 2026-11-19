@@ -1717,6 +1717,7 @@ struct HeteroHost {
     bool on() const { return link != nullptr; }
     bool drop_window(std::string& err) {
         pf_buf = -1;   // (any other call ends a prompt chunk read ahead: the front stage waits for it first)
+        snap_pending = false;   // (... and a checkpoint copy in flight, which it does not keep)
         if (!window_open) return true;
         window_open = false;   // (vanilla runs the next window over a window nobody committed)
         return timed(kTSession, [&] { return link->session(strata::hetero::SessionOp::Abandon, 0, 0, err); });
@@ -1731,7 +1732,7 @@ struct HeteroHost {
     std::vector<std::unique_ptr<HeteroGpuSpan>> t_stage;   ///< one per local stage
     // STRATA_SPLIT_TIMING: every other link call's round trip (per request), and with --pipeline-windows the first local
     // stage's wait on each parity's ready word, the verdicts on wrong guesses against the front stage's window end
-    enum { kTImages, kTSteer, kTReset, kTSession, kTPrefill, kTPfStart, kTPlRun, kTPlCommit, kTPlUndo, kTN };
+    enum { kTImages, kTSteer, kTReset, kTSession, kTPrefill, kTPfStart, kTPlRun, kTPlCommit, kTPlUndo, kTSnapStart, kTSnapWait, kTN };
     HeteroSum t_op[kTN];
     strata::core::Verifier* t_pl_ver[2] = {nullptr, nullptr};   ///< the first local stage's verifier of each parity
     const uint32_t* t_pl_flag_d[2] = {nullptr, nullptr};        ///< each parity's ready word, as that device sees it
@@ -1848,7 +1849,7 @@ struct HeteroHost {
         t_run.mark(); t_commit.mark(); t_wait.sum.mark();
         // the other link calls (count, total ms) and the pipelined windows
         static const char* const names[kTN] = {"images", "steer", "reset", "other session", "prompt chunk (wait)", "PfStart", "PlRun",
-                                               "PlCommit", "PlUndo"};
+                                               "PlCommit", "PlUndo", "SnapStart", "SnapWait"};
         std::string calls;
         for (int k = 0; k < kTN; ++k) {
             if (t_op[k].n_new() == 0) continue;
@@ -1971,6 +1972,55 @@ struct HeteroHost {
         err = "mixed split: the front stage: " + err;
         return false;
     }
+    // ---- a checkpoint's front part copied while this process saves its own parts (Snapshot in two steps): the front
+    // stage checks its session and starts the copy (SnapStart), and SnapWait gets the copy's result.  The part is kept
+    // only when the host's own parts were saved too, so a checkpoint vanilla skips (#3350) is skipped on both sides.
+    // STRATA_MIXED_CKPT_OVERLAP=0: the front part after the host's, in one call (Snapshot), as before.
+    bool snap_pending = false;   ///< a copy started and not waited for (any other call ends it on the front stage)
+    static bool ckpt_overlap() {
+        static const bool on = [] { const char* v = std::getenv("STRATA_MIXED_CKPT_OVERLAP"); return v == nullptr || std::atoi(v) != 0; }();
+        return on;
+    }
+    template <class T, class K>
+    bool snap_start(const T* ids, int64_t n, bool steer, const std::vector<K>& imgs, std::string& err) {
+        if (!drop_window(err)) return false;
+        if (!timed(kTSnapStart, [&] { return link->snapshot_start(strata::hetero::state_key(ids, n, steer, imgs), n, err); })) {
+            err = "mixed split: the front stage: " + err;
+            return false;
+        }
+        snap_pending = true;
+        return true;
+    }
+    bool snap_wait(bool keep, std::string& err) {
+        if (!snap_pending) { err = "mixed split: no checkpoint copy in flight on the front stage"; return false; }
+        snap_pending = false;
+        if (timed(kTSnapWait, [&] { return link->snapshot_wait(keep, err); })) return true;
+        err = "mixed split: the front stage: " + err;
+        return false;
+    }
+    /// One checkpoint's front part in two steps, as the saving code sees it: start() before the host saves its own
+    /// parts, finish() once they are saved.  Every other way out (a failed or skipped host part, an exception) waits
+    /// for the copy without keeping it.
+    struct Snap {
+        HeteroHost* h = nullptr;   ///< set while a copy is in flight
+        template <class T, class K>
+        bool start(HeteroHost& host, const T* ids, int64_t n, bool steer, const std::vector<K>& imgs, std::string& err) {
+            if (!host.snap_start(ids, n, steer, imgs, err)) return false;
+            h = &host;
+            return true;
+        }
+        bool pending() const { return h != nullptr; }
+        bool finish(std::string& err) {
+            HeteroHost* x = h;
+            h = nullptr;
+            return x->snap_wait(true, err);
+        }
+        ~Snap() {
+            if (h == nullptr) return;
+            std::string e;
+            (void) h->snap_wait(false, e);
+        }
+    };
     /// The host's conversation cache let the parked copy of `ids[0, n)` go: the front stage drops its own (no window or
     /// session change on either side).
     template <class T, class K>
@@ -2034,6 +2084,10 @@ struct HeteroFrontBackend final : strata::hetero::FrontBackend {
     std::function<bool(int, std::string&)> f_pl_undo;
     std::function<bool(const int32_t*, int64_t, int64_t, int, std::string&)> f_pf_start;
     std::function<bool(int, std::string&)> f_pf_wait;
+    std::function<bool(int64_t, int64_t, std::string&)> f_snap_start;
+    std::function<bool(bool, std::string&)> f_snap_wait;
+    bool snapshot_start(int64_t key, int64_t n, std::string& err) override { return f_snap_start(key, n, err); }
+    bool snapshot_wait(bool keep, std::string& err) override { return f_snap_wait(keep, err); }
     bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) override {
         return f_pf_start(tokens, n, pos0, buf, err);
     }
@@ -14367,6 +14421,13 @@ int main(int argc, char** argv) {
             if (parts == nullptr) pool_topup();   // the next save finds one ready (between requests only)
             c.ids.assign(cur.begin(), cur.begin() + L);
             c.imgs = imgs_below(req_imgs, L);
+#if defined(STRATA_MIXED_SPLIT)
+            HeteroHost::Snap front_snap;   // MIXED SPLIT: the front stage copies its part meanwhile (kept below, once these are saved)
+            if (parts == nullptr && hetero.on() && HeteroHost::ckpt_overlap()) {
+                std::string fe;
+                if (!front_snap.start(hetero, c.ids.data(), L, cvec_cached, c.imgs, fe)) { ckpt_why = ": " + fe; return false; }
+            }
+#endif
             if (parts != nullptr) {
                 if (parts->size() != stages.size() + 1) return false;
                 c.gdn = std::move((*parts)[0].gdn);
@@ -14471,7 +14532,7 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
             if (parts == nullptr && hetero.on()) {   // MIXED SPLIT: the front stage's part (a split's parts: on_stage_chunk)
                 std::string fe;
-                if (!hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, cvec_cached, c.imgs, fe)) { ckpt_why = ": " + fe; return false; }
+                if (!(front_snap.pending() ? front_snap.finish(fe) : hetero.at(strata::hetero::SessionOp::Snapshot, c.ids.data(), L, cvec_cached, c.imgs, fe))) { ckpt_why = ": " + fe; return false; }
             }
 #endif
             c.used = ++check_clock;
@@ -14628,6 +14689,12 @@ int main(int argc, char** argv) {
                     part_next[i] = done + o.prompt_cache_every;
                     ConvCheckpoint part;   // this stage's state at `done` (its stream is synchronized)
                     part.ids.assign(cur.begin(), cur.begin() + done);
+#if defined(STRATA_MIXED_SPLIT)
+                    HeteroHost::Snap front_snap;   // MIXED SPLIT: the front stage copies its part meanwhile (kept below)
+                    if (i == 0 && hetero.on() && HeteroHost::ckpt_overlap() &&
+                        !front_snap.start(hetero, cur.data(), done, cvec_cached, imgs_below(req_imgs, done), e))
+                        return false;
+#endif
                     if (!checkpoint_save(part, stage_ss, g)) {
                         // #3350: the copy ran out of memory (not the GPU): leave this part out. The set at `done` is then
                         // incomplete and the checkpoint is skipped below, as for a part that was never made
@@ -14641,7 +14708,9 @@ int main(int argc, char** argv) {
 #if defined(STRATA_MIXED_SPLIT)
                     // MIXED SPLIT: the front stage saves its part with the first local stage's.  It has read exactly this far:
                     // the first local stage asks it for each chunk before reading that chunk itself
-                    if (i == 0 && hetero.on() && !hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, cvec_cached, imgs_below(req_imgs, done), e))
+                    if (i == 0 && hetero.on() &&
+                        !(front_snap.pending() ? front_snap.finish(e)
+                                               : hetero.at(strata::hetero::SessionOp::Snapshot, cur.data(), done, cvec_cached, imgs_below(req_imgs, done), e)))
                         return false;
 #endif
                     std::lock_guard<std::mutex> lk(part_mu);
@@ -16343,6 +16412,43 @@ int main(int argc, char** argv) {
                 }, e);
             };
             fb.f_pf_wait = [&](int, std::string& e) { return settle(e); };
+            // a checkpoint copied while the host saves its own (SnapStart / SnapWait): Snapshot's check here, its copy on
+            // the runner's thread; the part goes into the book only at a SnapWait that keeps it
+            ConvCheckpoint f_snap_part;
+            int64_t f_snap_key = 0, f_snap_n = -1;   // the copy's key and tokens (-1: no copy made)
+            fb.f_snap_start = [&](int64_t a, int64_t b, std::string& e) {
+                if (!settle(e) || !ver.wait_commit(e)) return false;
+                book.on_abandon();   // (a session operation, as Snapshot)
+                f_snap_n = -1;
+                if (!book.check(a, b, "a checkpoint", e)) return false;
+                f_snap_part = ConvCheckpoint{};
+                f_snap_part.ids = book.history();
+                std::vector<strata::core::ConversationImageKey> imgs = held_imgs();
+                int dev = 0;
+                cudaGetDevice(&dev);
+                return runner.start([&, a, b, dev, imgs = std::move(imgs)](const std::function<void()>& launched, std::string& je) {
+                    launched();
+                    return f_timed(kFSession, [&] {
+                        if (cudaSetDevice(dev) != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess) {
+                            je = "the front stage's GPU before a checkpoint";
+                            return false;
+                        }
+                        if (!strata::core::conversation_checkpoint_save(f_snap_part, ss, g, je)) return false;
+                        f_snap_part.imgs = imgs;
+                        f_snap_key = a;
+                        f_snap_n = b;
+                        return true;
+                    });
+                }, e);
+            };
+            fb.f_snap_wait = [&](bool keep, std::string& e) {
+                const bool ok = settle(e);
+                if (ok && f_snap_n < 0) e = "no checkpoint copy was made";
+                if (ok && f_snap_n >= 0 && keep) book.put_part(f_snap_key, f_snap_n, std::move(f_snap_part));
+                const bool made = f_snap_n >= 0;
+                f_snap_n = -1;
+                return ok && made;
+            };
             // each operation is the vanilla call the host makes on its own first stage's session, here on this one's
             fb.f_images = [&](strata::hetero::FrontImages& im, std::string& e) {
                 const bool settled = settle(e);
