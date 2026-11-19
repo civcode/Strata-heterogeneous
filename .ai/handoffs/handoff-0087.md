@@ -12,8 +12,8 @@ Bring the newly carried patch onto the cards: private commit `05134f54`, the HIP
 conversation-restore preparation (`.ai/HARDENING.md`). Short runs only.
 
 ## Context
-- Read `.ai/PROJECT.md` (new: point 6, the carried divergence; `HSA_ENABLE_SDMA=0` for every GPU process; long runs on
-  hold; more kernel-log patterns), `.ai/HARDENING.md` and `.ai/STATUS.md` (the 19 November crash).
+- Read `.ai/PROJECT.md` (new: the first rule at the top, `HSA_ENABLE_SDMA=0`, enforced by the tools; point 6, the
+  carried divergence; long runs on hold; more kernel-log patterns), `.ai/HARDENING.md` and `.ai/STATUS.md` (the 19 November crash).
 - **Handoff 0086 ended in a host crash** at 18:01 on 19 November, during the full mixed session. Its builds
   (`build-0085-*`) are at a commit without the patch: build anew. Do not resume handoff 0086. No report 0086 is
   expected.
@@ -27,7 +27,8 @@ conversation-restore preparation (`.ai/HARDENING.md`). Short runs only.
 2. **Builds** at the current commit, in new directories `build-0087-*`, `-DSTRATA_MIXED_SPLIT=ON -DSTRATA_BUILD_TESTS=ON`,
    28 jobs: CUDA (13.0, sm_89) and HIP (gfx1201, `-DSTRATA_PREFILL_MMQ=ON -DSTRATA_MMQ=ON`), both vision helpers. Stamp
    each. Point the mirrors at them.
-3. **The patch's GPU tests**, with `HSA_ENABLE_SDMA=0` exported, one at a time: `conversation_readback_test`,
+3. **The patch's GPU tests**, through `mixed_split/tools/ctest_sdma_off.sh` (CTest with `HSA_ENABLE_SDMA=0`), one at a
+   time: `conversation_readback_test`,
    `conversation_prepare_test`, `conversation_copy_streams_test`, `conv_cache_test`,
    `conversation_restore_orchestration_test`, in the HIP tree and the CUDA tree where built. Then
    `mixed_split_tests` and `mixed_split_cache_drop_test` in both trees.
@@ -37,15 +38,19 @@ conversation-restore preparation (`.ai/HARDENING.md`). Short runs only.
    - in the server log: each park and restore, and no `skip restore` line other than the new
      "resource preparation unavailable" form if one occurs (report its text).
 5. **The same with the mixed mirror** (`mixed.example.json`): `features`, then `checks` (includes a cancelled request).
-6. **Park/restore at a medium context, mixed mirror:** `agent_session.py run OUT --scaled` (32K context, one
-   compaction, the three probes), then replay the probes on a fresh mixed server. All requests succeed; report the
-   probe results.
+6. **Park/restore at a medium context, mixed mirror:** start a mixed server through `serve_mixed.py` with
+   `STRATA_IQ_MT_MIN=1`, run `agent_session.py run OUT --scaled --url ...` against it (32K context, one compaction, the
+   three probes), stop it cooperatively; then replay each probe (`agent_session.py replay`) on a freshly started mixed
+   server with the same setting, restarting it between probes. All requests succeed; report each probe as equal or
+   different.
 
 ## Hardware Test Budget
 30 minutes of GPU run time (the allowance). Every single run under 10 minutes. No run past a 64K-token context.
 Priority: tasks 3, 4, 5, then 6.
 
 ## Constraints
+- **First rule: `HSA_ENABLE_SDMA=0` in every run** (`.ai/PROJECT.md`, top). The tools now enforce it; CTest goes
+  through `ctest_sdma_off.sh`.
 - All rules of `.ai/PROJECT.md`. Evidence under `.ai/runs/0087-*`. Never kill a GPU process by force. No two GPU jobs
   at once, except the two processes of one mixed run.
 - Stop at once and report if a kernel log line matches the safety patterns, a process crashes, or swap use grows by
