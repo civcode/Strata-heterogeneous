@@ -1,33 +1,40 @@
 #!/usr/bin/env python3
-"""A mixed-split run config and its start script, made from a vanilla run config of the same model.
+"""A mixed-split run config and start script, in vanilla's own form, made from a vanilla run config of the same model.
 
-    python3 mixed_split/tools/make_mixed_config.py VANILLA_CONFIG --build-tag 0091 [--name iq3_xxs-mixed]
-        [--front-layers 15] [--port N] [--repo DIR]
+    .venv/bin/python mixed_split/tools/make_mixed_config.py VANILLA_CONFIG --build-tag 0092 [--name iq3_xxs-mixed]
+        [--front-layers 15] [--port N]
 
 VANILLA_CONFIG: the `strata-<model>.json` vanilla's setup wrote (for example ~/workspace/Strata/strata-iq3_xxs.json).
-It is only read.  Its model files, pack, drafter, context, control vector, cache settings, port and environment are
-kept; what changes:
-  - the host engine: this checkout's `build-<tag>-hip/strata`; the front stage: `build-<tag>-cuda/strata`
-    (`--front-exe`, `--front-layers K`); the vision helpers: `build-<tag>-vision-hip` / `-vision-cpu`;
-  - the options the engine refuses beside the mixed split are left out (`--split-skip-if-fits`, `--batch`, `--slots`,
-    `--peer-device`, `--expert-cache-remote`), `"parallel": 1`;
-  - `"env"` gets `"HSA_ENABLE_SDMA": "0"` (.ai/PROJECT.md, the first rule);
-  - `cwd` is this checkout, the log goes to `runs/<name>/server.log`.
-Writes `strata-<name>.json` and `run-<name>.sh` into this checkout.  The script starts the server through
-`serve_mixed.py` (the launch check, SIGINT handling, `HSA_ENABLE_SDMA=0`); stop it with Ctrl-C (SIGINT), never kill -9.
-The model needs two or more AMD cards in the vanilla config (`"gpu": [0, 1]`).
+It is only read.  The two files written into this checkout have exactly vanilla's structure:
+  - `strata-<name>.json`: the vanilla config's keys and nothing else (setup's `args_written` / `user_args` bookkeeping
+    left out, as in a config written by hand).  What changes, all through vanilla's own keys:
+      "exe": this checkout's `build-<tag>-hip/strata`;
+      "args": `--front-exe <build-<tag>-cuda/strata> --front-layers K` added (the engine's options for the mixed split);
+              the options the engine refuses beside it left out (`--split-skip-if-fits`, `--batch`, `--slots`,
+              `--peer-device`, `--expert-cache-remote`); `--mmap-experts` added when the vanilla config has neither it
+              nor `--shared-expert-arena` (without one of them the host and the front stage would each hold a full copy
+              of the experts in RAM);
+      "env": `"HSA_ENABLE_SDMA": "0"` (.ai/PROJECT.md, the first rule);
+      "vision": this checkout's `build-<tag>-vision-hip` / `-vision-cpu` helpers;
+      "cwd": this checkout; "log": `strata-<name>.log` here (vanilla's place); "parallel": 1.
+  - `run-<name>.sh`: vanilla's `write_run_script` form (`cd` here, `exec` the venv's python on `serve/server.py
+    --engine strata --config ... --port ...`, `--open` unless the config says `"open_browser": false`).
+The launch check (`check_launch.py`) runs on the result before anything is written; a config that fails it is not
+written.  Stop the server with Ctrl-C and wait for it to drain; never kill -9.
 """
-import argparse, json, os, shlex, sys
+import argparse, json, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path.insert(0, str(HERE))
 REFUSED = {"--split-skip-if-fits": 0, "--batch": 1, "--slots": 1, "--peer-device": 1, "--expert-cache-remote": 1}
 FRONT = ("--front-exe", "--front-layers", "--front-arg")
+SETUP_BOOKKEEPING = ("args_written", "user_args")
 
 
 def convert(cfg: dict, repo: Path, tag: str, name: str, front_layers: int, port=None) -> tuple[dict, list]:
-    """The mixed config, and the notes on what was changed or left out."""
+    """The mixed config (vanilla's keys only), and notes on what was changed or left out."""
     notes = []
     if cfg.get("backend") != "hip":
         raise SystemExit('make_mixed_config: the vanilla config is not an AMD one ("backend": "hip")')
@@ -36,6 +43,8 @@ def convert(cfg: dict, repo: Path, tag: str, name: str, front_layers: int, port=
         raise SystemExit('make_mixed_config: the vanilla config runs on one AMD card; the mixed split needs two or more '
                          '("gpu": [0, 1])')
     out = json.loads(json.dumps(cfg))
+    for k in SETUP_BOOKKEEPING:
+        out.pop(k, None)
     hip, cuda = repo / f"build-{tag}-hip" / "strata", repo / f"build-{tag}-cuda" / "strata"
     args, kept, i = [str(x) for x in cfg.get("args", [])], [], 0
     while i < len(args):
@@ -49,10 +58,13 @@ def convert(cfg: dict, repo: Path, tag: str, name: str, front_layers: int, port=
             continue
         kept.append(a)
         i += 1
+    if "--mmap-experts" not in kept and "--shared-expert-arena" not in kept:
+        kept.append("--mmap-experts")
+        notes.append("added --mmap-experts (otherwise the host and the front stage would each load the experts into RAM)")
     out["args"] = kept + ["--front-exe", str(cuda), "--front-layers", str(front_layers)]
     out["exe"] = str(hip)
     out["cwd"] = str(repo)
-    out["log"] = str(repo / "runs" / name / "server.log")
+    out["log"] = str(repo / f"strata-{name}.log")
     out["layer_split"] = cfg.get("layer_split") or "auto"
     env = dict(cfg.get("env") or {})
     if env.get("HSA_ENABLE_SDMA") not in (None, "0"):
@@ -69,9 +81,6 @@ def convert(cfg: dict, repo: Path, tag: str, name: str, front_layers: int, port=
                 str(repo / f"build-{tag}-vision-cpu" / "bin" / "strata-vision")
         if v.get("cpu_exe") or v.get("gpu"):
             v["cpu_exe"] = str(repo / f"build-{tag}-vision-cpu" / "bin" / "strata-vision")
-    for k in ("args_written", "user_args"):   # setup's own bookkeeping: this file is not one setup wrote
-        out.pop(k, None)
-    out["mixed_split"] = {"front_exe": str(cuda), "front_layers": front_layers, "made_from": None}
     if port:
         out["port"] = port
     if "qwen3.8" not in str(cfg.get("model_name") or "").lower():
@@ -79,16 +88,11 @@ def convert(cfg: dict, repo: Path, tag: str, name: str, front_layers: int, port=
     return out, notes
 
 
-def script(repo: Path, name: str, cfg_path: Path, port) -> str:
-    q = shlex.quote
-    return f"""#!/bin/sh
-# {name}: Strata, mixed split (this checkout's builds), made by mixed_split/tools/make_mixed_config.py.
-# Stop it with Ctrl-C (SIGINT) and wait for it to finish; never kill -9 (.ai/PROJECT.md).
-cd {q(str(repo))} || exit 1
-mkdir -p {q(str(repo / 'runs' / name))}
-exec {q(str(repo / '.venv' / 'bin' / 'python'))} mixed_split/tools/serve_mixed.py --config {q(str(cfg_path))} \\
-    --run-dir {q(str(repo / 'runs' / name))}{f' --port {int(port)}' if port else ''}
-"""
+def run_script(repo: Path, cfg_path: Path, port: int, open_browser: bool) -> str:
+    """vanilla setup.py's write_run_script, Linux form."""
+    serve = [str(repo / ".venv" / "bin" / "python"), str(repo / "serve" / "server.py"), "--engine", "strata", "--config",
+             str(cfg_path), "--port", str(port)] + (["--open"] if open_browser else [])
+    return "#!/bin/sh\ncd \"" + str(repo) + "\"\nexec " + " ".join(f'"{x}"' for x in serve) + "\n"
 
 
 def main():
@@ -98,29 +102,31 @@ def main():
     ap.add_argument("--name", help="default: <model>-mixed, from the vanilla file's name")
     ap.add_argument("--front-layers", type=int, default=15, help="layers on the NVIDIA card (15 tested on 16 GB)")
     ap.add_argument("--port", type=int, help="default: the vanilla config's port")
-    ap.add_argument("--repo", default=str(REPO), help="this checkout (default: the one this script is in)")
+    ap.add_argument("--no-check", action="store_true", help="write without the launch check (only to inspect the files)")
     a = ap.parse_args()
     src = Path(a.vanilla_config).expanduser().resolve()
     cfg = json.loads(src.read_text(encoding="utf-8-sig"))
-    repo = Path(a.repo).expanduser().resolve()
     stem = src.stem[len("strata-"):] if src.stem.startswith("strata-") else src.stem
-    name = a.name or f"{stem}-mixed"
+    name = (a.name or f"{stem}-mixed").lower()
     if not 2 <= a.front_layers <= 40:
         raise SystemExit("--front-layers takes 2 to 40")
-    out, notes = convert(cfg, repo, a.build_tag, name, a.front_layers, a.port)
-    out["mixed_split"]["made_from"] = str(src)
-    missing = [p for p in (out["exe"], out["mixed_split"]["front_exe"]) if not Path(p).is_file()]
-    cfg_path = repo / f"strata-{name}.json"
-    cfg_path.write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8")
-    run = repo / f"run-{name}.sh"
-    run.write_text(script(repo, name, cfg_path, a.port), encoding="utf-8")
+    out, notes = convert(cfg, REPO, a.build_tag, name, a.front_layers, a.port)
+    if not a.no_check:
+        from check_launch import check_config
+        try:
+            print("launch check OK:", check_config(out))
+        except (ValueError, OSError) as e:
+            raise SystemExit(f"launch check failed, nothing written: {e}") from e
+    cfg_path = REPO / f"strata-{name}.json"
+    cfg_path.write_text(json.dumps(out, indent=1), encoding="utf-8")       # (vanilla's write_config form)
+    run = REPO / f"run-{name}.sh"
+    run.write_text(run_script(REPO, cfg_path, int(out.get("port") or 8080), out.get("open_browser") is not False),
+                   encoding="utf-8")
     run.chmod(0o755)
     print(f"wrote {cfg_path}\nwrote {run}")
     for n in notes:
         print("  note:", n)
-    for p in missing:
-        print(f"  WARNING: {p} does not exist yet (build it first, and stamp BUILD_COMMIT)")
-    print(f"start: {run}   (stop: Ctrl-C, then wait)")
+    print(f"start: {run}   (stop: Ctrl-C, then wait for the drain)")
     return 0
 
 

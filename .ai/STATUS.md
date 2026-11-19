@@ -1,7 +1,7 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0091 (the front-stage fix on the cards; non-finite logits with and without
-the patch; the mixed split's memory). Budget about 1.5 hours, announced.
+Turn holder: **Coding Agent**, handoff 0092 (one worktree; fresh builds with the front-stage fix; the IQ3_XXS mixed
+run config and start script for the Human User's agent run). Handoff 0091 deferred.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -147,5 +147,9 @@ front stage's LRU let the host's pinned checkpoint root go; fixed by Chat AI in 
 (vanilla plus the patch) logged non-finite logits (#879) at request 360 with no memory pressure; vanilla's guard
 recovered, the watcher stopped the run. Mixed showed the crash case's early signs (swap +3.4 GiB, 26 s of GPU pauses,
 7 workqueue warnings); HIP-only did not. Two mixed probes passed as near-ties. Handoff 0091 measures all three.
+
+Handoff 0091 deferred (Human User, 2026-11-19): first a real agent run on Qwen3.8-Flash-Next IQ3_XXS, mixed. Handoff
+0092: one worktree (`/home/chris/workspace/Strata-heterogeneous`), `build-0092-*` with the fix, and the run files from
+`mixed_split/tools/make_mixed_config.py` (vanilla's config keys and vanilla's run-script form only).
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
