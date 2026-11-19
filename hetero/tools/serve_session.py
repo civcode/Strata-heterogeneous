@@ -13,6 +13,8 @@ SUITE:
             at --cancel-at (default 0; seen in the server log's STRATA_TRACE lines, so run it with STRATA_TRACE=1),
             --cancel-after seconds (default 2.0) after that chunk's trace line; then the same conversation with one
             more turn, then an unrelated request.  The server log's lines for each go into the result.
+  warm      report 0079: the code prompt three times (16 tokens each), each with "Warm TAG i." in front, so none reuses
+            another's prefix; the second and third are a warm server's short-prompt first token
 PROMPTS_JSON: mkprompts.py's token prompts (default RUN_DIR/prompts.json).  The server gets SIGINT at the end and its
 drain is awaited (never killed).  Writes RUN_DIR/NAME-result.json, -console.log, -kernel-delta.log, the server's run
 directory RUN_DIR/NAME/, and adds the session's wall time to RUN_DIR/gpu-seconds.txt.  Exit status 0 only when every
@@ -133,6 +135,9 @@ def main():
                     at = os.path.getsize(logp)
                 if any('error' in out[k] for k in ('continue', 'unrelated')):
                     out['error'] = 'a request after the cancel failed'
+            elif a.suite == 'warm':
+                for i in range(3):
+                    out['warm%d' % i] = req([{'role': 'user', 'content': f'Warm {a.tag} {i}.\n' + tk.decode(prompts['code'])}], 16)
             elif a.suite == 'measure':
                 for k, n in [('code', 300), ('long', 200), ('long16k', 128)]:
                     out[k] = req([{'role': 'user', 'content': f'Measurement {a.tag} {k}.\n' + tk.decode(prompts[k])}], n)
@@ -158,7 +163,7 @@ def main():
     json.dump(out, open(os.path.join(run, a.name + '-result.json'), 'w'), indent=1)
     print(a.name, 'elapsed %.1f (GPU total %.1f)' % (out['elapsed'], tot), 'rc', out.get('rc'), 'error', out.get('error'),
           'checks', out.get('checks_rc'), out.get('checks_errors'), 'faults', out['fault_lines'], flush=True)
-    for k in ('code', 'long', 'long16k', 'first', 'second', 'interference', 'vision', 'cvec_off'):
+    for k in ('warm0', 'warm1', 'warm2', 'code', 'long', 'long16k', 'first', 'second', 'interference', 'vision', 'cvec_off'):
         if k in out:
             print('  %-12s %s' % (k, out[k].get('timings')), flush=True)
     bad = out.get('error') or out.get('fault_lines') or out.get('rc') != 0 or out['elapsed'] >= 120 or out.get('checks_errors') or out.get('checks_rc')
