@@ -1,8 +1,11 @@
 # Status
 
-Turn holder: **Human User**: choose the next direction (see Open decisions).
+Turn holder: **Coding Agent**, handoff `0080` (Tier 1), once the Human User hands it over.
 
 ## Current milestone
+
+M9: DFlash2 and `--batch` in mixed mode, DFlash2 first (handoff 0080, turn 1 of 2, starting with a go/no-go on
+HIP-only).
 
 M8 closed (report 0079, `ad6e06e7`). No engine change in the end; `check_off_is_vanilla.py` reports 6 of 6.
 
@@ -84,18 +87,20 @@ Chat AI's review:
 - 2026-11-18: keep `--pipeline-windows 2` in the mixed config. Next, in one handoff: tell the front stage when its
   window is judged wrong, cut the short-prompt fixed cost, overlap prompt chunks across the link.
 - 2026-11-19: the shutdown at 23:37 on 18 November was the Human User's; report 0078's results stand.
+- 2026-11-19: do `--batch` and DFlash2 in mixed mode now; the re-pin to vanilla 0.2.16 waits. Chat AI orders DFlash2
+  first (production runs one conversation at a time), each with a go/no-go on HIP-only before implementing.
 
 ## Open decisions for the Human User
 
-- **The next direction.** Chat AI recommends re-pinning to vanilla 0.2.16 first: the longer it waits, the more there
-  is to carry over. Alternatives:
-  - `--batch`;
-  - DFlash2;
-  - short prompts (an MMQ front stage, or fewer front layers: both trade against long prompts);
-  - a release-candidate qualification with long-duration runs.
+- None.
 
 ## Next step
 
-Depends on the decision above.
+After report 0080:
+- after a go: DFlash2 turn 2 (checkpoints, parks, the drafter's context across them);
+- after a no-go: `--batch`, starting with its own go/no-go: HIP-only aggregate throughput with 2 slots against 1, and
+  whether the CUDA card fits 2 slots at 262,144 tokens.
+
+The re-pin to vanilla 0.2.16 stays open.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
