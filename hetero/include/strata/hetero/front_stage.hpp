@@ -92,22 +92,6 @@ public:
         return false;
     }
 
-    /// A checkpoint of the front stage's session copied while the host saves its own (Snapshot, in two steps):
-    /// `snapshot_start(key, n)` checks that the session holds the `n` tokens whose state_key is `key` (refused at once
-    /// if not), starts the copy and returns once it is taken.  `snapshot_wait(keep)` returns when the copy is done
-    /// (true) or with its error; the copy is kept, as Snapshot keeps it, only with `keep` (the host saved its own
-    /// parts too).  At most one in flight; any other call ends it first, and the copy is not kept.
-    virtual bool snapshot_start(int64_t key, int64_t n, std::string& err) {
-        (void) key; (void) n;
-        err = "this front stage cannot copy a checkpoint in two steps";
-        return false;
-    }
-    virtual bool snapshot_wait(bool keep, std::string& err) {
-        (void) keep;
-        err = "this front stage cannot copy a checkpoint in two steps";
-        return false;
-    }
-
     /// Repeat a session operation on the front stage's session.
     virtual bool session(SessionOp op, int64_t a, int64_t b, std::string& err) = 0;
 

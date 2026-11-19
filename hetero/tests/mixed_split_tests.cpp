@@ -872,65 +872,10 @@ void test_prefill_ahead() {
     if (backend.calls != want) for (const std::string& c : backend.calls) std::fprintf(stderr, "  call: %s\n", c.c_str());
 }
 
-// report 0079: a checkpoint's front part copied while the host saves its own (SnapStart / SnapWait)
-void test_snapshot_two_step() {
-    Pair s;
-    test::BookBackend backend;
-    int rc = -1;
-    std::string serr;
-    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
-    SharedRegion region;
-    std::string err;
-    CHECK(make_region(region));
-    RemoteFrontStage front(s.host, 5000);
-    CHECK(front.hello(test_identity(), region, err));
-    const std::vector<ImageKey> none;
-    const int32_t c0[3] = {1, 2, 3}, c1[2] = {4, 5}, c2[1] = {6};
-    const int32_t all[6] = {1, 2, 3, 4, 5, 6};
-    auto key = [&](int64_t n) { return state_key(all, n, true, none); };
-    CHECK(front.prefill(c0, 3, 0, false, err));
-    CHECK(!front.snapshot_wait(true, err));                 // nothing in flight
-    CHECK(err == "no checkpoint copy in flight");
-    CHECK(!front.snapshot_start(0, 3, err));                // no key (refused on the host)
-    CHECK(!front.snapshot_start(key(2), 2, err));           // not the tokens the session holds: refused at the start
-    CHECK(err.find("holds 3") != std::string::npos);
-    CHECK(front.snapshot_start(key(3), 3, err));
-    CHECK(!front.snapshot_start(key(3), 3, err));           // one copy in flight at a time
-    CHECK(err == "a checkpoint copy is still in flight");
-    CHECK(front.snapshot_wait(true, err));                  // kept: the part is there
-    CHECK(backend.book.parts() == 1);
-    CHECK(front.prefill(c1, 2, 3, false, err));
-    CHECK(front.snapshot_start(key(5), 5, err));            // the host's own part failed: not kept
-    CHECK(front.snapshot_wait(false, err));
-    CHECK(backend.book.parts() == 1);
-    CHECK(front.snapshot_start(key(5), 5, err));            // another operation ends the copy, not kept
-    CHECK(front.session(SessionOp::Abandon, 0, 0, err));
-    CHECK(!front.snapshot_wait(true, err));
-    CHECK(backend.book.parts() == 1);
-    backend.fail_next_snap = true;                          // a failed copy is reported by its wait, not kept
-    CHECK(front.snapshot_start(key(5), 5, err));
-    CHECK(!front.snapshot_wait(true, err));
-    CHECK(err == "stub checkpoint failure");
-    CHECK(backend.book.parts() == 1);
-    CHECK(front.prefill(c2, 1, 5, false, err));             // the session goes on; the kept part restores
-    CHECK(front.session(SessionOp::Restore, key(3), 3, err));
-    CHECK(backend.book.history() == std::vector<int32_t>({1, 2, 3}));
-    CHECK(!front.session(SessionOp::Restore, key(5), 5, err));
-    CHECK(front.shutdown(err));
-    worker.join();
-    CHECK(rc == 0);
-    const std::vector<std::string> want = {"attach", "prefill 3 0 more 3", "snap_start 3", "snap_wait keep", "prefill 2 3 more 5",
-                                           "snap_start 5", "snap_wait drop", "snap_start 5", "session 6 0", "snap_start 5",
-                                           "snap_wait keep", "prefill 1 5 more 6", "session 4 3", "session 4 5"};
-    CHECK(backend.calls == want);
-    if (backend.calls != want) for (const std::string& c : backend.calls) std::fprintf(stderr, "  call: %s\n", c.c_str());
-}
-
 int main(int argc, char** argv) {
     test_token_key();
     test_pipelined_link();
     test_prefill_ahead();
-    test_snapshot_two_step();
     test_window_runner();
     test_session_ops();
     test_session_drop();

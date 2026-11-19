@@ -15,8 +15,8 @@
 
 namespace strata::hetero {
 
-constexpr uint32_t kLinkProtocol = 5;   // 2: Images; 3: PlRun / PlCommit / PlUndo, a hand-off per window parity;
-                                        // 4: PfStart / PfWait, two prompt row buffers; 5: SnapStart / SnapWait
+constexpr uint32_t kLinkProtocol = 4;   // 2: Images; 3: PlRun / PlCommit / PlUndo, a hand-off per window parity;
+                                        // 4: PfStart / PfWait, two prompt row buffers
 constexpr uint32_t kLinkMagic = 0x314c4653;          // "SFL1"
 constexpr size_t kLinkMaxPayload = size_t(16) << 20; // tokens of one prompt chunk, with room to spare
 
@@ -49,11 +49,10 @@ uint64_t model_fingerprint(const std::string& pack_dir, const std::vector<std::s
 /// PlRun (`a` T, `b` pos0, `c` parity, the tokens), PlCommit (`a` n_keep, `c` parity), PlUndo (`c` parity): the
 /// pipelined windows (FrontStage::pl_run, pl_commit, pl_undo).  PfStart (`a` n, `b` pos0, `c` buffer, the tokens),
 /// PfWait (`c` buffer): a prompt chunk read ahead (FrontStage::prefill_start, prefill_wait).  Every other operation
-/// ends a chunk in flight that nobody waited for.  SnapStart (`a` key, `b` n), SnapWait (`c` keep): a checkpoint copied
-/// while the host saves its own (FrontStage::snapshot_start, snapshot_wait); every other operation ends it unkept.
+/// ends a chunk in flight that nobody waited for.
 enum class Op : uint16_t {
     Hello = 1, Run = 2, Commit = 3, Prefill = 4, Session = 5, Shutdown = 6, Images = 7, PlRun = 8, PlCommit = 9, PlUndo = 10,
-    PfStart = 11, PfWait = 12, SnapStart = 13, SnapWait = 14, Reply = 100
+    PfStart = 11, PfWait = 12, Reply = 100
 };
 
 /// FrontImages on the wire (little-endian, both processes on one host).  `decode` checks the layout against the
@@ -116,8 +115,6 @@ public:
     bool pl_undo(int parity, std::string& err) override;
     bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) override;
     bool prefill_wait(int buf, std::string& err) override;
-    bool snapshot_start(int64_t key, int64_t n, std::string& err) override;
-    bool snapshot_wait(bool keep, std::string& err) override;
 
     /// Ask the worker to end its serve loop.  After this (or any transport error) the link is closed for calls.
     bool shutdown(std::string& err);

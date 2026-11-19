@@ -94,19 +94,6 @@ struct StubBackend : FrontBackend {
         if (!pf_err.empty()) { err = pf_err; pf_err.clear(); return false; }
         return true;
     }
-    /// a checkpoint copied in two steps.  `fail_next_snap`: the copy fails, which only the wait reports
-    bool fail_next_snap = false;
-    std::string snap_err;
-    bool snapshot_start(int64_t, int64_t n, std::string&) override {
-        calls.push_back("snap_start " + std::to_string(n));
-        if (fail_next_snap) { fail_next_snap = false; snap_err = "stub checkpoint failure"; }
-        return true;
-    }
-    bool snapshot_wait(bool keep, std::string& err) override {
-        calls.push_back(std::string("snap_wait ") + (keep ? "keep" : "drop"));
-        if (!snap_err.empty()) { err = snap_err; snap_err.clear(); return false; }
-        return true;
-    }
 };
 
 /// The front stage's session bookkeeping as the engine's front backend uses it, with a string for the session state:
@@ -138,25 +125,6 @@ struct BookBackend : StubBackend {
     bool prefill_start(const int32_t* tokens, int64_t n, int64_t pos0, int buf, std::string& err) override {
         if (!book.on_prefill(tokens, n, pos0, err)) return false;
         return StubBackend::prefill_start(tokens, n, pos0, buf, err);
-    }
-    // as the engine's front stage: Snapshot's check at the start, the part into the book only at a wait that keeps it
-    // (any other operation ends the copy: `snap_n` is cleared by the next start)
-    Part snap_part;
-    int64_t snap_key = 0, snap_n = -1;
-    bool snapshot_start(int64_t key, int64_t n, std::string& err) override {
-        book.on_abandon();
-        snap_n = -1;
-        if (!book.check(key, n, "a checkpoint", err)) return false;
-        snap_part = Part{book.history(), book.images_held()};
-        snap_key = key;
-        snap_n = n;
-        return StubBackend::snapshot_start(key, n, err);
-    }
-    bool snapshot_wait(bool keep, std::string& err) override {
-        const bool ok = StubBackend::snapshot_wait(keep, err);
-        if (ok && keep && snap_n >= 0) book.put_part(snap_key, snap_n, std::move(snap_part));
-        snap_n = -1;
-        return ok;
     }
     bool pl_run(int q, int T, const int32_t* tokens, int64_t pos0, std::string& err) override {
         return book.on_pl_run(q, tokens, T, pos0, err) && StubBackend::pl_run(q, T, tokens, pos0, err);

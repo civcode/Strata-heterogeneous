@@ -244,7 +244,6 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
     int pl_t[2] = {0, 0};   // the rows of each parity's last pipelined window (0: none since the last other operation)
     std::vector<uint8_t> images;   // the image input received so far (Op::Images)
     int pf_pending = -1;           // the prompt row buffer of the chunk read ahead and not waited for (-1: none)
-    bool snap_pending = false;     // a checkpoint copy started (SnapStart) and not waited for
     for (;;) {
         Frame f;
         int got = -1;
@@ -271,7 +270,6 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
         if (!greeted) return fatal("an operation before the hello");
         bool ok = false;
         if (f.op != Op::PfStart && f.op != Op::PfWait) pf_pending = -1;   // (the backend waits for the chunk first)
-        if (f.op != Op::SnapStart && f.op != Op::SnapWait) snap_pending = false;   // (... and for the copy: not kept)
         switch (f.op) {
         case Op::Run: {
             const int64_t T = f.a, pos0 = f.b;
@@ -357,21 +355,6 @@ int serve_loop(int fd, FrontBackend& backend, std::string& err, bool greeted, Li
             if (f.c < 0 || f.c > 1 || pf_pending != (int) f.c) { e = "no prompt chunk in flight in that buffer"; pf_pending = -1; break; }
             pf_pending = -1;
             ok = backend.prefill_wait((int) f.c, e);
-            break;
-        }
-        case Op::SnapStart: {
-            if (f.a <= 0 || f.b < 1 || f.b > id.max_context) { e = "bad checkpoint"; break; }
-            if (window != 0) { e = "a window is still waiting for its commit"; break; }
-            if (snap_pending) { e = "a checkpoint copy is still in flight"; break; }
-            pl_t[0] = pl_t[1] = 0;
-            ok = backend.snapshot_start(f.a, f.b, e);
-            snap_pending = ok;
-            break;
-        }
-        case Op::SnapWait: {
-            if (!snap_pending) { e = "no checkpoint copy in flight"; break; }
-            snap_pending = false;
-            ok = backend.snapshot_wait(f.c != 0, e);
             break;
         }
         case Op::Session: {
@@ -691,24 +674,6 @@ bool RemoteFrontStage::prefill_wait(int buf, std::string& err) {
     Frame f;
     f.op = Op::PfWait;
     f.c = buf;
-    return call(f, -1, err);
-}
-
-bool RemoteFrontStage::snapshot_start(int64_t key, int64_t n, std::string& err) {
-    if (!greeted_) { err = "front link: no hello yet"; return false; }
-    if (key <= 0 || n < 1) { err = "front link: bad checkpoint"; return false; }
-    Frame f;
-    f.op = Op::SnapStart;
-    f.a = key;
-    f.b = n;
-    return call(f, -1, err);
-}
-
-bool RemoteFrontStage::snapshot_wait(bool keep, std::string& err) {
-    if (!greeted_) { err = "front link: no hello yet"; return false; }
-    Frame f;
-    f.op = Op::SnapWait;
-    f.c = keep ? 1 : 0;
     return call(f, -1, err);
 }
 
