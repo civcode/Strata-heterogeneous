@@ -1,26 +1,38 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0081` (Tier 1), once the Human User hands it over.
+Turn holder: **Human User**: check the RTX 4070 Ti SUPER after its Xid 79, and choose the next direction (see Open decisions).
 
 ## Current milestone
 
-M9: `--batch` in mixed mode (handoff 0081, turn 1 of 2, starting with a go/no-go). DFlash2 was a no-go.
+M9 closed: both features from the Human User's choice of 2026-11-19 are no-go on this rig. DFlash2 (report 0080) and
+`--batch` (report 0081, `2a5773bd`), each stopped at its go/no-go before any engine change.
 
-Report 0080 (`98afe7cd`), Chat AI's review:
-- **DFlash2 is a no-go,** correctly stopped after part A. On HIP-only, production mirror, decode is −5.5% / −6.9% /
-  −16.7% against MTP (code / long / 16K; at 16K the sample ranges do not overlap).
-  - Vanilla runs DFlash2 without pipelined windows, since each window's drafts need the previous window's taps; that
-    costs more than its slightly higher acceptance gives back.
-  - Vanilla also needs a native pack for it.
-- **Side finding worth acting on:** the native pack (`tools/iq_pack.py --base packs/q2_0`) prefills 16.5% faster on the
-  long prompt and 13% at 16K on HIP-only, with MTP and `--pipeline-windows 2`, and decode within the spread.
-  Production is unchanged; switching is the Human User's decision. Handoff 0081 measures it in mixed mode.
-- **RAM:** 60 GB cannot page-cache both packs, so the first start after switching is slow (one start missed the
-  server's 65 s timeout).
-- No engine change; `check_off_is_vanilla.py` reports 6 of 6. New: `hiponly-native.example.json`,
-  `hiponly-dflash2.example.json`, `session_table.py`.
+Report 0081, Chat AI's review:
+- **`--batch` is a no-go.** On HIP-only, production mirror, two clients at once, aggregate decode against
+  `parallel` 1 (116.7 tok/s):
+  - vanilla's default groups: −9.6%;
+  - `--batch-groups 1`: −40.3%;
+  - `--batch-groups 1 --batch-mtp`: −31.6%.
+
+  Vanilla turns pipelined windows off with batch slots, and without `--batch-mtp` the slots do not draft. What
+  `parallel` 2 gains is a shorter wait for the second client; default groups finish the whole load about 10% sooner.
+- **CUDA card room:** one more front-stage session is 0.98 GiB at 262,144 tokens and 0.51 GiB at 131,072, with about
+  1.45 GiB free. So `--batch 2` would fit at 131,072, not at 262,144.
+- **Native pack in mixed mode:** the CUDA front stage accepts it. Prefill +23.7% / +15.6% / +2.7% (code / long / 16K).
+  Decode medians are 5 to 8% lower, with every pair of sample ranges overlapping. Compare HIP-only (report 0080):
+  prefill −11.5% / +16.5% / +13.0%, decode within the spread. A switch needs a decode A/B with more samples.
+- **Outside this project, during the Human User's own work:**
+  - 11:52: a `strata` and a `strata-vision-hip` from `/home/chris/tmp/Strata/engine/` dumped core.
+  - 12:20: the kernel logged NVRM **Xid 79 ("GPU has fallen off the bus") on the RTX 4070 Ti SUPER** (PCI 04:00),
+    during an `nvidia-smi` call, then `nvidia-modeset` errors until a reboot.
+  - The agent ran nothing on the GPU after the pause. That card is the front stage's: its health should be checked
+    before the next mixed run.
+- No engine change; `check_off_is_vanilla.py` reports 6 of 6. New: a concurrent suite in `serve_session.py`,
+  `concurrent_table.py`, `mixed-native.example.json`.
 
 ## History in short
+
+- Report 0081: `--batch` no-go (vanilla drops pipelined windows with slots); native pack in mixed mode prefill +24 / +16 / +3%, decode unsettled; an Xid 79 on the CUDA card outside the project.
 
 - Report 0080: DFlash2 no-go on this rig; the native pack prefills 13 to 16.5% faster on HIP-only.
 
@@ -89,13 +101,14 @@ Report 0080 (`98afe7cd`), Chat AI's review:
 
 ## Open decisions for the Human User
 
-- **Switch production to the native pack?** Prefill +13 to 16.5% on HIP-only, decode within the spread (report 0080).
-  Not urgent; report 0081 adds the mixed-mode numbers.
+- **The RTX 4070 Ti SUPER's Xid 79** (12:20, outside this project): check the card before the next mixed run.
+- **The next direction.** Chat AI recommends re-pinning to vanilla 0.2.16. Alternatives:
+  - a decode A/B for the native pack, with more samples;
+  - a release-candidate qualification with long-duration runs.
+- **Switch production to the native pack?** Not before that decode A/B.
 
 ## Next step
 
-After report 0081:
-- after a go: `--batch` turn 2 (parks, slot moves, the cache per slot);
-- after a no-go: the re-pin to vanilla 0.2.16, or a release-candidate qualification.
+Depends on the decisions above.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
