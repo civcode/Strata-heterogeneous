@@ -13,6 +13,9 @@ SUITE:
             at --cancel-at (default 0; seen in the server log's STRATA_TRACE lines, so run it with STRATA_TRACE=1),
             --cancel-after seconds (default 2.0) after that chunk's trace line; then the same conversation with one
             more turn, then an unrelated request.  The server log's lines for each go into the result.
+  concurrent  handoff 0081: --clients (2) clients at once, each sending the code (300 tokens) and then the long prompt
+            (200 tokens), --rounds (3) times, streamed; aggregate decode tok/s (tokens / the wall time with at least one
+            request decoding), per-request decode tok/s and time to first token
   warm      report 0079: the code prompt three times (16 tokens each), each with "Warm TAG i." in front, so none reuses
             another's prefix; the second and third are a warm server's short-prompt first token
 PROMPTS_JSON: mkprompts.py's token prompts (default RUN_DIR/prompts.json).  The server gets SIGINT at the end and its
@@ -36,10 +39,84 @@ def journal():
     return subprocess.check_output(['journalctl', '-k', '-b', '--no-pager'], text=True, timeout=30)
 
 
+def stream_req(port, content, n):
+    """One streamed greedy request; client-side times of the first and the last content chunk."""
+    d = dict(model='x', messages=[{'role': 'user', 'content': content}], temperature=0, max_tokens=n,
+             reasoning_budget_tokens=0, stream=True, stream_options={'include_usage': True})
+    r = urllib.request.Request(f'http://127.0.0.1:{port}/v1/chat/completions', data=json.dumps(d).encode(),
+                               headers={'Content-Type': 'application/json'})
+    t0 = time.monotonic()
+    first = lastc = None
+    usage = timings = None
+    with urllib.request.urlopen(r, timeout=110) as h:
+        for line in h:
+            line = line.strip()
+            if not line.startswith(b'data:') or line == b'data: [DONE]':
+                continue
+            ev = json.loads(line[5:])
+            usage = ev.get('usage') or usage
+            timings = ev.get('timings') or timings
+            for c in ev.get('choices', []):
+                dl = c.get('delta', {})
+                if dl.get('content') or dl.get('reasoning_content'):
+                    now = time.monotonic()
+                    first = now if first is None else first
+                    lastc = now
+    ntok = (usage or {}).get('completion_tokens') or (timings or {}).get('predicted_n') or 0
+    return dict(t0=t0, t_first=first, t_last=lastc, usage=usage, timings=timings, n=ntok)
+
+
+def concurrent_load(port, tk, prompts, tag, clients, rounds):
+    """handoff 0081: `clients` threads at once, each sending the code prompt (300 tokens) and then the long prompt
+    (200 tokens), `rounds` times; every request has its own prefix so none reuses another's.  Aggregate decode tok/s =
+    generated tokens / the wall time during which at least one request was between its first and last token."""
+    import threading
+    res, lock = [], threading.Lock()
+
+    def client(c):
+        for r in range(rounds):
+            for k, n in (('code', 300), ('long', 200)):
+                try:
+                    x = stream_req(port, f'Load {tag} client {c} round {r} {k}.\n' + tk.decode(prompts[k]), n)
+                except Exception as e:  # noqa: BLE001
+                    x = dict(error=repr(e))
+                x.update(client=c, round=r, prompt=k)
+                with lock:
+                    res.append(x)
+    t0 = time.monotonic()
+    th = [threading.Thread(target=client, args=(c,)) for c in range(clients)]
+    for t in th:
+        t.start()
+    for t in th:
+        t.join()
+    wall = time.monotonic() - t0
+    ok = [x for x in res if 'error' not in x and x.get('t_first') is not None]
+    iv = sorted((x['t_first'], x['t_last']) for x in ok)
+    busy, cur = 0.0, None
+    for s, e in iv:
+        if cur is None or s > cur[1]:
+            busy += (cur[1] - cur[0]) if cur else 0.0
+            cur = [s, e]
+        else:
+            cur[1] = max(cur[1], e)
+    busy += (cur[1] - cur[0]) if cur else 0.0
+    gen = sum(x['n'] for x in ok)
+    for x in res:
+        if 'error' not in x:
+            x['ttft_s'] = x['t_first'] - x['t0'] if x.get('t_first') else None
+            x['client_decode_tps'] = (x['n'] - 1) / (x['t_last'] - x['t_first']) \
+                if x.get('t_first') and x['t_last'] > x['t_first'] else None
+            for k in ('t0', 't_first', 't_last'):
+                x[k] = None if x.get(k) is None else x[k] - t0
+    return dict(wall_s=wall, decode_busy_s=busy, generated=gen, aggregate_decode_tps=gen / busy if busy else None,
+                aggregate_output_tps=gen / wall, requests=res)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run'); ap.add_argument('name'); ap.add_argument('config'); ap.add_argument('suite')
     ap.add_argument('--prompts'); ap.add_argument('--port', type=int, default=8096); ap.add_argument('--tag', default='0')
+    ap.add_argument('--clients', type=int, default=2); ap.add_argument('--rounds', type=int, default=3)
     ap.add_argument('--cancel-at', type=int, default=0); ap.add_argument('--cancel-after', type=float, default=2.0)
     a = ap.parse_args()
     run = os.path.abspath(a.run)
@@ -138,6 +215,10 @@ def main():
             elif a.suite == 'warm':
                 for i in range(3):
                     out['warm%d' % i] = req([{'role': 'user', 'content': f'Warm {a.tag} {i}.\n' + tk.decode(prompts['code'])}], 16)
+            elif a.suite == 'concurrent':
+                out['concurrent'] = concurrent_load(port, tk, prompts, a.tag, a.clients, a.rounds)
+                if any('error' in r for r in out['concurrent']['requests']):
+                    out['error'] = 'a concurrent request failed'
             elif a.suite == 'measure':
                 for k, n in [('code', 300), ('long', 200), ('long16k', 128)]:
                     out[k] = req([{'role': 'user', 'content': f'Measurement {a.tag} {k}.\n' + tk.decode(prompts[k])}], n)
@@ -163,6 +244,10 @@ def main():
     json.dump(out, open(os.path.join(run, a.name + '-result.json'), 'w'), indent=1)
     print(a.name, 'elapsed %.1f (GPU total %.1f)' % (out['elapsed'], tot), 'rc', out.get('rc'), 'error', out.get('error'),
           'checks', out.get('checks_rc'), out.get('checks_errors'), 'faults', out['fault_lines'], flush=True)
+    if 'concurrent' in out:
+        c = out['concurrent']
+        print('  concurrent wall %.1f s, decode busy %.1f s, %d tokens, aggregate decode %.1f tok/s, output %.1f tok/s'
+              % (c['wall_s'], c['decode_busy_s'], c['generated'], c['aggregate_decode_tps'] or 0, c['aggregate_output_tps']), flush=True)
     for k in ('warm0', 'warm1', 'warm2', 'code', 'long', 'long16k', 'first', 'second', 'interference', 'vision', 'cvec_off'):
         if k in out:
             print('  %-12s %s' % (k, out[k].get('timings')), flush=True)

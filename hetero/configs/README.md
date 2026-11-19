@@ -4,7 +4,8 @@
 configuration). Report 0080 adds two HIP-only variants: `hiponly-native.example.json` (the same on the native Q2_0 pack,
 `tools/iq_pack.py --base ${STRATA_DATA}/packs/q2_0 --out ${STRATA_DATA}/packs/q2_0-native`) and
 `hiponly-dflash2.example.json` (native pack, `"drafting": "dflash2"`, no `--pipeline-windows`; the drafter pack in
-`${STRATA_DATA}/dflash2/`). Vanilla refuses DFlash2 on the canonical pack. Both run vision and the scaled control vector. Start either with `hetero/tools/serve_mixed.py`, which fills the placeholders, writes the filled config
+`${STRATA_DATA}/dflash2/`). Vanilla refuses DFlash2 on the canonical pack.
+`mixed-native.example.json` (report 0081) is the mixed mirror on that native pack; the front stage gets the host's `--pack`. Both run vision and the scaled control vector. Start either with `hetero/tools/serve_mixed.py`, which fills the placeholders, writes the filled config
 and the server log into `RUN_DIR`, gives a mixed split one shared expert arena, and becomes the server:
 
 ```sh
@@ -44,4 +45,4 @@ Drivers in `hetero/tools/`: `engine_drive.py` (the engine over the serve protoco
 `server_checks.py` (the HTTP checks of report 0069), `front_client.cpp` (the front stage alone), `run_engine.py` (one
 accounted engine run from a config), `serve_session.py` (one accounted server session from a config: the checks, the
 cache/vision/cvec features, or the code/long/16K measurement), `cmp_tokens.py` (token-exact comparison of two runs), `tps_table.py` (prefill / decode tok/s and first-token time
-over the samples of run_engine.py results), `session_table.py` (the same, with drafts, over `serve_session.py … measure` results); `mkprompts.py` also writes a 32K prompt (`long32k`).
+over the samples of run_engine.py results), `session_table.py` (the same, with drafts, over `serve_session.py … measure` results), `concurrent_table.py` (aggregate and per-request tables over `serve_session.py … concurrent` results); `mkprompts.py` also writes a 32K prompt (`long32k`).
