@@ -220,6 +220,7 @@ bool draft_vocab_whole_head();       // STRATA_METAL_DRAFT_VOCAB=full
 #include <vector>
 #if defined(STRATA_MIXED_SPLIT)
 #include "strata/mixed_split/front_link.hpp"
+#include "strata/mixed_split/front_placement.hpp"
 #include "strata/mixed_split/front_runner.hpp"
 #include "strata/mixed_split/front_session.hpp"
 #include "strata/mixed_split/worker_process.hpp"
@@ -4953,6 +4954,17 @@ int main(int argc, char** argv) {
         }
         wa.push_back("--front-stage");
         wa.push_back(std::to_string(o.front_layers));
+        // The front runner inherits its process's host-core pin. Keep it off the host's spinning pipeline core;
+        // an explicit --front-arg --host-core remains authoritative, and serial mixed mode is unchanged.
+        std::string hc = o.host_core;
+        if (hc.empty()) if (const char* e = std::getenv("STRATA_HOST_CORE")) hc = e;
+        const std::string front_hc = strata::mixed_split::front_pipeline_host_core(o.pipeline_windows, hc, o.front_args);
+        if (!front_hc.empty()) {
+            wa.push_back("--host-core");
+            wa.push_back(front_hc);
+            std::fprintf(stderr, "strata serve: mixed split: front pipeline host core %s (override with --front-arg --host-core)\n",
+                         front_hc.c_str());
+        }
         for (const std::string& a : o.front_args) wa.push_back(a);
         std::string werr;
         if (!strata::mixed_split::WorkerProcess::launch(o.front_exe, wa, /*drain_ms=*/60000, mixed_host.worker, werr)) {
