@@ -1,31 +1,28 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0080` (Tier 1), once the Human User hands it over.
+Turn holder: **Coding Agent**, handoff `0081` (Tier 1), once the Human User hands it over.
 
 ## Current milestone
 
-M9: DFlash2 and `--batch` in mixed mode, DFlash2 first (handoff 0080, turn 1 of 2, starting with a go/no-go on
-HIP-only).
+M9: `--batch` in mixed mode (handoff 0081, turn 1 of 2, starting with a go/no-go). DFlash2 was a no-go.
 
-M8 closed (report 0079, `ad6e06e7`). No engine change in the end; `check_off_is_vanilla.py` reports 6 of 6.
-
-Chat AI's review:
-- **The read-ahead desync Chat AI suspected does not happen,** reproduced on the cards with cancels at 8,192 and 24,576
-  tokens. Vanilla already refuses to continue a session after a prompt read stops partway (`pp_exact` / `live_ok`), so
-  the next request starts from a Reset or a Restore, which the front stage takes without checking its history. Chat
-  AI's reading of the code was wrong. `serve_session.py` keeps the cancel suite.
-- **Checkpoint overlap:** built, exact, and no gain. Running at the same time, the two copies slow each other down
-  (host 17 → 24.5 ms, front 11.5 → 20.5 ms). Reverted, which is the right call; history keeps it as `d172f54e`.
-- **Safety:** boot ID unchanged throughout; no faults or core dumps; 214 s of GPU time.
-- **Process note:** the agent's first push was rejected because of Chat AI's status commit after the shutdown
-  confirmation, pushed as the handoff was being handed over. Rebased without conflicts.
-
-**Vanilla 0.2.16 is out** (tag of 18 November, 864 commits after 0.2.15):
-- The repository is restructured: the engine moved under `engine/` (and `app/`, `terminal/`, `tools/`).
-- Our seam files changed moderately in content: `generate.cpp` +1,337 / −141, `verify.cpp` +174 / −37,
-  `conversation_cache.hpp` +33 / −1, `verify.hpp` +12, `prefill.cpp` +28 / −1, `prefill.hpp` unchanged.
+Report 0080 (`98afe7cd`), Chat AI's review:
+- **DFlash2 is a no-go,** correctly stopped after part A. On HIP-only, production mirror, decode is −5.5% / −6.9% /
+  −16.7% against MTP (code / long / 16K; at 16K the sample ranges do not overlap).
+  - Vanilla runs DFlash2 without pipelined windows, since each window's drafts need the previous window's taps; that
+    costs more than its slightly higher acceptance gives back.
+  - Vanilla also needs a native pack for it.
+- **Side finding worth acting on:** the native pack (`tools/iq_pack.py --base packs/q2_0`) prefills 16.5% faster on the
+  long prompt and 13% at 16K on HIP-only, with MTP and `--pipeline-windows 2`, and decode within the spread.
+  Production is unchanged; switching is the Human User's decision. Handoff 0081 measures it in mixed mode.
+- **RAM:** 60 GB cannot page-cache both packs, so the first start after switching is slow (one start missed the
+  server's 65 s timeout).
+- No engine change; `check_off_is_vanilla.py` reports 6 of 6. New: `hiponly-native.example.json`,
+  `hiponly-dflash2.example.json`, `session_table.py`.
 
 ## History in short
+
+- Report 0080: DFlash2 no-go on this rig; the native pack prefills 13 to 16.5% faster on HIP-only.
 
 - Report 0079: no desync after a cancel (vanilla routes it to Reset / Restore); checkpoint overlap without gain, reverted.
 
@@ -92,15 +89,13 @@ Chat AI's review:
 
 ## Open decisions for the Human User
 
-- None.
+- **Switch production to the native pack?** Prefill +13 to 16.5% on HIP-only, decode within the spread (report 0080).
+  Not urgent; report 0081 adds the mixed-mode numbers.
 
 ## Next step
 
-After report 0080:
-- after a go: DFlash2 turn 2 (checkpoints, parks, the drafter's context across them);
-- after a no-go: `--batch`, starting with its own go/no-go: HIP-only aggregate throughput with 2 slots against 1, and
-  whether the CUDA card fits 2 slots at 262,144 tokens.
-
-The re-pin to vanilla 0.2.16 stays open.
+After report 0081:
+- after a go: `--batch` turn 2 (parks, slot moves, the cache per slot);
+- after a no-go: the re-pin to vanilla 0.2.16, or a release-candidate qualification.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
