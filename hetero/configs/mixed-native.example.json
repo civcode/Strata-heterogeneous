@@ -1,6 +1,6 @@
 {
  "//": "mixed.example.json (the mixed mirror) on the native Q2_0 pack (tools/iq_pack.py --base ${STRATA_DATA}/packs/q2_0 --out ${STRATA_DATA}/packs/q2_0-native) in both processes; the front stage gets the host's --pack. Report 0081 part C.",
- "exe": "${STRATA_REPO}/build-0071-hip/strata",
+ "exe": "${STRATA_REPO}/build-0083-hip/strata",
  "args": [
   "--pack",
   "${STRATA_DATA}/packs/q2_0-native",
@@ -49,7 +49,7 @@
   "--pipeline-windows",
   "2",
   "--front-exe",
-  "${STRATA_REPO}/build-0071-cuda/strata",
+  "${STRATA_REPO}/build-0083-cuda/strata",
   "--front-layers",
   "15"
  ],
@@ -69,12 +69,12 @@
  "gpus_asked": true,
  "layer_split": "auto",
  "vision": {
-  "exe": "${STRATA_REPO}/build-vision-hip/bin/strata-vision-hip",
+  "exe": "${STRATA_REPO}/build-0083-vision-hip/bin/strata-vision-hip",
   "mmproj": "${STRATA_MODEL_DIR}/mmproj-Qwen3.8-Flash-Next-BF16.gguf",
   "model": "${STRATA_MODEL_DIR}/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
   "gpu": true,
   "max_tokens": 1024,
-  "cpu_exe": "${STRATA_REPO}/build-vision-cpu/bin/strata-vision"
+  "cpu_exe": "${STRATA_REPO}/build-0083-vision-cpu/bin/strata-vision"
  },
  "env": {
   "HSA_ENABLE_SDMA": "0",
