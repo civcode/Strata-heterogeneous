@@ -1,0 +1,120 @@
+{
+ "ready_s": 32.02569308999955,
+ "code": {
+  "id": "chatcmpl-93c83b0d502d44e5a0a8fab5",
+  "object": "chat.completion",
+  "created": 1795079544,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "\"\n\nWe need produce final answer likely code and explanation. Need think in English. Need ensure complete Python implementation thread-safe LRU cache with type hints, docs, example usage, explain design and edge cases. Need maybe mention \"Measurement n0 code\"? Maybe just answer. Need be careful thread-safe LRU cache. Use OrderedDict and Lock. Generic type. Support get, set, delete, clear, maybe size, capacity. Thread-safe: lock around operations. LRU: on get move to end; on set if exists update and move; if capacity exceeded evict oldest. Edge cases: capacity <=0? Could allow zero capacity no caching? Need decide. Type hints: Generic[K, V]. Use collections.OrderedDict. Lock. Maybe include __len__, __contains__, __iter__? Need complete. Could include decorator? Maybe not. Need example usage.\n\nPotential pitfalls: thread-safe LRU cache with lock: if get returns value, moving under lock. If set with capacity 0: don't store. If capacity negative? raise ValueError. If key unhashable? dict requires hashable; type",
+     "reasoning_content": "We need answer user's request: \"Measurement n0 code.\n<|im_start|>user\nWrite a complete Python implementation of a thread-safe LRU cache, including type hints, documentation, and example usage. Explain the design and important edge cases.<|im_end|>\n<|im_start|>assistant\n<think>\n\n"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 118,
+   "completion_tokens": 300,
+   "total_tokens": 418,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 118,
+   "prompt_ms": 537.9,
+   "prompt_per_token_ms": 4.558,
+   "prompt_per_second": 219.4,
+   "predicted_n": 300,
+   "predicted_ms": 2955.0,
+   "predicted_per_token_ms": 9.85,
+   "predicted_per_second": 101.5,
+   "draft_n": 220,
+   "draft_n_accepted": 144
+  }
+ },
+ "long": {
+  "id": "chatcmpl-03c446855c694895a67e9d8a",
+  "object": "chat.completion",
+  "created": 1795079547,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. User: \"Measurement n0 long.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# Strata on two or more GPUs (layer split)\n...\"\nNeed summarize in five bullet points. Need likely English? User says \"Measurement n0 long.\" maybe typo? Could be \"Measurement n0 long.\" maybe wants concise? Need produce five bullet points. Need ensure no extra. Need maybe mention document about Strata multi-GPU layer split. Need summarize accurately.\n\nNeed think: The document is long. Need five bullets. Could include: purpose, roles, how split works, tuning/limits, pipeline windows/two models. Need concise.\n\nNeed final only five bullet points. Ensure no markdown? Bullet points okay. Need maybe \"Measurement n0 long\" maybe means \"Measurement n0 long.\" Could be instruction? Maybe they want \"Measurement n0 long.\"? Hmm. Could be"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 5000,
+   "completion_tokens": 200,
+   "total_tokens": 5200,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 5000,
+   "prompt_ms": 2165.8,
+   "prompt_per_token_ms": 0.433,
+   "prompt_per_second": 2308.6,
+   "predicted_n": 200,
+   "predicted_ms": 1521.1,
+   "predicted_per_token_ms": 7.605,
+   "predicted_per_second": 131.5,
+   "draft_n": 133,
+   "draft_n_accepted": 107
+  }
+ },
+ "long16k": {
+  "id": "chatcmpl-8b17346308b2438bb4176baf",
+  "object": "chat.completion",
+  "created": 1795079551,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. User: \"Measurement n0 long16k.\n<|im_start|>user\nSummarise the following document in five bullet points.\n\n# A770 decode optimization specification ... [long document] ... # Set up Strata for a user ... [truncated?]\"\n\nNeed summarize document in five bullet points. Need likely in English. Need produce final with five bullets. Need be careful: document is long, includes spec and reference/setup. Need summarize key points: objective, baseline, work packages, findings, conclusion. Five bullet points. Need maybe mention not claim met"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 16102,
+   "completion_tokens": 128,
+   "total_tokens": 16230,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 16102,
+   "prompt_ms": 4029.8,
+   "prompt_per_token_ms": 0.25,
+   "prompt_per_second": 3995.7,
+   "predicted_n": 128,
+   "predicted_ms": 957.7,
+   "predicted_per_token_ms": 7.482,
+   "predicted_per_second": 133.7,
+   "draft_n": 102,
+   "draft_n_accepted": 77
+  }
+ },
+ "rc": 0,
+ "elapsed": 46.16514931999973,
+ "fault_lines": []
+}

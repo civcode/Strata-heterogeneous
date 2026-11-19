@@ -1,0 +1,111 @@
+# Key engine lines (server logs are git-ignored)
+
+## c-p1-0
+strata generate: note: --pipeline-windows 2 on a layer split of two stages without the draft layer on the first card (STRATA_MTP_STAGE0=1 asks for it): the draft chain then shares the last card with its window and the pipeline lost to the serial loop on 2x R9700 before 0.1.44 (docs/MULTI_GPU.md); kept as asked, --pipeline-windows 0 turns it off
+strata generate: --pipeline-windows 2: 272 MiB of CUDA0 kept out of the expert cache (the second verifier, the GDN snapshots)
+strata generate: expert cache auto: 26.12 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 12288 slots
+strata generate: expert cache 12288 slots, 15.82 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 24-47, expert cache 12288 slots (15.82 GiB), 12288 of its 12288 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-23
+strata serve: STRATA_SPLIT_OVERLAP is off beside --pipeline-windows 2 (that loop overlaps the stages itself)
+strata serve: --pipeline-windows 2: two verifiers per stage, 2 stages overlap across windows (decode too; the GDN snapshots beside the window)
+strata serve: 6842 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 6674 MiB of VRAM free with everything loaded
+
+## c-p2-0
+strata generate: --pipeline-windows 2 is off: not with --batch slots (STRATA_PW_WITH_BATCH=1 keeps it for the solo path)
+strata generate: --batch-groups auto: 2 groups of 1 slot
+strata generate: --batch: 2 slot sessions on CUDA0 (1.86 GiB each); 22.46 GiB free
+strata generate: --batch: 2 slot sessions on CUDA1 (1.86 GiB each); 23.31 GiB free
+strata generate: --batch 2: the slot sessions take 3.73 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: expert cache auto: 22.40 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 12288 slots
+strata generate: expert cache 12288 slots, 15.82 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 24-47, expert cache 12288 slots (15.82 GiB), 12288 of its 12288 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-23
+strata verify: batch windows of up to 2 sequences (layers [0, 24))
+strata verify: batch windows of up to 2 sequences (layers [24, 48))
+strata serve: 3200 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 2918 MiB of VRAM free with everything loaded
+strata batch (pipelined, 2 groups of 1): 597 group-steps, 597 rows in 4491 ms = 132.9 rows/s (admissions included)
+strata batch (pipelined, 2 groups of 1): 398 group-steps, 398 rows in 4779 ms = 83.3 rows/s (admissions included)
+strata batch (pipelined, 2 groups of 1): 598 group-steps, 598 rows in 4485 ms = 133.3 rows/s (admissions included)
+strata batch (pipelined, 2 groups of 1): 398 group-steps, 398 rows in 4782 ms = 83.2 rows/s (admissions included)
+strata batch (pipelined, 2 groups of 1): 598 group-steps, 598 rows in 4501 ms = 132.9 rows/s (admissions included)
+strata batch (pipelined, 2 groups of 1): 398 group-steps, 398 rows in 4791 ms = 83.1 rows/s (admissions included)
+
+## c-p2g1-0
+strata generate: --pipeline-windows 2 is off: not with --batch slots (STRATA_PW_WITH_BATCH=1 keeps it for the solo path)
+strata generate: --batch: 2 slot sessions on CUDA0 (1.86 GiB each); 22.46 GiB free
+strata generate: --batch: 2 slot sessions on CUDA1 (1.86 GiB each); 23.31 GiB free
+strata generate: --batch 2: the slot sessions take 3.73 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: expert cache auto: 22.40 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 12288 slots
+strata generate: expert cache 12288 slots, 15.82 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 24-47, expert cache 12288 slots (15.82 GiB), 12288 of its 12288 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-23
+strata verify: batch windows of up to 2 sequences (layers [0, 24))
+strata verify: batch windows of up to 2 sequences (layers [24, 48))
+strata serve: 3200 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 2918 MiB of VRAM free with everything loaded
+strata batch: 1500 windows, avg 1.99 rows, 19.36 ms/window = run 17.21 (CUDA0 GPU-reach wait 0.00 + CPU experts 0.00) + commit 2.15 + emit 0.00 + adapt wait 0.00; per stage (ms/window): CUDA0 wait 0.00 + pool 0.00, CUDA1 wait 0.00 + pool 0.00; per layer-window: CPU experts 0.00, VRAM hits 0.00, PCIe 0.00; routed entries per window: VRAM 0.0 (0.0%), PCIe 0.0 (0.0%), CPU 0.0 (0.0%); 70.3 rows/s over 42501 ms of wall time (admissions included)
+
+## c-p2g1m-0
+strata generate: --pipeline-windows 2 is off: not with --batch slots (STRATA_PW_WITH_BATCH=1 keeps it for the solo path)
+strata generate: --batch: 2 slot sessions on CUDA0 (1.86 GiB each); 22.46 GiB free
+strata generate: --batch: 2 slot sessions on CUDA1 (1.86 GiB each); 23.31 GiB free
+strata generate: --batch 2: the slot sessions take 3.73 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: --batch-mtp: 2 slot drafters on CUDA1 (313 MiB of private K/V state and buffers each, sharing the solo drafter's weights); 21.62 GiB free there
+strata generate: expert cache auto: 22.40 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 12288 slots
+strata generate: expert cache 12288 slots, 15.82 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 24-47, expert cache 12288 slots (15.82 GiB), 12288 of its 12288 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-23
+strata verify: batch windows of up to 2 sequences (layers [0, 24))
+strata verify: batch windows of up to 2 sequences (layers [24, 48))
+strata serve: 3188 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 2262 MiB of VRAM free with everything loaded
+strata batch: 174 windows, avg 3.43 rows, 26.42 ms/window = run 22.46 (CUDA0 GPU-reach wait 0.00 + CPU experts 0.00) + commit 2.22 + emit 1.75 + adapt wait 0.00; per stage (ms/window): CUDA0 wait 0.00 + pool 0.00, CUDA1 wait 0.00 + pool 0.00; per layer-window: CPU experts 0.00, VRAM hits 0.00, PCIe 0.00; routed entries per window: VRAM 0.0 (0.0%), PCIe 0.0 (0.0%), CPU 0.0 (0.0%); 120.7 rows/s over 4946 ms of wall time (admissions included)
+strata batch: MTP proposals accepted 250 of 347 (72.0%)
+strata batch: 409 windows, avg 3.41 rows, 26.94 ms/window = run 22.96 (CUDA0 GPU-reach wait 0.00 + CPU experts 0.00) + commit 2.21 + emit 1.77 + adapt wait 0.00; per stage (ms/window): CUDA0 wait 0.00 + pool 0.00, CUDA1 wait 0.00 + pool 0.00; per layer-window: CPU experts 0.00, VRAM hits 0.00, PCIe 0.00; routed entries per window: VRAM 0.0 (0.0%), PCIe 0.0 (0.0%), CPU 0.0 (0.0%); 79.4 rows/s over 17537 ms of wall time (admissions included)
+strata batch: MTP proposals accepted 581 of 812 (71.6%)
+strata batch: 300 windows, avg 3.32 rows, 26.43 ms/window = run 22.54 (CUDA0 GPU-reach wait 0.00 + CPU experts 0.00) + commit 2.17 + emit 1.73 + adapt wait 0.00; per stage (ms/window): CUDA0 wait 0.00 + pool 0.00, CUDA1 wait 0.00 + pool 0.00; per layer-window: CPU experts 0.00, VRAM hits 0.00, PCIe 0.00; routed entries per window: VRAM 0.0 (0.0%), PCIe 0.0 (0.0%), CPU 0.0 (0.0%); 81.9 rows/s over 12162 ms of wall time (admissions included)
+strata batch: MTP proposals accepted 410 of 586 (70.0%)
+
+## size-ls15
+strata generate: --pipeline-windows 2 is off: not with --batch slots (STRATA_PW_WITH_BATCH=1 keeps it for the solo path)
+strata generate: --batch: 2 slot sessions on CUDA0 (0.98 GiB each); 25.79 GiB free
+strata generate: --batch: 2 slot sessions on CUDA1 (2.75 GiB each); 19.99 GiB free
+strata generate: --batch 2: the slot sessions take 1.95 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: expert cache auto: 25.72 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 7680 slots
+strata generate: expert cache 7680 slots, 9.89 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 15-47, expert cache 13747 slots (17.70 GiB), 13747 of its 16896 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-14
+strata verify: batch windows of up to 2 sequences (layers [0, 15))
+strata verify: batch windows of up to 2 sequences (layers [15, 48))
+strata serve: 12716 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 882 MiB of VRAM free with everything loaded
+
+## size-ls15-131k
+strata generate: --pipeline-windows 2 is off: not with --batch slots (STRATA_PW_WITH_BATCH=1 keeps it for the solo path)
+strata generate: --batch: 2 slot sessions on CUDA0 (0.51 GiB each); 27.19 GiB free
+strata generate: --batch: 2 slot sessions on CUDA1 (1.42 GiB each); 23.99 GiB free
+strata generate: --batch 2: the slot sessions take 1.02 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: expert cache auto: 27.09 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 7680 slots
+strata generate: expert cache 7680 slots, 9.89 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 15-47, expert cache 16896 slots (21.75 GiB), 16896 of its 16896 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-14
+strata verify: batch windows of up to 2 sequences (layers [0, 15))
+strata verify: batch windows of up to 2 sequences (layers [15, 48))
+strata serve: 14148 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 980 MiB of VRAM free with everything loaded
+
+## mixed mirror front stage (.ai/runs/0081-mixed/size-mirror)
+strata generate: expert cache auto: 12.85 GiB free, 956 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 7680 slots
+strata generate: expert cache 7680 slots, 9.89 GiB of VRAM; policy is
+strata generate: --pipeline-windows 2: 234 MiB of CUDA0 kept out of the expert cache (the second verifier, the GDN snapshots)
+strata generate: expert cache auto: 27.30 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 8192 slots
+strata generate: expert cache 8192 slots, 10.55 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 31-47, expert cache 8704 slots (11.21 GiB), 8704 of its 8704 profiled pairs; slot 0 verified
+strata serve: 1591 MiB of VRAM free with everything loaded
+strata serve: 13402 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 12122 MiB of VRAM free with everything loaded
+nvidia-smi peak during that run (used, total, free):
+14457 MiB, 16376 MiB, 1487 MiB
