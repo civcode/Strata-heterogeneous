@@ -1,36 +1,33 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0082` (Tier 2), once the Human User hands it over.
+Turn holder: **Human User**: the native-pack decision and the next direction (see Open decisions).
 
 ## Current milestone
 
-M9 closed: both features from the Human User's choice of 2026-11-19 are no-go on this rig. DFlash2 (report 0080) and
-`--batch` (report 0081, `2a5773bd`), each stopped at its go/no-go before any engine change.
+The native-pack question is answered (report 0082, `9de3c43a`; Partial only because outputs differ between packs).
 
-Report 0081, Chat AI's review:
-- **`--batch` is a no-go.** On HIP-only, production mirror, two clients at once, aggregate decode against
-  `parallel` 1 (116.7 tok/s):
-  - vanilla's default groups: −9.6%;
-  - `--batch-groups 1`: −40.3%;
-  - `--batch-groups 1 --batch-mtp`: −31.6%.
-
-  Vanilla turns pipelined windows off with batch slots, and without `--batch-mtp` the slots do not draft. What
-  `parallel` 2 gains is a shorter wait for the second client; default groups finish the whole load about 10% sooner.
-- **CUDA card room:** one more front-stage session is 0.98 GiB at 262,144 tokens and 0.51 GiB at 131,072, with about
-  1.45 GiB free. So `--batch 2` would fit at 131,072, not at 262,144.
-- **Native pack in mixed mode:** the CUDA front stage accepts it. Prefill +23.7% / +15.6% / +2.7% (code / long / 16K).
-  Decode medians are 5 to 8% lower, with every pair of sample ranges overlapping. Compare HIP-only (report 0080):
-  prefill −11.5% / +16.5% / +13.0%, decode within the spread. A switch needs a decode A/B with more samples.
-- **Outside this project, during the Human User's own work:**
-  - 11:52: a `strata` and a `strata-vision-hip` from `/home/chris/tmp/Strata/engine/` dumped core.
-  - 12:20: the kernel logged NVRM **Xid 79 ("GPU has fallen off the bus") on the RTX 4070 Ti SUPER** (PCI 04:00),
-    during an `nvidia-smi` call, then `nvidia-modeset` errors until a reboot.
-  - The agent ran nothing on the GPU after the pause. The Human User states the Xid 79 is unrelated to this project
-    (2026-11-19).
-- No engine change; `check_off_is_vanilla.py` reports 6 of 6. New: a concurrent suite in `serve_session.py`,
-  `concurrent_table.py`, `mixed-native.example.json`.
+Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm servers):
+- **Prefill:** the native pack is faster everywhere.
+  - HIP-only: +10.4% / +19.7% / +13.6% (code / long / 16K).
+  - Mixed: +39.6% / +16.3% / +3.0%.
+  - Report 0080's −11.5% on code was a cold-start artefact.
+- **Decode:** the native pack is slower.
+  - Medians HIP-only: −2.6% / −7.4% / −0.6%. Mixed: −8.6% / −7.4% / −11.2%; in mixed mode the code ranges do not
+    overlap.
+  - Where both packs produced identical output, the cost is still there: HIP-only long, first measured request,
+    121.9 against 114.6 tok/s (−6%); mixed 16K, about 162 against 141 to 157 (−3 to −13%).
+  - So it is not just different text. In mixed mode it is larger, which points at the CUDA front stage's decode kernels
+    for the GGUF-form experts (not measured).
+- **Per turn the two cancel out:** for a turn with 5,000 new prompt tokens and 500 generated tokens, the production pack
+  takes 6.08 s and the native 6.12 s in HIP-only, and 5.70 against 5.71 s in mixed mode. Turns heavier in new prompt
+  favour native; turns heavier in output favour production.
+- **Report gaps:** drafts accepted per window are not given, but accepted/offered per request is, and acceptance is
+  similar between packs.
+- **Safety:** boot ID unchanged; no faults or core dumps; 547 s of GPU time. No engine change.
 
 ## History in short
+
+- Report 0082: native pack prefill +3 to +40%, decode −1 to −11% (confirmed on identical outputs); per typical turn even.
 
 - Report 0081: `--batch` no-go (vanilla drops pipelined windows with slots); native pack in mixed mode prefill +24 / +16 / +3%, decode unsettled; an Xid 79 on the CUDA card outside the project.
 
@@ -102,7 +99,10 @@ Report 0081, Chat AI's review:
 
 ## Open decisions for the Human User
 
-- **Switch production to the native pack?** After report 0082.
+- **Native pack:** Chat AI recommends keeping the production pack. Per turn it is even; a switch costs a cold start and
+  changes outputs. Switch only if turns carry much more new prompt than generated text.
+- **The next direction:** the re-pin to vanilla 0.2.16 (Chat AI's recommendation), or a release-candidate
+  qualification.
 
 ## Next step
 
