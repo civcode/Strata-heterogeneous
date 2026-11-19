@@ -9,6 +9,10 @@ SUITE:
             parked and restored), a request with cvec=0 (experimental_speed_projection false) and a PNG vision request
   measure   the code, long and long16k prompts (300 / 200 / 128 tokens), each with "Measurement TAG NAME." in front, so
             no request reuses another's prefix (report 0076)
+  cancel    report 0079: a streamed long32k request whose client leaves while the host's first stage reads the chunk
+            at --cancel-at (default 0; seen in the server log's STRATA_TRACE lines, so run it with STRATA_TRACE=1),
+            --cancel-after seconds (default 2.0) after that chunk's trace line; then the same conversation with one
+            more turn, then an unrelated request.  The server log's lines for each go into the result.
 PROMPTS_JSON: mkprompts.py's token prompts (default RUN_DIR/prompts.json).  The server gets SIGINT at the end and its
 drain is awaited (never killed).  Writes RUN_DIR/NAME-result.json, -console.log, -kernel-delta.log, the server's run
 directory RUN_DIR/NAME/, and adds the session's wall time to RUN_DIR/gpu-seconds.txt.  Exit status 0 only when every
@@ -34,6 +38,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run'); ap.add_argument('name'); ap.add_argument('config'); ap.add_argument('suite')
     ap.add_argument('--prompts'); ap.add_argument('--port', type=int, default=8096); ap.add_argument('--tag', default='0')
+    ap.add_argument('--cancel-at', type=int, default=0); ap.add_argument('--cancel-after', type=float, default=2.0)
     a = ap.parse_args()
     run = os.path.abspath(a.run)
     os.makedirs(run, exist_ok=True)
@@ -85,6 +90,49 @@ def main():
                 png = base64.b64encode(open(PNG, 'rb').read()).decode()
                 out['vision'] = req([{'role': 'user', 'content': [{'type': 'text', 'text': 'Describe this image.'},
                                                                    {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + png}}]}], 64)
+            elif a.suite == 'cancel':
+                import http.client, re
+                cfg = json.load(open(os.path.join(run, a.name, os.path.basename(a.config).replace('.example', ''))))
+                logp = cfg['log']
+                at = os.path.getsize(logp)
+
+                def log_since(pos):
+                    with open(logp, errors='replace') as f:
+                        f.seek(pos)
+                        return f.read()
+                user = {'role': 'user', 'content': tk.decode(prompts['long32k'])}
+                body = json.dumps(dict(model='x', messages=[user], temperature=0, max_tokens=32, reasoning_budget_tokens=0, stream=True))
+                c = http.client.HTTPConnection('127.0.0.1', port, timeout=55)
+                c.request('POST', '/v1/chat/completions', body=body, headers={'Content-Type': 'application/json'})
+                # the host's first stage starts the chunk at --cancel-at (trace line), then the client leaves
+                mark = re.compile(r'strata trace: prompt chunk %d of (\d+) stage \[15,' % a.cancel_at)
+                t0 = time.monotonic()
+                while not mark.search(log_since(at)):
+                    if time.monotonic() - t0 > 40:
+                        raise RuntimeError('no trace line of the chunk to cancel at (STRATA_TRACE=1?)')
+                    time.sleep(0.05)
+                time.sleep(a.cancel_after)
+                c.sock.shutdown(2)
+                c.close()
+                out['cancel_sent_s'] = time.monotonic() - t0
+                t1 = time.monotonic()
+                while 'cancelled' not in log_since(at) and time.monotonic() - t1 < 30:
+                    time.sleep(0.2)
+                time.sleep(1.0)
+                out['cancel_log'] = [x for x in log_since(at).splitlines() if 'prompt chunk' in x or 'strata serve:' in x or 'ERR' in x]
+                at = os.path.getsize(logp)
+                for k, msgs in (('continue', [user, {'role': 'assistant', 'content': 'Here is a summary.'},
+                                              {'role': 'user', 'content': 'Answer in one sentence instead.'}]),
+                                ('unrelated', [{'role': 'user', 'content': 'What is a mutex?'}])):
+                    try:
+                        out[k] = req(msgs, 32)
+                    except Exception as e:  # noqa: BLE001
+                        out[k] = {'error': repr(e), 'body': getattr(e, 'read', lambda: b'')().decode(errors='replace')}
+                    time.sleep(0.5)
+                    out[k + '_log'] = [x for x in log_since(at).splitlines() if 'strata serve:' in x or 'ERR' in x or 'front' in x]
+                    at = os.path.getsize(logp)
+                if any('error' in out[k] for k in ('continue', 'unrelated')):
+                    out['error'] = 'a request after the cancel failed'
             elif a.suite == 'measure':
                 for k, n in [('code', 300), ('long', 200), ('long16k', 128)]:
                     out[k] = req([{'role': 'user', 'content': f'Measurement {a.tag} {k}.\n' + tk.decode(prompts[k])}], n)
