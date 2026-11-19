@@ -28,34 +28,32 @@ The target design and the plan are in `.ai/SEAM.md` and the roadmap referenced f
 
 | What | Revision |
 | --- | --- |
-| Vanilla reference and base of this branch | tag `v0.2.16`, `64524fb9fc82222ddce554c0643b64f056ec8366` (merged in report 0083) |
-| Earlier base | `c77572806996349b49995e4f98d41b5294d36a21` (0.2.15), its last head archived as `archive/mixed-native-0.2.15` |
+| Vanilla reference and base of this branch | `c77572806996349b49995e4f98d41b5294d36a21` (0.2.15). Production stays on 0.2.15 with MMQ (Human User, 2026-11-19) |
+| Re-pin to 0.2.16, taken back | reports 0083 and 0084, archived as `archive/mixed-native-0.2.16`: vanilla 0.2.16 removed the MMQ prompt kernels, and its prefill was 15 to 20% slower on HIP-only (report 0084) |
 | Working branch | `feature/mixed-native` |
 | Frozen earlier adapter (not developed, kept as fallback) | branch `feature/heterogeneous-hip-only`, archived as `archive/heterogeneous-adapter-0062` at `0dca627f` |
 | Earlier local vanilla pin on Oberon | `8db7ddc4`: a private work-in-progress branch, not pushed (report 0063) |
 
 Handoff and report numbers continue from the earlier branch (0062 was its last).
 
-## Layout (vanilla 0.2.16)
+## Layout (vanilla 0.2.15)
 
-- The engine is under `engine/` (`engine/src`, `engine/include`, `engine/CMakeLists.txt`); configure with
-  `cmake -S engine -B <build dir>`.
-- The Terminal is under `terminal/`: the server is `terminal/serve/server.py`, setup is `terminal/setup.py`, and vanilla's
-  tools are `terminal/tools/` (`calibrate.py`, `iq_pack.py`, `strata_pack.py`, the vision helpers in `vision/`).
-- The mixed split's own subtree is `mixed_split/` at the top level (library, tests, tools, configs); the engine takes
-  it in behind `STRATA_MIXED_SPLIT`. Its code lives in the namespace `strata::mixed_split`, and its headers are under
-  `strata/mixed_split/`. The name was `hetero/` / `strata::hetero` until 2026-11-19; history in `.ai/` keeps the old name.
-- Check the option-off build with `python3 mixed_split/tools/check_off_is_vanilla.py` (default reference `v0.2.16`).
+- The engine is at the top level (`src`, `include`, `CMakeLists.txt`); configure with `cmake -S . -B <build dir>`. The
+  server is `serve/server.py`; vanilla's tools are `tools/` (`calibrate.py`, `iq_pack.py`, `strata_pack.py`, the vision
+  helpers in `tools/vision/`).
+- The mixed split's own subtree is `mixed_split/` (library, tests, tools, configs); the top-level `CMakeLists.txt`
+  takes it in behind `STRATA_MIXED_SPLIT`. Its code lives in the namespace `strata::mixed_split`, and its headers are
+  under `strata/mixed_split/`. The name was `hetero/` / `strata::hetero` until 2026-11-19; history in `.ai/` keeps the
+  old name.
+- Check the option-off build with `python3 mixed_split/tools/check_off_is_vanilla.py` (default reference `c775728`).
 
 ## Environment (Oberon)
 
 - Cards: one NVIDIA RTX 4070 Ti SUPER (16 GB, CUDA, sm_89) and two AMD Radeon AI PRO R9700 (HIP, gfx1201).
 - HIP toolchain: ROCm at `/opt/rocm/core-10.1` (`ROCM_PATH`, `HIP_PLATFORM=amd`), Ninja, `-DCMAKE_HIP_ARCHITECTURES=gfx1201
-  -DCMAKE_BUILD_RPATH=/opt/rocm/lib`. Vanilla 0.2.16 removed llama.cpp's MMQ prompt kernels: `-DSTRATA_MMQ` and
-  `-DSTRATA_PREFILL_MMQ` are ignored (CMake warns), and every build uses Strata's own prompt kernels. On 0.2.15 they gave
-  about 22% faster prefill (report 0066); report 0084 measured 0.2.16 HIP-only prefill 19.8% / 15.2% slower than 0.2.15
-  with MMQ (long / 16K).
-- CUDA toolchain: CUDA 13.0 at `/usr/local/cuda-13.0` (vanilla 0.2.15 and 0.2.16 build with CUDA 13.0; driver 580.178.04).
+  -DSTRATA_PREFILL_MMQ=ON -DSTRATA_MMQ=ON -DCMAKE_BUILD_RPATH=/opt/rocm/lib`. The MMQ prompt kernels need both MMQ
+  options; report 0066 measured about 22% faster prefill with them (2641 against 2163 tok/s, one sample).
+- CUDA toolchain: CUDA 13.0 at `/usr/local/cuda-13.0` (vanilla 0.2.15 is built with CUDA 13.0; driver 580.178.04).
   Configure the CUDA tree with `-DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=89`.
   `/usr/local/cuda` still points at CUDA 12.0, which the frozen branch was built with: leave it. nvcc 12.0 cannot
   compile vanilla 0.2.15 (report 0063). Do not change vanilla sources to fit a toolkit.
