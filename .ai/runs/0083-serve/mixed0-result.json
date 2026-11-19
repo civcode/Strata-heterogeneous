@@ -1,0 +1,120 @@
+{
+ "ready_s": 28.024425700999927,
+ "warm0": {
+  "id": "chatcmpl-5d7d27fc6ade4140aee80d0d",
+  "object": "chat.completion",
+  "created": 1795095553,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Warm 0 0.\n<"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 609.4,
+   "prompt_per_token_ms": 5.121,
+   "prompt_per_second": 195.3,
+   "predicted_n": 16,
+   "predicted_ms": 142.1,
+   "predicted_per_token_ms": 8.881,
+   "predicted_per_second": 112.6,
+   "draft_n": 20,
+   "draft_n_accepted": 9
+  }
+ },
+ "warm1": {
+  "id": "chatcmpl-71c3e663530d4f349d1271bd",
+  "object": "chat.completion",
+  "created": 1795095553,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. Need produce final answer with complete Python implementation thread"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 470.9,
+   "prompt_per_token_ms": 3.957,
+   "prompt_per_second": 252.7,
+   "predicted_n": 16,
+   "predicted_ms": 102.0,
+   "predicted_per_token_ms": 6.375,
+   "predicted_per_second": 156.9,
+   "draft_n": 10,
+   "draft_n_accepted": 10
+  }
+ },
+ "warm2": {
+  "id": "chatcmpl-09be411aea484a9786c00058",
+  "object": "chat.completion",
+  "created": 1795095554,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. User says \"Warm 0 2.\""
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 471.5,
+   "prompt_per_token_ms": 3.962,
+   "prompt_per_second": 252.4,
+   "predicted_n": 16,
+   "predicted_ms": 146.4,
+   "predicted_per_token_ms": 9.15,
+   "predicted_per_second": 109.3,
+   "draft_n": 17,
+   "draft_n_accepted": 8
+  }
+ },
+ "rc": 0,
+ "elapsed": 31.3429246149999,
+ "fault_lines": []
+}

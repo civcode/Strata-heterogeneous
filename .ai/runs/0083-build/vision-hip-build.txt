@@ -1,0 +1,17 @@
+[1/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_kernels_neon.cpp.o
+[2/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_ops.cpp.o
+[3/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_kernels_sse41.cpp.o
+[4/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/vit_geometry.cpp.o
+[5/17] Building CXX object CMakeFiles/strata-vision.dir/strata_vision.cpp.o
+[6/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_kernels_scalar.cpp.o
+[7/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/own_reader.cpp.o
+[8/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_kernels_avx2.cpp.o
+[9/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_kernels_avx512.cpp.o
+[10/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/cpu_kernels_avx.cpp.o
+[11/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/gguf_lite.cpp.o
+[12/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/vit_cpu.cpp.o
+[13/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/vit_ref.cpp.o
+[14/17] Building HIP object own/CMakeFiles/strata_vit_own.dir/vit_gpu.cu.o
+[15/17] Building CXX object own/CMakeFiles/strata_vit_own.dir/image_prep.cpp.o
+[16/17] Linking HIP static library own/libstrata_vit_own.a
+[17/17] Linking HIP executable bin/strata-vision-hip

@@ -1,0 +1,120 @@
+{
+ "ready_s": 35.5377271490006,
+ "warm0": {
+  "id": "chatcmpl-6151b7b3d1084ed193809d45",
+  "object": "chat.completion",
+  "created": 1795095597,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. Need produce final answer with complete Python implementation thread"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 568.4,
+   "prompt_per_token_ms": 4.776,
+   "prompt_per_second": 209.4,
+   "predicted_n": 16,
+   "predicted_ms": 113.1,
+   "predicted_per_token_ms": 7.069,
+   "predicted_per_second": 141.5,
+   "draft_n": 10,
+   "draft_n_accepted": 10
+  }
+ },
+ "warm1": {
+  "id": "chatcmpl-0bd5c2c5c82f4ce38ed2b28e",
+  "object": "chat.completion",
+  "created": 1795095598,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. Need produce final answer with complete Python implementation thread"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 489.7,
+   "prompt_per_token_ms": 4.115,
+   "prompt_per_second": 243.0,
+   "predicted_n": 16,
+   "predicted_ms": 112.9,
+   "predicted_per_token_ms": 7.056,
+   "predicted_per_second": 141.7,
+   "draft_n": 10,
+   "draft_n_accepted": 10
+  }
+ },
+ "warm2": {
+  "id": "chatcmpl-de4f61881acb4450b7c21e40",
+  "object": "chat.completion",
+  "created": 1795095598,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request. Need produce final answer with complete Python implementation thread"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 119,
+   "completion_tokens": 16,
+   "total_tokens": 135,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 119,
+   "prompt_ms": 465.1,
+   "prompt_per_token_ms": 3.908,
+   "prompt_per_second": 255.9,
+   "predicted_n": 16,
+   "predicted_ms": 119.3,
+   "predicted_per_token_ms": 7.456,
+   "predicted_per_second": 134.1,
+   "draft_n": 12,
+   "draft_n_accepted": 10
+  }
+ },
+ "rc": 0,
+ "elapsed": 38.58353438500035,
+ "fault_lines": []
+}

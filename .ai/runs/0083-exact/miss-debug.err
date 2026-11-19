@@ -1,0 +1,646 @@
+strata generate: opened 2 GPU queues in a fixed order (STRATA_HIP_QUEUE_PRIME=0 turns it off)
+strata: gfx12 (RDNA4): exact extra switches on by default (STRATA_GFX12_DEFAULTS=0 turns them off; a switch you set is kept): HEAD_MIX_MULTI
+strata: gfx12 (RDNA4): a model with K-quant experts (Unsloth UD-Q4/Q5/Q6_K_XL) reads its prompt on Strata's own kernels; the 'prompt kernels' line below gives the counts
+strata: gfx12 (RDNA4): the matrix-core QSA block scorer is on once a prompt is past 28,672 tokens (+5.7% prompt speed at 98K on an R9700, shorter prompts unchanged; the first-token KL against the warp kernel is 0.002 on average above 30K; STRATA_SELECT_WMMA=0 or STRATA_GFX12_DEFAULTS=0 turns it off)
+strata: gfx12 (RDNA4): 12 exact speed switches on by default (STRATA_GFX12_DEFAULTS=0 turns them off; a switch you set is kept): GDN_HEAD GDN_PP GDN_CONVL2 GDN_NOY CVEC_FUSE ATTN_LANECELL ATTN_MERGE_V2 TSUM EXPDEC SMALL_UNR GR_Q32_G GR_Q8_PFS
+strata generate: gfx12: --prefill auto may take chunks up to 32768 (STRATA_GFX12_CHUNK=16 keeps 16384, =0 keeps 8192)
+strata generate: memory guard: limit 60.5 GiB (source: meminfo), current 4.1 GiB, reclaimable cache credited 0.0 GiB; available 56.3 GiB (MemAvailable 56.3 GiB), floor 2560 MiB
+strata serve: mixed split: front stage started (PID 96188, /home/chris/workspace/Strata-mixed-native/build-0083-cuda/strata): layers 0-14 there, 15-... here
+strata generate: layer split across 2 GPUs: CUDA0, then CUDA1 (split auto)
+strata generate: NVIDIA: --prefill auto may take chunks up to 32768 (STRATA_NV_CHUNK=0 keeps 8192, =16 keeps 16384)
+strata generate: memory guard: limit 60.5 GiB (source: meminfo), current 4.4 GiB, reclaimable cache credited 0.0 GiB; available 56.1 GiB (MemAvailable 56.1 GiB), floor 2560 MiB
+strata generate: 1879 MiB of weights loaded from /home/chris/workspace/Strata-data/packs/q2_0 in 0.3 s (301 canonical tensors skipped: served natively)
+strata: gfx12 (RDNA4): the hyper-connection projections are read as Q8_0 (quantized at load, decode faster, answers differ slightly); STRATA_HC_Q8=0 keeps the bf16 read
+strata: STRATA_HC_Q8=1: 0.62 GiB of Q8_0 hyper-connection projections for the verify read
+strata generate: 493 native projection matrices, 2013.70 MiB of weights, in 0.2 s
+strata generate: control vector mode = project, dir = per-layer, layers 4..44 (41 steered)
+strata generate: PLE direct read probe: 158489 rows/s (fine)
+strata generate: the SSD is kept awake while rows are read: one page of the table after 100 ms without a read, until 60 s after the last request (STRATA_SSD_KEEPALIVE=0 turns it off)
+strata generate: note: --pipeline-windows 2 on a layer split of two stages without the draft layer on the first card (STRATA_MTP_STAGE0=1 asks for it): the draft chain then shares the last card with its window and the pipeline lost to the serial loop on 2x R9700 before 0.1.44 (docs/MULTI_GPU.md); kept as asked, --pipeline-windows 0 turns it off
+strata generate: profile /home/chris/workspace/Strata/data/expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: mixed split: 16896 of the 24576 ranked pairs are of this process's layers
+strata generate: layer split auto: CUDA0 32 SMs at 2.35 GHz -> 0.96 ms per layer, 26.61 GiB free before its session carve
+strata generate: layer split auto: CUDA1 32 SMs at 2.35 GHz -> 0.96 ms per layer, 29.48 GiB free before its session carve
+strata generate: layer split auto: CUDA0 link -1.0 GB/s -> miss cost x1.00
+strata generate: layer split auto: CUDA1 link -1.0 GB/s -> miss cost x1.00
+strata: the prompt attention on matrix cores on (gfx1201) by default; STRATA_HIP_WMMA=0 turns it off
+strata generate: PCIe probe: 6.7 GB/s host->device (best of 6.7 6.7 6.7 6.7); the canonical pack starts at pcie_frac 0.20 and refines it from the CPU pool's speed
+strata generate: front stage: the dense weights of layers 0-14 only
+strata generate: layer split auto: K=31 - predicted 31.8 ms per decode window; the caches hold 16896 of 16896 profiled pairs (~100.0% of the routed mass), best of 31 placements
+strata generate: 1003 MiB of weights loaded from /home/chris/workspace/Strata-data/packs/q2_0 in 0.3 s (796 canonical tensors skipped: served natively)
+strata generate: 94 native projection matrices, 406.25 MiB of weights, in 0.1 s
+strata generate: control vector mode = project, dir = per-layer, layers 4..44 (41 steered)
+strata generate: PLE direct read probe: 164947 rows/s (fine)
+strata generate: the SSD is kept awake while rows are read: one page of the table after 100 ms without a read, until 60 s after the last request (STRATA_SSD_KEEPALIVE=0 turns it off)
+strata generate: profile /home/chris/workspace/Strata/data/expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: mixed split: 7680 of the 24576 ranked pairs are of this process's layers
+strata: STRATA_HC_Q8=1: 0.21 GiB of Q8_0 hyper-connection projections for the verify read
+strata generate: layer split: CUDA0 keeps only its own layers' dense weights (2.70 GiB in all): CUDA0 15-30 (1858 MiB freed) (the later cards trim in late_weights)
+strata generate: layer split: CUDA1 loads the dense weights of layers 31-47 only
+strata generate: PLE on, table 320001536 rows of /home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf
+strata generate: GPU 0: NVIDIA GeForce RTX 4070 Ti SUPER, compute capability 8.9
+strata generate: experts via mmap (--mmap-experts; the A/B arm of R2.1)
+strata generate: file tier (Linux defaults, experts.bin: its pages are read from the mapping as they are): page-cached experts computed from the mapping (STRATA_COLD_OVERLAP=0), io prefetch with whole-blob preads on 8 I/O threads, the decode's read-ahead only while the page cache has room for it and it pays (STRATA_IO_PF_GATE=1); off: STRATA_COLD_OVERLAP=0, STRATA_IO_PREFETCH=0, STRATA_IO_PF_GATE=0
+strata generate: GPU host-callback thread started before host-core pinning
+strata generate: CPU pool tasks/phase: 48 (automatic), participating threads: 16
+strata generate: CPU pool: 15 workers by default (16 physical cores, 32 logical processors; bounded by every physical core but the host's)
+strata generate: 15 pool workers on logical processors 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, the host thread on 0 (draining too) (--host-core first)
+strata generate: CPU workers on logical processors 1-15 (15 workers, one per physical core; host on 0)
+strata aux cpus: threads that are neither pool workers nor the host go to CPUs 16 (off at start; a request's aux_cpus=1 turns it on)
+strata generate: expert cache auto: 12.85 GiB free, 956 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 7680 slots
+strata generate: expert cache 7680 slots, 9.89 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: the profile fill asks for 256 pairs ahead (STRATA_FILL_AHEAD)
+strata: STRATA_HC_Q8=1: 0.22 GiB of Q8_0 hyper-connection projections for the verify read
+strata generate: layer split: CUDA1 holds its weights; 29.83 GiB free (its session follows)
+strata generate: layer split: CUDA1 holds its weights, session [31, 48) and the head; 27.87 GiB free
+strata mtp: draft layer loaded, 1100 MiB of VRAM (experts 675, dense 111), files read in 0.15 s (5296 MiB/s)
+strata generate: GPU 0: AMD Radeon AI PRO R9700 (gfx1201)
+strata generate: experts via mmap (--mmap-experts; the A/B arm of R2.1)
+strata generate: file tier (Linux defaults, experts.bin: its pages are read from the mapping as they are): page-cached experts computed from the mapping (STRATA_COLD_OVERLAP=0), io prefetch with whole-blob preads on 8 I/O threads, the decode's read-ahead only while the page cache has room for it and it pays (STRATA_IO_PF_GATE=1); off: STRATA_COLD_OVERLAP=0, STRATA_IO_PREFETCH=0, STRATA_IO_PF_GATE=0
+strata generate: GPU host-callback thread started before host-core pinning
+strata generate: CPU pool tasks/phase: 48 (automatic), participating threads: 16
+strata generate: CPU pool: 15 workers by default (16 physical cores, 32 logical processors; bounded by every physical core but the host's)
+strata generate: 15 pool workers on logical processors 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, the host thread on 0 (draining too) (--host-core first)
+strata generate: CPU workers on logical processors 1-15 (15 workers, one per physical core; host on 0)
+strata aux cpus: threads that are neither pool workers nor the host go to CPUs 16 (off at start; a request's aux_cpus=1 turns it on)
+strata generate: --pipeline-windows 2: 234 MiB of CUDA0 kept out of the expert cache (the second verifier, the GDN snapshots)
+strata generate: expert cache auto: 28.64 GiB free, 700 MiB reserved (+0 MiB for the draft head, +256 MiB for what is allocated after the cache) -> 8192 slots
+strata generate: expert cache 8192 slots, 10.55 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: the profile fill asks for 256 pairs ahead (STRATA_FILL_AHEAD)
+strata prefill: warmed the BF16 and FP16 GEMM libraries on GPU 0 in 362 ms (STRATA_PREFILL_WARM=0 skips)
+strata generate: pre-filled 8192 of 8192 slots from the profile in 1.3 s (8595 MB/s); slot 0 verified
+strata generate: layer split, CUDA1: 26.79 GiB free of 31.86, room for experts 25.42 GiB
+strata generate: pre-filled 7680 of 7680 slots from the profile in 2.4 s (4438 MB/s); slot 0 verified
+strata generate: routing-aware prefetch on (the next layer's router, file tier)
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 15 expert-pool workers + the host thread
+strata generate: session is up (engine 0.1.62)
+strata generate: token graph hit path: 7680 resident experts, decided on the device
+prefill: the CPU share is ON by default for prompt chunks up to 3072 tokens (the idle CPU takes some of the experts the GPU would stream; answers can differ slightly from 0.1.40.3, mean KL ~0.004 below 1024 tokens, ~0.011 at 1-3K). STRATA_PREFILL_CPU_SHARE=0 turns it off, STRATA_PREFILL_CPU_SHARE_MAX=1024 keeps the old limit.
+prefill: prompt pieces of 1536 tokens or more read on the fused kernels, as long prompts do. STRATA_PF_PLAIN_FLOOR=0 keeps the earlier rule; STRATA_PREFILL_STREAM_MIN=N sets the number by hand.
+strata: prompt kernels: chunks of 1536 tokens or more run 48 of 48 layers on the fused kernels; shorter chunks run 48 on the FP16 path.
+strata serve: the prompt path allocates its own buffers (too few cache slots to borrow)
+strata generate: layer split: CUDA1 runs layers 31-47, expert cache 8704 slots (11.21 GiB), 8704 of its 8704 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 15-30
+strata generate: layer split auto: L2 probe: the split is startable on the live free figures
+strata generate: routing-aware prefetch off (the routers are not BF16 in the arena)
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 15 expert-pool workers + the host thread
+strata generate: session is up (engine 0.1.62)
+strata generate: token graph hit path: 16896 resident experts, decided on the device
+strata: prompt kernels: every chunk runs 48 of 48 layers on the FP16 path.
+strata: prefill plan: chunk 8192, ring 192 kept: file set 16.9 GiB fits the page cache 53.8 GiB -> about 0.0 GB read from the drive per 32768-token prompt (4 chunks)
+strata: prefill plan inputs: 31.6 GiB experts, 21.8 GiB in the GPU caches, 0.0 GiB RAM copy (0 lend slots kept), file tier 9.9 GiB; 53.8 GiB available for the page cache; PCIe 12.0 GB/s; drive 2.50 GB/s (nvme0n1 is NVMe); a 32768-token prompt
+strata serve: prompt chunk auto: 8192 tokens, a 192-slot ring
+strata serve:   CUDA0 keeps its own prompt buffers (3.36 GiB of 17.99 GiB free): no loan
+strata serve:   CUDA1 keeps its own prompt buffers (3.36 GiB of 15.58 GiB free): no loan
+strata serve: the prompt path allocates its own buffers (too few cache slots to borrow)
+strata serve: mixed split: waiting for the front stage to load and take the hand-off memory
+strata serve: mixed split: shared hand-off memory 640.8 MiB (8 window rows, 8192 prompt rows), attached
+strata serve: mixed split: shared hand-off memory 640.8 MiB (8 window rows, 8192 prompt rows), the front stage has it
+strata prefill: warmed the BF16 and FP16 GEMM libraries on GPU 1 in 512 ms (STRATA_PREFILL_WARM=0 skips)
+strata serve: STRATA_SPLIT_OVERLAP is off beside --pipeline-windows 2 (that loop overlaps the stages itself)
+strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 6 tokens, 56.4 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+strata verify: window up to 6 tokens, 56.4 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+strata serve: front stage: --pipeline-windows: two verifiers, GDN snapshots of 2 x 37.4 MiB
+strata serve: PCIe share: start 0.10 from 15 pool workers (assumed 60 GB/s of expert bytes) and the 6.7 GB/s link (was 0.20)
+strata serve: STRATA_ROUTE_TAIL_SKIP=7 is ON (default): a missed expert that every token of a verify window routes at rank 7 or lower is skipped (+10..20% decode on 12-16 GB cards that miss experts, answers differ slightly from 0.1.41); STRATA_ROUTE_TAIL_SKIP=0 turns it off
+strata serve: adaptive overlap: off (STRATA_ADAPT_OVERLAP=1 turns it on)
+strata serve: 1591 MiB of VRAM free with everything loaded
+INFO logit_bias=1 context=262144 kv=int8 kv_resident=0 expert_slots=7680 experts=24576 expert_cache_mib=10125 expert_slots_primary=7680 expert_cache_primary_mib=10125 spec=6 mtp_max=4 lookup=3 vram_free_mib=1591 cvec=project:4-44 arena_mib=0 pool_workers=15 pcie_frac=0.10 spec_min_p=0.50 conversation_cache_mib=0 conversation_cache_slots=4 conversation_cache_min_free_mib=2560 conversation_cache_min_tokens=8192 tail_role_token=-1 vram_elastic=0 prefill_cap=2048 prefill_stages=1 stream_all_min=1536 prefill_pipe=0 engine=0.1.62
+strata verify: capturing the 1-token window (1591 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error) in 4.4 ms
+strata verify: capturing the 2-token window (1585 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error) in 4.4 ms
+strata verify: capturing the 3-token window (1579 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error) in 4.2 ms
+strata verify: capturing the 4-token window (1573 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error) in 4.2 ms
+strata verify: capturing the 5-token window (1569 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error) in 1.3 ms
+strata verify: capturing the 6-token window (1563 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error) in 4.4 ms
+strata serve: window warm-up: ms per width 1:3 2:6 3:3 4:5 5:5 6:6, total 52 ms
+strata verify: capturing the 1-token window (1557 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 2-token window (1551 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error) in 4.1 ms
+strata verify: capturing the 3-token window (1547 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 4-token window (1541 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error) in 4.3 ms
+strata verify: capturing the 5-token window (1535 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 6-token window (1529 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error) in 1.2 ms
+strata serve: front stage: layers 0-14 ready, serving the link
+strata hc: CUDA1: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 6 tokens, 56.3 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+strata serve: layer split: layers 15-30 (CUDA0), 31-47 (CUDA1), one hand-off per window
+strata verify: window up to 6 tokens, 56.3 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 6 tokens, 56.3 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+strata verify: window up to 6 tokens, 56.3 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+strata mtp: draft head over 106299 tokens (178.4 MiB)
+strata serve: --pipeline-windows 2: two verifiers per stage, 2 stages overlap across windows (decode too; the GDN snapshots beside the window)
+strata serve: conversation cache sized from the free RAM: 8192 MiB for up to 4 parked conversations, so an agent's next turn reuses its prompt (--conversation-cache-mib N sets it, 0 turns it off)
+strata serve: STRATA_ROUTE_TAIL_SKIP is off by default: 68.8% of the experts are in the GPU cache, so few are missed and skipping them costs more draft acceptance than it saves; STRATA_ROUTE_TAIL_SKIP=7 turns it on
+strata serve: adaptive overlap: off: not on a layer split
+strata serve: 14810 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 12162 MiB of VRAM free with everything loaded
+strata serve: mixed split: the front stage is ready
+strata verify: capturing the 1-token window (14810 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error) in 6.7 ms
+strata verify: capturing the 2-token window (14802 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error) in 1.3 ms
+strata verify: capturing the 3-token window (14800 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error) in 1.3 ms
+strata verify: capturing the 4-token window (14798 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 5-token window (14796 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 6-token window (14794 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 1-token window (14790 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error) in 1.7 ms
+strata verify: capturing the 2-token window (14788 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 3-token window (14786 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error) in 1.3 ms
+strata verify: capturing the 4-token window (14784 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 5-token window (14782 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 6-token window (14780 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 1-token window (12162 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error) in 36.6 ms
+strata verify: capturing the 2-token window (12120 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error) in 1.3 ms
+strata verify: capturing the 3-token window (12116 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 4-token window (12112 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 5-token window (12108 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 6-token window (12104 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error) in 1.5 ms
+strata verify: capturing the 1-token window (12098 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error) in 1.5 ms
+strata verify: capturing the 2-token window (12096 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error) in 1.1 ms
+strata verify: capturing the 3-token window (12092 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 4-token window (12088 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 5-token window (12084 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error) in 1.2 ms
+strata verify: capturing the 6-token window (12080 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error) in 1.2 ms
+strata pipeline: verdict p=42 T=1 a=0 B none (B front 0, A com 0) out 71093
+strata pipeline: chain 2 for p=43 T=4: B T=1 p_on 0.893 (5 outputs)
+strata pipeline: verdict p=43 T=4 a=3 B launched ON (B front 1, A com 1) out 12305 198 12237 198
+strata pipeline: chain 1 for p=47 T=1: B T=4 p_on 0.493 (4 outputs)
+strata pipeline: verdict p=47 T=1 a=0 B launched ON (B front 0+, A com 1) out 6641
+strata pipeline: chain 1 for p=48 T=4: B T=1 p_on 0.386 (5 outputs)
+strata pipeline: verdict p=48 T=4 a=0 B launched (B front 1, A com 1) out 53269
+strata pipeline: chain 2 for p=49 T=4: B T=1 p_on 0.251 (5 outputs)
+strata pipeline: verdict p=49 T=4 a=3 B launched (B front 1, A com 1) out 436 34810 318 78994
+strata pipeline: chain 2 for p=53 T=3: B T=1 p_on 0.126 (4 outputs)
+strata pipeline: verdict p=53 T=3 a=0 B none (B front 0, A com 0) out 39642
+strata pipeline: chain 2 for p=54 T=4: B T=4 p_on 0.462 (7 outputs)
+strata pipeline: verdict p=54 T=4 a=2 B launched (B front 0+, A com 1) out 11851 8 18887
+strata pipeline: chain 2 for p=57 T=4: B T=4 p_on 0.485 (7 outputs)
+strata pipeline: verdict p=57 T=4 a=3 B launched ON (B front 0+, A com 1) out 7873 13 271 1919
+strata pipeline: chain 1 for p=61 T=4: B T=1 p_on 0.661 (5 outputs)
+strata pipeline: verdict p=61 T=4 a=3 B launched ON (B front 1, A com 1) out 4536 5529 264 4368
+strata pipeline: chain 1 for p=65 T=1: B T=4 p_on 0.317 (4 outputs)
+strata pipeline: verdict p=65 T=1 a=0 B launched (B front 0+, A com 1) out 53269
+strata pipeline: chain 2 for p=66 T=4: B T=1 p_on 0.461 (5 outputs)
+strata pipeline: verdict p=66 T=4 a=3 B launched ON (B front 1, A com 1) out 436 34810 6297 421
+strata pipeline: chain 1 for p=70 T=1: B T=4 p_on 0.336 (4 outputs)
+strata pipeline: verdict p=70 T=1 a=0 B launched ON (B front 0+, A com 1) out 11222
+strata pipeline: chain 1 for p=71 T=4: B T=3 p_on 0.000 (7 outputs)
+strata pipeline: verdict p=71 T=4 a=0 B none (B front 0, A com 0) out 32907
+strata pipeline: chain 2 for p=72 T=4: B T=3 p_on 0.173 (7 outputs)
+strata pipeline: verdict p=72 T=4 a=0 B none (B front 0, A com 0) out 2528
+strata pipeline: chain 2 for p=73 T=4: B T=4 p_on 0.626 (7 outputs)
+strata pipeline: verdict p=73 T=4 a=3 B launched ON (B front 0+, A com 1) out 198 1445 5081 14145
+strata pipeline: chain 1 for p=77 T=4: B T=1 p_on 0.000 (5 outputs)
+strata pipeline: verdict p=77 T=4 a=1 B none (B front 0, A com 0) out 13 1049
+strata pipeline: chain 2 for p=79 T=4: B T=3 p_on 0.250 (7 outputs)
+strata pipeline: verdict p=79 T=4 a=1 B launched (B front 0+, A com 1) out 5533 264
+strata pipeline: chain 2 for p=81 T=3: B T=4 p_on 0.315 (6 outputs)
+strata pipeline: verdict p=81 T=3 a=2 B launched ON (B front 0+, A com 1) out 10286 314 264
+strata pipeline: chain 1 for p=84 T=4: B T=4 p_on 0.000 (7 outputs)
+strata pipeline: verdict p=84 T=4 a=0 B none (B front 0, A com 0) out 90651
+strata pipeline: chain 2 for p=85 T=4: B T=4 p_on 0.295 (7 outputs)
+strata pipeline: verdict p=85 T=4 a=0 B launched (B front 0+, A com 1) out 52589
+strata pipeline: chain 2 for p=86 T=2: B T=2 p_on 0.396 (4 outputs)
+strata pipeline: verdict p=86 T=2 a=1 B launched (B front 0+, A com 1) out 1103 318
+strata pipeline: chain 2 for p=88 T=3: B T=2 p_on 0.183 (5 outputs)
+strata pipeline: verdict p=88 T=3 a=2 B none (B front 0, A com 0) out 19492 198 49416
+strata pipeline: chain 2 for p=91 T=4: B T=1 p_on 0.249 (5 outputs)
+strata pipeline: verdict p=91 T=4 a=0 B launched (B front 1, A com 1) out 19063
+strata pipeline: chain 2 for p=92 T=4: B T=4 p_on 0.395 (7 outputs)
+strata pipeline: verdict p=92 T=4 a=3 B launched (B front 0+, A com 1) out 290 13061 8 321
+strata pipeline: chain 2 for p=96 T=2: B T=4 p_on 0.361 (5 outputs)
+strata pipeline: verdict p=96 T=2 a=1 B launched (B front 0+, A com 1) out 264 5128
+strata pipeline: chain 2 for p=98 T=1: B T=4 p_on 0.425 (4 outputs)
+strata pipeline: verdict p=98 T=1 a=0 B launched (B front 0+, A com 1) out 310
+strata pipeline: chain 2 for p=99 T=4: B T=2 p_on 0.686 (6 outputs)
+strata pipeline: verdict p=99 T=4 a=3 B launched ON (B front 1, A com 1) out 5790 4368 6925 13
+strata pipeline: chain 1 for p=103 T=2: B T=1 p_on 0.786 (3 outputs)
+strata pipeline: verdict p=103 T=2 a=1 B launched (B front 1, A com 1) out 271 19846
+strata pipeline: chain 2 for p=105 T=1: B T=3 p_on 0.328 (4 outputs)
+strata pipeline: verdict p=105 T=1 a=0 B launched ON (B front 0+, A com 1) out 25
+strata pipeline: chain 1 for p=106 T=3: B T=4 p_on 0.492 (6 outputs)
+strata pipeline: verdict p=106 T=3 a=2 B launched (B front 0+, A com 1) out 198 12 51425
+strata pipeline: chain 2 for p=109 T=1: B T=3 p_on 0.322 (4 outputs)
+strata pipeline: verdict p=109 T=1 a=0 B launched (B front 0+, A com 1) out 30941
+strata pipeline: chain 2 for p=110 T=3: B T=2 p_on 0.308 (5 outputs)
+strata pipeline: verdict p=110 T=3 a=2 B launched (B front 0+, A com 1) out 34736 1906 11
+strata pipeline: chain 2 for p=113 T=2: B T=2 p_on 0.177 (4 outputs)
+strata pipeline: verdict p=113 T=2 a=1 B none (B front 0, A com 0) out 864 567
+strata pipeline: chain 2 for p=115 T=4: B T=4 p_on 0.217 (7 outputs)
+strata pipeline: verdict p=115 T=4 a=1 B launched (B front 0+, A com 1) out 958 310
+strata pipeline: chain 2 for p=117 T=1: B T=1 p_on 0.373 (2 outputs)
+strata pipeline: verdict p=117 T=1 a=0 B launched (B front 0+, A com 1) out 3627
+strata pipeline: chain 2 for p=118 T=4: B T=4 p_on 0.267 (7 outputs)
+strata pipeline: verdict p=118 T=4 a=0 B launched (B front 1, A com 1) out 2528
+strata pipeline: chain 2 for p=119 T=4: B T=3 p_on 0.764 (7 outputs)
+strata pipeline: verdict p=119 T=4 a=3 B launched (B front 0+, A com 1) out 1906 13 198 12
+strata pipeline: chain 2 for p=123 T=1: B T=2 p_on 0.491 (3 outputs)
+strata pipeline: verdict p=123 T=1 a=0 B launched ON (B front 0+, A com 1) out 357
+strata pipeline: chain 1 for p=124 T=2: B T=1 p_on 0.662 (3 outputs)
+strata pipeline: verdict p=124 T=2 a=0 B launched (B front 1, A com 1) out 29174
+strata pipeline: chain 2 for p=125 T=2: B T=4 p_on 0.265 (5 outputs)
+strata pipeline: verdict p=125 T=2 a=1 B launched (B front 0+, A com 1) out 30371 33972
+strata pipeline: chain 2 for p=127 T=2: B T=1 p_on 0.441 (3 outputs)
+strata pipeline: verdict p=127 T=2 a=1 B launched ON (B front 0+, A com 1) out 660 7289
+strata pipeline: chain 1 for p=129 T=1: B T=4 p_on 0.496 (4 outputs)
+strata pipeline: verdict p=129 T=1 a=0 B launched ON (B front 0+, A com 1) out 310
+strata pipeline: chain 1 for p=130 T=4: B T=4 p_on 0.312 (7 outputs)
+strata pipeline: verdict p=130 T=4 a=3 B launched (B front 0+, A com 1) out 5790 4368 6925 13
+strata pipeline: chain 2 for p=134 T=4: B T=2 p_on 0.637 (6 outputs)
+strata pipeline: verdict p=134 T=4 a=2 B launched (B front 1, A com 1) out 198 12 1848
+strata pipeline: chain 2 for p=137 T=4: B T=4 p_on 0.488 (7 outputs)
+strata pipeline: verdict p=137 T=4 a=0 B launched (B front 0+, A com 1) out 2528
+strata pipeline: chain 2 for p=138 T=4: B T=3 p_on 0.308 (7 outputs)
+strata pipeline: verdict p=138 T=4 a=1 B launched (B front 0+, A com 1) out 11 3470
+strata pipeline: chain 2 for p=140 T=4: B T=4 p_on 0.950 (7 outputs)
+strata pipeline: verdict p=140 T=4 a=3 B launched ON (B front 0+, A com 1) out 513 7481 310 279
+strata pipeline: chain 1 for p=144 T=4: B T=2 p_on 0.340 (6 outputs)
+strata pipeline: verdict p=144 T=4 a=3 B launched (B front 0+, A com 1) out 809 314 279 51425
+strata pipeline: chain 2 for p=148 T=2: B T=4 p_on 0.108 (5 outputs)
+strata pipeline: verdict p=148 T=2 a=1 B none (B front 0, A com 0) out 318 3444
+strata pipeline: chain 2 for p=150 T=4: B T=4 p_on 0.518 (7 outputs)
+strata pipeline: verdict p=150 T=4 a=3 B launched ON (B front 0+, A com 1) out 5742 1429 553 198
+strata pipeline: chain 1 for p=154 T=4: B T=4 p_on 0.000 (7 outputs)
+strata pipeline: verdict p=154 T=4 a=2 B none (B front 0, A com 0) out 12 1848 34736
+strata pipeline: chain 2 for p=157 T=2: B T=1 p_on 0.393 (3 outputs)
+strata pipeline: verdict p=157 T=2 a=1 B launched (B front 0+, A com 1) out 11 413
+strata pipeline: chain 2 for p=159 T=2: B T=4 p_on 0.376 (5 outputs)
+strata pipeline: verdict p=159 T=2 a=1 B launched (B front 0+, A com 1) out 279 6297
+strata pipeline: chain 2 for p=161 T=4: B T=4 p_on 0.474 (7 outputs)
+strata pipeline: verdict p=161 T=4 a=3 B launched (B front 0+, A com 1) out 369 2400 11 279
+strata pipeline: chain 2 for p=165 T=4: B T=3 p_on 0.448 (7 outputs)
+strata pipeline: verdict p=165 T=4 a=3 B launched (B front 0+, A com 1) out 3140 5742 1429 1455
+strata pipeline: chain 2 for p=169 T=4: B T=4 p_on 0.433 (7 outputs)
+strata pipeline: verdict p=169 T=4 a=0 B launched (B front 0+, A com 1) out 318
+strata pipeline: chain 2 for p=170 T=4: B T=1 p_on 0.636 (5 outputs)
+strata pipeline: verdict p=170 T=4 a=0 B launched (B front 1, A com 1) out 3765
+strata pipeline: chain 2 for p=171 T=1: B T=4 p_on 0.429 (4 outputs)
+strata pipeline: verdict p=171 T=1 a=0 B launched (B front 0+, A com 1) out 303
+strata pipeline: chain 2 for p=172 T=4: B T=4 p_on 0.547 (7 outputs)
+strata pipeline: verdict p=172 T=4 a=2 B launched (B front 0+, A com 1) out 198 220 51425
+strata pipeline: chain 2 for p=175 T=4: B T=4 p_on 0.608 (7 outputs)
+strata pipeline: verdict p=175 T=4 a=3 B launched ON (B front 0+, A com 1) out 8 369 3514 12404
+strata pipeline: chain 1 for p=179 T=4: B T=3 p_on 0.308 (7 outputs)
+strata pipeline: verdict p=179 T=4 a=2 B launched (B front 0+, A com 1) out 13 271 11320
+strata pipeline: chain 2 for p=182 T=4: B T=2 p_on 0.626 (6 outputs)
+strata pipeline: verdict p=182 T=4 a=3 B launched ON (B front 1, A com 1) out 4886 17083 25 198
+strata pipeline: chain 1 for p=186 T=2: B T=2 p_on 0.249 (4 outputs)
+strata pipeline: verdict p=186 T=2 a=1 B launched (B front 0+, A com 1) out 12 9266
+strata pipeline: chain 2 for p=188 T=2: B T=4 p_on 0.350 (5 outputs)
+strata pipeline: verdict p=188 T=2 a=1 B launched (B front 0+, A com 1) out 286 264
+strata pipeline: chain 2 for p=190 T=4: B T=2 p_on 0.311 (6 outputs)
+strata pipeline: verdict p=190 T=4 a=2 B launched (B front 1, A com 1) out 1328 421 3070
+strata pipeline: chain 2 for p=193 T=3: B T=1 p_on 0.216 (4 outputs)
+strata pipeline: verdict p=193 T=3 a=2 B launched (B front 1, A com 1) out 914 2905 4523
+strata pipeline: chain 2 for p=196 T=4: B T=1 p_on 0.675 (5 outputs)
+strata pipeline: verdict p=196 T=4 a=1 B launched (B front 1, A com 1) out 2168 318
+strata pipeline: chain 2 for p=198 T=2: B T=1 p_on 0.240 (3 outputs)
+strata pipeline: verdict p=198 T=2 a=1 B launched (B front 0+, A com 1) out 269 264
+strata pipeline: chain 2 for p=200 T=4: B T=2 p_on 0.435 (6 outputs)
+strata pipeline: verdict p=200 T=4 a=0 B launched (B front 1, A com 1) out 41960
+strata pipeline: chain 2 for p=201 T=4: B T=1 p_on 0.849 (5 outputs)
+strata pipeline: verdict p=201 T=4 a=3 B launched (B front 1, A com 1) out 1581 553 198 12
+strata pipeline: chain 2 for p=205 T=1: B T=4 p_on 0.216 (4 outputs)
+strata pipeline: verdict p=205 T=1 a=0 B launched ON (B front 0+, A com 1) out 16598
+strata pipeline: chain 1 for p=206 T=4: B T=2 p_on 0.285 (6 outputs)
+strata pipeline: verdict p=206 T=4 a=1 B launched (B front 1, A com 1) out 286 264
+strata pipeline: chain 2 for p=208 T=4: B T=4 p_on 0.592 (7 outputs)
+strata pipeline: verdict p=208 T=4 a=3 B launched (B front 0+, A com 1) out 1328 421 2582 6513
+strata pipeline: chain 2 for p=212 T=2: B T=1 p_on 0.282 (3 outputs)
+strata pipeline: verdict p=212 T=2 a=1 B launched (B front 0+, A com 1) out 8570 1141
+strata pipeline: chain 2 for p=214 T=4: B T=4 p_on 0.692 (7 outputs)
+strata pipeline: verdict p=214 T=4 a=2 B launched (B front 0+, A com 1) out 869 321 14973
+strata pipeline: chain 2 for p=217 T=4: B T=4 p_on 0.587 (7 outputs)
+strata pipeline: verdict p=217 T=4 a=3 B launched (B front 0+, A com 1) out 424 430 1379 198
+strata pipeline: chain 2 for p=221 T=4: B T=3 p_on 0.891 (7 outputs)
+strata pipeline: verdict p=221 T=4 a=3 B launched ON (B front 0+, A com 1) out 220 5742 1429 13
+strata pipeline: chain 1 for p=225 T=3: B T=4 p_on 0.258 (6 outputs)
+strata pipeline: verdict p=225 T=3 a=2 B launched (B front 0+, A com 1) out 198 12 8487
+strata pipeline: chain 2 for p=228 T=1: B T=1 p_on 0.360 (2 outputs)
+strata pipeline: verdict p=228 T=1 a=0 B launched (B front 0+, A com 1) out 53269
+strata pipeline: chain 2 for p=229 T=2: B T=2 p_on 0.188 (4 outputs)
+strata pipeline: verdict p=229 T=2 a=0 B none (B front 0, A com 0) out 7289
+strata pipeline: chain 2 for p=230 T=1: B T=4 p_on 0.378 (4 outputs)
+strata pipeline: verdict p=230 T=1 a=0 B launched (B front 0+, A com 1) out 4417
+strata pipeline: chain 2 for p=231 T=1: B T=2 p_on 0.314 (3 outputs)
+strata pipeline: verdict p=231 T=1 a=0 B launched (B front 0+, A com 1) out 36605
+strata pipeline: chain 2 for p=232 T=4: B T=2 p_on 0.204 (6 outputs)
+strata pipeline: verdict p=232 T=4 a=3 B launched (B front 1, A com 1) out 13 198 12 38778
+strata pipeline: chain 2 for p=236 T=1: B T=4 p_on 0.416 (4 outputs)
+strata pipeline: verdict p=236 T=1 a=0 B launched (B front 0+, A com 1) out 314
+strata pipeline: chain 2 for p=237 T=3: B T=4 p_on 0.355 (6 outputs)
+strata pipeline: verdict p=237 T=3 a=2 B launched (B front 0+, A com 1) out 220 15 3254
+strata pipeline: chain 2 for p=240 T=2: B T=4 p_on 0.385 (5 outputs)
+strata pipeline: verdict p=240 T=2 a=1 B launched (B front 0+, A com 1) out 874 45850
+strata pipeline: chain 2 for p=242 T=1: B T=4 p_on 0.434 (4 outputs)
+strata pipeline: verdict p=242 T=1 a=0 B launched (B front 0+, A com 1) out 318
+strata pipeline: chain 2 for p=243 T=1: B T=4 p_on 0.200 (4 outputs)
+strata pipeline: verdict p=243 T=1 a=0 B launched (B front 0+, A com 1) out 528
+strata pipeline: chain 2 for p=244 T=4: B T=4 p_on 0.492 (7 outputs)
+strata pipeline: verdict p=244 T=4 a=1 B launched (B front 0+, A com 1) out 7289 513
+strata pipeline: chain 2 for p=246 T=4: B T=4 p_on 0.727 (7 outputs)
+strata pipeline: verdict p=246 T=4 a=3 B launched ON (B front 0+, A com 1) out 874 12 3595 553
+strata pipeline: chain 1 for p=250 T=4: B T=4 p_on 0.700 (7 outputs)
+strata pipeline: verdict p=250 T=4 a=3 B launched (B front 0+, A com 1) out 198 12237 271 464
+strata pipeline: chain 2 for p=254 T=4: B T=4 p_on 0.609 (7 outputs)
+strata pipeline: verdict p=254 T=4 a=2 B launched (B front 0+, A com 1) out 29174 198 1445
+strata pipeline: chain 2 for p=257 T=4: B T=4 p_on 0.748 (7 outputs)
+strata pipeline: verdict p=257 T=4 a=2 B launched (B front 0+, A com 1) out 14856 1120 51425
+strata pipeline: chain 2 for p=260 T=4: B T=4 p_on 0.958 (7 outputs)
+strata pipeline: verdict p=260 T=4 a=3 B launched (B front 0+, A com 1) out 198 1445 18904 1120
+strata pipeline: chain 2 for p=264 T=4: B T=1 p_on 0.414 (5 outputs)
+strata pipeline: verdict p=264 T=4 a=3 B launched ON (B front 1, A com 1) out 5586 11 11906 11
+strata pipeline: chain 1 for p=268 T=1: B T=4 p_on 0.375 (4 outputs)
+strata pipeline: verdict p=268 T=1 a=0 B launched ON (B front 0+, A com 1) out 6328
+strata pipeline: chain 1 for p=269 T=4: B T=1 p_on 0.000 (5 outputs)
+strata pipeline: verdict p=269 T=4 a=1 B none (B front 0, A com 0) out 470 1358
+strata pipeline: chain 2 for p=271 T=4: B T=4 p_on 0.892 (7 outputs)
+strata pipeline: verdict p=271 T=4 a=1 B launched (B front 0+, A com 1) out 1005 43072
+strata pipeline: chain 2 for p=273 T=4: B T=4 p_on 0.999 (7 outputs)
+strata pipeline: verdict p=273 T=4 a=3 B launched ON (B front 0+, A com 1) out 5287 1714 25 198
+strata pipeline: chain 1 for p=277 T=4: B T=4 p_on 0.697 (7 outputs)
+strata pipeline: verdict p=277 T=4 a=3 B launched (B front 0+, A com 1) out 262 4071 198 262
+strata pipeline: chain 2 for p=281 T=3: B T=1 p_on 0.439 (4 outputs)
+strata pipeline: verdict p=281 T=3 a=2 B launched (B front 1, A com 1) out 357 4368 53269
+strata pipeline: chain 2 for p=284 T=4: B T=1 p_on 0.527 (5 outputs)
+strata pipeline: verdict p=284 T=4 a=0 B launched (B front 1, A com 1) out 87401
+strata pipeline: chain 2 for p=285 T=1: B T=1 p_on 0.444 (2 outputs)
+strata pipeline: verdict p=285 T=1 a=0 B launched (B front 0+, A com 1) out 39642
+strata pipeline: chain 2 for p=286 T=4: B T=4 p_on 0.886 (7 outputs)
+strata pipeline: verdict p=286 T=4 a=3 B launched ON (B front 0+, A com 1) out 11851 318 19504 52
+strata pipeline: chain 1 for p=290 T=4: B T=4 p_on 0.980 (7 outputs)
+strata pipeline: verdict p=290 T=4 a=3 B launched ON (B front 0+, A com 1) out 8 6297 13 271
+strata pipeline: chain 1 for p=294 T=4: B T=2 p_on 0.000 (6 outputs)
+strata pipeline: verdict p=294 T=4 a=1 B none (B front 0, A com 0) out 262 32998
+strata pipeline: chain 2 for p=296 T=4: B T=1 p_on 0.494 (5 outputs)
+strata pipeline: verdict p=296 T=4 a=3 B launched (B front 1, A com 1) out 25 198 285 8390
+strata pipeline: chain 2 for p=300 T=4: B T=4 p_on 0.420 (7 outputs)
+strata pipeline: verdict p=300 T=4 a=3 B launched ON (B front 0+, A com 1) out 318 390 1590 25749
+strata pipeline: chain 1 for p=304 T=4: B T=4 p_on 0.846 (7 outputs)
+strata pipeline: verdict p=304 T=4 a=3 B launched (B front 0+, A com 1) out 1324 314 3470 279
+strata pipeline: chain 2 for p=308 T=4: B T=4 p_on 0.771 (7 outputs)
+strata pipeline: verdict p=308 T=4 a=3 B launched ON (B front 0+, A com 1) out 6297 628 3222 13
+strata pipeline: chain 1 for p=312 T=4: B T=4 p_on 0.000 (7 outputs)
+strata pipeline: verdict p=312 T=4 a=2 B none (B front 0, A com 0) out 198 285 696
+strata pipeline: chain 2 for p=315 T=4: B T=1 p_on 0.856 (5 outputs)
+strata pipeline: verdict p=315 T=4 a=2 B launched (B front 1, A com 1) out 9082 318 52560
+strata pipeline: chain 2 for p=318 T=4: B T=4 p_on 0.362 (7 outputs)
+strata pipeline: verdict p=318 T=4 a=2 B launched (B front 0+, A com 1) out 13061 1590 14963
+strata pipeline: chain 2 for p=321 T=4: B T=4 p_on 0.434 (7 outputs)
+strata pipeline: verdict p=321 T=4 a=1 B launched (B front 0+, A com 1) out 5638 12366
+strata pipeline: chain 2 for p=323 T=1: B T=2 p_on 0.243 (3 outputs)
+strata pipeline: verdict p=323 T=1 a=0 B launched (B front 0+, A com 1) out 6679
+strata pipeline: chain 2 for p=324 T=4: B T=4 p_on 0.875 (7 outputs)
+strata pipeline: verdict p=324 T=4 a=2 B launched (B front 0+, A com 1) out 310 2663 11
+strata pipeline: chain 2 for p=327 T=1: B T=4 p_on 0.392 (4 outputs)
+strata pipeline: verdict p=327 T=1 a=0 B launched ON (B front 0+, A com 1) out 11128
+strata pipeline: chain 1 for p=328 T=4: B T=4 p_on 0.250 (7 outputs)
+strata pipeline: verdict p=328 T=4 a=1 B launched (B front 0+, A com 1) out 198 309
+strata pipeline: chain 2 for p=330 T=4: B T=4 p_on 0.356 (7 outputs)
+strata pipeline: verdict p=330 T=4 a=2 B launched (B front 0+, A com 1) out 539 2528 854
+strata pipeline: chain 2 for p=333 T=4: B T=4 p_on 0.331 (7 outputs)
+strata pipeline: verdict p=333 T=4 a=1 B launched (B front 0+, A com 1) out 318 53415
+strata pipeline: chain 2 for p=335 T=3: B T=4 p_on 0.379 (6 outputs)
+strata pipeline: verdict p=335 T=3 a=2 B launched (B front 0+, A com 1) out 5742 1429 1118
+strata pipeline: chain 2 for p=338 T=2: B T=4 p_on 0.249 (5 outputs)
+strata pipeline: verdict p=338 T=2 a=0 B launched (B front 0+, A com 1) out 553
+strata pipeline: chain 2 for p=339 T=4: B T=4 p_on 0.712 (7 outputs)
+strata pipeline: verdict p=339 T=4 a=2 B launched (B front 0+, A com 1) out 198 285 696
+strata serve: prompt 43 tokens = 0 reused + 43 read in 250 ms (172.2 tok/s), 300 generated in 2274 ms (131.9 tok/s), drafts accepted 177 of 259, 1 checkpoints
+strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 23359.8 MB read
+strata serve: file tier I/O this request: the OS read 17.6 MB from storage (0 major faults) for 23359.8 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room -1.00 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), open, closed in 0 windows so far, 0 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: conversation cache: skip parking (342 tokens, below the 8192 minimum; parked=0)
+strata: prompt experts on the fused int8 kernels (STRATA_PF_FUSED=1, #136)
+strata prefill: QSA layers: norm + rope in one pass on, attention gate in the attention epilogue off
+strata prefill: QSA layers: norm + rope in one pass on, attention gate in the attention epilogue on
+strata pipeline: verdict p=4923 T=1 a=0 B none (B front 0, A com 0) out 8160
+strata pipeline: chain 2 for p=4924 T=4: B T=1 p_on 0.535 (5 outputs)
+strata pipeline: verdict p=4924 T=4 a=0 B launched (B front 1, A com 1) out 369
+strata pipeline: chain 2 for p=4925 T=4: B T=2 p_on 0.873 (6 outputs)
+strata pipeline: verdict p=4925 T=4 a=3 B launched ON (B front 1, A com 1) out 264 11782 314 279
+strata pipeline: chain 1 for p=4929 T=2: B T=4 p_on 0.000 (5 outputs)
+strata pipeline: verdict p=4929 T=2 a=0 B none (B front 0, A com 0) out 2128
+strata pipeline: chain 2 for p=4930 T=4: B T=4 p_on 0.232 (7 outputs)
+strata pipeline: verdict p=4930 T=4 a=0 B launched (B front 0+, A com 1) out 303
+strata pipeline: chain 2 for p=4931 T=4: B T=4 p_on 0.999 (7 outputs)
+strata pipeline: verdict p=4931 T=4 a=3 B launched ON (B front 0+, A com 1) out 4097 16916 3387 25
+strata pipeline: chain 1 for p=4935 T=4: B T=2 p_on 0.894 (6 outputs)
+strata pipeline: verdict p=4935 T=4 a=3 B launched (B front 0+, A com 1) out 271 9 256 2972
+strata pipeline: chain 2 for p=4939 T=1: B T=1 p_on 0.440 (2 outputs)
+strata pipeline: verdict p=4939 T=1 a=0 B launched (B front 0+, A com 1) out 8758
+strata pipeline: chain 2 for p=4940 T=1: B T=1 p_on 0.454 (2 outputs)
+strata pipeline: verdict p=4940 T=1 a=0 B launched (B front 0+, A com 1) out 33284
+strata pipeline: chain 2 for p=4941 T=2: B T=4 p_on 0.440 (5 outputs)
+strata pipeline: verdict p=4941 T=2 a=1 B launched (B front 0+, A com 1) out 321 11873
+strata pipeline: chain 2 for p=4943 T=4: B T=2 p_on 0.275 (6 outputs)
+strata pipeline: verdict p=4943 T=4 a=1 B launched (B front 1, A com 1) out 64700 14206
+strata pipeline: chain 2 for p=4945 T=2: B T=1 p_on 0.250 (3 outputs)
+strata pipeline: verdict p=4945 T=2 a=1 B launched ON (B front 0+, A com 1) out 628 9501
+strata pipeline: chain 1 for p=4947 T=1: B T=2 p_on 0.613 (3 outputs)
+strata pipeline: verdict p=4947 T=1 a=0 B launched (B front 0+, A com 1) out 3050
+strata pipeline: chain 2 for p=4948 T=4: B T=4 p_on 0.692 (7 outputs)
+strata pipeline: verdict p=4948 T=4 a=1 B launched (B front 0+, A com 1) out 12417 310
+strata pipeline: chain 2 for p=4950 T=3: B T=1 p_on 0.196 (4 outputs)
+strata pipeline: verdict p=4950 T=3 a=0 B none (B front 0, A com 0) out 5081
+strata pipeline: chain 2 for p=4951 T=4: B T=4 p_on 0.443 (7 outputs)
+strata pipeline: verdict p=4951 T=4 a=1 B launched (B front 0+, A com 1) out 68022 318
+strata pipeline: chain 2 for p=4953 T=4: B T=3 p_on 0.971 (7 outputs)
+strata pipeline: verdict p=4953 T=4 a=3 B launched ON (B front 0+, A com 1) out 6008 11 12536 11
+strata pipeline: chain 1 for p=4957 T=3: B T=3 p_on 0.000 (6 outputs)
+strata pipeline: verdict p=4957 T=3 a=0 B none (B front 0, A com 0) out 466
+strata pipeline: chain 2 for p=4958 T=4: B T=4 p_on 0.168 (7 outputs)
+strata pipeline: verdict p=4958 T=4 a=2 B none (B front 0, A com 0) out 3978 8 4417
+strata pipeline: chain 2 for p=4961 T=4: B T=4 p_on 0.643 (7 outputs)
+strata pipeline: verdict p=4961 T=4 a=0 B launched (B front 0+, A com 1) out 16985
+strata pipeline: chain 2 for p=4962 T=4: B T=4 p_on 0.261 (7 outputs)
+strata pipeline: verdict p=4962 T=4 a=0 B launched (B front 0+, A com 1) out 878
+strata pipeline: chain 2 for p=4963 T=4: B T=3 p_on 0.428 (7 outputs)
+strata pipeline: verdict p=4963 T=4 a=3 B launched (B front 0+, A com 1) out 11 14586 10966 11
+strata pipeline: chain 2 for p=4967 T=4: B T=4 p_on 0.526 (7 outputs)
+strata pipeline: verdict p=4967 T=4 a=3 B launched ON (B front 0+, A com 1) out 466 2124 3425 13
+strata pipeline: chain 1 for p=4971 T=4: B T=4 p_on 0.805 (7 outputs)
+strata pipeline: verdict p=4971 T=4 a=3 B launched ON (B front 0+, A com 1) out 561 328 6008 1
+strata pipeline: chain 1 for p=4975 T=4: B T=2 p_on 0.000 (6 outputs)
+strata pipeline: verdict p=4975 T=4 a=1 B none (B front 0, A com 0) out 3575 13081
+strata pipeline: chain 2 for p=4977 T=3: B T=1 p_on 0.211 (4 outputs)
+strata pipeline: verdict p=4977 T=3 a=2 B launched (B front 1, A com 1) out 279 1534 2468
+strata pipeline: chain 2 for p=4980 T=3: B T=4 p_on 0.142 (6 outputs)
+strata pipeline: verdict p=4980 T=3 a=0 B none (B front 0, A com 0) out 17102
+strata pipeline: chain 2 for p=4981 T=4: B T=4 p_on 0.233 (7 outputs)
+strata pipeline: verdict p=4981 T=4 a=1 B launched (B front 0+, A com 1) out 321 369
+strata pipeline: chain 2 for p=4983 T=1: B T=1 p_on 0.420 (2 outputs)
+strata pipeline: verdict p=4983 T=1 a=0 B launched (B front 0+, A com 1) out 10813
+strata pipeline: chain 2 for p=4984 T=4: B T=4 p_on 0.306 (7 outputs)
+strata pipeline: verdict p=4984 T=4 a=1 B launched (B front 0+, A com 1) out 279 24830
+strata pipeline: chain 2 for p=4986 T=1: B T=4 p_on 0.406 (4 outputs)
+strata pipeline: verdict p=4986 T=1 a=0 B launched (B front 0+, A com 1) out 466
+strata pipeline: chain 2 for p=4987 T=4: B T=4 p_on 0.630 (7 outputs)
+strata pipeline: verdict p=4987 T=4 a=0 B launched (B front 0+, A com 1) out 8166
+strata pipeline: chain 2 for p=4988 T=4: B T=4 p_on 0.544 (7 outputs)
+strata pipeline: verdict p=4988 T=4 a=0 B launched (B front 0+, A com 1) out 61932
+strata pipeline: chain 2 for p=4989 T=4: B T=4 p_on 0.243 (7 outputs)
+strata pipeline: verdict p=4989 T=4 a=1 B launched (B front 0+, A com 1) out 3575 11
+strata pipeline: chain 2 for p=4991 T=4: B T=2 p_on 0.865 (6 outputs)
+strata pipeline: verdict p=4991 T=4 a=3 B launched ON (B front 1, A com 1) out 1345 328 5338 1
+strata pipeline: chain 1 for p=4995 T=2: B T=3 p_on 0.377 (5 outputs)
+strata pipeline: verdict p=4995 T=2 a=1 B launched (B front 0+, A com 1) out 7176 3436
+strata pipeline: chain 2 for p=4997 T=1: B T=1 p_on 0.407 (2 outputs)
+strata pipeline: verdict p=4997 T=1 a=0 B launched (B front 0+, A com 1) out 1558
+strata pipeline: chain 2 for p=4998 T=4: B T=2 p_on 0.387 (6 outputs)
+strata pipeline: verdict p=4998 T=4 a=3 B launched ON (B front 1, A com 1) out 13224 321 6009 51790
+strata pipeline: chain 1 for p=5002 T=2: B T=1 p_on 0.000 (3 outputs)
+strata pipeline: verdict p=5002 T=2 a=0 B none (B front 0, A com 0) out 310
+strata pipeline: chain 2 for p=5003 T=4: B T=4 p_on 0.306 (7 outputs)
+strata pipeline: verdict p=5003 T=4 a=3 B launched (B front 0+, A com 1) out 5096 8390 13 198
+strata pipeline: chain 2 for p=5007 T=4: B T=1 p_on 0.197 (5 outputs)
+strata pipeline: verdict p=5007 T=4 a=3 B none (B front 0, A com 0) out 9 256 2972 8915
+strata pipeline: chain 2 for p=5011 T=3: B T=4 p_on 0.097 (6 outputs)
+strata pipeline: verdict p=5011 T=3 a=0 B none (B front 0, A com 0) out 26907
+strata pipeline: chain 2 for p=5012 T=4: B T=2 p_on 0.933 (6 outputs)
+strata pipeline: verdict p=5012 T=4 a=1 B launched (B front 1, A com 1) out 1235 74196
+strata pipeline: chain 2 for p=5014 T=3: B T=2 p_on 0.236 (5 outputs)
+strata pipeline: verdict p=5014 T=3 a=2 B launched (B front 0+, A com 1) out 64700 561 1785
+strata pipeline: chain 2 for p=5017 T=4: B T=4 p_on 0.626 (7 outputs)
+strata pipeline: verdict p=5017 T=4 a=3 B launched ON (B front 0+, A com 1) out 5533 14855 14835 2074
+strata pipeline: chain 1 for p=5021 T=4: B T=4 p_on 0.000 (7 outputs)
+strata pipeline: verdict p=5021 T=4 a=0 B none (B front 0, A com 0) out 4598
+strata pipeline: chain 2 for p=5022 T=4: B T=3 p_on 0.999 (7 outputs)
+strata pipeline: verdict p=5022 T=4 a=3 B launched ON (B front 0+, A com 1) out 1056 15167 14835 2074
+strata pipeline: chain 1 for p=5026 T=3: B T=2 p_on 0.000 (5 outputs)
+strata pipeline: verdict p=5026 T=3 a=1 B none (B front 0, A com 0) out 11 42898
+strata pipeline: chain 2 for p=5028 T=4: B T=3 p_on 0.317 (7 outputs)
+strata pipeline: verdict p=5028 T=4 a=0 B launched (B front 0+, A com 1) out 1558
+strata pipeline: chain 2 for p=5029 T=4: B T=4 p_on 0.972 (7 outputs)
+strata pipeline: verdict p=5029 T=4 a=3 B launched ON (B front 0+, A com 1) out 13224 1083 64258 20629
+strata pipeline: chain 1 for p=5033 T=4: B T=4 p_on 0.000 (7 outputs)
+strata pipeline: verdict p=5033 T=4 a=1 B none (B front 0, A com 0) out 3808 7176
+strata pipeline: chain 2 for p=5035 T=4: B T=3 p_on 0.274 (7 outputs)
+strata pipeline: verdict p=5035 T=4 a=1 B launched (B front 0+, A com 1) out 13 8618
+strata pipeline: chain 2 for p=5037 T=4: B T=3 p_on 0.352 (7 outputs)
+strata pipeline: verdict p=5037 T=4 a=3 B launched ON (B front 0+, A com 1) out 3575 9687 1141 1765
+strata pipeline: chain 1 for p=5041 T=3: B T=4 p_on 0.000 (6 outputs)
+strata pipeline: verdict p=5041 T=3 a=0 B none (B front 0, A com 0) out 27044
+strata pipeline: chain 2 for p=5042 T=4: B T=4 p_on 0.391 (7 outputs)
+strata pipeline: verdict p=5042 T=4 a=3 B launched (B front 0+, A com 1) out 13914 11 3669 1528
+strata pipeline: chain 2 for p=5046 T=4: B T=2 p_on 0.748 (6 outputs)
+strata pipeline: verdict p=5046 T=4 a=3 B launched ON (B front 1, A com 1) out 11 321 6009 6297
+strata pipeline: chain 1 for p=5050 T=2: B T=4 p_on 0.000 (5 outputs)
+strata pipeline: verdict p=5050 T=2 a=0 B none (B front 0, A com 0) out 364
+strata pipeline: chain 2 for p=5051 T=4: B T=2 p_on 0.323 (6 outputs)
+strata pipeline: verdict p=5051 T=4 a=1 B launched (B front 1, A com 1) out 1141 12244
+strata pipeline: chain 2 for p=5053 T=4: B T=2 p_on 0.309 (6 outputs)
+strata pipeline: verdict p=5053 T=4 a=2 B launched (B front 1, A com 1) out 13224 11 440
+strata pipeline: chain 2 for p=5056 T=1: B T=4 p_on 0.497 (4 outputs)
+strata pipeline: verdict p=5056 T=1 a=0 B launched (B front 0+, A com 1) out 795
+strata pipeline: chain 2 for p=5057 T=4: B T=4 p_on 0.298 (7 outputs)
+strata pipeline: verdict p=5057 T=4 a=0 B launched (B front 0+, A com 1) out 5642
+strata pipeline: chain 2 for p=5058 T=4: B T=3 p_on 0.581 (7 outputs)
+strata pipeline: verdict p=5058 T=4 a=3 B launched ON (B front 0+, A com 1) out 1881 7176 4417 46120
+strata pipeline: chain 1 for p=5062 T=3: B T=1 p_on 0.000 (4 outputs)
+strata pipeline: verdict p=5062 T=3 a=0 B none (B front 0, A com 0) out 21360
+strata pipeline: chain 2 for p=5063 T=4: B T=4 p_on 0.503 (7 outputs)
+strata pipeline: verdict p=5063 T=4 a=2 B launched (B front 0+, A com 1) out 4598 1056 21998
+strata pipeline: chain 2 for p=5066 T=4: B T=4 p_on 0.507 (7 outputs)
+strata pipeline: verdict p=5066 T=4 a=3 B launched (B front 0+, A com 1) out 23683 3806 466 13984
+strata pipeline: chain 2 for p=5070 T=4: B T=4 p_on 0.753 (7 outputs)
+strata pipeline: verdict p=5070 T=4 a=2 B launched (B front 0+, A com 1) out 4534 75907 2528
+strata pipeline: chain 2 for p=5073 T=4: B T=2 p_on 0.995 (6 outputs)
+strata pipeline: verdict p=5073 T=4 a=3 B launched (B front 1, A com 1) out 13 198 9 256
+strata pipeline: verdict p=5077 T=3 a=1 B launched (B front 0+, A com 1) out 2972 60676
+strata pipeline: chain 2 for p=5079 T=4: B T=4 p_on 0.286 (7 outputs)
+strata pipeline: verdict p=5079 T=4 a=0 B launched (B front 0+, A com 1) out 5972
+strata pipeline: chain 2 for p=5080 T=3: B T=4 p_on 0.339 (6 outputs)
+strata pipeline: verdict p=5080 T=3 a=2 B launched (B front 0+, A com 1) out 13 14121 26566
+strata pipeline: chain 2 for p=5083 T=4: B T=4 p_on 0.516 (7 outputs)
+strata pipeline: verdict p=5083 T=4 a=3 B launched (B front 0+, A com 1) out 286 64700 561 1510
+strata pipeline: chain 2 for p=5087 T=4: B T=1 p_on 0.661 (5 outputs)
+strata pipeline: verdict p=5087 T=4 a=0 B launched (B front 1, A com 1) out 3771
+strata pipeline: chain 2 for p=5088 T=3: B T=2 p_on 0.275 (5 outputs)
+strata pipeline: verdict p=5088 T=3 a=1 B launched (B front 0+, A com 1) out 63 6047
+strata pipeline: chain 2 for p=5090 T=1: B T=2 p_on 0.230 (3 outputs)
+strata pipeline: verdict p=5090 T=1 a=0 B launched (B front 0+, A com 1) out 7314
+strata pipeline: chain 2 for p=5091 T=4: B T=4 p_on 0.232 (7 outputs)
+strata pipeline: verdict p=5091 T=4 a=1 B launched (B front 0+, A com 1) out 4603 6000
+strata pipeline: chain 2 for p=5093 T=4: B T=4 p_on 0.566 (7 outputs)
+strata pipeline: verdict p=5093 T=4 a=3 B launched ON (B front 0+, A com 1) out 20791 3018 383 1845
+strata pipeline: chain 1 for p=5097 T=4: B T=2 p_on 0.000 (6 outputs)
+strata pipeline: verdict p=5097 T=4 a=2 B none (B front 0, A com 0) out 18588 1354 321
+strata pipeline: chain 2 for p=5100 T=1: B T=4 p_on 0.399 (4 outputs)
+strata pipeline: verdict p=5100 T=1 a=0 B launched ON (B front 0+, A com 1) out 6009
+strata pipeline: chain 1 for p=5101 T=4: B T=1 p_on 0.296 (5 outputs)
+strata pipeline: verdict p=5101 T=4 a=0 B launched (B front 1, A com 1) out 5353
+strata pipeline: chain 2 for p=5102 T=1: B T=4 p_on 0.239 (4 outputs)
+strata pipeline: verdict p=5102 T=1 a=0 B launched (B front 0+, A com 1) out 9888
+strata pipeline: chain 2 for p=5103 T=4: B T=4 p_on 0.300 (7 outputs)
+strata pipeline: verdict p=5103 T=4 a=0 B launched (B front 0+, A com 1) out 11
+strata pipeline: chain 2 for p=5104 T=1: B T=1 p_on 0.357 (2 outputs)
+strata pipeline: verdict p=5104 T=1 a=0 B launched (B front 0+, A com 1) out 43195
+strata pipeline: chain 2 for p=5105 T=4: B T=1 p_on 0.717 (5 outputs)
+strata pipeline: verdict p=5105 T=4 a=2 B launched (B front 1, A com 1) out 4694 279 24830
+strata pipeline: chain 2 for p=5108 T=4: B T=3 p_on 0.425 (7 outputs)
+strata pipeline: verdict p=5108 T=4 a=1 B launched (B front 0+, A com 1) out 3575 364
+strata pipeline: chain 2 for p=5110 T=4: B T=4 p_on 0.355 (7 outputs)
+strata pipeline: verdict p=5110 T=4 a=1 B launched (B front 0+, A com 1) out 279 1534
+strata pipeline: chain 2 for p=5112 T=3: B T=1 p_on 0.137 (4 outputs)
+strata pipeline: verdict p=5112 T=3 a=2 B none (B front 0, A com 0) out 6228 13 14121
+strata pipeline: chain 2 for p=5115 T=1: B T=2 p_on 0.371 (3 outputs)
+strata pipeline: verdict p=5115 T=1 a=0 B launched (B front 0+, A com 1) out 39129
+strata pipeline: chain 2 for p=5116 T=3: B T=2 p_on 0.371 (5 outputs)
+strata pipeline: verdict p=5116 T=3 a=2 B launched (B front 1, A com 1) out 628 381 4364
+strata pipeline: chain 2 for p=5119 T=3: B T=4 p_on 0.153 (6 outputs)
+strata pipeline: verdict p=5119 T=3 a=2 B none (B front 0, A com 0) out 539 36588 6000
+strata pipeline: chain 2 for p=5122 T=2: B T=4 p_on 0.231 (5 outputs)
+strata pipeline: verdict p=5122 T=2 a=0 B launched (B front 0+, A com 1) out 14505
+strata serve: prompt 4924 tokens = 0 reused + 4924 read in 2423 ms (2032.3 tok/s), 200 generated in 1685 ms (118.7 tok/s), drafts accepted 110 of 202, 1 checkpoints
+strata serve: expert tiers: GPU 0 hits this request; since the start RAM 0 blobs, files 0 blobs 23359.8 MB read
+strata serve: file tier I/O this request: the OS read 0.2 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room -1.00 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), open, closed in 0 windows so far, 0 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 1 windows, 1 of 2 drafts accepted
+strata serve: front stage: the link ended cleanly
+READY 262144 stop hold holdb
+strata serve: mixed split: waiting for the front stage (PID 96188) to end
+strata serve: mixed split: the front stage ended cleanly
