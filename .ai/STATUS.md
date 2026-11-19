@@ -1,7 +1,7 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0092 (one worktree; fresh builds with the front-stage fix; the IQ3_XXS mixed
-run config and start script for the Human User's agent run). Handoff 0091 deferred.
+Turn holder: **Coding Agent (Tier 1)**, handoff 0093 (mixed pipelined decode collapse on IQ3_XXS: 23 tok/s
+pipelined against about 101 serial). Budget about 1.5 hours, announced. Handoff 0091 still deferred.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -151,5 +151,11 @@ recovered, the watcher stopped the run. Mixed showed the crash case's early sign
 Handoff 0091 deferred (Human User, 2026-11-19): first a real agent run on Qwen3.8-Flash-Next IQ3_XXS, mixed. Handoff
 0092: one worktree (`/home/chris/workspace/Strata-heterogeneous`), `build-0092-*` with the fix, and the run files from
 `mixed_split/tools/make_mixed_config.py` (vanilla's config keys and vanilla's run-script form only).
+
+Report 0092: one worktree, `build-0092-*`, IQ3_XXS run files; short start 114 / 101 tok/s decode (serial). The Human
+User's agent work: mixed serial 106 tok/s median against vanilla HIP-only pipelined 120; mixed with
+`--pipeline-windows 2` collapses to 23 tok/s (also with the right ROCm libraries; `make_mixed_config.py` now takes
+`lib_dirs` from the build and `check_launch.py` refuses a mismatched ROCm, `67a1f19a`). Handoff 0093 (Tier 1)
+investigates and fixes the pipelined collapse.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
