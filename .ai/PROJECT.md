@@ -2,6 +2,12 @@
 
 Read this file at the start of every turn. The collaboration protocol is `.ai/WORKFLOW.md`.
 
+> **FIRST RULE — `HSA_ENABLE_SDMA=0` in EVERY run, no exceptions.** SDMA has a known bug in the AMD driver. Every
+> process that touches a GPU runs with `HSA_ENABLE_SDMA=0`: servers, engines, the front stage, vision helpers, test
+> binaries and CTest (`mixed_split/tools/ctest_sdma_off.sh`), probes and one-off scripts. Every run config's `"env"`
+> has `"HSA_ENABLE_SDMA": "0"`; `check_launch.py` refuses a config without it, and the tools refuse any other value in
+> the shell. A run without it is invalid: its results are discarded and the report says so. Every report confirms it.
+
 ## What this project is
 
 Strata running one model across an NVIDIA card (CUDA) and AMD cards (HIP) at the same time. The fork is
@@ -91,8 +97,8 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   - Before the first GPU run and after the last, record the kernel log lines matching
     `amdgpu|gfxhub|GCVM|MES|page fault|segfault|general protection|Bad page|Oops|rcu.*stall`, `coredumpctl list` since
     boot, and the boot ID (`/proc/sys/kernel/random/boot_id`).
-  - **Every GPU process runs with `HSA_ENABLE_SDMA=0`**, test binaries included (CTest: export it first). Each report
-    says so, and records swap use (`free -m`) before and after.
+  - The first rule (top of this file): `HSA_ENABLE_SDMA=0`. Each report confirms it, and records swap use (`free -m`)
+    before and after.
   - **After any pause in a turn** (a usage limit, a wait for the Human User), compare the boot ID before the next GPU
     run. A different boot ID means the machine was restarted: run nothing more, and report it.
   - A new GPU fault line, a crash outside the run, or a reboot ends the handoff.

@@ -34,6 +34,11 @@ def fail(message):
 
 
 def check_config(cfg):
+    if str((cfg.get('env') or {}).get('HSA_ENABLE_SDMA')) != '0':
+        fail('the config\'s "env" must have "HSA_ENABLE_SDMA": "0" (.ai/PROJECT.md, the first rule: SDMA has a known bug '
+             'in the AMD driver)')
+    if os.environ.get('HSA_ENABLE_SDMA') not in (None, '0'):
+        fail(f'HSA_ENABLE_SDMA={os.environ["HSA_ENABLE_SDMA"]} in this shell: unset it or set it to 0 (.ai/PROJECT.md)')
     head = git('rev-parse', 'HEAD').stdout.strip()
     if source_changed('HEAD'):
         fail('the checkout has uncommitted source changes: commit or stash them, rebuild, and stamp the builds')

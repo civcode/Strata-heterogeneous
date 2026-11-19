@@ -29,7 +29,9 @@ import argparse, base64, json, os, signal, subprocess, sys, time, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
-FAULTS = ('xid', 'gfxhub', 'gcvm', 'gpu fault', 'page fault', 'amdgpu: ring', 'gpu reset')
+sys.path.insert(0, HERE)
+from mixed_split_common import force_sdma_off  # noqa: E402
+FAULTS = ('xid', 'gfxhub', 'gcvm', 'gpu fault', 'page fault', 'amdgpu: ring', 'gpu reset', 'bad page', 'oops', 'general protection')
 DEFAULTS = dict(STRATA_DATA='/home/chris/workspace/Strata-data', STRATA_MODEL_DIR='/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF',
                 STRATA_PROFILE='/home/chris/workspace/Strata/data/expert-profile.bin', STRATA_VANILLA='/home/chris/workspace/Strata',
                 ROCM_LIB='/opt/rocm/core-10.1/lib', HSA_ENABLE_SDMA='0', HIP_VISIBLE_DEVICES='0,1')
@@ -122,7 +124,7 @@ def main():
     a = ap.parse_args()
     run = os.path.abspath(a.run)
     os.makedirs(run, exist_ok=True)
-    env = dict(DEFAULTS, **os.environ)
+    env = force_sdma_off(dict(DEFAULTS, **os.environ))   # .ai/PROJECT.md, the first rule
     from strata_tokenizer import Tokenizer
     tk = Tokenizer.from_gguf(env['STRATA_MODEL_DIR'] + '/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf')
     prompts = json.load(open(a.prompts or os.path.join(run, 'prompts.json')))

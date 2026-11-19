@@ -15,7 +15,7 @@ import json, os, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
-from mixed_split_common import expand  # noqa: E402
+from mixed_split_common import expand, force_sdma_off  # noqa: E402
 from check_launch import check_config  # noqa: E402
 
 FAULTS = ('xid', 'gfxhub', 'gcvm', 'gpu fault', 'page fault', 'amdgpu: ring', 'gpu reset')
@@ -60,7 +60,6 @@ def main():
         out += ['--layer-split', str(cfg['layer_split'])]
     argv = [cfg['exe'], '--serve'] + out + add
     env.update({k: str(v) for k, v in cfg.get('env', {}).items()})
-    env.setdefault('HSA_ENABLE_SDMA', '0')
     if cfg.get('gpu') and cfg.get('backend') == 'hip':
         env['HIP_VISIBLE_DEVICES'] = ','.join(str(g) for g in cfg['gpu'])
     if cfg.get('lib_dirs'):
@@ -68,6 +67,7 @@ def main():
     for kv in env_kv:
         k, v = kv.split('=', 1)
         env[k] = v
+    force_sdma_off(env)                                  # .ai/PROJECT.md, the first rule
     own = [sys.executable, os.path.join(HERE, 'engine_drive.py'), os.path.join(run, name), os.path.join(run, 'prompts.json'), reqs]
     if '--front-exe' in argv and '--mmap-experts' not in argv:
         own.append('--shared-arena')

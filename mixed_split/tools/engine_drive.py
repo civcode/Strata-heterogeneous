@@ -15,7 +15,7 @@ tokens, memory samples at READY and at the end).  The engine is never signalled:
 import json, os, subprocess, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mixed_split_common import mem_sample, shared_arena  # noqa: E402
+from mixed_split_common import force_sdma_off, mem_sample, shared_arena  # noqa: E402
 
 
 def main():
@@ -35,6 +35,7 @@ def main():
             env[k] = v
             i += 1
         i += 1
+    force_sdma_off(env)                                  # .ai/PROJECT.md, the first rule
     prompts = json.load(open(pj))
     sent, made = {}, {}
 

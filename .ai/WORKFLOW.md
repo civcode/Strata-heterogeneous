@@ -269,6 +269,7 @@ State expected results, not a needlessly prescriptive command list.
 
 ## Constraints
 Important architectural boundaries, interfaces, and user requirements.
+Every handoff with GPU work repeats the project's first rule (`.ai/PROJECT.md`, top): `HSA_ENABLE_SDMA=0` in every run.
 Tier 1: the boundaries within which the agent may make design decisions.
 Tier 2: the files and interfaces the agent may change.
 

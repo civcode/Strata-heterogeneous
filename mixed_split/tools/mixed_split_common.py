@@ -84,3 +84,16 @@ def expand(value, names):
     if isinstance(value, dict):
         return {k: expand(v, names) for k, v in value.items() if not k.startswith("//")}
     return value
+
+
+SDMA_RULE = ("HSA_ENABLE_SDMA must be 0 for every GPU process (.ai/PROJECT.md, the first rule): "
+             "SDMA has a known bug in the AMD driver")
+
+
+def force_sdma_off(env):
+    """Sets HSA_ENABLE_SDMA=0 in `env` (a dict, or os.environ); refuses any other value already there."""
+    v = env.get("HSA_ENABLE_SDMA")
+    if v is not None and v != "0":
+        raise SystemExit(f"HSA_ENABLE_SDMA={v}: refused. " + SDMA_RULE)
+    env["HSA_ENABLE_SDMA"] = "0"
+    return env
