@@ -1,6 +1,6 @@
 # Status
 
-Turn holder: **Human User**: check the RTX 4070 Ti SUPER after its Xid 79, and choose the next direction (see Open decisions).
+Turn holder: **Coding Agent**, handoff `0082` (Tier 2), once the Human User hands it over.
 
 ## Current milestone
 
@@ -25,8 +25,8 @@ Report 0081, Chat AI's review:
   - 11:52: a `strata` and a `strata-vision-hip` from `/home/chris/tmp/Strata/engine/` dumped core.
   - 12:20: the kernel logged NVRM **Xid 79 ("GPU has fallen off the bus") on the RTX 4070 Ti SUPER** (PCI 04:00),
     during an `nvidia-smi` call, then `nvidia-modeset` errors until a reboot.
-  - The agent ran nothing on the GPU after the pause. That card is the front stage's: its health should be checked
-    before the next mixed run.
+  - The agent ran nothing on the GPU after the pause. The Human User states the Xid 79 is unrelated to this project
+    (2026-11-19).
 - No engine change; `check_off_is_vanilla.py` reports 6 of 6. New: a concurrent suite in `serve_session.py`,
   `concurrent_table.py`, `mixed-native.example.json`.
 
@@ -98,17 +98,15 @@ Report 0081, Chat AI's review:
 - 2026-11-19: the shutdown at 23:37 on 18 November was the Human User's; report 0078's results stand.
 - 2026-11-19: do `--batch` and DFlash2 in mixed mode now; the re-pin to vanilla 0.2.16 waits. Chat AI orders DFlash2
   first (production runs one conversation at a time), each with a go/no-go on HIP-only before implementing.
+- 2026-11-19: the NVIDIA Xid 79 is unrelated to this project. Next: the native-pack decode comparison.
 
 ## Open decisions for the Human User
 
-- **The RTX 4070 Ti SUPER's Xid 79** (12:20, outside this project): check the card before the next mixed run.
-- **The next direction.** Chat AI recommends re-pinning to vanilla 0.2.16. Alternatives:
-  - a decode A/B for the native pack, with more samples;
-  - a release-candidate qualification with long-duration runs.
-- **Switch production to the native pack?** Not before that decode A/B.
+- **Switch production to the native pack?** After report 0082.
 
 ## Next step
 
-Depends on the decisions above.
+After report 0082: Chat AI lays out the native-pack decision. Then the re-pin to vanilla 0.2.16 (Chat AI's
+recommendation), or a release-candidate qualification.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
