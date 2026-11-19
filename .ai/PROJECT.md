@@ -15,9 +15,11 @@ Strata running one model across an NVIDIA card (CUDA) and AMD cards (HIP) at the
 3. Builds without the mixed-split option behave exactly as vanilla.
 4. HIP-only (two AMD cards) is plain vanilla Strata with a native layer split. It uses no mixed-split code.
 5. Numerical differences between CUDA and HIP are low priority.
-6. Withdrawn (2026-11-18): the engine hardening from `civcode/strata-dev-private` is no longer carried. The 17 November
-   crash is attributed to a launch config that mixed components from different builds. The hardened line is kept on
-   branch `archive/hardened-0069`; see `.ai/HARDENING.md`.
+6. One labelled divergence from vanilla is carried (Human User, 2026-11-19, after the 19 November crash): private
+   commit `05134f54`, the HIP pinned snapshot readback and conversation-restore preparation (`.ai/HARDENING.md`). It
+   applies to every build, HIP-only included, with or without the mixed-split option. "Vanilla" in points 3 and 4 and
+   in `check_off_is_vanilla.py` means vanilla 0.2.15 plus that commit: branch `base/vanilla-0.2.15-pinned-readback`.
+   The rest of the 2026-11-17 hardening stays withdrawn (`archive/hardened-0069`).
 7. Every process in a launch config runs from one build directory, with that build's libraries. A mixed config names
    exactly two builds, one HIP build for the host and one CUDA build for the front stage, and both are built from
    the same commit of this branch. Check before a run (`mixed_split/tools/check_launch.py`, handoff 0070).
@@ -87,13 +89,15 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   over. It is allowed by default; the Human User intervenes only to refuse it. A handoff may set a lower budget.
 - **Safety checks in every turn with GPU runs:**
   - Before the first GPU run and after the last, record the kernel log lines matching
-    `amdgpu|gfxhub|GCVM|MES|page fault|segfault|general protection`, `coredumpctl list` since boot, and the boot ID
-    (`/proc/sys/kernel/random/boot_id`).
+    `amdgpu|gfxhub|GCVM|MES|page fault|segfault|general protection|Bad page|Oops|rcu.*stall`, `coredumpctl list` since
+    boot, and the boot ID (`/proc/sys/kernel/random/boot_id`).
+  - **Every GPU process runs with `HSA_ENABLE_SDMA=0`**, test binaries included (CTest: export it first). Each report
+    says so, and records swap use (`free -m`) before and after.
   - **After any pause in a turn** (a usage limit, a wait for the Human User), compare the boot ID before the next GPU
     run. A different boot ID means the machine was restarted: run nothing more, and report it.
   - A new GPU fault line, a crash outside the run, or a reboot ends the handoff.
 - Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
-- Long-duration tests (soak, long context, capacity sweeps) are allowed now, for the release-candidate
-  qualification (`.ai/RC.md`): a handoff states each long run's length and the turn's total budget, and Chat AI tells
-  the Human User when it hands it over.
+- Long-duration tests (soak, long context, capacity sweeps) are **on hold** since the 19 November host crash (Human User
+  decision needed to resume). Before the crash: allowed for the release-candidate qualification (`.ai/RC.md`), with
+  each long run's length and the turn's total budget in the handoff.
 - Never compare a traced run with an untraced one.

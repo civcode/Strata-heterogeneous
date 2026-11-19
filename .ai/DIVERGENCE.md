@@ -1,6 +1,6 @@
 # How this branch differs from vanilla
 
-Reference: vanilla Strata 0.2.15 (`c775728`). Kept current by Chat AI; checked with
+Reference: vanilla Strata 0.2.15 (`c775728`), plus the one carried divergence below (`base/vanilla-0.2.15-pinned-readback`). Kept current by Chat AI; checked with
 `python3 mixed_split/tools/check_off_is_vanilla.py` (no GPU, no build).
 
 
@@ -80,10 +80,17 @@ The reasons are Chat AI's reading of the code, not measured.
 - `--layer-split auto` for the host's cards (report 0075). It picks K = 31 on Oberon, against the fixed 33. Vanilla's
   check for a too-small first stage does not cover the host's first stage; hosts with four or more cards are untested.
 
+## Carried divergence from vanilla: HIP pinned snapshot readback
+
+Private commit `05134f54` (`.ai/HARDENING.md`), carried since 2026-11-19 in every build. Reference for the check above:
+`base/vanilla-0.2.15-pinned-readback` (vanilla 0.2.15 plus that commit alone). Against plain vanilla 0.2.15 the branch
+also differs by that commit's files: the snapshot and copy code, the restore preparation in `generate.cpp`, and its
+tests.
+
 ## Not carried
 
-- The `civcode/strata-dev-private` hardening: withdrawn on 2026-11-18 (`.ai/HARDENING.md`); archived on
-  `archive/hardened-0069`.
+- The rest of the `civcode/strata-dev-private` hardening (GPU ownership through shutdown, Phase 10E and 11B): withdrawn
+  on 2026-11-18; archived on `archive/hardened-0069`.
 
 ## Known differences in output
 

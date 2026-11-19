@@ -1,7 +1,20 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0086 (the GPU part of 0085: scaled and full pi-like sessions, probes).
-Budget about 4 hours of GPU time, announced.
+Turn holder: **Coding Agent**, handoff 0087 (the pinned snapshot readback on the cards: builds, its GPU tests, short
+park/restore checks). Budget 30 minutes. Handoff 0086 ended in the 19 November host crash; the RC is blocked.
+
+## The 19 November host crash (handoff 0086)
+
+- 18:01 local, 17 minutes into the full mixed session, at a 214K-token context: right after the probe, the restore of
+  the main conversation gave non-finite logits; the Python server crashed on an invalid pointer and the kernel found
+  overwritten page tables in the HIP engine, then oopsed; the boot ended uncleanly. Evidence and analysis stay with the
+  Human User (private).
+- Chat AI's reading: memory of two processes overwritten from outside them (a GPU or driver, or hardware); the
+  overwritten page-table entries decode as int8 KV-like data; under swap, with the AMD driver repeatedly restoring
+  userptr memory and the GPU paused up to 23 s for it. HSA_ENABLE_SDMA=0 was set. Not proven.
+- Response (Human User, 2026-11-19): carry private commit `05134f54` (HIP pinned snapshot readback) as the one
+  labelled divergence (`.ai/HARDENING.md`); long runs on hold; `HSA_ENABLE_SDMA=0` for every GPU process.
+- Handoff 0086's other results: none reported (the report was not written).
 
 ## Current milestone
 
@@ -113,8 +126,8 @@ qualification uses a synthetic workload shaped like it; model, measurements and 
 
 ## Next step
 
-Handoff 0086 (Coding Agent). Report 0085 was partial: builds `build-0085-*` done, no driver, no GPU runs. Chat AI then
-wrote the driver `agent_session.py` and `agent_table.py` (self-test against a stub passes). Then RC handoff 2: a soak of
-about three hours on the mixed configuration; then `mixed_split/README.md` and the tag `mixed-split-rc1`.
+Handoff 0087 (Coding Agent): the pinned readback on the cards. Then Chat AI reviews and proposes, with the Human User,
+how to qualify again (swap off or low swappiness, the audit of host buffers the GPUs write in mixed mode). The setup
+integration (`./setup.sh` answer 3, `--backend mixed_split`) waits on branch `chat/setup-mixed-split`.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
