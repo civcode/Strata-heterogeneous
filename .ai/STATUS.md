@@ -1,33 +1,38 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0083` (Tier 1), once the Human User hands it over.
+Turn holder: **Coding Agent**, handoff `0084` (Tier 2), once the Human User hands it over.
 
 ## Current milestone
 
-M10: re-pin to vanilla 0.2.16 (`v0.2.16`, `64524fb9`), by merging it into `feature/mixed-native` (handoff 0083).
+M10: re-pinned to vanilla 0.2.16 (report 0083, `a4d3f434`; Partial). Handoff 0084 finishes it and checks the rename on
+the cards.
 
-The native-pack question is answered (report 0082, `9de3c43a`; Partial only because outputs differ between packs).
-
-Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm servers):
-- **Prefill:** the native pack is faster everywhere.
-  - HIP-only: +10.4% / +19.7% / +13.6% (code / long / 16K).
-  - Mixed: +39.6% / +16.3% / +3.0%.
-  - Report 0080's −11.5% on code was a cold-start artefact.
-- **Decode:** the native pack is slower.
-  - Medians HIP-only: −2.6% / −7.4% / −0.6%. Mixed: −8.6% / −7.4% / −11.2%; in mixed mode the code ranges do not
-    overlap.
-  - Where both packs produced identical output, the cost is still there: HIP-only long, first measured request,
-    121.9 against 114.6 tok/s (−6%); mixed 16K, about 162 against 141 to 157 (−3 to −13%).
-  - So it is not just different text. In mixed mode it is larger, which points at the CUDA front stage's decode kernels
-    for the GGUF-form experts (not measured).
-- **Per turn the two cancel out:** for a turn with 5,000 new prompt tokens and 500 generated tokens, the production pack
-  takes 6.08 s and the native 6.12 s in HIP-only, and 5.70 against 5.71 s in mixed mode. Turns heavier in new prompt
-  favour native; turns heavier in output favour production.
-- **Report gaps:** drafts accepted per window are not given, but accepted/offered per request is, and acceptance is
-  similar between packs.
-- **Safety:** boot ID unchanged; no faults or core dumps; 547 s of GPU time. No engine change.
+Report 0083, Chat AI's review:
+- **The merge** (`50450647`, no force-push; the pre-merge head is archived as `archive/mixed-native-0.2.15`) had one
+  conflict: the `<functional>` include in `conversation_cache.hpp`, which vanilla 0.2.16 now includes itself. Git
+  carried every guarded block into `engine/`. With the option off, the six changed vanilla files are vanilla 0.2.16
+  (`check_off_is_vanilla.py`, also run by Chat AI). The branch adds 1,534 lines to 7 vanilla files and deletes none.
+- **Checks passed:**
+  - `mixed_split_tests` 2/2 in every tree;
+  - both mirrors serve;
+  - pipelined against serial exact (300/300 and 200/200), also with forced misses;
+  - the server suites, with a 16K conversation parked and restored, vision and `cvec=0`.
+- **Mixed against production on 0.2.16** (first requests, fresh servers, median of three):
+  - prefill −7.7% / +3.4% / +16.0% (code / long / 16K);
+  - decode +7.4% / +22.8% / +13.2%.
+- **Open:**
+  - all-target builds;
+  - a full audit of the production options on 0.2.16;
+  - prompt reading looks slower on 0.2.16 than in reports 0078 / 0082 (HIP-only long 1,975 against 2,372 tok/s), but
+    under other conditions. Handoff 0084 measures it controlled.
+- **Since report 0083, by Chat AI:**
+  - the rename to `mixed_split` (Human User's request, `740e2bea`). Checked without a GPU: CPU tests, off = vanilla
+    0.2.16, syntax with the option on, the Python tools;
+  - `.ai/PROJECT.md` updated for the 0.2.16 base and layout.
 
 ## History in short
+
+- Report 0083: merged vanilla 0.2.16 (one small conflict); re-checks pass; then renamed `hetero` to `mixed_split`.
 
 - Report 0082: native pack prefill +3 to +40%, decode −1 to −11% (confirmed on identical outputs); per typical turn even.
 
@@ -99,6 +104,7 @@ Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm 
   first (production runs one conversation at a time), each with a go/no-go on HIP-only before implementing.
 - 2026-11-19: the NVIDIA Xid 79 is unrelated to this project. Next: the native-pack decode comparison.
 - 2026-11-19: re-pin to vanilla 0.2.16 next.
+- 2026-11-19: rename every `hetero` to `mixed_split` / `MIXED_SPLIT` in the project's own code.
 
 ## Open decisions for the Human User
 
@@ -107,7 +113,7 @@ Chat AI's review (greedy, six measured requests per pack, prompt and mode, warm 
 
 ## Next step
 
-After report 0083: Chat AI reviews the merge against the contract (`check_off_is_vanilla.py` against `v0.2.16`, the
-hooks' new places) and the re-checks. Then a release-candidate qualification, or the next performance step.
+After report 0084: Chat AI reviews it, and lays out what 0.2.16 means for the production setup. Then a release-candidate
+qualification (`.ai/WORKFLOW.md` Section 12: long-duration runs), or the next performance step.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
