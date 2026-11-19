@@ -1,36 +1,29 @@
 # Status
 
-Turn holder: **Human User**: the production version and the next direction (see Open decisions).
+Turn holder: **Chat AI**, planning the release-candidate qualification; waiting for the Human User's workload details.
 
 ## Current milestone
 
-M10 closed: the branch is vanilla 0.2.16 plus the mixed split (report 0084, `1e6390da`; Partial only for the full
-option audit).
+M11: a release candidate on vanilla 0.2.15, qualified on the Human User's real workload: the pi coding agent with
+256K-token context, several compactions per long session, and a tool-call pruning / compaction extension.
 
-Report 0084, Chat AI's review:
-- **The rename works on the cards:**
-  - every default target built in all five trees;
-  - host CTest 147/147; `mixed_split_tests` and `mixed_split_cache_drop_test` 2/2 on HIP and CUDA;
-  - the mixed mirror served the features suite (16K conversation restored, vision, `cvec=0`, clean shutdown);
-  - pipelined against serial exact.
-- **Vanilla 0.2.16 removed llama.cpp's MMQ prompt kernels** (`engine/CMakeLists.txt`, `docs/AMD_HIP_PERFORMANCE.md`):
-  the MMQ build options are now ignored. HIP-only, the same production arguments, warm blocks, six samples each:
-
-  | Prompt | Prefill, 0.2.15 / 0.2.16 | Decode, 0.2.15 / 0.2.16 |
-  | --- | --- | --- |
-  | Long | 2,744 / 2,202 (−19.8%) | 106.4 / 117.3 (+10%) |
-  | 16K | 3,786 / 3,210 (−15.2%) | 117.7 / 116.2 (−1%) |
-
-  Beyond the spread. MMQ's removal is the likely cause (it was worth about 22% in report 0066), but not isolated. Per
-  turn:
-  - 5,000 new tokens and 500 generated: 6.52 s on 0.2.15, 6.53 s on 0.2.16;
-  - 16,000 and 500: 8.48 s against 9.28 s (+9%).
-- **The option audit** names every production argument's meaning on 0.2.16, but does not compare defaults across
-  versions. Found: `STRATA_SPLIT_OVERLAP=1` has no effect next to `--pipeline-windows 2`.
-- **Safety:** boot ID unchanged, no faults, no core dumps.
-- **Since report 0084, by Chat AI:** `.ai/PROJECT.md` notes the MMQ removal and the inert overlap variable.
+**Back on vanilla 0.2.15** (2026-11-19, the Human User's decision):
+- Production stays on 0.2.15 with MMQ, and the project with it.
+- `feature/mixed-native` was rebuilt from the 0.2.15 head `7d573bee` and force-pushed. The 0.2.16 line (reports 0083
+  and 0084, the merge and the rename on it) is archived as `archive/mixed-native-0.2.16`.
+- On the rebuilt line, Chat AI made the `hetero` → `mixed_split` rename afresh and carried the `.ai/` notes and reports
+  over. `PROJECT.md` and `DIVERGENCE.md` describe the 0.2.15 base.
+- **Checked without a GPU:** CPU tests; `check_off_is_vanilla.py` 6 of 6 against `c775728`; a syntax check with the
+  option on (nothing beyond vanilla 0.2.15's own); the Python tools. `mixed_split/` differs from the 0.2.16 line's only
+  in its layout lines and build paths.
+- **Not yet on the cards:** the build directories must be configured anew (paths moved with the rename). The release
+  candidate's first handoff starts with that.
+- **Kept from the 0.2.16 work:** the finding that 0.2.16 prefill is 15 to 20% slower on HIP-only (MMQ removed, the
+  FP16 path on every layer); already reported upstream by others, so no report from this project.
 
 ## History in short
+
+- 2026-11-19: back on vanilla 0.2.15 (0.2.16 line archived); `mixed_split` rename on 0.2.15.
 
 - Report 0084: rename confirmed on the cards; vanilla 0.2.16 prefill 15 to 20% slower than 0.2.15 with MMQ (HIP-only), decode equal or better.
 
@@ -107,17 +100,19 @@ Report 0084, Chat AI's review:
 - 2026-11-19: the NVIDIA Xid 79 is unrelated to this project. Next: the native-pack decode comparison.
 - 2026-11-19: re-pin to vanilla 0.2.16 next.
 - 2026-11-19: rename every `hetero` to `mixed_split` / `MIXED_SPLIT` in the project's own code.
+- 2026-11-19: production stays on 0.2.15 with MMQ, and the project returns to 0.2.15. The 0.2.16 prefill drop has
+  already been reported upstream. Next: a release candidate, with testing and qualification covering the pi coding-agent
+  workload: 256K context, compactions, tool-call pruning.
 
 ## Open decisions for the Human User
 
-- **Production on 0.2.15 or 0.2.16?** Vanilla's own change; about even for 5K-token turns, about 9% slower on 0.2.16
-  for 16K-token turns.
-- **Report the prefill drop upstream?** Chat AI can draft an issue, following vanilla's `CONTRIBUTING.md`
-  (`[Benchmark]`, a same-day comparison); the Human User posts it.
-- **The next direction:** a release-candidate qualification (long-duration runs), or more performance work.
+- **The release candidate's workload:** how pi and its extension can be driven on Oberon, the compaction settings,
+  whether real sessions may be captured and replayed, and the time for long runs (Chat AI's questions,
+  2026-11-19).
 
 ## Next step
 
-Depends on the decisions above.
+After the Human User's answers: Chat AI writes the release-candidate plan and its first handoff: fresh builds on 0.2.15,
+a workload driver for pi sessions, then the qualification runs.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
