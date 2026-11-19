@@ -1,7 +1,7 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0090 (rerun of 0089 with stop and record patterns separated).
-Budget about 4 hours of GPU time, announced.
+Turn holder: **Coding Agent**, handoff 0091 (the front-stage fix on the cards; non-finite logits with and without
+the patch; the mixed split's memory). Budget about 1.5 hours, announced.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -141,5 +141,11 @@ Report 0089: the mixed session stopped after 3.5 minutes (58 requests, 116K cont
 handoff's `amdgpu` pattern wrongly treated as a stop line; swap 30 MiB sampled, one 418 ms GPU pause, no non-finite
 logits, no fault. Fixed: stop and record patterns in `PROJECT.md`; RC criterion 3 allows swap growth under 1 GiB.
 Handoff 0090 reruns it.
+
+Report 0090: neither session finished. Mixed failed at request 251 ("no checkpoint at 9956 tokens is kept here": the
+front stage's LRU let the host's pinned checkpoint root go; fixed by Chat AI in `8819f09b`, CPU-tested). HIP-only
+(vanilla plus the patch) logged non-finite logits (#879) at request 360 with no memory pressure; vanilla's guard
+recovered, the watcher stopped the run. Mixed showed the crash case's early signs (swap +3.4 GiB, 26 s of GPU pauses,
+7 workqueue warnings); HIP-only did not. Two mixed probes passed as near-ties. Handoff 0091 measures all three.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
