@@ -66,6 +66,7 @@ def add_model_flags(p):
     g.add_argument('--probe-tokens', type=int, default=64)
     g.add_argument('--reasoning-budget', type=int, default=0, help='reasoning_budget_tokens of every request')
     g.add_argument('--max-requests', type=int, default=0, help='stop after this many requests (0: no limit)')
+    g.add_argument('--max-cycle-min', type=float, default=90, help='stop after a cycle exceeding this many minutes (0: no limit)')
 
 
 def finish_flags(a):
@@ -232,6 +233,7 @@ class Session:
             self.corpus, rng, self.ch(300), 'Task: find why the second stage is slow on long prompts and fix it. '
             'Context from the issue follows.\n')}]
         end_after = None
+        cycle_started = time.monotonic()
         while True:
             answer = self.turn % a.answer_every == a.answer_every - 1
             r, _ = self.request(clean(messages), a.answer_tokens if answer else a.tool_tokens,
@@ -253,6 +255,10 @@ class Session:
                 messages = self.compact(messages, log)
                 if messages is None:
                     return
+                if a.max_cycle_min and time.monotonic() - cycle_started > a.max_cycle_min * 60:
+                    self.totals['cycle_limit_stop'] = True
+                    return
+                cycle_started = time.monotonic()
                 if self.totals['compactions'] >= a.compactions:
                     end_after = True
                 continue
@@ -384,7 +390,13 @@ def sample(match):
         s['hip_vram_mib'] = {k: int(v.get('VRAM Total Used Memory (B)', 0)) >> 20 for k, v in j.items()
                              if isinstance(v, dict)}
     except Exception:  # noqa: BLE001
-        pass
+        try:  # ROCm 10 on Oberon supplies amd-smi instead of rocm-smi.
+            out = subprocess.run(['amd-smi', 'metric', '-m', '--json'], capture_output=True, text=True,
+                                 timeout=20, check=True).stdout
+            j = json.loads(out)
+            s['hip_vram_mib'] = {str(g['gpu']): g['mem_usage']['used_vram']['value'] for g in j['gpu_data']}
+        except Exception:  # noqa: BLE001
+            pass
     try:
         mi = dict(l.split(':', 1) for l in open('/proc/meminfo'))
         kb = lambda k: int(mi[k].split()[0])
