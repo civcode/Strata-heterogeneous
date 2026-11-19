@@ -80,7 +80,7 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
 
 ## Project stage and hardware test budget
 
-- Stage: **early development**.
+- Stage: **release candidate** (Human User, 2026-11-19). The qualification is defined in `.ai/RC.md`.
 - Hardware test budget: **up to 30 minutes of GPU run time per handoff** (Human User, 2026-11-18), short prompts,
   runs sequential, never two GPU jobs at once. Every single run stays under 2 minutes unless the handoff says otherwise.
 - A handoff that expects more than 30 minutes states its budget, and Chat AI tells the Human User when it hands it
@@ -93,6 +93,7 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
     run. A different boot ID means the machine was restarted: run nothing more, and report it.
   - A new GPU fault line, a crash outside the run, or a reboot ends the handoff.
 - Run evidence (logs, JSON) that a report cites goes under `.ai/runs/<iteration>-<name>/`, never at the top level.
-- Long-duration tests (soak, long context, capacity sweeps, the 160 tok/s qualification) wait for
-  release-candidate state and an explicit request from the Human User.
+- Long-duration tests (soak, long context, capacity sweeps) are allowed now, for the release-candidate
+  qualification (`.ai/RC.md`): a handoff states each long run's length and the turn's total budget, and Chat AI tells
+  the Human User when it hands it over.
 - Never compare a traced run with an untraced one.

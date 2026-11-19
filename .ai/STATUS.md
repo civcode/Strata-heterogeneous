@@ -1,11 +1,13 @@
 # Status
 
-Turn holder: **Chat AI**, planning the release-candidate qualification; waiting for the Human User's workload details.
+Turn holder: **Coding Agent**, handoff 0085 (RC qualification, part 1: builds, the pi-like session driver, one full
+256K session per configuration). Budget about 4 hours of GPU time, announced.
 
 ## Current milestone
 
 M11: a release candidate on vanilla 0.2.15, qualified on the Human User's real workload: the pi coding agent with
-256K-token context, several compactions per long session, and a tool-call pruning / compaction extension.
+256K-token context, several compactions per long session, and a tool-call pruning / compaction extension. The
+qualification uses a synthetic workload shaped like it; model, measurements and pass criteria are in `.ai/RC.md`.
 
 **Back on vanilla 0.2.15** (2026-11-19, the Human User's decision):
 - Production stays on 0.2.15 with MMQ, and the project with it.
