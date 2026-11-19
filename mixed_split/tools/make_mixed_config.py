@@ -16,7 +16,8 @@ It is only read.  The two files written into this checkout have exactly vanilla'
               of the experts in RAM);
       "env": `"HSA_ENABLE_SDMA": "0"` (.ai/PROJECT.md, the first rule);
       "vision": this checkout's `build-<tag>-vision-hip` / `-vision-cpu` helpers;
-      "cwd": this checkout; "log": `strata-<name>.log` here (vanilla's place); "parallel": 1.
+      "cwd": this checkout; "log": `strata-<name>.log` here (vanilla's place); "parallel": 1;
+      "lib_dirs": the ROCm `build-<tag>-hip` was configured with (its CMakeCache), not the vanilla engine's.
   - `run-<name>.sh`: vanilla's `write_run_script` form (`cd` here, `exec` the venv's python on `serve/server.py
     --engine strata --config ... --port ...`, `--open` unless the config says `"open_browser": false`).
 The launch check (`check_launch.py`) runs on the result before anything is written; a config that fails it is not
@@ -63,6 +64,13 @@ def convert(cfg: dict, repo: Path, tag: str, name: str, front_layers: int, port=
         notes.append("added --mmap-experts (otherwise the host and the front stage would each load the experts into RAM)")
     out["args"] = kept + ["--front-exe", str(cuda), "--front-layers", str(front_layers)]
     out["exe"] = str(hip)
+    from check_launch import build_rocm_lib
+    lib = build_rocm_lib(hip.parent)                  # the ROCm the build was made with, not the vanilla engine's
+    if lib and out.get("lib_dirs") != [lib]:
+        notes.append(f"lib_dirs {out.get('lib_dirs')} -> [{lib!r}] (the ROCm build-{tag}-hip was built with)")
+        out["lib_dirs"] = [lib]
+    elif not lib:
+        notes.append(f"lib_dirs kept as {out.get('lib_dirs')}: build-{tag}-hip names no ROCm (check it matches the build)")
     out["cwd"] = str(repo)
     out["log"] = str(repo / f"strata-{name}.log")
     out["layer_split"] = cfg.get("layer_split") or "auto"

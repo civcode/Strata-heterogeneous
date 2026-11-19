@@ -33,6 +33,29 @@ def fail(message):
     raise ValueError(message)
 
 
+def rocm_root(values):
+    """The ROCm a HIP build was configured with (its CMakeCache values), resolved; None when the cache names none."""
+    for key in ('CMAKE_HIP_COMPILER_ROCM_ROOT:PATH', 'CMAKE_HIP_COMPILER_ROCM_ROOT:INTERNAL', 'ROCM_PATH:PATH', 'HIP_PATH:PATH',
+                'CMAKE_PREFIX_PATH:UNINITIALIZED', 'CMAKE_PREFIX_PATH:PATH', 'CMAKE_PREFIX_PATH:STRING', 'hip_DIR:PATH'):
+        for part in (values.get(key) or '').split(';'):
+            p = Path(part)
+            while p != p.parent and 'rocm' in str(p) and not (p / 'lib').is_dir():
+                p = p.parent
+            if 'rocm' in str(p) and (p / 'lib').is_dir():
+                return p.resolve()
+    return None
+
+
+def build_rocm_lib(build):
+    """`<root>/lib` of the ROCm this build directory was configured with (make_mixed_config's lib_dirs), or None."""
+    cache = Path(build) / 'CMakeCache.txt'
+    if not cache.is_file():
+        return None
+    values = dict(l.split('=', 1) for l in cache.read_text().splitlines() if '=' in l and not l.startswith(('#', '//')))
+    root = rocm_root(values)
+    return str(root / 'lib') if root else None
+
+
 def check_config(cfg):
     if str((cfg.get('env') or {}).get('HSA_ENABLE_SDMA')) != '0':
         fail('the config\'s "env" must have "HSA_ENABLE_SDMA": "0" (.ai/PROJECT.md, the first rule: SDMA has a known bug '
@@ -102,6 +125,11 @@ def check_config(cfg):
             lib = Path(words[0]).resolve()
             if not any(lib == root or root in lib.parents for root in allowed):
                 fail(f'{role}: library outside build/system/toolkit: {lib}')
+            # a HIP build loads the ROCm it was built with, not another one under /opt (the run config's lib_dirs)
+            built_rocm = rocm_root(values) if backend in ('hip', 'vision-hip') else None
+            if built_rocm and str(lib).startswith('/opt/rocm') and built_rocm not in lib.parents:
+                fail(f'{role}: loads {lib} from another ROCm than the build used ({built_rocm}); set "lib_dirs" to '
+                     f'["{built_rocm / "lib"}"]')
     host = builds['host']
     if host[1] != 'hip':
         fail('host is not a HIP build')
