@@ -1,16 +1,16 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff `0079` (Tier 1), once the Human User hands it over and confirms the 18 November shutdown.
+Turn holder: **Coding Agent**, handoff `0079` (Tier 1), once the Human User hands it over.
 
 ## Current milestone
 
-M8 reached (report 0078, `5b82ad6d`), pending the Human User's confirmation of the shutdown during the turn.
+M8 reached (report 0078, `5b82ad6d`).
 
 Chat AI's review:
 - **Reboot:** the machine was shut down cleanly at 23:37 on 18 November, while the turn was paused, and booted at 08:01.
   The agent missed it at resume and ran about 14 more GPU minutes before noticing at the final check: no faults, no
-  core dumps. `.ai/PROJECT.md` now checks the boot ID after any pause. If the shutdown was the Human User's, the
-  results stand.
+  core dumps. `.ai/PROJECT.md` now checks the boot ID after any pause. The Human User confirmed the shutdown was
+  theirs (2026-11-19), so the results stand.
 - **Wrong-guess notice:** measured and correctly not added. The front window is always launched before the verdict;
   82 to 89% of wrong guesses find it already ended; the host's undo never waited for it.
 - **Short prompts:** the gap is the CUDA card's own prompt compute, 8.5 ms per layer against about 3.6 ms on an R9700.
@@ -88,10 +88,11 @@ Chat AI's review:
 - 2026-11-18: the next performance step is pipelined decode windows in mixed mode.
 - 2026-11-18: keep `--pipeline-windows 2` in the mixed config. Next, in one handoff: tell the front stage when its
   window is judged wrong, cut the short-prompt fixed cost, overlap prompt chunks across the link.
+- 2026-11-19: the shutdown at 23:37 on 18 November was the Human User's; report 0078's results stand.
 
 ## Open decisions for the Human User
 
-- Confirm that the clean shutdown at 23:37 on 18 November was the Human User's.
+- None.
 
 ## Next step
 
