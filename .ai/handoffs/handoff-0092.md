@@ -14,6 +14,17 @@ directories, the example configs' build paths, and `.ai/` notes. No engine or to
 
 Handoff 0091 is deferred (Human User, 2026-11-19); do not run it.
 
+**Resumed after report 0092 (Human User's decisions, 21:22):**
+- **Work outside `Strata-heterogeneous` is authorized for task 2:** removing the three other worktrees as described
+  there, and writing `/home/chris/workspace/strata-local-archive/`. (The earlier paste prompt's "work only in
+  Strata-heterogeneous" meant: build, generate and run there. Chat AI's wording conflicted with task 2.)
+- **`tools/heterogeneous_pool_probe.cpp`** (untracked, in `Strata-heterogeneous`): move it to
+  `/home/chris/workspace/strata-local-archive/Strata-heterogeneous/tools/heterogeneous_pool_probe.cpp`, then continue
+  with task 3. The untracked run artifacts under `.ai/runs/` stay where they are (local evidence, not sources).
+- Note: `Strata-mixed-native` now shows HEAD `0976fe41` (the pull in the kept worktree moved the shared branch), so its
+  files lag its HEAD and `git status` there shows changes that are only that lag. Do not commit, reset or check out
+  anything in it: archive its untracked non-build files as task 2 says, then `git worktree remove --force` it.
+
 ## Context
 - Read `.ai/PROJECT.md` (the first rule; starting and stopping GPU processes) and `.ai/STATUS.md`.
 - `git worktree list` on Oberon (Human User, 21:07) shows four worktrees, two of them on `feature/mixed-native` (git
@@ -38,7 +49,8 @@ Handoff 0091 is deferred (Human User, 2026-11-19); do not run it.
 1. **Before anything:** the boot ID, kernel log and core dumps (`.ai/PROJECT.md`); `free -m`, `swapon --show`.
 2. **Worktrees** (no GPU). For each worktree other than `/home/chris/workspace/Strata-heterogeneous`:
    - record its HEAD and `git status --porcelain --ignored`;
-   - if it has **modified tracked files**: stop this task for that worktree and report them (do not remove it);
+   - if it has **modified tracked files**: stop this task for that worktree and report them (do not remove it).
+     Exception: `Strata-mixed-native` (see above);
    - copy every untracked or ignored file that is **not** a build product (`build*/`, `.venv/`, `__pycache__/`,
      `*.o`) into `/home/chris/workspace/strata-local-archive/<worktree name>/`, keeping the paths (local run logs
      under `.ai/runs/`, untracked sources such as `tools/heterogeneous_pool_probe.cpp`); list what was copied;
