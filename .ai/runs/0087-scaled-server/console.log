@@ -1,0 +1,151 @@
+serve_mixed: /home/chris/workspace/Strata-heterogeneous/.venv/bin/python /home/chris/workspace/Strata-heterogeneous/serve/server.py --engine strata --config /home/chris/workspace/Strata-heterogeneous/.ai/runs/0087-scaled-server/mixed.json --port 8096
+loading the vision encoder ...
+loading the model (the first start takes a minute or two) ...
+[strata] layer split across GPUs [0, 1] (auto)
+[strata] Drafting: MTP (DFlash2 isn't available in this mode)
+[strata] starting the engine: reading the model's weights ...
+[strata] engine priority: nice +5 (this PC has built-in Radeon graphics that usually draw the desktop; STRATA_ENGINE_NICE=0 turns it off)
+[strata] mapping the experts from the model files (about 38 GB, --mmap-experts): they are not loaded into RAM - the OS file cache reads them as the GPU's expert cache fills and as requests need them.
+         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.
+         Please wait and don't close this window; the server says when it is ready.
+[strata] filling the GPU's expert cache (7680 experts, 9.89 GiB of VRAM) ...
+[strata] almost ready ...
+ready: http://127.0.0.1:8096/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 262144 tokens, images on)
+       open http://127.0.0.1:8096/ in a browser to chat; close this window to stop the model
+[strata] reading the prompt: 2,378 of 2,737 tokens, 1 s so far
+[strata] thinking: 53 of max 128 tokens, 129.8 tok/s, 2 s
+[strata] done: 128 tokens in 3 s (155.4 tok/s) (length, cancel=False)
+#   1 c0 t  0 tool           prompt 2737 cached 0 gen 128 ttft 1.92 pp 1448.7 dec 155.4
+[strata] thinking: 41 of max 128 tokens, 113.0 tok/s, 1 s
+[strata] done: 128 tokens in 1 s (151.1 tok/s) (length, cancel=False)
+#   2 c0 t  1 tool           prompt 3315 cached 2732 gen 128 ttft 0.649 pp 922.8 dec 151.1
+[strata] reading the prompt: 5,834 of 5,839 tokens, 1 s so far
+[strata] done: 104 tokens in 2 s (138.4 tok/s) (stop, cancel=False)
+#   3 c0 t  2 tool           prompt 5839 cached 3310 gen 104 ttft 1.38 pp 1858.2 dec 138.4
+[strata] thinking: 10 of max 128 tokens, 40.0 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (156.3 tok/s) (length, cancel=False)
+#   4 c0 t  3 tool           prompt 7413 cached 5834 gen 128 ttft 0.915 pp 1760.1 dec 156.3
+[strata] reading the prompt: 10,445 of 10,450 tokens, 2 s so far
+[strata] done: 142 tokens in 2 s (155.8 tok/s) (stop, cancel=False)
+#   5 c0 t  4 answer         prompt 10450 cached 7408 gen 142 ttft 1.591 pp 1938.1 dec 155.8
+[strata] reading the prompt: 12,654 of 12,659 tokens, 1 s so far
+[strata] done: 128 tokens in 2 s (135.9 tok/s) (length, cancel=False)
+#   6 c0 t  5 tool           prompt 12659 cached 10445 gen 128 ttft 1.264 pp 1780.9 dec 135.9
+[strata] thinking: 57 of max 128 tokens, 117.9 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (118.3 tok/s) (length, cancel=False)
+#   7 c0 t  6 tool           prompt 12946 cached 12654 gen 128 ttft 0.522 pp 581.2 dec 118.3
+[strata] thinking: 15 of max 128 tokens, 60.0 tok/s, 1 s
+[strata] done: 123 tokens in 2 s (156.2 tok/s) (stop, cancel=False)
+#   8 c0 t  7 tool           prompt 13956 cached 12941 gen 123 ttft 0.87 pp 1196.4 dec 156.2
+[strata] reading the prompt: 10,570 of 12,055 tokens, 3 s so far
+[strata] thinking: 67 of max 128 tokens, 105.6 tok/s, 4 s
+[strata] done: 128 tokens in 5 s (104.7 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#   9 c0 t  8 tool           prompt 12055 cached 2378 gen 128 ttft 3.513 pp 2772.0 dec 104.7
+[strata] thinking: 33 of max 512 tokens, 111.0 tok/s, 1 s
+[strata] done: 179 tokens in 2 s (142.7 tok/s) (stop, cancel=False)
+#  10 c0 t  9 answer         prompt 12681 cached 12050 gen 179 ttft 0.713 pp 911.5 dec 142.7
+[strata] thinking: 26 of max 128 tokens, 104.0 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (113.7 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  11 c0 t 10 tool           prompt 13523 cached 12676 gen 128 ttft 0.816 pp 1065.4 dec 113.7
+[strata] thinking: 34 of max 128 tokens, 101.1 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (114.7 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  12 c0 t 11 tool           prompt 14083 cached 13518 gen 128 ttft 0.672 pp 867.1 dec 114.7
+[strata] thinking: 6 of max 128 tokens, 24.0 tok/s, 1 s
+[strata] done: 85 tokens in 2 s (150.4 tok/s) (stop, cancel=False)
+#  13 c0 t 12 tool           prompt 15655 cached 14078 gen 85 ttft 0.954 pp 1691.3 dec 150.4
+[strata] thinking: 13 of max 128 tokens, 52.0 tok/s, 1 s
+[strata] done: 62 tokens in 1 s (158.0 tok/s) (stop, cancel=False)
+#  14 c0 t 13 tool           prompt 16686 cached 15650 gen 62 ttft 0.896 pp 1186.7 dec 158.0
+[strata] thinking: 5 of max 512 tokens, 20.0 tok/s, 1 s
+[strata] writing a tool call: grep: 164 of max 512 tokens, 153.5 tok/s, 2 s
+[strata] done: 185 tokens in 2 s (155.3 tok/s) (stop, cancel=False)
+#  15 c0 t 14 answer         prompt 17906 cached 16681 gen 185 ttft 0.961 pp 1305.1 dec 155.3
+[strata] thinking: 32 of max 128 tokens, 128.0 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (133.4 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  16 c0 t 15 tool           prompt 18710 cached 17901 gen 128 ttft 0.794 pp 1049.6 dec 133.4
+[strata] reading the prompt: 10,570 of 12,512 tokens, 3 s so far
+[strata] thinking: 81 of max 128 tokens, 146.4 tok/s, 4 s
+[strata] done: 128 tokens in 5 s (145.2 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  17 c0 t 16 tool           prompt 12512 cached 2378 gen 128 ttft 3.648 pp 2795.2 dec 145.2
+[strata] done: 64 tokens in 1 s (123.7 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  18 c0 t 16 probe-pruned   prompt 12543 cached 12507 gen 64 ttft 0.332 pp 115.3 dec 123.7
+[strata] thinking: 40 of max 128 tokens, 141.8 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (134.7 tok/s) (length, cancel=False)
+#  19 c0 t 17 tool           prompt 12818 cached 12507 gen 128 ttft 0.727 pp 440.4 dec 134.7
+[strata] thinking: 55 of max 128 tokens, 111.2 tok/s, 1 s
+[strata] done: 116 tokens in 1 s (136.2 tok/s) (stop, cancel=False)
+#  20 c0 t 18 tool           prompt 13140 cached 12813 gen 116 ttft 0.53 pp 642.6 dec 136.2
+[strata] thinking: 74 of max 512 tokens, 139.3 tok/s, 1 s
+[strata] done: 143 tokens in 1 s (146.0 tok/s) (stop, cancel=False)
+#  21 c0 t 19 answer         prompt 13389 cached 13135 gen 143 ttft 0.484 pp 548.6 dec 146.0
+[strata] thinking: 12 of max 128 tokens, 48.0 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (123.0 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  22 c0 t 20 tool           prompt 14458 cached 13384 gen 128 ttft 0.898 pp 1225.3 dec 123.0
+[strata] reading the prompt: 8 of max 128 tokens, 32.0 tok/s, 1 s
+[strata] done: 53 tokens in 1 s (165.7 tok/s) (stop, cancel=False)
+#  23 c0 t 21 tool           prompt 15690 cached 14453 gen 53 ttft 1.015 pp 1324.4 dec 165.7
+[strata] thinking: 31 of max 128 tokens, 124.0 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (141.0 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  24 c0 t 22 tool           prompt 16507 cached 15685 gen 128 ttft 0.788 pp 1072.5 dec 141.0
+[strata] thinking: 42 of max 128 tokens, 111.3 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (113.3 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  25 c0 t 23 tool           prompt 16983 cached 16502 gen 128 ttft 0.628 pp 793.5 dec 113.3
+[strata] reading the prompt: 10,570 of 16,932 tokens, 3 s so far
+[strata] reading the prompt: 16,931 of 16,932 tokens, 4 s so far
+[strata] thinking: 129 of max 512 tokens, 130.4 tok/s, 5 s
+[strata] done: 255 tokens in 6 s (129.9 tok/s) (stop, cancel=False)
+#  26 c0 t 24 answer         prompt 16932 cached 2378 gen 255 ttft 4.232 pp 3459.8 dec 129.9
+[strata] thinking: 29 of max 128 tokens, 116.0 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (128.8 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  27 c0 t 25 tool           prompt 17636 cached 16927 gen 128 ttft 0.778 pp 944.2 dec 128.8
+[strata] reading the prompt: 20,397 of 20,402 tokens, 1 s so far
+[strata] thinking: 109 of max 128 tokens, 115.2 tok/s, 2 s
+[strata] done: 128 tokens in 3 s (115.8 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  28 c0 t 26 tool           prompt 20402 cached 17631 gen 128 ttft 1.531 pp 1862.2 dec 115.8
+[strata] thinking: 36 of max 128 tokens, 114.8 tok/s, 1 s
+[strata] done: 128 tokens in 2 s (100.1 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  29 c0 t 27 tool           prompt 20967 cached 20397 gen 128 ttft 0.695 pp 848.1 dec 100.1
+[strata] reading the prompt: 26,162 of 26,167 tokens, 2 s so far
+[strata] done: 128 tokens in 3 s (137.2 tok/s) (length, cancel=False)
+#  30 c0 t 28 tool           prompt 26167 cached 20962 gen 128 ttft 2.397 pp 2195.7 dec 137.2
+[strata] done: 64 tokens in 1 s (128.3 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  31 c0 t 28 probe-deep     prompt 26198 cached 26162 gen 64 ttft 0.492 pp 76.9 dec 128.3
+[strata] reading the prompt: 28,461 of 28,466 tokens, 2 s so far
+[strata] done: 120 tokens in 3 s (140.6 tok/s) (stop, cancel=False)
+#  32 c0 t 29 answer         prompt 28466 cached 26162 gen 120 ttft 1.704 pp 1373.6 dec 140.6
+[strata] thinking: 1 of max 128 tokens, 4.0 tok/s, 1 s
+[strata] done: 95 tokens in 2 s (151.0 tok/s) (stop, cancel=False)
+#  33 c0 t 30 tool           prompt 29843 cached 28461 gen 95 ttft 1.016 pp 1396.9 dec 151.0
+[strata] thinking: 46 of max 128 tokens, 123.2 tok/s, 1 s
+[strata] done: 122 tokens in 2 s (129.3 tok/s) (stop, cancel=False)
+#  34 c0 t 31 tool           prompt 30342 cached 29838 gen 122 ttft 0.65 pp 806.5 dec 129.3
+[strata] thinking: 49 of max 512 tokens, 101.3 tok/s, 1 s
+[strata] thinking: 157 of max 512 tokens, 105.6 tok/s, 2 s
+[strata] thinking: 269 of max 512 tokens, 107.8 tok/s, 3 s
+[strata] thinking: 388 of max 512 tokens, 110.3 tok/s, 4 s
+[strata] done: 512 tokens in 5 s (117.0 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  35 c0 t 31 compaction     prompt 30373 cached 30337 gen 512 ttft 0.523 pp 72.2 dec 117.0
+[strata] reading the prompt: 4,658 of 4,663 tokens, 2 s so far
+[strata] writing a tool call: bash: 128 of max 128 tokens, 136.5 tok/s, 3 s
+[strata] done: 128 tokens in 3 s (134.4 tok/s) (length, cancel=False)
+#  36 c1 t  0 tool           prompt 4663 cached 2378 gen 128 ttft 1.598 pp 1447.2 dec 134.4
+[strata] done: 64 tokens in 1 s (130.2 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+#  37 c1 t  0 probe-compacted prompt 4694 cached 4658 gen 64 ttft 0.184 pp 216.5 dec 130.2
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped

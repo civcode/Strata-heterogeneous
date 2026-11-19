@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 173: conversation_readback_test
+1/1 Test #173: conversation_readback_test .......   Passed    0.21 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.22 sec

@@ -1,0 +1,22 @@
+{
+ "probe": ".ai/runs/0087-scaled/probes/probe-deep.json",
+ "why": "deep",
+ "equal": false,
+ "error": null,
+ "live": {
+  "content": "",
+  "reasoning": "The most recent tool output was a bash read... let me check: the last call was `bash` with path `tools/vision/own/cpu_caps.h`, but the output shown was from `tools/test_setup_gyro.py` (from character 1430). Then the next call was `write`",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "",
+  "reasoning": "The most recent tool output was a bash read... let me check: the last call was `bash` with path `src/split/src/card_split.hpp` — wait, the last call was `bash` with path `tools/vision/own/cpu_caps.h`, but the output shown was from `src/split",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "prompt_tokens": 26198,
+ "wall_s": 8.142
+}

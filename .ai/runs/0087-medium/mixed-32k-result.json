@@ -1,0 +1,196 @@
+{
+ "ready_s": 9.019091008000032,
+ "first": {
+  "id": "chatcmpl-f6d40b1bc2984b72a5c4ef0a",
+  "object": "chat.completion",
+  "created": 1795111242,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Summarise the following document in five bullet points.\" Need produce final with five bullet points. Need likely summarize entire provided document. It's long: A770 decode optimization spec plus Strata reference docs. Need five bullets. Need be concise but cover key points. Need"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 32093,
+   "completion_tokens": 64,
+   "total_tokens": 32157,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 32093,
+   "prompt_ms": 7403.4,
+   "prompt_per_token_ms": 0.231,
+   "prompt_per_second": 4334.9,
+   "predicted_n": 64,
+   "predicted_ms": 530.6,
+   "predicted_per_token_ms": 8.291,
+   "predicted_per_second": 120.6,
+   "draft_n": 55,
+   "draft_n_accepted": 38
+  }
+ },
+ "interference": {
+  "id": "chatcmpl-025b53fbde144b5692c5c45f",
+  "object": "chat.completion",
+  "created": 1795111250,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user: \"What is a mutex?\" Need provide explanation. Need final concise but thorough. Define mutex mutual"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 57,
+   "completion_tokens": 24,
+   "total_tokens": 81,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 57,
+   "prompt_ms": 376.6,
+   "prompt_per_token_ms": 6.607,
+   "prompt_per_second": 151.4,
+   "predicted_n": 24,
+   "predicted_ms": 184.0,
+   "predicted_per_token_ms": 7.667,
+   "predicted_per_second": 130.4,
+   "draft_n": 18,
+   "draft_n_accepted": 14
+  }
+ },
+ "second": {
+  "id": "chatcmpl-dfe790cbc29e4bfd84c383e6",
+  "object": "chat.completion",
+  "created": 1795111251,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Now give a one sentence summary.\" They previously asked summarize document in five bullet points? Actually user first: \"Summarise the following document in five bullet points.\" Then assistant output empty? Now user says \"Now give a one sentence summary.\" Need provide one sentence summary. Need"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 32105,
+   "completion_tokens": 64,
+   "total_tokens": 32169,
+   "prompt_tokens_details": {
+    "cached_tokens": 32088
+   }
+  },
+  "timings": {
+   "cache_n": 32088,
+   "prompt_n": 17,
+   "prompt_ms": 169.1,
+   "prompt_per_token_ms": 9.947,
+   "prompt_per_second": 100.5,
+   "predicted_n": 64,
+   "predicted_ms": 486.0,
+   "predicted_per_token_ms": 7.594,
+   "predicted_per_second": 131.7,
+   "draft_n": 54,
+   "draft_n_accepted": 36
+  }
+ },
+ "cvec_off": {
+  "id": "chatcmpl-99fa8f2c213b45a39396efd5",
+  "object": "chat.completion",
+  "created": 1795111251,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user: \"Define a semaphore.\" Need likely concise definition. Need final. Could include computer science definition:"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 56,
+   "completion_tokens": 24,
+   "total_tokens": 80,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 56,
+   "prompt_ms": 354.3,
+   "prompt_per_token_ms": 6.327,
+   "prompt_per_second": 158.1,
+   "predicted_n": 24,
+   "predicted_ms": 190.2,
+   "predicted_per_token_ms": 7.925,
+   "predicted_per_second": 126.2,
+   "draft_n": 16,
+   "draft_n_accepted": 12
+  }
+ },
+ "vision": {
+  "id": "chatcmpl-d6815106164b44c8a9967f77",
+  "object": "chat.completion",
+  "created": 1795111252,
+  "model": "qwen3.8-flash-next-q2_0",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": "We need answer user's request: \"Describe this image.\" Need provide description. Need analyze image. It has white background, black horizontal bars top and bottom? Let's inspect: image likely 600x400? Top black line, bottom black line. Three shapes: blue circle left, red square"
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 318,
+   "completion_tokens": 64,
+   "total_tokens": 382,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 318,
+   "prompt_ms": 519.3,
+   "prompt_per_token_ms": 1.633,
+   "prompt_per_second": 612.4,
+   "predicted_n": 64,
+   "predicted_ms": 496.7,
+   "predicted_per_token_ms": 7.761,
+   "predicted_per_second": 128.9,
+   "draft_n": 52,
+   "draft_n_accepted": 34
+  }
+ },
+ "rc": 0,
+ "elapsed": 21.757520714000293,
+ "fault_lines": []
+}

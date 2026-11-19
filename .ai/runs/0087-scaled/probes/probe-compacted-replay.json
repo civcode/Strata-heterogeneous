@@ -1,0 +1,22 @@
+{
+ "probe": ".ai/runs/0087-scaled/probes/probe-compacted.json",
+ "why": "compacted",
+ "equal": false,
+ "error": null,
+ "live": {
+  "content": "",
+  "reasoning": "The most recent tool output: the edit tool returned a read of `tools/test_setup_gpu_fit.py` (from character 2493). Wait — the edit was on serve/test_web_api_key.py but the output shown was from tools/test_setup_gpu_fit.py. The tool output content is from `tools/test",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "fresh": {
+  "content": "",
+  "reasoning": "The most recent tool output: the edit tool returned a read of `tools/test_setup_gpu_fit.py` (from character 2493). Wait — the edit was on serve/test_web_api_key.py but the output shown is from tools/test_setup_gpu_fit.py. The tool output content is from tools/test_setup",
+  "tool_args": "",
+  "finish": "length",
+  "completion_tokens": 64
+ },
+ "prompt_tokens": 4694,
+ "wall_s": 3.17
+}

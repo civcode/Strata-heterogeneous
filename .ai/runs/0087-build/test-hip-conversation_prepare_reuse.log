@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 165: conversation_prepare_reuse
+1/1 Test #165: conversation_prepare_reuse .......   Passed    0.07 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.07 sec

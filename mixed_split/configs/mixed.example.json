@@ -1,6 +1,6 @@
 {
  "//": "Mixed split on Oberon, the counterpart of hiponly.example.json (the production setup): CUDA layers [0,15) (front stage, the CUDA build), HIP on the two R9700 (host, the HIP build; layer_split auto plans layers [15,48), report 0075). Pipelined windows as in production since report 0077: --pipeline-windows 2 with STRATA_PIPELINE_AUTO=0 and STRATA_MTP_STAGE0=0 (the draft layer on the host's last card); the front stage mirrors the host's first stage (its two verifiers, snapshots and undo). Start with mixed_split/tools/serve_mixed.py; placeholders: mixed_split/configs/README.md.",
- "exe": "${STRATA_REPO}/build-0085-hip/strata",
+ "exe": "${STRATA_REPO}/build-0087-hip/strata",
  "args": [
   "--pack",
   "${STRATA_DATA}/packs/q2_0",
@@ -49,7 +49,7 @@
   "--pipeline-windows",
   "2",
   "--front-exe",
-  "${STRATA_REPO}/build-0085-cuda/strata",
+  "${STRATA_REPO}/build-0087-cuda/strata",
   "--front-layers",
   "15"
  ],
@@ -69,12 +69,12 @@
  "gpus_asked": true,
  "layer_split": "auto",
  "vision": {
-  "exe": "${STRATA_REPO}/build-0085-vision-hip/bin/strata-vision-hip",
+  "exe": "${STRATA_REPO}/build-0087-vision-hip/bin/strata-vision-hip",
   "mmproj": "${STRATA_MODEL_DIR}/mmproj-Qwen3.8-Flash-Next-BF16.gguf",
   "model": "${STRATA_MODEL_DIR}/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
   "gpu": true,
   "max_tokens": 1024,
-  "cpu_exe": "${STRATA_REPO}/build-0085-vision-cpu/bin/strata-vision"
+  "cpu_exe": "${STRATA_REPO}/build-0087-vision-cpu/bin/strata-vision"
  },
  "env": {
   "HSA_ENABLE_SDMA": "0",

@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 172: conversation_prepare_query
+1/1 Test #172: conversation_prepare_query .......   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.06 sec

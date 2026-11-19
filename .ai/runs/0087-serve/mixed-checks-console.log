@@ -1,0 +1,64 @@
+serve_mixed: /home/chris/workspace/Strata-heterogeneous/.venv/bin/python /home/chris/workspace/Strata-heterogeneous/serve/server.py --engine strata --config /home/chris/workspace/Strata-heterogeneous/.ai/runs/0087-serve/mixed-checks/mixed.json --port 8096
+loading the vision encoder ...
+loading the model (the first start takes a minute or two) ...
+[strata] layer split across GPUs [0, 1] (auto)
+[strata] Drafting: MTP (DFlash2 isn't available in this mode)
+[strata] starting the engine: reading the model's weights ...
+[strata] engine priority: nice +5 (this PC has built-in Radeon graphics that usually draw the desktop; STRATA_ENGINE_NICE=0 turns it off)
+[strata] mapping the experts from the model files (about 38 GB, --mmap-experts): they are not loaded into RAM - the OS file cache reads them as the GPU's expert cache fills and as requests need them.
+         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.
+         Please wait and don't close this window; the server says when it is ready.
+[strata] filling the GPU's expert cache (7680 experts, 9.89 GiB of VRAM) ...
+[strata] almost ready ...
+ready: http://127.0.0.1:8096/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 262144 tokens, images on)
+       open http://127.0.0.1:8096/ in a browser to chat; close this window to stop the model
+health {"health": 200, "models": 200, "model_ids": ["qwen3.8-flash-next-q2_0"], "engine": []}
+[strata] thinking capped at 60 of max_tokens 120 to leave room for the answer (budget 64)
+[strata] thinking budget reached (60 tokens): wrapping up the thinking
+[strata] answering: 92 of max 120 tokens, 130.6 tok/s, 1 s
+[strata] done: 120 tokens in 1 s (119.6 tok/s) (length, cancel=False)
+stream {"status": 200, "chunks": 120, "first_chunk_s": 0.0, "s": 1.21, "content": "Sunlight contains all colors of visible light. Molecules in Earth\u2019s atmosphere scatter shorter blue wavelengths more str", "engine": [{"prompt": 63, "reused": 0, "prefill_tps": 209.6, "generated": 60, "decode_tps": 123.3, "prefill_ms": 301}, {"prompt": 141, "reused": 122, "prefill_tps": 382.4, "generated": 42, "decode_tps": 114.7, "prefill_ms": 50}]}
+[strata] thinking capped at 60 of max_tokens 120 to leave room for the answer (budget 64)
+[strata] thinking budget reached (60 tokens): wrapping up the thinking
+[strata] done: 97 tokens in 1 s (125.9 tok/s) (stop, cancel=False)
+nonstream {"status": 200, "s": 0.91, "content": "Cold wind cuts the sea  \nA lighthouse beam sweeps snow  \nShips find safe harbor", "usage": {"prompt_tokens": 63, "completion_tokens": 97, "total_tokens": 160, "prompt_tokens_details": {"cached_tokens": 0}}, "engine": [{"prompt": 63, "reused": 0, "prefill_tps": 276.1, "generated": 60, "decode_tps": 142.1, "prefill_ms": 228}, {"prompt": 141, "reused": 122, "prefill_tps": 381.5, "generated": 19, "decode_tps": 92.6, "prefill_ms": 50}]}
+[strata] thinking capped at 60 of max_tokens 120 to leave room for the answer (budget 64)
+[strata] thinking budget reached (60 tokens): wrapping up the thinking
+[strata] answering: 104 of max 120 tokens, 136.4 tok/s, 1 s
+[strata] done: 120 tokens in 1 s (119.1 tok/s) (length, cancel=False)
+sampled {"status": 200, "s": 1.15, "content": "**Name: \u201cZephyr\u201d**\n\n**Why:** A *zephyr* is a light, gentle wind. For a small sailing boat, that\u2019s a fitting name because", "usage": {"prompt_tokens": 66, "completion_tokens": 120, "total_tokens": 186, "prompt_tokens_details": {"cached_tokens": 0}}, "engine": [{"prompt": 66, "reused": 0, "prefill_tps": 275.5, "generated": 60, "decode_tps": 119.2, "prefill_ms": 240}, {"prompt": 144, "reused": 125, "prefill_tps": 379.0, "generated": 42, "decode_tps": 119.0, "prefill_ms": 50}]}
+[strata] done: 10 tokens in 0 s (124.6 tok/s) (disconnect, cancel=True)
+cancel {"status": 200, "chunks": 8, "first_chunk_s": 0.0, "s": 0.28, "content": "", "engine": [{"prompt": 60, "reused": 0, "prefill_tps": 267.8, "generated": 11, "decode_tps": 124.6, "prefill_ms": 224}]}
+[strata] thinking capped at 60 of max_tokens 120 to leave room for the answer (budget 64)
+[strata] thinking budget reached (60 tokens): wrapping up the thinking
+[strata] done: 86 tokens in 1 s (105.5 tok/s) (stop, cancel=False)
+after_cancel {"status": 200, "s": 0.93, "content": "Red, blue, and yellow.", "usage": {"prompt_tokens": 57, "completion_tokens": 86, "total_tokens": 143, "prompt_tokens_details": {"cached_tokens": 0}}, "engine": [{"prompt": 57, "reused": 0, "prefill_tps": 252.8, "generated": 60, "decode_tps": 101.3, "prefill_ms": 225}, {"prompt": 135, "reused": 116, "prefill_tps": 383.1, "generated": 8, "decode_tps": 154.0, "prefill_ms": 50}]}
+[strata] thinking capped at 60 of max_tokens 120 to leave room for the answer (budget 64)
+[strata] thinking budget reached (60 tokens): wrapping up the thinking
+[strata] answering: 105 of max 120 tokens, 135.7 tok/s, 1 s
+[strata] done: 120 tokens in 1 s (121.8 tok/s) (length, cancel=False)
+turn1 {"status": 200, "s": 1.12, "content": "A refrigerator uses a refrigerant that absorbs heat from the air inside the compartment. The compressor then pumps this ", "usage": {"prompt_tokens": 64, "completion_tokens": 120, "total_tokens": 184, "prompt_tokens_details": {"cached_tokens": 0}}, "engine": [{"prompt": 64, "reused": 0, "prefill_tps": 277.3, "generated": 60, "decode_tps": 128.2, "prefill_ms": 231}, {"prompt": 142, "reused": 123, "prefill_tps": 381.9, "generated": 42, "decode_tps": 113.6, "prefill_ms": 50}]}
+[strata] thinking capped at 60 of max_tokens 120 to leave room for the answer (budget 64)
+[strata] thinking budget reached (60 tokens): wrapping up the thinking
+[strata] answering: 100 of max 120 tokens, 125.7 tok/s, 1 s
+[strata] done: 114 tokens in 1 s (110.2 tok/s) (stop, cancel=False)
+turn2 {"status": 200, "s": 1.13, "content": "It hums because the compressor and fans run periodically to maintain the set temperature. At night it seems louder becau", "usage": {"prompt_tokens": 110, "completion_tokens": 114, "total_tokens": 224, "prompt_tokens_details": {"cached_tokens": 59}}, "engine": [{"prompt": 110, "reused": 59, "prefill_tps": 255.0, "generated": 60, "decode_tps": 118.6, "prefill_ms": 200}, {"prompt": 188, "reused": 169, "prefill_tps": 383.0, "generated": 36, "decode_tps": 98.7, "prefill_ms": 50}]}
+[strata] thinking budget reached (64 tokens): wrapping up the thinking
+[strata] answering: 107 of max 200 tokens, 142.6 tok/s, 1 s
+[strata] done: 200 tokens in 2 s (118.9 tok/s) (length, cancel=False)
+fast_reader {"status": 200, "chunks": 198, "first_chunk_s": 0.0, "s": 1.83, "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho", "engine": [{"prompt": 66, "reused": 0, "prefill_tps": 267.9, "generated": 64, "decode_tps": 135.6, "prefill_ms": 246}, {"prompt": 148, "reused": 129, "prefill_tps": 382.6, "generated": 118, "decode_tps": 111.5, "prefill_ms": 50}]}
+[strata] thinking budget reached (64 tokens): wrapping up the thinking
+[strata] answering: 130 of max 200 tokens, 136.0 tok/s, 1 s
+[strata] done: 200 tokens in 2 s (121.7 tok/s) (length, cancel=False)
+slow_reader {"status": 200, "chunks": 198, "first_chunk_s": 0.0, "s": 9.96, "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho", "engine": [{"prompt": 66, "reused": 61, "prefill_tps": 145.8, "generated": 64, "decode_tps": 139.0, "prefill_ms": 34}, {"prompt": 148, "reused": 129, "prefill_tps": 385.0, "generated": 118, "decode_tps": 114.1, "prefill_ms": 49}]}
+[strata] thinking budget reached (64 tokens): wrapping up the thinking
+[strata] answering: 130 of max 200 tokens, 136.4 tok/s, 1 s
+[strata] done: 200 tokens in 2 s (122.1 tok/s) (length, cancel=False)
+fast_reader2 {"status": 200, "chunks": 198, "first_chunk_s": 0.0, "s": 1.58, "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho", "engine": [{"prompt": 66, "reused": 61, "prefill_tps": 145.9, "generated": 64, "decode_tps": 139.7, "prefill_ms": 34}, {"prompt": 148, "reused": 129, "prefill_tps": 384.8, "generated": 118, "decode_tps": 114.3, "prefill_ms": 49}]}
+[strata] thinking budget reached (64 tokens): wrapping up the thinking
+[strata] answering: 130 of max 200 tokens, 135.9 tok/s, 1 s
+[strata] done: 200 tokens in 2 s (121.9 tok/s) (length, cancel=False)
+slow_reader2 {"status": 200, "chunks": 198, "first_chunk_s": 0.0, "s": 9.97, "content": "The walk begins before the town has fully woken.\n\nThe first light is pale and uncertain, a thin silver line along the ho", "engine": [{"prompt": 66, "reused": 61, "prefill_tps": 143.9, "generated": 64, "decode_tps": 139.0, "prefill_ms": 35}, {"prompt": 148, "reused": 129, "prefill_tps": 382.5, "generated": 118, "decode_tps": 114.3, "prefill_ms": 50}]}
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped

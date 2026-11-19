@@ -1,0 +1,11 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 180: conversation_prepare_device
+1/1 Test #180: conversation_prepare_device ......***Skipped   1.23 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.24 sec
+
+The following tests did not run:
+	180 - conversation_prepare_device (Skipped)

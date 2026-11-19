@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 182: conversation_readback_test
+1/1 Test #182: conversation_readback_test .......   Passed    1.61 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.62 sec

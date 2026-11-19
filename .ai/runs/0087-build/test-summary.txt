@@ -1,0 +1,281 @@
+==== hip conversation_readback_test 2026-11-19T18:53:34+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 173: conversation_readback_test
+1/1 Test #173: conversation_readback_test .......   Passed    0.21 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.22 sec
+exit=0
+==== hip conversation_prepare_reuse 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 165: conversation_prepare_reuse
+1/1 Test #165: conversation_prepare_reuse .......   Passed    0.07 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.07 sec
+exit=0
+==== hip conversation_prepare_contention 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 166: conversation_prepare_contention
+1/1 Test #166: conversation_prepare_contention ...   Passed    0.07 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.07 sec
+exit=0
+==== hip conversation_prepare_wrong-device 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 167: conversation_prepare_wrong-device
+1/1 Test #167: conversation_prepare_wrong-device ...   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.07 sec
+exit=0
+==== hip conversation_prepare_stream 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 168: conversation_prepare_stream
+1/1 Test #168: conversation_prepare_stream ......   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.06 sec
+exit=0
+==== hip conversation_prepare_event 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 169: conversation_prepare_event
+1/1 Test #169: conversation_prepare_event .......   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.06 sec
+exit=0
+==== hip conversation_prepare_second 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 170: conversation_prepare_second
+1/1 Test #170: conversation_prepare_second ......   Passed    0.08 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.09 sec
+exit=0
+==== hip conversation_prepare_device 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 171: conversation_prepare_device
+1/1 Test #171: conversation_prepare_device ......   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.06 sec
+exit=0
+==== hip conversation_prepare_query 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 172: conversation_prepare_query
+1/1 Test #172: conversation_prepare_query .......   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.06 sec
+exit=0
+==== hip conversation_copy_streams_test 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 164: conversation_copy_streams_test
+1/1 Test #164: conversation_copy_streams_test ...   Passed    0.14 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.14 sec
+exit=0
+==== hip conv_cache_test 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 200: conv_cache_test
+1/1 Test #200: conv_cache_test ..................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+exit=0
+==== hip conversation_restore_orchestration_test 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 199: conversation_restore_orchestration_test
+1/1 Test #199: conversation_restore_orchestration_test ...   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+exit=0
+==== hip mixed_split_tests 2026-11-19T18:53:35+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 310: mixed_split_tests
+1/1 Test #310: mixed_split_tests ................   Passed    0.90 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.90 sec
+exit=0
+==== hip mixed_split_cache_drop_test 2026-11-19T18:53:36+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-hip
+    Start 311: mixed_split_cache_drop_test
+1/1 Test #311: mixed_split_cache_drop_test ......   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+exit=0
+==== cuda conversation_readback_test 2026-11-19T18:53:36+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 182: conversation_readback_test
+1/1 Test #182: conversation_readback_test .......   Passed    1.61 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.62 sec
+exit=0
+==== cuda conversation_prepare_reuse 2026-11-19T18:53:38+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 174: conversation_prepare_reuse
+1/1 Test #174: conversation_prepare_reuse .......   Passed    1.33 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.33 sec
+exit=0
+==== cuda conversation_prepare_contention 2026-11-19T18:53:39+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 175: conversation_prepare_contention
+1/1 Test #175: conversation_prepare_contention ...   Passed    2.02 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   2.03 sec
+exit=0
+==== cuda conversation_prepare_wrong-device 2026-11-19T18:53:41+01:00
+1/1 Test #176: conversation_prepare_wrong-device ...***Skipped   1.01 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.01 sec
+
+The following tests did not run:
+	176 - conversation_prepare_wrong-device (Skipped)
+exit=0
+==== cuda conversation_prepare_stream 2026-11-19T18:53:42+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 177: conversation_prepare_stream
+1/1 Test #177: conversation_prepare_stream ......   Passed    1.11 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.12 sec
+exit=0
+==== cuda conversation_prepare_event 2026-11-19T18:53:44+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 178: conversation_prepare_event
+1/1 Test #178: conversation_prepare_event .......   Passed    0.92 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.92 sec
+exit=0
+==== cuda conversation_prepare_second 2026-11-19T18:53:45+01:00
+1/1 Test #179: conversation_prepare_second ......***Skipped   1.38 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.38 sec
+
+The following tests did not run:
+	179 - conversation_prepare_second (Skipped)
+exit=0
+==== cuda conversation_prepare_device 2026-11-19T18:53:46+01:00
+1/1 Test #180: conversation_prepare_device ......***Skipped   1.23 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.24 sec
+
+The following tests did not run:
+	180 - conversation_prepare_device (Skipped)
+exit=0
+==== cuda conversation_prepare_query 2026-11-19T18:53:47+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 181: conversation_prepare_query
+1/1 Test #181: conversation_prepare_query .......   Passed    1.33 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.33 sec
+exit=0
+==== cuda conversation_copy_streams_test 2026-11-19T18:53:49+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 173: conversation_copy_streams_test
+1/1 Test #173: conversation_copy_streams_test ...   Passed    1.31 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.32 sec
+exit=0
+==== cuda conv_cache_test 2026-11-19T18:53:50+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 209: conv_cache_test
+1/1 Test #209: conv_cache_test ..................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+exit=0
+==== cuda conversation_restore_orchestration_test 2026-11-19T18:53:50+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 208: conversation_restore_orchestration_test
+1/1 Test #208: conversation_restore_orchestration_test ...   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+exit=0
+==== cuda mixed_split_tests 2026-11-19T18:53:50+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 366: mixed_split_tests
+1/1 Test #366: mixed_split_tests ................   Passed    0.90 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.90 sec
+exit=0
+==== cuda mixed_split_cache_drop_test 2026-11-19T18:53:51+01:00
+Internal ctest changing into directory: /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+Test project /home/chris/workspace/Strata-heterogeneous/build-0087-cuda
+    Start 367: mixed_split_cache_drop_test
+1/1 Test #367: mixed_split_cache_drop_test ......   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+exit=0
+elapsed_seconds=17
