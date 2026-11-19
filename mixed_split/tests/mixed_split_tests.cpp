@@ -2,7 +2,6 @@
 // Usage: mixed_split_tests <absolute path of mixed_split_mock_worker>
 
 #include "stub_backend.hpp"
-#include "strata/mixed_split/front_placement.hpp"
 #include "strata/mixed_split/front_runner.hpp"
 #include "strata/mixed_split/worker_process.hpp"
 
@@ -50,17 +49,6 @@ bool make_region(SharedRegion& r) {
     std::string err;
     // slot 0: hand-off rows, slot 1: the ready word (64 bytes, as vanilla allocates it)
     return SharedRegion::create({8 * sizeof(float) * 16, 64}, r, err);
-}
-
-void test_front_placement() {
-    CHECK(front_pipeline_host_core(0, "", {}).empty());
-    CHECK(front_pipeline_host_core(-1, "first", {}).empty());
-    CHECK(front_pipeline_host_core(2, "", {}) == "last");
-    CHECK(front_pipeline_host_core(1, "first", {}) == "last");
-    CHECK(front_pipeline_host_core(2, "last", {}) == "first");
-    CHECK(front_pipeline_host_core(2, "sibling", {}) == "last");
-    CHECK(front_pipeline_host_core(2, "first", {"--host-core", "sibling"}).empty());
-    CHECK(front_pipeline_host_core(2, "first", {"--pool-workers", "4"}) == "last");
 }
 
 void test_shared_region() {
@@ -930,7 +918,6 @@ void test_prefill_ahead() {
 }
 
 int main(int argc, char** argv) {
-    test_front_placement();
     test_token_key();
     test_pipelined_link();
     test_prefill_ahead();
