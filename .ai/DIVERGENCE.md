@@ -1,25 +1,30 @@
 # How this branch differs from vanilla
 
-Reference: vanilla Strata 0.2.15 (`c775728`). Kept current by Chat AI; checked with
-`python3 hetero/tools/check_off_is_vanilla.py` (no GPU, no build).
+Reference: vanilla Strata 0.2.16 (`64524fb9`). Checked with
+`.venv/bin/python hetero/tools/check_off_is_vanilla.py` (no GPU, no build).
 
 ## With `STRATA_MIXED_SPLIT` off (the default): vanilla
 
 Every change in a vanilla engine file sits inside `#if defined(STRATA_MIXED_SPLIT)`. With the option off, the six
-changed files read exactly as vanilla after the preprocessor. The branch deletes no vanilla line: it adds 1,537 lines to
-7 vanilla files. The only change outside a guard is the option itself in the top-level `CMakeLists.txt` (12 lines,
-default `OFF`).
+changed engine source/header files read exactly as vanilla after resolving those guards. The branch deletes no vanilla
+line: it adds 1,534 lines to 7 vanilla files. The only change outside a guard is the option in
+`engine/CMakeLists.txt` (12 lines, default `OFF`). CMake itself is reviewed separately from the six-file checker.
 
 ## With `STRATA_MIXED_SPLIT` on: the seam
 
 | File | What it adds | Lines |
 | --- | --- | ---: |
-| `CMakeLists.txt` | The option; `add_subdirectory(hetero)`; the define on `strata_engine`; links `strata_mixed_split` | 12 |
-| `include/strata/core/verify.hpp`, `src/core/verify.cpp` | `Verifier::set_front`: the first local stage forwards each window's run and commit to the front stage. `set_launch_mark`: events around the window graph's launch, for `STRATA_SPLIT_TIMING` only. With `--pipeline-windows`, `pl_launch` and `pl_commit_async` launch and commit the front stage's window of the same parity first | 39 |
-| `include/strata/prefill/prefill.hpp`, `src/prefill/prefill.cpp` | `Prefill::set_remote_out` / `set_remote_in`: a prompt chunk's rows go to, or come from, the shared hand-off instead of a stage in the same process. The fill callback gets the next chunk's size and returns the buffer its rows are in (read-ahead, report 0078) | 69 |
-| `include/strata/core/conversation_cache.hpp` | `ConversationCache::on_drop`: reports each parked conversation the cache lets go (not one taken for a restore) | 25 |
-| `src/program/generate.cpp` | See below | 1,392 |
-| `hetero/` | The seam library (shared region, front link, worker process), its CPU tests, the probe, run configs and tools | 4,628 |
+| `engine/CMakeLists.txt` | The option; adds top-level `hetero/` with an explicit binary directory; the define on `strata_engine`; links `strata_mixed_split` | 12 |
+| `engine/include/strata/core/verify.hpp`, `engine/src/core/verify.cpp` | Verifier front run/commit, pipelined launch/commit and timing hooks | 39 |
+| `engine/include/strata/prefill/prefill.hpp`, `engine/src/prefill/prefill.cpp` | Remote prompt input/output and read-ahead hooks | 69 |
+| `engine/include/strata/core/conversation_cache.hpp` | `ConversationCache::on_drop` for parked conversations discarded by the cache | 22 |
+| `engine/src/program/generate.cpp` | See below | 1,392 |
+| `hetero/` | The seam library, CPU tests, probe, configs and tools | — |
+
+The merge carried the guarded hooks through the `engine/` move; the only textual conflict was the `functional` include,
+which 0.2.16 already supplies unconditionally. No hook was deliberately moved or reshaped. The new vanilla verifier's
+late-fork path remains vanilla. Local exactness and server checks are in report 0083; they do not prove every new
+0.2.16 path is compatible.
 
 What `generate.cpp` adds:
 - **Options:** `--front-exe`, `--front-layers`, `--front-arg` on the host; `--front-stage` on the front stage.
