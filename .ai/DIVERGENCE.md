@@ -59,6 +59,16 @@ What `generate.cpp` adds:
   - `--mmap-experts`, or the host's `--shared-expert-arena`;
   - lookup windows capped at the hand-off's rows.
 
+## Setup (`setup.py`, a vanilla Python file)
+
+`./setup.sh` offers the mixed split as answer 3 of its first question (NVIDIA and AMD cards in one PC) and as
+`--backend mixed_split` / `--front-layers K` (`mixed_split/README.md`). The code is one block marked
+`MIXED_SPLIT (this branch)` plus five marked one- or few-line hooks: the HIP build's `-DSTRATA_MIXED_SPLIT` and stamp,
+`write_setup_config`, the start's file check, the flags and the first question. Without `--backend mixed_split` or
+answer 3, and with no `"mixed_split"` key in a run config, setup does what vanilla does (the HIP build passes
+`-DSTRATA_MIXED_SPLIT=OFF` explicitly; its stamp and source hash are vanilla's). Tests:
+`mixed_split/tests/test_setup_mixed_split.py`; vanilla's `tools/test_setup_*.py` give the same results as on vanilla.
+
 ## Refused in mixed mode (the engine says so at start)
 
 The reasons are Chat AI's reading of the code, not measured.

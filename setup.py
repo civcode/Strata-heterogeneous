@@ -5128,12 +5128,15 @@ def build_engine_hip(gpu, llama, vision="none") -> Path:
     eng.mkdir(exist_ok=True)
     stamp = eng / "BUILD.json"
     meta = json.loads(stamp.read_text(encoding="utf-8")) if stamp.exists() else {}
-    src, vsrc = source_hash(ENGINE_SOURCES), source_hash(VISION_SOURCES)
+    mixed = mixed_hip_wanted(meta)                       # MIXED_SPLIT (this branch): the option, and the front stage's engine
+    if mixed:
+        build_front_engine(llama)
+    src, vsrc = source_hash(ENGINE_SOURCES + (MIXED_SOURCES if mixed else ())), source_hash(VISION_SOURCES)
     archs = sorted(set(gpu.get("archs") or [gpu["arch"]]))
     has_archs = set(archs) <= set(arch_names(meta.get("archs")))
     floor = cpu_floor(cpu_info()[1])                     # "" on an AVX2 CPU: the normal engine
     engine_ok = meta.get("backend") == "hip" and (eng / EXE).exists() and meta.get("src") == src and has_archs and \
-        (meta.get("isa_floor") or "") == floor and not stale_binary(eng / EXE)
+        (meta.get("isa_floor") or "") == floor and not stale_binary(eng / EXE) and bool(meta.get("mixed_split")) == mixed
     vision_ok = vision == "none" or ((eng / VEXE).exists() and meta.get("vision_src") == vsrc and
                                      (vision != "gpu" or ((eng / HVEXE).exists() and set(archs) <= set(arch_names(meta.get("vision_archs"))))))
     if engine_ok and vision_ok:
@@ -5160,6 +5163,7 @@ def build_engine_hip(gpu, llama, vision="none") -> Path:
                 ["-DSTRATA_ENABLE_HIP=ON", "-DSTRATA_ENABLE_CUDA=OFF", "-DSTRATA_BUILD_TESTS=OFF",
                  "-DSTRATA_PREFILL_MMQ=ON", "-DSTRATA_Q6K_EXPERTS=ON", "-DSTRATA_MMQ_KQUANTS=ON", "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(archs),
                  "-DSTRATA_MMQ=OFF",   # without llama.cpp's MMQ, also in a build folder configured before (its cache says ON)
+                 "-DSTRATA_MIXED_SPLIT=" + ("ON" if mixed else "OFF"),   # MIXED_SPLIT (this branch)
                  f"-DCMAKE_HIP_COMPILER={root / 'llvm' / 'bin' / 'clang++'}", f"-DCMAKE_HIP_COMPILER_ROCM_ROOT={root}",
                  "-DCMAKE_PREFIX_PATH=" + ";".join([str(root), *libs]),
                  f"-DCMAKE_HIP_FLAGS=--rocm-path={root} --rocm-device-lib-path={bitcode}",
@@ -5170,7 +5174,7 @@ def build_engine_hip(gpu, llama, vision="none") -> Path:
              "the installed engine is left as it was", "delete the folder build-hip and run this again")
     shutil.copy2(ROOT / "build-hip" / EXE, eng / EXE)
     meta = {"source": "local-hip", "backend": "hip", "version": source_version(), "archs": archs, "vision": "none",
-            "lib_dirs": dirs, "src": src, **({"isa_floor": floor} if floor else {})}
+            "lib_dirs": dirs, "src": src, **({"isa_floor": floor} if floor else {}), **({"mixed_split": True} if mixed else {})}
     if vision != "none":
         return build_vision_hip(eng, stamp, meta, llama, vsrc, archs, vision)
     stamp.write_text(json.dumps(meta, indent=1))
@@ -5260,6 +5264,179 @@ def build_vision_cpu(eng: Path, stamp: Path, meta: dict, llama, vsrc) -> Path:
     stamp.write_text(json.dumps({**meta, "vision": "cpu", "vision_src": vsrc}, indent=1))
     ok(f"engine: {eng / EXE}, image encoder (CPU): {eng / VEXE}")
     return eng
+
+
+# ------------------------------------------------------------------------------------------------ MIXED_SPLIT (this branch)
+# The mixed split (mixed_split/, CMake option STRATA_MIXED_SPLIT, .ai/DIVERGENCE.md): the model's first layers on an NVIDIA
+# card (the "front stage": a CUDA engine in engine-front/) and the rest on two or more AMD cards (the HIP engine in engine/,
+# built with the option).  Linux, a source checkout.  None of this runs unless `--backend mixed_split` is given or the
+# mixed split is chosen at the first question; a run config without the "mixed_split" key is vanilla's.
+MIXED_KEY = "mixed_split"              # the run config's key (not in SETUP_KEYS: a later setup run carries it over)
+MIXED_CHOICE = None                    # True: this run sets the mixed split up; False: this run chose one make of card; None: not asked
+MIXED_FRONT = None                     # this run's NVIDIA card (a gpus() entry), MIXED_LAYERS its layer count
+MIXED_LAYERS = None
+MIXED_FLAGS = ("--front-exe", "--front-layers", "--front-arg")
+MIXED_REFUSED = {"--split-skip-if-fits": 0, "--batch": 1, "--slots": 1, "--peer-device": 1, "--expert-cache-remote": 1}
+MIXED_SOURCES = ("mixed_split/CMakeLists.txt", "mixed_split/include", "mixed_split/src")
+FRONT_DIR = ROOT / "engine-front"
+FRONT_LAYERS_TESTED = 15               # Qwen3.8-Flash-Next, an RTX 4070 Ti SUPER (16 GB) beside two R9700 (reports 0075-0086)
+
+
+def mixed_split_available() -> bool:
+    """The mixed split can be offered: Linux, a source checkout with mixed_split/ (not the app's installer mode)."""
+    return not WIN and sys.platform != "darwin" and not CONTROL and (ROOT / "mixed_split" / "CMakeLists.txt").is_file()
+
+
+def mixed_split_installed() -> bool:
+    """A model of this Strata folder is set up as a mixed split (the first question then offers it as the default)."""
+    for c in home().glob("strata-*.json"):
+        try:
+            if isinstance(json.loads(c.read_text(encoding="utf-8-sig")).get(MIXED_KEY), dict):
+                return True
+        except (OSError, ValueError, AttributeError):
+            pass
+    return False
+
+
+def mixed_split_off() -> None:
+    global MIXED_CHOICE
+    MIXED_CHOICE = False
+
+
+def mixed_split_pick(a, found, amd_ok) -> None:
+    """The mixed split was asked for: the NVIDIA card (the one with the most VRAM), its share of the layers, and every
+    AMD card Strata can use (the host's layer split), unless --gpus names them."""
+    global MIXED_CHOICE, MIXED_FRONT, MIXED_LAYERS
+    if not mixed_split_available():
+        fail("the mixed split (NVIDIA + AMD) is set up from a Strata checkout on Linux", "use --backend hip or --backend cuda")
+    nv = [g for g in found if gpu_problem(g) is None and int(g["arch"]) >= CUDA13_MIN_ARCH]
+    if not nv:
+        fail("the mixed split needs an NVIDIA card Strata can use (RTX 20 or newer)", "use --backend hip")
+    if len(amd_ok) < 2:
+        fail("the mixed split needs two or more AMD cards Strata can use (one AMD card is not supported yet)",
+             "use --backend hip or --backend cuda")
+    MIXED_CHOICE = True
+    MIXED_FRONT = {**max(nv, key=lambda g: (round(g["vram_gb"]), -g["index"])), "nvidia_count": len(found)}
+    if not a.gpus and a.gpu is None:
+        a.gpus = ",".join(str(g["index"]) for g in amd_ok)
+    default = max(2, min(30, round(FRONT_LAYERS_TESTED * float(MIXED_FRONT.get("vram_gb") or 16) / 16)))
+    if a.front_layers is not None:
+        if not 2 <= a.front_layers <= 40:
+            fail("--front-layers takes a number of layers from 2 to 40", f"e.g. --front-layers {default}")
+        MIXED_LAYERS = a.front_layers
+    else:
+        say(f"  Mixed split: the first layers of the model run on {gpu_name(MIXED_FRONT)}, the rest on the AMD cards.")
+        say(f"  Tested: 15 layers on a 16 GB card (Qwen3.8-Flash-Next). Fewer layers leave more of its VRAM for experts.")
+        MIXED_LAYERS = int(ask("Layers on the NVIDIA card?", [str(i) for i in range(2, 41)], str(default), a.yes or a.check))
+    ok(f"mixed split: layers 0-{MIXED_LAYERS - 1} on {gpu_name(MIXED_FRONT)} (CUDA), the rest on AMD GPUs {a.gpus} (HIP); "
+       "experimental (mixed_split/README.md)")
+
+
+def mixed_hip_wanted(meta: dict) -> bool:
+    """The HIP engine is built with STRATA_MIXED_SPLIT: chosen on this run, or (no choice on this run: an update, a
+    re-run for another model) built so before.  With the option on and no --front-exe it runs as vanilla's."""
+    return MIXED_CHOICE is True or (MIXED_CHOICE is None and bool(meta.get("mixed_split")))
+
+
+def build_front_engine(llama, yes=False) -> Path:
+    """The front stage's engine: this source built for CUDA with STRATA_MIXED_SPLIT, into engine-front/ (again only when
+    its source changed).  The NVIDIA card: this run's choice, else the one with the most VRAM."""
+    acquisition.require("an engine build")
+    found = [g for g in gpus() if gpu_problem(g) is None and int(g["arch"]) >= CUDA13_MIN_ARCH]
+    if not found:
+        fail("the mixed split's front stage needs an NVIDIA card Strata can use (nvidia-smi found none)",
+             "check the NVIDIA driver, or set this model up again with --backend hip")
+    nv = MIXED_FRONT or max(found, key=lambda g: (round(g["vram_gb"]), -g["index"]))
+    FRONT_DIR.mkdir(exist_ok=True)
+    stamp = FRONT_DIR / "BUILD.json"
+    meta = json.loads(stamp.read_text(encoding="utf-8")) if stamp.exists() else {}
+    src = source_hash(ENGINE_SOURCES + MIXED_SOURCES)
+    archs = sorted(set(arch_numbers(meta.get("archs"))) | {int(nv["arch"])})
+    floor = cpu_floor(cpu_info()[1])
+    if (FRONT_DIR / EXE).exists() and meta.get("src") == src and int(nv["arch"]) in arch_numbers(meta.get("archs")) and \
+            (meta.get("isa_floor") or "") == floor and not stale_binary(FRONT_DIR / EXE):
+        ok("front-stage engine (NVIDIA) already built")
+        return FRONT_DIR
+    nvcc, vcvars = install_build_tools({**nv, "archs": archs, "toolkit": 13}, yes)
+    bdir = ROOT / "build-front-cuda"
+    say("  Compiling the mixed split's front-stage engine for " + ", ".join(f"sm_{x}" for x in archs)
+        + " (10-20 minutes, once) ...")
+    cmake_build(ROOT, bdir, "strata",
+                ["-DSTRATA_ENABLE_CUDA=ON", "-DSTRATA_ENABLE_HIP=OFF", "-DSTRATA_MIXED_SPLIT=ON", "-DSTRATA_BUILD_TESTS=OFF",
+                 "-DSTRATA_Q6K_EXPERTS=ON", "-DSTRATA_MMQ_KQUANTS=ON", "-DSTRATA_MMQ=OFF",
+                 "-DCMAKE_CUDA_ARCHITECTURES=" + ";".join(str(x) for x in archs), f"-DCMAKE_CUDA_COMPILER={nvcc}",
+                 *toolkit_root_defs(nvcc), *ggml_defs(llama), *host_compiler_defs(True), *engine_defs(archs, 13),
+                 *isa_floor_defs(floor, bdir, meta)], vcvars, "")
+    if stale_binary(bdir / EXE):
+        fail(f"the front-stage build finished without a new engine ({EXE} is version {binary_engine_version(bdir / EXE)}, "
+             f"this source is {source_version()})", f"delete the folder {bdir} and run this again")
+    shutil.copy2(bdir / EXE, FRONT_DIR / EXE)
+    if (bdir / KQ_LIB).exists():
+        shutil.copy2(bdir / KQ_LIB, FRONT_DIR / KQ_LIB)
+    elif (FRONT_DIR / KQ_LIB).exists():
+        (FRONT_DIR / KQ_LIB).unlink()
+    stamp.write_text(json.dumps({"source": "local", "backend": "cuda", "role": "mixed-split front stage",
+                                 "version": source_version(), "archs": archs, "src": src,
+                                 **({"isa_floor": floor} if floor else {})}, indent=1))
+    ok(f"front-stage engine compiled: {FRONT_DIR / EXE}")
+    return FRONT_DIR
+
+
+def mixed_strip(args: list) -> list:
+    """The argument list without the mixed split's own options."""
+    out, i = [], 0
+    while i < len(args):
+        if args[i] in MIXED_FLAGS:
+            i += 2
+            continue
+        out.append(args[i])
+        i += 1
+    return out
+
+
+def mixed_split_config(cfg: dict) -> None:
+    """The run config of a mixed split (write_setup_config, after the earlier config's keys and the person's options are
+    carried over): the front stage's options, and none of the options the engine refuses beside them.  A config of a run
+    that chose one make of card loses them."""
+    if MIXED_CHOICE is True and cfg.get("backend") == "hip":
+        front_args = ["--gpu", str(MIXED_FRONT["index"])] if MIXED_FRONT.get("nvidia_count", 1) > 1 else []
+        cfg[MIXED_KEY] = {"front_exe": str(FRONT_DIR / EXE), "front_layers": int(MIXED_LAYERS),
+                          "front_gpu": MIXED_FRONT["index"], "front_gpu_name": MIXED_FRONT["name"], "front_args": front_args}
+    m = cfg.get(MIXED_KEY)
+    if MIXED_CHOICE is False or cfg.get("backend") != "hip" or not isinstance(m, dict):
+        if cfg.pop(MIXED_KEY, None) is not None or any(x in MIXED_FLAGS for x in cfg.get("args") or []):
+            cfg["args"] = mixed_strip(cfg.get("args") or [])
+            ok("mixed split: off for this model")
+        return
+    if not (isinstance(cfg.get("gpu"), list) and len(cfg["gpu"]) >= 2):
+        warn("mixed split: this model is set up on one AMD card, and the mixed split needs two or more: it runs without it")
+        cfg.pop(MIXED_KEY)
+        cfg["args"] = mixed_strip(cfg.get("args") or [])
+        return
+    args, out, i = mixed_strip([str(x) for x in cfg.get("args") or []]), [], 0
+    while i < len(args):
+        n = MIXED_REFUSED.get(args[i])
+        if n is not None:
+            warn(f"mixed split: {args[i]} is not supported beside it, left out (.ai/DIVERGENCE.md)")
+            i += 1 + n
+            continue
+        out.append(args[i])
+        i += 1
+    out += ["--front-exe", str(m["front_exe"]), "--front-layers", str(m["front_layers"])]
+    for x in m.get("front_args") or []:
+        out += ["--front-arg", str(x)]
+    cfg["args"] = out
+    if (cfg.get("parallel") or 1) > 1:
+        warn("mixed split: one request at a time (parallel requests are not supported beside it yet)")
+        cfg["parallel"] = 1
+    if "qwen3.8" not in str(cfg.get("model_name") or "").lower():
+        warn("mixed split: tested with Qwen3.8-Flash-Next only; this model is untested")
+
+
+def mixed_split_files(cfg: dict) -> list:
+    """The front stage's engine, for the start's check of missing files."""
+    m = cfg.get(MIXED_KEY)
+    return [str(m["front_exe"])] if isinstance(m, dict) and m.get("front_exe") else []
 
 
 # ------------------------------------------------------------------------------------------------ image generation
@@ -7126,6 +7303,7 @@ def write_setup_config(cfg_path: Path, cfg: dict, source: Path | None = None, ex
         carry_user_args({}, cfg, explicit)              # a first install: only what this run's command line sets (nothing to report as kept)
     if after_carry is not None:                        # a check of the finished argument list (the person's own options are in it now)
         after_carry(cfg)
+    mixed_split_config(cfg)                            # MIXED_SPLIT (this branch): the front stage's options, or none
     user_args.stamp(cfg)                               # args_written: what setup wrote, for the next hand-edit check
     if "images" in cfg and cfg["images"] is None:      # --images no (or not downloaded): no image section
         cfg.pop("images")
@@ -7687,9 +7865,14 @@ def _start(cfg_path: Path, port: int | None, gpu: int | list | None = None, open
     component = engine_component.is_reference(cfg["exe"])
     # The server resolves and verifies component engines; the reference itself is not a file.
     files = ([] if component else [cfg["exe"]]) + [a for a in cfg["args"] if a.endswith(".gguf")]
+    files += mixed_split_files(cfg)                    # MIXED_SPLIT (this branch)
     missing = [p for p in files if not Path(p).exists()]
     if missing:
         fail(f"{cfg_path.name} refers to missing files: {missing[0]}", "run it again with --setup to repair")
+    if isinstance(cfg.get(MIXED_KEY), dict):           # MIXED_SPLIT (this branch)
+        m = cfg[MIXED_KEY]
+        ok(f"mixed split: layers 0-{int(m.get('front_layers', 0)) - 1} on {m.get('front_gpu_name', 'the NVIDIA card')} (CUDA), "
+           "the rest on the AMD cards (HIP)")
     keep = {k: v for k, v in (keep or {}).items() if v is not None}
     reserve = keep.pop("vram_reserve_mib", None)       # #493: an engine argument, kept in the config's args
     if reserve is not None:
@@ -9491,10 +9674,14 @@ def main() -> int:
     ap.add_argument("--kv-streaming", choices=["auto", "on", "off"], default="auto",
                     help="from a 64K context: keep the KV cache in RAM and only the attention's window in VRAM (more "
                          "experts fit on the GPU); auto: when the RAM has room for it")
-    ap.add_argument("--backend", choices=["cuda", "hip", "sycl"],
+    ap.add_argument("--front-layers", type=int, metavar="K",
+                    help="--backend mixed_split: the layers on the NVIDIA card (default: 15 on a 16 GB card, scaled by its VRAM)")
+    ap.add_argument("--backend", choices=["cuda", "hip", "sycl"] + ["mixed_split"],   # MIXED_SPLIT (this branch)
                     help="cuda = NVIDIA (default), hip = AMD RX 7900 / 7800 / 7700 XT, RX 9060 XT / 9070 / AI PRO R9700 on "
                          "Linux or Windows (chosen by itself when the PC has no NVIDIA card Strata can use), "
-                         "sycl = Intel Arc, EXPERIMENTAL: Linux, built from source (docs/INTEL_ARC.md)")
+                         "sycl = Intel Arc, EXPERIMENTAL: Linux, built from source (docs/INTEL_ARC.md), "
+                         "mixed_split = an NVIDIA card and two or more AMD cards sharing one model, EXPERIMENTAL: Linux, "
+                         "built from source (mixed_split/README.md)")
     ap.add_argument("--skip-build", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
     if getattr(a, "gguf_dir", None):                   # the person's own files: their finish marks go to Strata's marks/, never beside them
@@ -9666,6 +9853,11 @@ def main() -> int:
     nv_ok = any(gpu_problem(g) is None for g in found)
     if not nv_ok and not amd_ok and a.backend != "hip" and maxwell_note(found):    # #3218: a warning with the way forward
         warn(maxwell_note(found))
+    if a.backend == "mixed_split":                     # MIXED_SPLIT (this branch): the HIP path, with the front stage
+        mixed_split_pick(a, found, amd_ok)
+        a.backend = "hip"
+    elif a.backend in ("cuda", "hip"):
+        mixed_split_off()
     hip = a.backend == "hip" or (a.backend is None and not nv_ok and bool(amd_ok))
     if a.backend is None and nv_ok and amd_ok:
         # both kinds of card: asked (a first run on such a PC used to take NVIDIA without mentioning the Radeon)
@@ -9677,14 +9869,25 @@ def main() -> int:
                                for g in amd_ok)
             + f"   ({'the ready-made AMD engine' if WIN else 'compiled here'}, pictures on"
               " - docs/AMD_HIP.md)")
-        say("  One engine drives the cards of one make: a model is never split across NVIDIA and AMD cards, and two models at the same")
-        say("  time, one on each, is not supported yet.")
+        mixed_offer = mixed_split_available() and len(amd_ok) >= 2   # MIXED_SPLIT (this branch)
+        if mixed_offer:
+            say("  3) Both together: mixed split - the first layers on the NVIDIA card, the rest on the AMD cards")
+            say("     (experimental, this checkout's mixed_split/: compiled here, one request at a time)")
+        else:
+            say("  One engine drives the cards of one make: a model is never split across NVIDIA and AMD cards, and two models at the same")
+            say("  time, one on each, is not supported yet.")
         from strata_control import gpu_fit
         bigger = gpu_fit.other_vendor_note([{**g, "vendor": "nvidia", "usable": gpu_problem(g) is None} for g in found] +
                                            [{**g, "vendor": "amd", "usable": True} for g in amd_ok], "nvidia")
         if bigger:
             say("  " + bigger)
-        hip = ask("Which cards?", ["1", "2"], "1", a.yes or a.check) == "2"
+        which = ask("Which cards?", ["1", "2", "3"] if mixed_offer else ["1", "2"],
+                    "3" if mixed_offer and mixed_split_installed() else "1", a.yes or a.check)
+        hip = which in ("2", "3")
+        if which == "3":
+            mixed_split_pick(a, found, amd_ok)
+        else:
+            mixed_split_off()
         if a.check and not hip:
             say(f"  (the AMD card: {'START-HERE.bat' if WIN else './setup.sh'} --backend hip)")
     cuda_tk = 13                                       # NVIDIA: the toolkit of this model's engine (cuda_choice)
