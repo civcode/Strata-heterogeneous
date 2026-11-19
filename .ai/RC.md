@@ -81,7 +81,8 @@ configurations see exactly the same requests.
 
    In addition, over the whole session: **no `non-finite logits` line** in either server's log.
 3. **Resources:** after the first cycle, VRAM per card grows by less than 1% and available RAM falls by less than
-   2 GiB across the remaining cycles and the soak. No swap use.
+   2 GiB across the remaining cycles and the soak. Swap stays on (Human User, 2026-11-19): swap used grows by less
+   than 1 GiB over a session, and is reported per session with the crash case's other signs (`.ai/PROJECT.md`).
 4. **Performance against production** on the same sessions: session wall time, and decode tok/s at 200K tokens or more.
    - Mixed is expected to be no slower. If it is slower, the RC is not blocked, but the report says by how much, and
      the Human User decides.

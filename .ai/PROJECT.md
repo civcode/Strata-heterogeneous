@@ -94,9 +94,15 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
 - A handoff that expects more than 30 minutes states its budget, and Chat AI tells the Human User when it hands it
   over. It is allowed by default; the Human User intervenes only to refuse it. A handoff may set a lower budget.
 - **Safety checks in every turn with GPU runs:**
-  - Before the first GPU run and after the last, record the kernel log lines matching
-    `amdgpu|gfxhub|GCVM|MES|page fault|segfault|general protection|Bad page|Oops|rcu.*stall`, `coredumpctl list` since
-    boot, and the boot ID (`/proc/sys/kernel/random/boot_id`).
+  - Before the first GPU run and after the last, record the kernel log lines matching the record patterns below,
+    `coredumpctl list` since boot, and the boot ID (`/proc/sys/kernel/random/boot_id`).
+  - **Two kinds of kernel line** (report 0089 stopped on a warning because one pattern, `amdgpu`, matched both):
+    - **Stop patterns** (a fault, corruption or hang): `gfxhub|GCVM|page fault|segfault|general protection|Bad page|
+      Bad swap|Oops|BUG:|rcu.*stall|amdgpu.*(fault|reset|timeout|hang)|ring .* timeout|MES failed|Xid|NVRM`. A new
+      line ends the run cooperatively at once, and the handoff.
+    - **Record patterns** (warnings, the crash case's early signs): everything the stop patterns match, plus
+      `amdgpu|workqueue:.*\[amdgpu\]|restore_userptr_worker|svm_range_restore_work|MES`. Recorded with their times and
+      reported; they do not stop a run. The engine's `paused the GPU` lines are recorded the same way.
   - The first rule (top of this file): `HSA_ENABLE_SDMA=0`. Each report confirms it, and records swap use (`free -m`)
     before and after.
   - **After any pause in a turn** (a usage limit, a wait for the Human User), compare the boot ID before the next GPU
@@ -121,7 +127,8 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   budget in the handoff. Swap stays as configured (on).
 - **The 19 November crash case** (documented, Human User's decision to keep swap on): the host crashed in a long mixed
   session at a 214K-token context, while Linux was swapping (about 8 GB written out, about 39 GB still available) and
-  the AMD driver kept restoring GPU-mapped host memory. Its signs, in the order they appeared:
+  the AMD driver kept restoring GPU-mapped host memory. Its signs, in the order they appeared (the first three are
+  warnings, recorded; the last two are stop lines):
   - kernel: `workqueue: amdgpu_amdkfd_restore_userptr_worker ... hogged CPU` and `svm_range_restore_work ... hogged CPU`;
   - engine: `the graphics driver paused the GPU for N ms ... while Linux moved memory the GPU uses` (up to 23 s);
   - swap use growing during the run;
@@ -129,7 +136,7 @@ Handoff and report numbers continue from the earlier branch (0062 was its last).
   - kernel: `BUG: Bad page map`, an `Oops`, RCU stalls; the boot ended uncleanly.
 
   Every long run records the first three (the kernel lines, the engine's pause lines, swap use from the sampler) and
-  reports them with their times. A `non-finite logits` line, or any kernel line matching the safety patterns, ends
-  the run cooperatively at once. The carried pinned-readback patch (`.ai/HARDENING.md`) is this project's response;
+  reports them with their times. A `non-finite logits` line, or a kernel line matching the stop patterns, ends the run
+  cooperatively at once. The carried pinned-readback patch (`.ai/HARDENING.md`) is this project's response;
   `HSA_USERPTR_FOR_PAGED_MEM=0` (vanilla's `docs/AMD_HIP.md`) is held in reserve.
 - Never compare a traced run with an untraced one.

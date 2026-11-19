@@ -1,6 +1,6 @@
 # Status
 
-Turn holder: **Coding Agent**, handoff 0089 (RC long sessions: mixed full 256K session first, then production).
+Turn holder: **Coding Agent**, handoff 0090 (rerun of 0089 with stop and record patterns separated).
 Budget about 4 hours of GPU time, announced.
 
 ## The 19 November host crash (handoff 0086)
@@ -136,5 +136,10 @@ Human User's decisions (2026-11-19): long runs resume; swap stays on, the crash 
 (`PROJECT.md`); the mixed session first; `HSA_USERPTR_FOR_PAGED_MEM` held in reserve. Handoff 0089 runs the two long
 sessions with a log watcher that stops on non-finite logits or a safety line. The setup integration waits on
 `chat/setup-mixed-split`.
+
+Report 0089: the mixed session stopped after 3.5 minutes (58 requests, 116K context) on a workqueue warning that the
+handoff's `amdgpu` pattern wrongly treated as a stop line; swap 30 MiB sampled, one 418 ms GPU pause, no non-finite
+logits, no fault. Fixed: stop and record patterns in `PROJECT.md`; RC criterion 3 allows swap growth under 1 GiB.
+Handoff 0090 reruns it.
 
 Roadmap: https://claude.ai/artifact/NXCzvkbBJ2Z9fKts6ADRNn
