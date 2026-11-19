@@ -431,6 +431,9 @@ def sample(match):
         kb = lambda k: int(mi[k].split()[0])
         s['mem_available_mib'] = kb('MemAvailable') >> 10
         s['swap_used_mib'] = (kb('SwapTotal') - kb('SwapFree')) >> 10
+        for k in ('Cached', 'Shmem', 'Mlocked', 'AnonPages', 'Unevictable', 'Dirty'):   # report 0090: where the RAM goes
+            if k in mi:
+                s[k.lower() + '_mib'] = kb(k) >> 10
     except Exception:  # noqa: BLE001
         pass
     if match:
@@ -443,6 +446,9 @@ def sample(match):
                 if re.search(match, cmd) and 'agent_session' not in cmd:
                     st = dict(l.split(':', 1) for l in open(f'/proc/{pid}/status'))
                     rss[pid] = {'rss_mib': int(st['VmRSS'].split()[0]) >> 10, 'cmd': cmd[:120]}
+                    for k in ('VmSwap', 'VmLck', 'VmPin', 'RssAnon', 'RssFile', 'RssShmem'):   # report 0090: the breakdown
+                        if k in st:
+                            rss[pid][k.lower() + '_mib'] = int(st[k].split()[0]) >> 10
             except Exception:  # noqa: BLE001
                 pass
         s['rss'] = rss

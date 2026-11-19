@@ -490,6 +490,51 @@ void test_session_ops() {
     CHECK(rc == 0);
 }
 
+// Report 0090: the host pins its checkpoint chain's root (program/conv_cache.hpp) and keeps it however many newer
+// checkpoints come; the front stage must keep its part too.  A parked conversation's parts may go (its image has them).
+void test_session_root_kept() {
+    Pair s;
+    test::BookBackend backend;   // keeps 3 parts
+    int rc = -1;
+    std::string serr;
+    std::thread worker([&] { rc = serve_front(s.worker, backend, serr); });
+    SharedRegion region;
+    CHECK(make_region(region));
+    RemoteFrontStage front(s.host, 5000);
+    std::string err;
+    CHECK(front.hello(test_identity(), region, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    std::vector<int32_t> a = {1, 2};                                                  // the system prompt: the root at 2
+    CHECK(front.prefill(a.data(), 2, 0, true, err));
+    CHECK(front.session(SessionOp::Snapshot, token_key(a.data(), 2), 2, err));
+    for (int32_t t = 3; t <= 8; ++t) {                                                // six more checkpoints of the same chain
+        CHECK(front.prefill(&t, 1, (int64_t) a.size(), true, err));
+        a.push_back(t);
+        CHECK(front.session(SessionOp::Snapshot, token_key(a.data(), (int64_t) a.size()), (int64_t) a.size(), err));
+    }
+    CHECK(backend.book.parts() == 3);
+    CHECK(front.session(SessionOp::Restore, token_key(a.data(), 2), 2, err));         // the root is still there
+    CHECK(backend.book.history() == std::vector<int32_t>(a.begin(), a.begin() + 2));
+    CHECK(!front.session(SessionOp::Restore, token_key(a.data(), 4), 4, err));        // a middle one went
+    CHECK(front.session(SessionOp::Restore, token_key(a.data(), 8), 8, err));         // the newest stayed
+    // park it, fill the store from another conversation: the parked chain's parts go first, and come back with Unpark
+    CHECK(front.session(SessionOp::Park, token_key(a.data(), 8), 8, err));
+    CHECK(front.session(SessionOp::Reset, 0, 0, err));
+    std::vector<int32_t> b;
+    for (int32_t t = 50; t <= 52; ++t) {
+        CHECK(front.prefill(&t, 1, (int64_t) b.size(), true, err));
+        b.push_back(t);
+        CHECK(front.session(SessionOp::Snapshot, token_key(b.data(), (int64_t) b.size()), (int64_t) b.size(), err));
+    }
+    CHECK(!front.session(SessionOp::Restore, token_key(a.data(), 2), 2, err));        // gone from the store ...
+    CHECK(front.session(SessionOp::Unpark, token_key(a.data(), 8), 8, err));          // ... back with the image
+    CHECK(front.session(SessionOp::Restore, token_key(a.data(), 2), 2, err));
+    CHECK(!front.broken());
+    CHECK(front.shutdown(err));
+    worker.join();
+    CHECK(rc == 0);
+}
+
 // Drop: the host's conversation cache let a parked copy go (evicted, superseded, cleared or refused).  The front stage
 // drops its copy, and an open window survives it: the cache can drop entries while the host runs a window.
 void test_session_drop() {
@@ -878,6 +923,8 @@ int main(int argc, char** argv) {
     test_prefill_ahead();
     test_window_runner();
     test_session_ops();
+
+    test_session_root_kept();
     test_session_drop();
     test_session_steer();
     test_image_key();

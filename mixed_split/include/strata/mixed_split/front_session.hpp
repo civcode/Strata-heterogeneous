@@ -182,7 +182,16 @@ public:
     }
 
     // ---- checkpoints of the front stage's session (vanilla's checkpoint chain, one part per host checkpoint)
-    void put_part(int64_t key, int64_t n, Part&& p) { put(parts_, max_parts_, key, n, std::move(p)); }
+    /// When the store is full, the victim follows the host's retention (program/conv_cache.hpp, report 0090): first the
+    /// least recently used part that is not on the live session's chain (a parked conversation's part: its image holds
+    /// a copy, and Unpark puts it back); then the least recently used of the live chain, never its root (the shortest,
+    /// which the host pins) and never the newest; the oldest only as a backstop.  An LRU over all parts let the
+    /// host's pinned root go while the host still held it: "no checkpoint at 9956 tokens is kept here" (report 0090).
+    void put_part(int64_t key, int64_t n, Part&& p) {
+        parts_.remove_if([&](const Entry<Part>& e) { return e.key == key && e.n == n; });   // the same tokens: the newer state
+        parts_.push_back(Entry<Part>{key, n, std::move(p)});
+        while (parts_.size() > max_parts_) parts_.erase(part_victim());
+    }
     Part* find_part(int64_t key, int64_t n) {
         for (auto it = parts_.begin(); it != parts_.end(); ++it)
             if (it->key == key && it->n == n) {
@@ -227,6 +236,20 @@ public:
 private:
     template <class V>
     struct Entry { int64_t key; int64_t n; V v; };
+    bool on_live_chain(const Entry<Part>& e) const {
+        return e.n <= (int64_t) hist_.size() && state_key(hist_.data(), e.n, steer_, imgs_) == e.key;
+    }
+    typename std::list<Entry<Part>>::iterator part_victim() {
+        const auto newest = std::prev(parts_.end());
+        for (auto it = parts_.begin(); it != newest; ++it)          // least recently used first (most recent last)
+            if (!on_live_chain(*it)) return it;
+        auto root = parts_.end();                                   // the live chain's root: its shortest part
+        for (auto it = parts_.begin(); it != parts_.end(); ++it)
+            if (root == parts_.end() || it->n < root->n) root = it;
+        for (auto it = parts_.begin(); it != newest; ++it)
+            if (it != root) return it;
+        return parts_.begin();
+    }
     template <class V>
     static void put(std::list<Entry<V>>& l, size_t cap, int64_t key, int64_t n, V&& v) {
         l.remove_if([&](const Entry<V>& e) { return e.key == key && e.n == n; });   // the same tokens: the newer state
