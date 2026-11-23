@@ -30,6 +30,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from agent_session import sampler  # noqa: E402  (the memory/VRAM sampler)
+import phase_tps  # noqa: E402  (the Human User's phase benchmark, from GET /metrics)
 
 SAMPLING_DROP = ('top_k', 'min_p', 'typical_p', 'repetition_penalty', 'presence_penalty', 'frequency_penalty',
                  'logit_bias', 'n')
@@ -109,6 +110,7 @@ def cmd_run(a):
     if a.sample_s > 0:
         th = threading.Thread(target=sampler, args=(str(out / 'samples.jsonl'), a.sample_s, a.rss_match, stop), daemon=True)
         th.start()
+    pth, pstop, pres = phase_tps.start_collector(a.url.rstrip('/') + '/metrics', str(out / 'phase_samples.jsonl'))
     t_run = time.time()
     errors = 0
     with open(out / 'requests.jsonl', 'w') as h:
@@ -137,9 +139,15 @@ def cmd_run(a):
                   f"cached {line['cached_tokens']} gen {line['completion_tokens']} ttft {line['ttft_s']} "
                   f"dec {line['decode_tok_s']}" + (f" ERROR {res['error']}" if res['error'] else ''), flush=True)
     stop.set()
+    pstop.set()
+    pth.join(timeout=10)
     if th:
         th.join(timeout=30)
     s = summarise(out)
+    if pres.get('stats') and pres['stats'].get('overall')[2]:
+        print(pres['stats'].summary())
+        phase_tps.write_plot([out / 'phase_samples.jsonl'], out / 'phase_tps.html', 30)
+        print(f"plot: {out / 'phase_tps.html'}")
     s.update(recording=os.path.expanduser(a.recording), sampling=a.sampling, pauses=not a.no_pauses,
              pause_scale=a.pause_scale, wall_s=round(time.time() - t_run, 1), errors=errors)
     json.dump(s, open(out / 'summary.json', 'w'), indent=1)
@@ -157,33 +165,43 @@ def summarise(d: Path) -> dict:
           for k in ('reasoning', 'content', 'tool_calls')}
     for v in ph.values():
         v['tok_s'] = round(v['chunks'] / v['seconds'], 2) if v['seconds'] else None
+    metrics = None
+    if (d / 'phase_samples.jsonl').is_file():        # the Human User's measure (GET /metrics), when the run collected it
+        samples = phase_tps.load_samples(d / 'phase_samples.jsonl')
+        metrics = phase_tps.stats_of(samples).as_dict() if samples else None
     return dict(requests=len(rows), generated_tokens=gen, decode_seconds=round(dec_s, 3),
                 engine_decode_tps=round(gen / dec_s, 2) if dec_s else None,
                 draft_acceptance_pct=round(100 * da / dn, 2) if dn else None,
                 prompt_mismatches=sum(1 for r in rows if r['prompt_matches'] is False),
                 ttft_median_s=round(statistics.median([r['ttft_s'] for r in rows if r['ttft_s'] is not None]), 3)
                 if any(r['ttft_s'] is not None for r in rows) else None,
-                phases=ph)
+                phases=ph, metrics_phases=metrics)
 
 
 def cmd_summary(a):
     runs = [(Path(d).name, summarise(Path(d))) for d in a.dirs]
     names = {'reasoning': 'thinking', 'content': 'answering', 'tool_calls': 'writing tool calls'}
+    for _, s in runs:                                 # the phase columns: GET /metrics when collected, else stream chunks
+        m = s.get('metrics_phases')
+        s['_ph'] = ({'reasoning': m['thinking']['tps'], 'content': m['answering']['tps'], 'tool_calls': m['writing tool calls']['tps'],
+                     'overall': m['overall']['tps'], 'src': '/metrics'} if m else
+                    {k: s['phases'][k]['tok_s'] for k in ('reasoning', 'content', 'tool_calls')} | {'overall': None, 'src': 'chunks'})
     lines = ['| run | requests | generated | decode s | engine decode tok/s | draft acceptance % | ttft median s | '
-             'thinking tok/s | answering tok/s | tool calls tok/s | prompt mismatches |', '|' + '---|' * 11]
+             'overall tok/s | thinking tok/s | answering tok/s | tool calls tok/s | phases from | prompt mismatches |', '|' + '---|' * 13]
     for n, s in runs:
-        p = s['phases']
+        p = s['_ph']
         lines.append(f"| {n} | {s['requests']} | {s['generated_tokens']} | {s['decode_seconds']} | {s['engine_decode_tps']} | "
-                     f"{s['draft_acceptance_pct']} | {s['ttft_median_s']} | {p['reasoning']['tok_s']} | {p['content']['tok_s']} | "
-                     f"{p['tool_calls']['tok_s']} | {s['prompt_mismatches']} |")
+                     f"{s['draft_acceptance_pct']} | {s['ttft_median_s']} | {p['overall']} | {p['reasoning']} | {p['content']} | "
+                     f"{p['tool_calls']} | {p['src']} | {s['prompt_mismatches']} |")
     if len(runs) > 1:
         def m(f):
             xs = [f(s) for _, s in runs if f(s) is not None]
             return round(statistics.median(xs), 2) if xs else None
         lines.append(f"| **median** | | | | {m(lambda s: s['engine_decode_tps'])} | {m(lambda s: s['draft_acceptance_pct'])} | "
-                     f"{m(lambda s: s['ttft_median_s'])} | {m(lambda s: s['phases']['reasoning']['tok_s'])} | "
-                     f"{m(lambda s: s['phases']['content']['tok_s'])} | {m(lambda s: s['phases']['tool_calls']['tok_s'])} | |")
-    text = '\n'.join(lines) + '\n\nPhases: tokens counted as stream chunks; ' + ', '.join(f'{k} = {v}' for k, v in names.items()) + '.\n'
+                     f"{m(lambda s: s['ttft_median_s'])} | {m(lambda s: s['_ph']['overall'])} | {m(lambda s: s['_ph']['reasoning'])} | "
+                     f"{m(lambda s: s['_ph']['content'])} | {m(lambda s: s['_ph']['tool_calls'])} | | |")
+    text = ('\n'.join(lines) + '\n\nPhase columns from /metrics: phase_tps.py (the Human User\'s benchmark). From chunks: '
+            'stream chunks counted as tokens. ' + ', '.join(f'{k} = {v}' for k, v in names.items()) + '.\n')
     if a.markdown:
         open(a.markdown, 'w').write(text)
     print(text)
