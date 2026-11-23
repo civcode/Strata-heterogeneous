@@ -1,0 +1,370 @@
+{
+ "all": {
+  "requests": 40,
+  "engine_calls": 42,
+  "generated": 23733,
+  "decode_s": 193.2,
+  "tok_s": 122.8,
+  "prompt_read": 365617,
+  "prompt_s": 123.1,
+  "dt_windows": 9755,
+  "dt_ms": 18.866,
+  "dt_tpw": 2.342,
+  "dt_T": 2.837,
+  "dt_verify": 18.865,
+  "dt_commit": 0.0,
+  "dt_draft": 0.0,
+  "dt_adapt": 0.0,
+  "dt_reach": 0.0,
+  "dt_host": 0.0,
+  "pl_windows": 9755,
+  "pl_spec": 8236,
+  "pl_on": 4456,
+  "pl_rb": 3780,
+  "pl_gate": 1477,
+  "fresh_n": 5299,
+  "spec_n": 4456,
+  "disagree": 1143,
+  "chain_late": 2819,
+  "fresh_ms": 24.258,
+  "fresh_tok": 2.295,
+  "spec_ms": 12.413,
+  "spec_tok": 2.398,
+  "s0_gpu_ms": 7.398,
+  "s1_gpu_ms": 7.811,
+  "s1_head_ms": 1.204,
+  "s0_vramhits_ms": 1.765,
+  "s1_vramhits_ms": 1.621,
+  "fr_kept_ms": 4.689,
+  "fr_undone_ms": 4.588,
+  "fr_windows": 13261,
+  "pl_ready_wait": 4.55,
+  "wg_ended": 3734,
+  "wg_ran": 46,
+  "ser_windows": 393,
+  "ser_ready_wait": 4.273,
+  "ser_s0": 7.732,
+  "ser_s1": 7.851,
+  "ser_link_run": 0.066,
+  "ser_link_commit": 0.032,
+  "link_calls": {
+   "images": [
+    42,
+    0.167,
+    0.01
+   ],
+   "reset": [
+    2,
+    1.6,
+    0.0
+   ],
+   "other session": [
+    122,
+    36.163,
+    4.41
+   ],
+   "prompt chunk (wait)": [
+    66,
+    541.411,
+    35.73
+   ],
+   "PfStart": [
+    66,
+    0.171,
+    0.01
+   ],
+   "PlRun": [
+    13584,
+    0.052,
+    0.71
+   ],
+   "PlCommit": [
+    13584,
+    0.048,
+    0.66
+   ],
+   "PlUndo": [
+    3780,
+    0.029,
+    0.11
+   ]
+  },
+  "park_s": 9.6,
+  "gpu_pause_s": 2.7,
+  "class_ms_check": 183.9,
+  "miss_cost_ms": 11.84
+ },
+ "reasoning": {
+  "requests": 15,
+  "engine_calls": 17,
+  "generated": 6553,
+  "decode_s": 56.7,
+  "tok_s": 115.6,
+  "prompt_read": 138748,
+  "prompt_s": 45.5,
+  "dt_windows": 2991,
+  "dt_ms": 18.962,
+  "dt_tpw": 2.191,
+  "dt_T": 2.686,
+  "dt_verify": 18.962,
+  "dt_commit": 0.0,
+  "dt_draft": 0.0,
+  "dt_adapt": 0.0,
+  "dt_reach": 0.0,
+  "dt_host": 0.0,
+  "pl_windows": 2991,
+  "pl_spec": 2536,
+  "pl_on": 1221,
+  "pl_rb": 1315,
+  "pl_gate": 438,
+  "fresh_n": 1770,
+  "spec_n": 1221,
+  "disagree": 296,
+  "chain_late": 790,
+  "fresh_ms": 23.7,
+  "fresh_tok": 2.137,
+  "spec_ms": 12.029,
+  "spec_tok": 2.269,
+  "s0_gpu_ms": 7.2,
+  "s1_gpu_ms": 7.629,
+  "s1_head_ms": 1.175,
+  "s0_vramhits_ms": 1.684,
+  "s1_vramhits_ms": 1.556,
+  "fr_kept_ms": 4.574,
+  "fr_undone_ms": 4.472,
+  "fr_windows": 4329,
+  "pl_ready_wait": 4.436,
+  "wg_ended": 1295,
+  "wg_ran": 20,
+  "ser_windows": 0,
+  "ser_ready_wait": null,
+  "ser_s0": null,
+  "ser_s1": null,
+  "ser_link_run": null,
+  "ser_link_commit": null,
+  "link_calls": {
+   "images": [
+    17,
+    0.106,
+    0.0
+   ],
+   "other session": [
+    47,
+    38.126,
+    1.79
+   ],
+   "prompt chunk (wait)": [
+    25,
+    513.9,
+    12.85
+   ],
+   "PfStart": [
+    25,
+    0.168,
+    0.0
+   ],
+   "PlRun": [
+    4329,
+    0.051,
+    0.22
+   ],
+   "PlCommit": [
+    4329,
+    0.055,
+    0.24
+   ],
+   "PlUndo": [
+    1315,
+    0.027,
+    0.04
+   ]
+  },
+  "park_s": 3.9,
+  "gpu_pause_s": 1.4,
+  "class_ms_check": 56.6,
+  "miss_cost_ms": 11.67
+ },
+ "content": {
+  "requests": 1,
+  "engine_calls": 1,
+  "generated": 889,
+  "decode_s": 9.2,
+  "tok_s": 96.6,
+  "prompt_read": 24140,
+  "prompt_s": 6.2,
+  "dt_windows": 0,
+  "dt_ms": null,
+  "dt_tpw": null,
+  "dt_T": null,
+  "dt_verify": null,
+  "dt_commit": null,
+  "dt_draft": null,
+  "dt_adapt": null,
+  "dt_reach": null,
+  "dt_host": null,
+  "pl_windows": 0,
+  "pl_spec": 0,
+  "pl_on": 0,
+  "pl_rb": 0,
+  "pl_gate": 0,
+  "fresh_n": 0,
+  "spec_n": 0,
+  "disagree": 0,
+  "chain_late": 0,
+  "fresh_ms": null,
+  "fresh_tok": null,
+  "spec_ms": null,
+  "spec_tok": null,
+  "s0_gpu_ms": 7.69,
+  "s1_gpu_ms": 7.64,
+  "s1_head_ms": 1.22,
+  "s0_vramhits_ms": 1.88,
+  "s1_vramhits_ms": 1.58,
+  "fr_kept_ms": 4.659,
+  "fr_undone_ms": null,
+  "fr_windows": 2,
+  "pl_ready_wait": 2.573,
+  "wg_ended": 0,
+  "wg_ran": 0,
+  "ser_windows": 393,
+  "ser_ready_wait": 4.273,
+  "ser_s0": 7.732,
+  "ser_s1": 7.851,
+  "ser_link_run": 0.066,
+  "ser_link_commit": 0.032,
+  "link_calls": {
+   "images": [
+    1,
+    0.1,
+    0.0
+   ],
+   "reset": [
+    1,
+    1.6,
+    0.0
+   ],
+   "other session": [
+    3,
+    33.567,
+    0.1
+   ],
+   "prompt chunk (wait)": [
+    3,
+    715.7,
+    2.15
+   ],
+   "PfStart": [
+    3,
+    0.067,
+    0.0
+   ],
+   "PlRun": [
+    2,
+    0.1,
+    0.0
+   ],
+   "PlCommit": [
+    2,
+    4.65,
+    0.01
+   ]
+  },
+  "park_s": 0.2,
+  "gpu_pause_s": 0.0
+ },
+ "tool_calls": {
+  "requests": 24,
+  "engine_calls": 24,
+  "generated": 16291,
+  "decode_s": 127.3,
+  "tok_s": 128.0,
+  "prompt_read": 202729,
+  "prompt_s": 71.4,
+  "dt_windows": 6764,
+  "dt_ms": 18.823,
+  "dt_tpw": 2.409,
+  "dt_T": 2.903,
+  "dt_verify": 18.822,
+  "dt_commit": 0.0,
+  "dt_draft": 0.0,
+  "dt_adapt": 0.0,
+  "dt_reach": 0.0,
+  "dt_host": 0.0,
+  "pl_windows": 6764,
+  "pl_spec": 5700,
+  "pl_on": 3235,
+  "pl_rb": 2465,
+  "pl_gate": 1039,
+  "fresh_n": 3529,
+  "spec_n": 3235,
+  "disagree": 847,
+  "chain_late": 2029,
+  "fresh_ms": 24.538,
+  "fresh_tok": 2.374,
+  "spec_ms": 12.557,
+  "spec_tok": 2.447,
+  "s0_gpu_ms": 7.478,
+  "s1_gpu_ms": 7.901,
+  "s1_head_ms": 1.215,
+  "s0_vramhits_ms": 1.797,
+  "s1_vramhits_ms": 1.652,
+  "fr_kept_ms": 4.742,
+  "fr_undone_ms": 4.651,
+  "fr_windows": 8930,
+  "pl_ready_wait": 4.603,
+  "wg_ended": 2439,
+  "wg_ran": 26,
+  "ser_windows": 0,
+  "ser_ready_wait": null,
+  "ser_s0": null,
+  "ser_s1": null,
+  "ser_link_run": null,
+  "ser_link_commit": null,
+  "link_calls": {
+   "images": [
+    24,
+    0.212,
+    0.01
+   ],
+   "reset": [
+    1,
+    1.6,
+    0.0
+   ],
+   "other session": [
+    72,
+    34.99,
+    2.52
+   ],
+   "prompt chunk (wait)": [
+    38,
+    545.75,
+    20.74
+   ],
+   "PfStart": [
+    38,
+    0.182,
+    0.01
+   ],
+   "PlRun": [
+    9253,
+    0.053,
+    0.49
+   ],
+   "PlCommit": [
+    9253,
+    0.044,
+    0.41
+   ],
+   "PlUndo": [
+    2465,
+    0.03,
+    0.07
+   ]
+  },
+  "park_s": 5.6,
+  "gpu_pause_s": 1.4,
+  "class_ms_check": 127.2,
+  "miss_cost_ms": 11.98
+ }
+}

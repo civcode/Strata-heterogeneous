@@ -1,0 +1,11 @@
+date: 2026-11-23T20:33:33+01:00
+boot_id: f94c87ce-2f4b-412e-b02c-09dfdb04f155
+--- free -m
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3684       15417           0       43517       58258
+Swap:          16383         891       15492
+--- coredumpctl since boot
+No coredumps found.
+--- kernel record-pattern lines since 18:33 (turn start)
+Nov 23 20:11:16 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 259 times, consider switching to WQ_UNBOUND
+Nov 23 20:11:22 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 515 times, consider switching to WQ_UNBOUND

@@ -1,0 +1,26 @@
+{
+ "name": "cpu",
+ "limit": 106,
+ "env": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": true,
+ "sampler": true,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3692       11940           0       46985       58250\nSwap:          16383         851       15532\n",
+ "t_start": "2026-11-23T19:52:49+0100",
+ "ready_s": 13.0,
+ "server_pid": 770661,
+ "replay_rc": 0,
+ "replay_s": 931.1,
+ "server_rc": 0,
+ "elapsed_s": 954.1,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3730       22461           0       36426       58211\nSwap:          16383         860       15523\n",
+ "leftovers": [],
+ "gpu_pause_lines": [
+  "strata serve: the graphics driver paused the GPU for 941 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 191 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 633 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much"
+ ],
+ "non_finite": 0
+}

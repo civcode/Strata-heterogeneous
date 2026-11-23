@@ -1,0 +1,100 @@
+
+=== pid 770693 /home/chris/workspace/Strata-heterogeneous/build-0093-hip/strata
+--- tid 770693: 339810 samples (681.0 CPU s); leaf in a wait/poll/runtime-query function: 87.8%
+    53.7%  strata::core::Verifier::done
+    12.5%  strata::prefill::Prefill::run_impl
+     9.5%  strata::core::MtpDrafter::chain_poll
+     9.2%  strata::core::MtpDrafter::chain_outputs_ready
+     4.9%  strata::core::Verifier::run
+     3.0%  main
+     1.9%  strata::core::
+     1.4%  (no engine frame)
+     0.6%  std::vector<unsigned char, std::allocator<unsigned char>> strata::core::conversation_detail::copy_beating<unsigned char>
+     0.6%  main::'lambda1'
+     0.5%  strata::core::Verifier::service
+     0.5%  strata::core::MtpDrafter::draft
+     0.4%  strata::core::ConversationBuffer::resize_impl
+     0.4%  main::'lambda'
+     0.2%  std::vector<unsigned char, std::allocator<unsigned char>>::resize
+     0.2%  strata::core::Verifier::commit
+     0.1%  std::vector<strata::core::ConversationCheckpoint, std::allocator<strata::core::ConversationCheckpoint>>::~vector
+     0.1%  strata::core::MtpDrafter::chain_launch
+     0.1%  _fini
+     0.0%  strata::core::Verifier::pl_launch
+     0.0%  strata::mixed_split::
+     0.0%  
+     0.0%  strata::prefill::Gemm::bf16
+     0.0%  strata::core::ConversationCheckpoint::~ConversationCheckpoint
+     0.0%  main::'lambda0'
+--- tid 770697: 55838 samples (111.9 CPU s); leaf in a wait/poll/runtime-query function: 99.4%
+   100.0%  (no engine frame)
+--- tid 789399: 554 samples (1.1 CPU s); leaf in a wait/poll/runtime-query function: 100.0%
+    76.7%  strata::prefill::Prefill::run_impl
+    23.3%  strata::core::MtpDrafter::prefill
+--- tid 789338: 549 samples (1.1 CPU s); leaf in a wait/poll/runtime-query function: 99.8%
+    76.5%  strata::prefill::Prefill::run_impl
+    23.5%  strata::core::MtpDrafter::prefill
+
+=== pid 770700 /home/chris/workspace/Strata-heterogeneous/build-0093-cuda/strata
+--- tid 770883: 160566 samples (321.8 CPU s); leaf in a wait/poll/runtime-query function: 95.0%
+    39.7%  strata::prefill::Prefill::run_impl
+    31.0%  strata::core::Verifier::done
+    26.3%  std::_Function_handler<bool 
+     2.3%  strata::core::Verifier::run
+     0.2%  strata::core::Verifier::service
+     0.1%  _init
+     0.1%  strata::prefill::Gemm::bf16
+     0.1%  strata::prefill::Gemm::f16
+     0.0%  strata::ngram::PleReader::collect
+     0.0%  strata::kernels::iq4nl_dequant_row
+     0.0%  void strata::prefill::fused::
+     0.0%  void strata::kernels::
+     0.0%  __device_stub__ZN6strata7prefill43_GLOBAL__N__6502e17e_10_kernels_cu_54cd8b6615copy_i32_kernelEPiPKil
+     0.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::mixed_split::WindowRunner::start
+     0.0%  std::_Function_handler<void 
+     0.0%  __device_stub__ZN6strata7prefill43_GLOBAL__N__6502e17e_10_kernels_cu_54cd8b6615gr_mix_r_kernelEPKfS3_S3_S3_PfPtlS5_S5_
+     0.0%  __device_stub__ZN6strata7prefill43_GLOBAL__N__6502e17e_10_kernels_cu_54cd8b6623gr_write_norm_rs_kernelEPfPKfS4_lS4_fS...
+     0.0%  __device_stub__ZN6strata7prefill43_GLOBAL__N__6502e17e_10_kernels_cu_54cd8b6614gr_silu_kernelEPKfPtS4_l
+     0.0%  __device_stub__ZN6strata7kernels46_GLOBAL__N__ded1ddb5_13_iq_kernels_cu_8289e10f19dequant_flat_kernelI6__halfEEviPKvP...
+     0.0%  strata::kernels::qsa_block_topk
+     0.0%  strata::core::ExpertCache::device_slot
+     0.0%  strata::core::WeightTable::find
+     0.0%  __device_stub__ZN6strata7prefill43_GLOBAL__N__6502e17e_10_kernels_cu_54cd8b6619moe_combine4_kernelEPKfPKiS3_PK6float4...
+     0.0%  __device_stub__ZN6strata7prefill5fused48_GLOBAL__N__0dcb1e5c_15_moe_fused_iq_cu_2ba75fdd20quant_act_nat_kernelEPKflPh
+     0.0%  __device_stub__ZN6strata7prefill5fused45_GLOBAL__N__16a9b196_12_moe_fused_cu_989fdfff13bounds_kernelEPKiNS2_6TablesEi
+--- tid 770700: 7047 samples (14.1 CPU s); leaf in a wait/poll/runtime-query function: 50.9%
+    44.3%  strata::core::
+    12.8%  void std::vector<unsigned char, std::allocator<unsigned char>>::_M_range_insert<__gnu_cxx::__normal_iterator<unsigned...
+    11.9%  strata::core::ConversationCheckpoint::ConversationCheckpoint
+     9.7%  strata::core::ConversationBuffer::resize_impl
+     3.4%  std::vector<unsigned char, std::allocator<unsigned char>>::resize
+     3.1%  main::'lambda'
+     2.9%  std::_Function_handler<bool 
+     2.9%  strata::core::Verifier::pl_commit_async
+     1.5%  strata::ngram::PleReader::issue
+     1.5%  strata::mixed_split::
+     1.1%  std::vector<strata::core::ConversationCheckpoint, std::allocator<strata::core::ConversationCheckpoint>>::~vector
+     1.1%  strata::mixed_split::WindowRunner::start
+     1.0%  strata::core::Verifier::pl_launch
+     0.7%  long strata::mixed_split::state_key<int, strata::core::ConversationImageKey>
+     0.4%  strata::mixed_split::FrontSessionBook<strata::core::ConversationCheckpoint, strata::core::SavedConversation>::check
+     0.3%  strata::core::SavedConversation::~SavedConversation
+     0.3%  strata::core::ConversationCheckpoint::~ConversationCheckpoint
+     0.2%  strata::mixed_split::FrontSessionBook<strata::core::ConversationCheckpoint, strata::core::SavedConversation>::put_part
+     0.2%  strata::core::Verifier::commit
+     0.2%  strata::ngram::
+     0.2%  strata::core::Verifier::stage_inputs
+     0.1%  void std::vector<int, std::allocator<int>>::_M_range_insert<__gnu_cxx::__normal_iterator<int const*, std::vector<int,...
+     0.0%  strata::kernels::PleTable::prefetch_rows
+     0.0%  strata::kernels::ngram_rows
+     0.0%  strata::mixed_split::recv_frame
+--- tid 770745: 1335 samples (2.7 CPU s); leaf in a wait/poll/runtime-query function: 11.8%
+    35.1%  strata::platform::DirectFile::wait
+    21.9%  strata::ngram::PleReader::Impl::worker_loop
+    20.3%  strata::platform::DirectFile::submit
+    11.6%  strata::ngram::PleReader::Impl::finish
+     6.1%  strata::ngram::PleReader::Impl::pump
+     4.6%  strata::platform::now_us
+     0.4%  std::_Hashtable<unsigned int, std::pair<unsigned int const, strata::ngram::
+--- tid 770744: 335 samples (0.7 CPU s); leaf in a wait/poll/runtime-query function: 0.6%
+   100.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::platform::DirectFile::open

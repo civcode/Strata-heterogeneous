@@ -1,0 +1,13 @@
+graph launches (decode windows, front stage): 21777; duration ms: median 3.50, mean 2.35, p10 0.09, p90 4.80, p99 6.15; total 51.3 s
+steady decode bins: 6.8 s; front windows in them 612 = 90.7/s; front GPU busy 21.3% of that time
+  window ms median 1.81 mean 2.35; gap to the next window ms: median 8.92, p10 2.73, p90 15.45
+plain (prompt-path) kernels: 174083, 39.3 s GPU time
+memcpy D2H: 3720 copies, 48.9 GiB, 8.03 s, 6.1 GiB/s
+memcpy H2D: 10553 copies, 20.0 GiB, 3.25 s, 6.2 GiB/s
+memcpy D2D: 13358 copies, 488.0 GiB, 1.28 s, 379.8 GiB/s
+trace span 280.7 s
+
+refined: steady decode bins (>= 2 window graphs > 1 ms, prompt kernels and copies < 5% of the bin): 136.5 s
+  front windows 10402 = 76.2/s = 13.12 ms apart; window ms median 4.67 mean 4.61; front GPU busy with windows 35.1%, other kernels 0.0%, copies 0.9%
+  idle between windows ms: median 6.63, p10 5.78, p90 16.42
+cudaGraphLaunch host call: 21777 calls, median 36.2 us, p90 141.7 us, mean 67.5 us

@@ -1,0 +1,27 @@
+{
+ "name": "baseline3",
+ "limit": 106,
+ "env": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3840       20522           0       38256       58101\nSwap:          16383         837       15546\n",
+ "t_start": "2026-11-23T19:13:26+0100",
+ "ready_s": 19.0,
+ "server_pid": 718216,
+ "replay_rc": 0,
+ "replay_s": 1000.1,
+ "server_rc": 0,
+ "elapsed_s": 1021.1,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3633       22219           0       36765       58308\nSwap:          16383         807       15576\n",
+ "leftovers": [],
+ "gpu_pause_lines": [
+  "strata serve: the graphics driver paused the GPU for 1169 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 197 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 101 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 746 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much"
+ ],
+ "non_finite": 0
+}

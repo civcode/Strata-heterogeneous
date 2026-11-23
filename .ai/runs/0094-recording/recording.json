@@ -1,0 +1,93 @@
+{
+ "records": 107,
+ "chat_requests": 107,
+ "cancelled": 1,
+ "failed": 1,
+ "finish": {
+  "tool_calls": 101,
+  "stop": 5,
+  "null": 1
+ },
+ "generated_tokens": 130173,
+ "predicted_n": 130173,
+ "decode_s": 943.3,
+ "engine_decode_tps": 138.0,
+ "draft_acceptance_pct": 75.17,
+ "chunks": {
+  "reasoning": 36120,
+  "content": 4636,
+  "tool_calls": 76061
+ },
+ "dominant_phase_requests": {
+  "tool_calls": 53,
+  "reasoning": 49,
+  "content": 5
+ },
+ "prompt_tokens_min": 9529,
+ "prompt_tokens_max": 135682,
+ "prompt_tokens_median": 59996.0,
+ "no_usage": [
+  107
+ ],
+ "prompt_evaluated_tokens": 1065037,
+ "prompt_s": 353.0,
+ "cached_tokens_total": 6029457,
+ "compactions_lt60pct": [
+  [
+   38,
+   70802,
+   24140
+  ],
+  [
+   68,
+   74948,
+   28275
+  ],
+  [
+   82,
+   95081,
+   15982
+  ],
+  [
+   88,
+   107136,
+   9529
+  ],
+  [
+   99,
+   123741,
+   13864
+  ]
+ ],
+ "prompt_shrinks": [
+  [
+   38,
+   70802,
+   24140
+  ],
+  [
+   68,
+   74948,
+   28275
+  ],
+  [
+   82,
+   95081,
+   15982
+  ],
+  [
+   88,
+   107136,
+   9529
+  ],
+  [
+   99,
+   123741,
+   13864
+  ]
+ ],
+ "session_wall_s": 1323.5,
+ "pauses_s": 9.4,
+ "pause_max_s": 5.0,
+ "busy_s": 1314.1
+}

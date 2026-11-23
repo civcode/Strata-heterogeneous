@@ -1,0 +1,36 @@
+decode bins: 3405 x 50 ms = 170.2 s of steady decode
+HIP0 windows (wait_handoff) in them: 12290 = 72.2 windows/s = 13.85 ms per window
+
+=== Agent 1 (HIP0): 5835581 kernels = 475 per HIP0 window; kernel time 117.3 s = 68.9% of decode time, of it wait_handoff spin 51.2 s (30.1%); real work 38.8%
+  gaps between kernels: <100 us 19.01 s (11.2%, mean 3.3 us x 5791606), 0.1-1 ms 1.20 s (0.7%), >= 1 ms 174.91 s (102.7%)
+   51.19 s  30.1% of time    1.0/win x  4165.5 us  wait_handoff_kernel
+    5.66 s   3.3% of time   17.9/win x    25.7 us  native_mmvq_multi_kernel<Q6KTraits, 3, 4, 2, true, false>
+    5.60 s   3.3% of time   13.0/win x    35.1 us  native_down_multi_kernel<42, true, false>
+    4.93 s   2.9% of time    7.0/win x    57.3 us  expdec_gu_kernel<21, 1, 4>
+    4.31 s   2.5% of time   23.0/win x    15.3 us  gr_up_q8_q32_kernel<3, 2>
+    3.43 s   2.0% of time   12.2/win x    22.9 us  native_mmvq_multi_kernel<Q4KTraits, 3, 4, 2, true, false>
+    3.25 s   1.9% of time    5.0/win x    53.0 us  expdec_gu_kernel<22, 1, 4>
+    3.16 s   1.9% of time   23.0/win x    11.2 us  gr_down_q8_fast_kernel<3, 4, true>
+    3.04 s   1.8% of time   17.2/win x    14.4 us  native_mmvq_multi_kernel<IQ4XSTraits, 3, 4, 2, true, false>
+    2.36 s   1.4% of time    4.0/win x    48.1 us  attn_chunk_kernel<1, true, false, false>
+    1.77 s   1.0% of time    4.0/win x    36.1 us  block_topk_wide_kernel<false>
+    1.60 s   0.9% of time    4.0/win x    32.5 us  block_scores_multi_kernel
+    1.59 s   0.9% of time   12.0/win x    10.8 us  gdn_step_norm_multi_kernel<true, false>
+    1.52 s   0.9% of time    3.0/win x    41.2 us  native_down_multi_kernel<20, true, false>
+
+=== Agent 2 (HIP1): 7492577 kernels = 610 per HIP0 window; kernel time 112.6 s = 66.2% of decode time, of it wait_handoff spin 0.0 s (0.0%); real work 66.2%
+  gaps between kernels: <100 us 24.08 s (14.1%, mean 3.6 us x 6751405), 0.1-1 ms 2.17 s (1.3%), >= 1 ms 182.44 s (107.2%)
+   17.17 s  10.1% of time    4.7/win x   294.8 us  native_q5_k_mmvq_kernel<false>
+    8.96 s   5.3% of time    7.9/win x    92.7 us  attn_chunk_kernel<1, true, false, false>
+    8.58 s   5.0% of time    3.8/win x   182.2 us  native_mmvq_multi_kernel<Q5KTraits, 3, 4, 2, true, false>
+    7.91 s   4.6% of time   27.6/win x    23.3 us  native_small_mmvq_kernel<Q80Block, 8, false>
+    5.71 s   3.4% of time   18.1/win x    25.7 us  native_mmvq_multi_kernel<Q6KTraits, 3, 4, 2, true, false>
+    4.85 s   2.8% of time    8.8/win x    45.1 us  native_down_multi_kernel<20, true, false>
+    4.11 s   2.4% of time   18.6/win x    18.0 us  gr_up_q8_q32_kernel<3, 2>
+    3.15 s   1.8% of time    3.6/win x    70.2 us  expdec_gu_kernel<21, 1, 4>
+    2.93 s   1.7% of time    4.4/win x    54.4 us  expdec_gu_kernel<18, 1, 4>
+    2.82 s   1.7% of time   18.6/win x    12.3 us  gr_down_q8_fast_kernel<3, 4, true>
+    2.33 s   1.4% of time   12.1/win x    15.7 us  gr_down_staged_kernel<1, true>
+    2.21 s   1.3% of time   12.1/win x    14.9 us  gr_up_q32_kernel<1, true>
+    1.98 s   1.2% of time    2.9/win x    55.2 us  expdec_gu_kernel<22, 1, 4>
+    1.94 s   1.1% of time   10.4/win x    15.2 us  native_mmvq_multi_kernel<IQ4XSTraits, 3, 4, 2, true, false>

@@ -1,0 +1,16 @@
+steady decode 170.2 s, 12290 HIP0 windows; HIP1 kernels HIP0 does not run: 23.4 s = 13.8% of decode time = 1.91 ms per HIP0 window; HIP1 all kernels 112.6 s
+    7.91 s 27.59/win x    23.3 us  native_small_mmvq_kernel<Q80Block, 8, false>
+    2.93 s  4.38/win x    54.4 us  expdec_gu_kernel<18, 1, 4>
+    2.33 s 12.08/win x    15.7 us  gr_down_staged_kernel<1, true>
+    2.21 s 12.08/win x    14.9 us  gr_up_q32_kernel<1, true>
+    0.99 s  4.22/win x    19.2 us  gu_grouped_t_kernel<0, 1>
+    0.94 s  8.44/win x     9.1 us  norm<1024>
+    0.72 s  4.15/win x    14.2 us  native_mmvq_multi_kernel<SmallTraits<Q80Block, 8>, 4, 4, 2, true, false>
+    0.69 s  4.22/win x    13.3 us  mtp_select_kernel
+    0.57 s  4.22/win x    11.0 us  down_grouped_t_kernel<0, 1>
+    0.54 s  4.22/win x    10.4 us  row_top_prob_split_kernel
+    0.44 s  4.95/win x     7.3 us  argmax_rows_kernel
+    0.38 s 13.39/win x     2.3 us  gr_norm_split_fast_kernel
+    0.33 s  4.22/win x     6.4 us  native_small_mmvq_kernel<Q80Block, 8, true>
+    0.28 s  1.09/win x    20.9 us  gr_down_staged_kernel<3, true>
+    0.28 s  4.22/win x     5.4 us  embed_rows_kernel

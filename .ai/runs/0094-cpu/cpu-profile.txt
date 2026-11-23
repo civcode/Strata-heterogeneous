@@ -1,0 +1,615 @@
+
+=== pid 770693 /home/chris/workspace/Strata-heterogeneous/build-0093-hip/strata  samples 452161 (906.1 CPU s)
+# exe /home/chris/workspace/Strata-heterogeneous/build-0093-hip/strata wall_s 931.008 samples 452161 dropped 0 hz 499
+
+--- group: _start  threads 1  samples 339810 (681.0 CPU s)
+  self:
+     24.8%  ?? [libamdhip64.so.7.16.26385-0000000]
+     18.3%  __tls_get_addr [ld-linux-x86-64.so.2]
+     17.3%  rocr::core::InterruptSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [li...
+      9.5%  [[vdso]]
+      6.0%  lll_mutex_unlock_optimized [libc.so.6]
+      5.7%  lll_mutex_lock_optimized [libc.so.6]
+      4.2%  strata::core::Verifier::done
+      2.9%  main
+      1.4%  rocr::core::BusyWaitSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [lib...
+      1.4%  __memcpy_avx512_unaligned_erms [libc.so.6]
+      1.2%  __pthread_mutex_lock [libc.so.6]
+      0.6%  __memset_avx512_unaligned_erms [libc.so.6]
+      0.6%  hipEventQuery [libamdhip64.so.7.16.26385-0000000]
+      0.6%  hipSetDevice [libamdhip64.so.7.16.26385-0000000]
+      0.6%  main::'lambda1'
+      0.5%  strata::core::Verifier::service
+      0.5%  std::chrono::_V2::steady_clock::now() [libstdc++.so.6.0.33]
+      0.5%  strata::core::MtpDrafter::draft
+      0.4%  hipGetDevice [libamdhip64.so.7.16.26385-0000000]
+      0.4%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      0.4%  main::'lambda'
+      0.3%  __pthread_once [libc.so.6]
+      0.3%  rocr::core::BusyWaitSignal::LoadRelaxed() [libhsa-runtime64.so.1.21.0]
+      0.3%  rocr::HSA::hsa_signal_load_relaxed(hsa_signal_s) [libhsa-runtime64.so.1.21.0]
+      0.2%  strata::core::MtpDrafter::chain_outputs_ready
+      0.2%  strata::core::MtpDrafter::chain_poll
+      0.2%  __clock_gettime [libc.so.6]
+      0.1%  pthread_mutex_unlock [libc.so.6]
+      0.1%  hsa_signal_load_relaxed [libhsa-runtime64.so.1.21.0]
+      0.1%  munmap [libc.so.6]
+  inclusive:
+     98.5%  __libc_start_call_main [libc.so.6]
+     98.5%  __libc_start_main [libc.so.6]
+     98.5%  main
+     98.5%  _start
+     76.4%  ?? [libamdhip64.so.7.16.26385-0000000]
+     53.7%  strata::core::Verifier::done
+     32.8%  main::'lambda'
+     29.1%  hipEventQuery [libamdhip64.so.7.16.26385-0000000]
+     19.3%  hipSetDevice [libamdhip64.so.7.16.26385-0000000]
+     18.7%  rocr::HSA::hsa_signal_wait_scacquire(hsa_signal_s, hsa_signal_condition_t, long, unsigned long, hsa_wait_st...
+     18.6%  hipStreamSynchronize [libamdhip64.so.7.16.26385-0000000]
+     18.3%  __tls_get_addr [ld-linux-x86-64.so.2]
+     17.3%  rocr::core::InterruptSignal::WaitAcquire(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [li...
+     17.3%  rocr::core::InterruptSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [li...
+     13.1%  main::'lambda1'
+     12.6%  strata::prefill::Prefill::run
+     12.6%  strata::prefill::Prefill::run_impl
+     10.2%  std::chrono::_V2::steady_clock::now() [libstdc++.so.6.0.33]
+      9.7%  __clock_gettime [libc.so.6]
+      9.5%  [[vdso]]
+      9.5%  strata::core::MtpDrafter::chain_poll
+      9.3%  hipGetDevice [libamdhip64.so.7.16.26385-0000000]
+      9.2%  strata::core::MtpDrafter::chain_outputs_ready
+      6.0%  lll_mutex_unlock_optimized [libc.so.6]
+      5.7%  lll_mutex_lock_optimized [libc.so.6]
+      4.9%  strata::core::Verifier::run
+      2.8%  bool strata::program::ConversationRestoreAttempt::apply<main::'lambda95'
+      2.7%  strata::core::conversation_snapshot_save
+      2.1%  strata::core::
+      1.8%  strata::core::conversation_kv_save
+
+--- group: std::__future_base::_Async_state_impl<std::thread::_Invoker<std::tuple<strata::prefill:...  threads 176  samples 56475 (113.2 CPU s)
+  self:
+     72.3%  rocr::core::InterruptSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [li...
+     27.2%  rocr::core::BusyWaitSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [lib...
+      0.1%  lll_mutex_unlock_optimized [libc.so.6]
+      0.1%  ?? [libamdhip64.so.7.16.26385-0000000]
+      0.1%  __memset_avx512_unaligned_erms [libc.so.6]
+      0.0%  ioctl [libc.so.6]
+      0.0%  __memcpy_avx512_unaligned_erms [libc.so.6]
+      0.0%  _int_malloc [libc.so.6]
+      0.0%  __libc_malloc [libc.so.6]
+      0.0%  rocr::AMD::AqlQueue::AddWriteIndexRelease(unsigned long) [libhsa-runtime64.so.1.21.0]
+      0.0%  rocr::HSA::hsa_signal_store_screlease(hsa_signal_s, long) [libhsa-runtime64.so.1.21.0]
+      0.0%  lll_mutex_lock_optimized [libc.so.6]
+      0.0%  malloc_consolidate [libc.so.6]
+      0.0%  __pthread_mutex_lock [libc.so.6]
+      0.0%  __pthread_rwlock_rdlock_full64 [libc.so.6]
+      0.0%  __pthread_rwlock_rdunlock [libc.so.6]
+      0.0%  strata::prefill::Prefill::run_impl
+      0.0%  __pthread_mutex_trylock [libc.so.6]
+      0.0%  __lll_lock_wake_private [libc.so.6]
+      0.0%  llvm::msgpack::Document::readFromBlob(llvm::StringRef, bool, llvm::function_ref<int (llvm::msgpack::DocNode...
+      0.0%  llvm::msgpack::Document::copyNode(llvm::msgpack::DocNode) [libLLVM.so.24.0git]
+      0.0%  llvm::raw_string_ostream::write_impl(char const*, unsigned long) [libLLVM.so.24.0git]
+      0.0%  __strlen_evex [libc.so.6]
+      0.0%  __memcmp_evex_movbe [libc.so.6]
+      0.0%  mprotect [libc.so.6]
+      0.0%  tcache_get_n [libc.so.6]
+      0.0%  rocr::HSA::hsa_signal_load_relaxed(hsa_signal_s) [libhsa-runtime64.so.1.21.0]
+      0.0%  cfree [libc.so.6]
+      0.0%  rocr::core::SharedSignalPool_t::alloc() [libhsa-runtime64.so.1.21.0]
+      0.0%  rocr::core::Runtime::AsyncEventsPool::alloc() [libhsa-runtime64.so.1.21.0]
+  inclusive:
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  std::_Function_handler<std::unique_ptr<std::__future_base::_Result_base, std::__future_base::_Result_base::...
+    100.0%  std::__future_base::_State_baseV2::_M_do_set
+    100.0%  __pthread_once_slow [libc.so.6]
+    100.0%  std::__future_base::_Async_state_impl<std::thread::_Invoker<std::tuple<strata::prefill::Prefill::run_impl
+    100.0%  strata::prefill::Prefill::run_impl
+     99.9%  ?? [libamdhip64.so.7.16.26385-0000000]
+     99.6%  hipStreamSynchronize [libamdhip64.so.7.16.26385-0000000]
+     99.6%  rocr::HSA::hsa_signal_wait_scacquire(hsa_signal_s, hsa_signal_condition_t, long, unsigned long, hsa_wait_st...
+     72.3%  rocr::core::InterruptSignal::WaitAcquire(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [li...
+     72.3%  rocr::core::InterruptSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [li...
+     27.2%  rocr::core::BusyWaitSignal::WaitAcquire(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [lib...
+     27.2%  rocr::core::BusyWaitSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t) [lib...
+     26.9%  std::_Function_handler<bool 
+     26.9%  strata::core::MtpDrafter::prefill
+      0.1%  hipGraphLaunch [libamdhip64.so.7.16.26385-0000000]
+      0.1%  strata::core::conversation_checkpoint_save
+      0.1%  strata::core::
+      0.1%  main::'lambda'
+      0.1%  lll_mutex_unlock_optimized [libc.so.6]
+      0.1%  hipMemcpyAsync [libamdhip64.so.7.16.26385-0000000]
+      0.1%  std::vector<unsigned char, std::allocator<unsigned char>>::resize
+      0.1%  __memset_avx512_unaligned_erms [libc.so.6]
+      0.0%  hipLaunchKernel [libamdhip64.so.7.16.26385-0000000]
+      0.0%  __libc_malloc [libc.so.6]
+      0.0%  operator new(unsigned long) [libstdc++.so.6.0.33]
+      0.0%  ioctl [libc.so.6]
+      0.0%  hsakmt_ioctl [libhsa-runtime64.so.1.21.0]
+
+--- group: (no engine frame) clone3 [libc.so.6]  threads 1  samples 55838 (111.9 CPU s)
+  self:
+     99.2%  rocr::core::Runtime::AsyncEventsLoop(void*) [libhsa-runtime64.so.1.21.0]
+      0.3%  ioctl [libc.so.6]
+      0.2%  ?? [libamdhip64.so.7.16.26385-0000000]
+      0.0%  _int_free [libc.so.6]
+      0.0%  rocr::core::Runtime::ConcurrentAsyncEvents::GetAllEvents(std::vector<rocr::core::Runtime::AsyncEventItem, s...
+      0.0%  rocr::core::InterruptSignal::EopEvent() [libhsa-runtime64.so.1.21.0]
+      0.0%  pthread_cond_destroy [libc.so.6]
+      0.0%  hsaKmtWaitOnMultipleEvents_ExtCtx [libhsa-runtime64.so.1.21.0]
+      0.0%  lll_mutex_unlock_optimized [libc.so.6]
+      0.0%  _int_free_create_chunk [libc.so.6]
+      0.0%  _int_free_merge_chunk [libc.so.6]
+      0.0%  unlink_chunk [libc.so.6]
+      0.0%  calloc [libc.so.6]
+      0.0%  rocr::core::Runtime::AsyncEventsPool::free(rocr::core::Runtime::AsyncEventItem*) [libhsa-runtime64.so.1.21.0]
+      0.0%  _int_malloc [libc.so.6]
+      0.0%  cfree [libc.so.6]
+      0.0%  lll_mutex_lock_optimized [libc.so.6]
+      0.0%  futex_wait [libc.so.6]
+      0.0%  rocr::HSA::hsa_signal_load_relaxed(hsa_signal_s) [libhsa-runtime64.so.1.21.0]
+      0.0%  rocr::core::BusyWaitSignal::LoadRelaxed() [libhsa-runtime64.so.1.21.0]
+      0.0%  hsaKmtWaitOnMultipleEvents_Ext [libhsa-runtime64.so.1.21.0]
+      0.0%  __pthread_mutex_lock [libc.so.6]
+      0.0%  std::condition_variable::~condition_variable() [libstdc++.so.6.0.33]
+      0.0%  tcache_put [libc.so.6]
+      0.0%  ?? [libstdc++.so.6.0.33]
+      0.0%  __memset_avx512_unaligned_erms [libc.so.6]
+      0.0%  void std::vector<rocr::core::Runtime::AsyncEventItem, std::allocator<rocr::core::Runtime::AsyncEventItem>>:...
+      0.0%  operator delete(void*, unsigned long) [libstdc++.so.6.0.33]
+      0.0%  rocr::os::PostSemaphore(void*) [libhsa-runtime64.so.1.21.0]
+      0.0%  free_perturb [libc.so.6]
+  inclusive:
+    100.0%  start_thread [libc.so.6]
+    100.0%  clone3 [libc.so.6]
+    100.0%  rocr::os::ThreadTrampoline(void*) [libhsa-runtime64.so.1.21.0]
+    100.0%  rocr::core::Runtime::AsyncEventsLoop(void*) [libhsa-runtime64.so.1.21.0]
+      0.4%  hsaKmtWaitOnMultipleEvents_ExtCtx [libhsa-runtime64.so.1.21.0]
+      0.3%  ioctl [libc.so.6]
+      0.3%  hsakmt_ioctl [libhsa-runtime64.so.1.21.0]
+      0.3%  ?? [libamdhip64.so.7.16.26385-0000000]
+      0.1%  cfree [libc.so.6]
+      0.1%  _int_free [libc.so.6]
+      0.0%  rocr::core::Runtime::ConcurrentAsyncEvents::GetAllEvents(std::vector<rocr::core::Runtime::AsyncEventItem, s...
+      0.0%  rocr::AMD::hsa_amd_profiling_get_dispatch_time(hsa_agent_s, hsa_signal_s, hsa_amd_profiling_dispatch_time_s...
+      0.0%  rocr::AMD::GpuAgent::TranslateTime(unsigned long) [libhsa-runtime64.so.1.21.0]
+      0.0%  rocr::AMD::GpuAgent::TranslateTime(rocr::core::Signal*, hsa_amd_profiling_dispatch_time_s&) [libhsa-runtime...
+      0.0%  rocr::AMD::KfdDriver::GetClockCounters(unsigned int, _HsaClockCounters*) const [libhsa-runtime64.so.1.21.0]
+      0.0%  hsaKmtGetClockCounters [libhsa-runtime64.so.1.21.0]
+      0.0%  rocr::core::InterruptSignal::EopEvent() [libhsa-runtime64.so.1.21.0]
+      0.0%  _int_free_create_chunk [libc.so.6]
+      0.0%  pthread_cond_destroy [libc.so.6]
+      0.0%  calloc [libc.so.6]
+      0.0%  lll_mutex_unlock_optimized [libc.so.6]
+      0.0%  _int_free_merge_chunk [libc.so.6]
+      0.0%  rocr::HSA::hsa_signal_load_relaxed(hsa_signal_s) [libhsa-runtime64.so.1.21.0]
+      0.0%  rocr::core::Runtime::AsyncEventsPool::free(rocr::core::Runtime::AsyncEventItem*) [libhsa-runtime64.so.1.21.0]
+      0.0%  unlink_chunk [libc.so.6]
+      0.0%  _int_malloc [libc.so.6]
+      0.0%  lll_mutex_lock_optimized [libc.so.6]
+      0.0%  futex_wait [libc.so.6]
+      0.0%  operator new(unsigned long) [libstdc++.so.6.0.33]
+      0.0%  rocr::core::BusyWaitSignal::LoadRelaxed() [libhsa-runtime64.so.1.21.0]
+
+--- group: std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::core::SegmentPoolFill...  threads 1  samples 24 (0.0 CPU s)
+  self:
+     37.5%  __GI___libc_read [libc.so.6]
+     16.7%  fstatat64 [libc.so.6]
+      8.3%  std::basic_istream<char, std::char_traits<char>>& std::operator>><char, std::char_traits<char>, std::alloca...
+      8.3%  __open [libc.so.6]
+      8.3%  madvise [libc.so.6]
+      4.2%  strata::core::cache_credit_from_stat
+      4.2%  std::filesystem::__cxx11::path::_List::_List(std::filesystem::__cxx11::path::_List const&) [libstdc++.so.6....
+      4.2%  std::istream::sentry::sentry(std::istream&, bool) [libstdc++.so.6.0.33]
+      4.2%  __futex_abstimed_wait_common64 [libc.so.6]
+      4.2%  __libc_malloc [libc.so.6]
+  inclusive:
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+    100.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::core::SegmentPoolFiller::SegmentPoolFiller
+     87.5%  strata::core::sample_host_memory
+     87.5%  std::_Function_handler<unsigned long 
+     79.2%  strata::core::
+     37.5%  std::__basic_file<char>::xsgetn(char*, long) [libstdc++.so.6.0.33]
+     37.5%  __GI___libc_read [libc.so.6]
+     37.5%  std::basic_filebuf<char, std::char_traits<char>>::underflow() [libstdc++.so.6.0.33]
+     29.2%  std::ostream::operator<<(std::basic_streambuf<char, std::char_traits<char>>*) [libstdc++.so.6.0.33]
+     29.2%  long std::__copy_streambufs_eof<char, std::char_traits<char>>(std::basic_streambuf<char, std::char_traits<c...
+     20.8%  strata::core::cache_credit_from_stat
+     16.7%  fstatat64 [libc.so.6]
+     16.7%  std::filesystem::status(std::filesystem::__cxx11::path const&, std::error_code&) [libstdc++.so.6.0.33]
+     12.5%  std::basic_istream<char, std::char_traits<char>>& std::operator>><char, std::char_traits<char>, std::alloca...
+      8.3%  _IO_file_open [libc.so.6]
+      8.3%  std::basic_filebuf<char, std::char_traits<char>>::open(char const*, std::_Ios_Openmode) [libstdc++.so.6.0.33]
+      8.3%  __fopen_internal [libc.so.6]
+      8.3%  __open [libc.so.6]
+      8.3%  std::__basic_file<char>::open(char const*, std::_Ios_Openmode, int) [libstdc++.so.6.0.33]
+      8.3%  _IO_file_fopen [libc.so.6]
+      8.3%  madvise [libc.so.6]
+      4.2%  std::filesystem::__cxx11::path::_List::_List(std::filesystem::__cxx11::path::_List const&) [libstdc++.so.6....
+      4.2%  std::istream::sentry::sentry(std::istream&, bool) [libstdc++.so.6.0.33]
+      4.2%  std::basic_streambuf<char, std::char_traits<char>>::xsgetn(char*, long) [libstdc++.so.6.0.33]
+      4.2%  std::istream::read(char*, long) [libstdc++.so.6.0.33]
+      4.2%  std::basic_filebuf<char, std::char_traits<char>>::xsgetn(char*, long) [libstdc++.so.6.0.33]
+      4.2%  __futex_abstimed_wait_common64 [libc.so.6]
+      4.2%  __pthread_cond_wait_common [libc.so.6]
+
+--- group: std::thread::_State_impl<std::thread::_Invoker<std::tuple<main::'lambda73'  threads 1  samples 7 (0.0 CPU s)
+  self:
+     57.1%  __GI___libc_read [libc.so.6]
+     28.6%  __close_nocancel [libc.so.6]
+     14.3%  _IO_sputbackc [libc.so.6]
+  inclusive:
+    100.0%  
+    100.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<main::'lambda73'
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+     57.1%  _IO_fread [libc.so.6]
+     57.1%  __GI___libc_read [libc.so.6]
+     57.1%  _IO_file_underflow [libc.so.6]
+     57.1%  __GI__IO_file_xsgetn [libc.so.6]
+     28.6%  _IO_file_close_it [libc.so.6]
+     28.6%  __close_nocancel [libc.so.6]
+     28.6%  fclose [libc.so.6]
+     14.3%  _IO_sputbackc [libc.so.6]
+     14.3%  __isoc23_sscanf [libc.so.6]
+     14.3%  __vfscanf_internal [libc.so.6]
+
+--- group: main::'lambda71'  threads 1  samples 5 (0.0 CPU s)
+  self:
+     40.0%  __memcpy_avx512_unaligned_erms [libc.so.6]
+     40.0%  __memchr_evex [libc.so.6]
+     20.0%  __GI___libc_read [libc.so.6]
+  inclusive:
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+    100.0%  main::'lambda71'
+     40.0%  __memcpy_avx512_unaligned_erms [libc.so.6]
+     40.0%  __memchr_evex [libc.so.6]
+     20.0%  __GI___libc_read [libc.so.6]
+
+--- group: strata::ngram::PleReader::Impl::worker_loop  threads 1  samples 2 (0.0 CPU s)
+  self:
+     50.0%  strata::ngram::PleReader::Impl::worker_loop
+     50.0%  __GI___lll_lock_wake [libc.so.6]
+  inclusive:
+    100.0%  clone3 [libc.so.6]
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  start_thread [libc.so.6]
+    100.0%  strata::ngram::PleReader::Impl::worker_loop
+     50.0%  __GI___lll_lock_wake [libc.so.6]
+     50.0%  strata::platform::DirectFile::wait
+     50.0%  lll_mutex_unlock_optimized [libc.so.6]
+
+=== pid 770700 /home/chris/workspace/Strata-heterogeneous/build-0093-cuda/strata  samples 173971 (348.6 CPU s)
+# exe /home/chris/workspace/Strata-heterogeneous/build-0093-cuda/strata wall_s 931.032 samples 173971 dropped 0 hz 499
+
+--- group: std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::mixed_split::WindowRu...  threads 1  samples 160566 (321.8 CPU s)
+  self:
+     50.0%  ?? [libcuda.so.580.178.04]
+     25.5%  sched_yield [libc.so.6]
+     12.5%  [[vdso]]
+      1.7%  __pthread_rwlock_rdlock_full64 [libc.so.6]
+      1.7%  ?? [libcudart.so.13.0.96]
+      1.7%  __pthread_rwlock_rdunlock [libc.so.6]
+      1.6%  strata::core::Verifier::done
+      0.9%  lll_mutex_unlock_optimized [libc.so.6]
+      0.8%  lll_mutex_lock_optimized [libc.so.6]
+      0.8%  std::_Function_handler<bool 
+      0.3%  __clock_gettime [libc.so.6]
+      0.2%  std::chrono::_V2::steady_clock::now() [libstdc++.so.6.0.33]
+      0.2%  __pthread_once [libc.so.6]
+      0.2%  pthread_rwlock_rdlock [libc.so.6]
+      0.2%  pthread_rwlock_unlock [libc.so.6]
+      0.2%  cudaGetDevice [libcudart.so.13.0.96]
+      0.2%  __pthread_mutex_lock [libc.so.6]
+      0.2%  strata::core::Verifier::service
+      0.2%  cuEventQuery [libcuda.so.580.178.04]
+      0.2%  pthread_getspecific [libc.so.6]
+      0.1%  cuCtxGetDevice_v2 [libcuda.so.580.178.04]
+      0.1%  cudaEventQuery [libcudart.so.13.0.96]
+      0.1%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      0.1%  _init
+      0.1%  strata::prefill::Prefill::run_impl
+      0.0%  __futex_abstimed_wait_common64 [libc.so.6]
+      0.0%  ?? [libcublasLt.so.13.1.1.3]
+      0.0%  strata::kernels::iq4nl_dequant_row
+      0.0%  pthread_mutex_unlock [libc.so.6]
+      0.0%  futex_wake [libc.so.6]
+  inclusive:
+    100.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::mixed_split::WindowRunner::start
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+     66.7%  ?? [libcudart.so.13.0.96]
+     60.8%  ?? [libcuda.so.580.178.04]
+     59.9%  std::_Function_handler<bool 
+     41.9%  cudaStreamSynchronize [libcudart.so.13.0.96]
+     41.9%  cuStreamSynchronize [libcuda.so.580.178.04]
+     40.1%  strata::prefill::Prefill::run
+     40.1%  strata::prefill::Prefill::run_impl
+     31.1%  strata::core::Verifier::done
+     25.5%  sched_yield [libc.so.6]
+     20.6%  cudaEventQuery [libcudart.so.13.0.96]
+     17.8%  cuEventQuery [libcuda.so.580.178.04]
+     12.7%  __clock_gettime [libc.so.6]
+     12.5%  [[vdso]]
+      4.5%  std::chrono::_V2::steady_clock::now() [libstdc++.so.6.0.33]
+      4.3%  cudaGetDevice [libcudart.so.13.0.96]
+      2.3%  strata::core::Verifier::run
+      1.7%  __pthread_rwlock_rdlock_full64 [libc.so.6]
+      1.7%  __pthread_rwlock_rdunlock [libc.so.6]
+      1.1%  cuCtxGetDevice_v2 [libcuda.so.580.178.04]
+      0.9%  lll_mutex_unlock_optimized [libc.so.6]
+      0.8%  lll_mutex_lock_optimized [libc.so.6]
+      0.2%  __pthread_once [libc.so.6]
+      0.2%  strata::core::Verifier::service
+      0.2%  pthread_rwlock_rdlock [libc.so.6]
+      0.2%  pthread_rwlock_unlock [libc.so.6]
+      0.2%  cuLaunchKernel [libcuda.so.580.178.04]
+
+--- group: _start  threads 1  samples 7047 (14.1 CPU s)
+  self:
+     42.5%  ?? [libcuda.so.580.178.04]
+     25.2%  __memcpy_avx512_unaligned_erms [libc.so.6]
+     13.1%  __memset_avx512_unaligned_erms [libc.so.6]
+      6.5%  [[vdso]]
+      3.0%  main::'lambda'
+      1.6%  munmap [libc.so.6]
+      1.0%  lll_mutex_unlock_optimized [libc.so.6]
+      0.9%  __libc_send [libc.so.6]
+      0.7%  long strata::mixed_split::state_key<int, strata::core::ConversationImageKey>
+      0.6%  futex_wake [libc.so.6]
+      0.5%  _int_malloc [libc.so.6]
+      0.5%  strata::mixed_split::FrontSessionBook<strata::core::ConversationCheckpoint, strata::core::SavedConversation...
+      0.5%  strata::ngram::PleReader::issue
+      0.4%  __poll [libc.so.6]
+      0.4%  __futex_abstimed_wait_common64 [libc.so.6]
+      0.3%  lll_mutex_lock_optimized [libc.so.6]
+      0.3%  futex_wait [libc.so.6]
+      0.2%  ?? [libcudart.so.13.0.96]
+      0.2%  __clock_gettime [libc.so.6]
+      0.2%  strata::core::Verifier::stage_inputs
+      0.1%  strata::core::Verifier::pl_launch
+      0.1%  __pthread_rwlock_rdlock_full64 [libc.so.6]
+      0.1%  __pthread_rwlock_rdunlock [libc.so.6]
+      0.1%  __pthread_mutex_lock [libc.so.6]
+      0.1%  tcache_get_n [libc.so.6]
+      0.1%  brk [libc.so.6]
+      0.1%  strata::mixed_split::
+      0.1%  __recvmsg_syscall [libc.so.6]
+      0.1%  strata::ngram::
+      0.0%  strata::core::Verifier::pl_commit_async
+  inclusive:
+    100.0%  strata::mixed_split::
+    100.0%  __libc_start_call_main [libc.so.6]
+    100.0%  __libc_start_main [libc.so.6]
+    100.0%  _start
+    100.0%  strata::mixed_split::serve_front_greeted
+    100.0%  main
+     98.5%  
+     88.4%  main::'lambda'
+     57.3%  strata::core::conversation_snapshot_save
+     50.8%  ?? [libcudart.so.13.0.96]
+     50.6%  ?? [libcuda.so.580.178.04]
+     47.7%  strata::core::
+     45.7%  cudaMemcpyAsync [libcudart.so.13.0.96]
+     43.6%  cuMemcpyAsync [libcuda.so.580.178.04]
+     37.7%  strata::core::conversation_kv_save
+     25.2%  __memcpy_avx512_unaligned_erms [libc.so.6]
+     13.1%  __memset_avx512_unaligned_erms [libc.so.6]
+     12.9%  strata::core::conversation_detail::copy_checkpoints_beating
+     12.9%  strata::core::conversation_detail::copy_checkpoint_beating
+     12.8%  std::vector<unsigned char, std::allocator<unsigned char>> strata::core::conversation_detail::copy_beating<u...
+     12.8%  void std::vector<unsigned char, std::allocator<unsigned char>>::_M_range_insert<__gnu_cxx::__normal_iterato...
+     12.0%  std::vector<strata::core::ConversationCheckpoint, std::allocator<strata::core::ConversationCheckpoint>>::pu...
+     11.9%  strata::core::ConversationCheckpoint::ConversationCheckpoint
+     10.1%  std::_Function_handler<bool 
+      9.7%  strata::core::ConversationBuffer::resize_impl
+      6.7%  __clock_gettime [libc.so.6]
+      6.6%  strata::core::conversation_checkpoint_save
+      6.5%  [[vdso]]
+      4.6%  strata::core::conversation_checkpoint_restore
+      3.4%  std::vector<unsigned char, std::allocator<unsigned char>>::resize
+
+--- group: std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::platform::DirectFile:...  threads 16  samples 4948 (9.9 CPU s)
+  self:
+     93.1%  __libc_pread64 [libc.so.6]
+      1.8%  futex_wake [libc.so.6]
+      1.3%  futex_wait [libc.so.6]
+      1.3%  __GI___lll_lock_wake [libc.so.6]
+      0.7%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::platform::DirectFile::open
+      0.4%  __futex_abstimed_wait_common64 [libc.so.6]
+      0.3%  __pthread_mutex_lock [libc.so.6]
+      0.3%  __condvar_acquire_lock [libc.so.6]
+      0.2%  lll_mutex_unlock_optimized [libc.so.6]
+      0.1%  __condvar_release_lock [libc.so.6]
+      0.1%  __condvar_quiesce_and_switch_g1 [libc.so.6]
+      0.1%  __GI___lll_lock_wait [libc.so.6]
+      0.1%  pthread_cond_broadcast [libc.so.6]
+      0.0%  __condvar_fetch_xor_wseq_release [libc.so.6]
+      0.0%  __GI___pthread_disable_asynccancel [libc.so.6]
+      0.0%  ?? [libstdc++.so.6.0.33]
+      0.0%  __pread64 [libc.so.6]
+      0.0%  __condvar_set_orig_size [libc.so.6]
+      0.0%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      0.0%  cfree [libc.so.6]
+      0.0%  tcache_put [libc.so.6]
+      0.0%  _pthread_cleanup_pop [libc.so.6]
+      0.0%  _int_free [libc.so.6]
+      0.0%  std::condition_variable::wait(std::unique_lock<std::mutex>&) [libstdc++.so.6.0.33]
+      0.0%  __pthread_cond_wait_common [libc.so.6]
+      0.0%  lll_mutex_lock_optimized [libc.so.6]
+      0.0%  __pthread_mutex_cond_lock [libc.so.6]
+  inclusive:
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+    100.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<strata::platform::DirectFile::open
+     93.1%  __libc_pread64 [libc.so.6]
+      1.8%  futex_wake [libc.so.6]
+      1.4%  lll_mutex_unlock_optimized [libc.so.6]
+      1.3%  futex_wait [libc.so.6]
+      1.3%  __GI___lll_lock_wake [libc.so.6]
+      1.2%  __pthread_cond_wait_common [libc.so.6]
+      0.7%  lll_mutex_lock_optimized [libc.so.6]
+      0.6%  __pthread_mutex_cond_lock [libc.so.6]
+      0.4%  __futex_abstimed_wait_common64 [libc.so.6]
+      0.3%  __pthread_mutex_lock [libc.so.6]
+      0.3%  __condvar_acquire_lock [libc.so.6]
+      0.1%  __condvar_release_lock [libc.so.6]
+      0.1%  __condvar_quiesce_and_switch_g1 [libc.so.6]
+      0.1%  cfree [libc.so.6]
+      0.1%  __GI___lll_lock_wait [libc.so.6]
+      0.1%  pthread_cond_broadcast [libc.so.6]
+      0.0%  __condvar_fetch_xor_wseq_release [libc.so.6]
+      0.0%  __GI___pthread_disable_asynccancel [libc.so.6]
+      0.0%  __pread64 [libc.so.6]
+      0.0%  __condvar_set_orig_size [libc.so.6]
+      0.0%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      0.0%  tcache_put [libc.so.6]
+      0.0%  _pthread_cleanup_pop [libc.so.6]
+      0.0%  _int_free [libc.so.6]
+      0.0%  std::condition_variable::wait(std::unique_lock<std::mutex>&) [libstdc++.so.6.0.33]
+
+--- group: strata::ngram::PleReader::Impl::worker_loop  threads 1  samples 1335 (2.7 CPU s)
+  self:
+     26.7%  futex_wake [libc.so.6]
+     21.0%  __futex_abstimed_wait_common64 [libc.so.6]
+      9.1%  __memcpy_avx512_unaligned_erms [libc.so.6]
+      5.7%  __GI___lll_lock_wake [libc.so.6]
+      3.8%  [[vdso]]
+      3.7%  lll_mutex_unlock_optimized [libc.so.6]
+      3.1%  _int_free [libc.so.6]
+      2.8%  futex_wait [libc.so.6]
+      2.5%  strata::ngram::PleReader::Impl::finish
+      2.5%  __condvar_acquire_lock [libc.so.6]
+      2.5%  strata::platform::DirectFile::wait
+      1.8%  __pthread_mutex_lock [libc.so.6]
+      1.7%  __condvar_dec_grefs [libc.so.6]
+      1.7%  strata::ngram::PleReader::Impl::worker_loop
+      1.5%  __pthread_cond_wait_common [libc.so.6]
+      1.3%  cfree [libc.so.6]
+      1.2%  lll_mutex_lock_optimized [libc.so.6]
+      1.0%  strata::ngram::PleReader::Impl::pump
+      0.6%  __condvar_release_lock [libc.so.6]
+      0.5%  strata::platform::DirectFile::submit
+      0.5%  strata::platform::now_us
+      0.4%  unlink_chunk [libc.so.6]
+      0.4%  pthread_cond_broadcast [libc.so.6]
+      0.4%  pthread_cond_signal [libc.so.6]
+      0.4%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      0.4%  std::_Hashtable<unsigned int, std::pair<unsigned int const, strata::ngram::
+      0.4%  __condvar_quiesce_and_switch_g1 [libc.so.6]
+      0.4%  __pthread_mutex_cond_lock [libc.so.6]
+      0.3%  __GI___pthread_disable_asynccancel [libc.so.6]
+      0.2%  std::chrono::_V2::steady_clock::now() [libstdc++.so.6.0.33]
+  inclusive:
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  strata::ngram::PleReader::Impl::worker_loop
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+     35.1%  strata::platform::DirectFile::wait
+     29.6%  strata::ngram::PleReader::Impl::pump
+     26.7%  futex_wake [libc.so.6]
+     24.3%  __pthread_cond_wait_common [libc.so.6]
+     21.3%  __futex_abstimed_wait_common64 [libc.so.6]
+     20.3%  strata::platform::DirectFile::submit
+     13.5%  strata::ngram::PleReader::Impl::finish
+      9.4%  lll_mutex_unlock_optimized [libc.so.6]
+      9.1%  __memcpy_avx512_unaligned_erms [libc.so.6]
+      5.7%  __GI___lll_lock_wake [libc.so.6]
+      5.0%  cfree [libc.so.6]
+      4.6%  strata::platform::now_us
+      4.2%  std::chrono::_V2::steady_clock::now() [libstdc++.so.6.0.33]
+      4.0%  __clock_gettime [libc.so.6]
+      3.8%  [[vdso]]
+      3.7%  _int_free [libc.so.6]
+      3.5%  lll_mutex_lock_optimized [libc.so.6]
+      2.8%  futex_wait [libc.so.6]
+      2.5%  __condvar_acquire_lock [libc.so.6]
+      1.8%  __pthread_mutex_lock [libc.so.6]
+      1.7%  __condvar_dec_grefs [libc.so.6]
+      0.9%  __pthread_mutex_cond_lock [libc.so.6]
+      0.6%  __condvar_release_lock [libc.so.6]
+      0.4%  _int_free_maybe_consolidate [libc.so.6]
+      0.4%  malloc_consolidate [libc.so.6]
+      0.4%  unlink_chunk [libc.so.6]
+
+--- group: (no engine frame) clone3 [libc.so.6]  threads 2  samples 36 (0.1 CPU s)
+  self:
+     63.9%  __poll [libc.so.6]
+     22.2%  ?? [libcuda.so.580.178.04]
+      2.8%  __pthread_mutex_cond_lock [libc.so.6]
+      2.8%  [[vdso]]
+      2.8%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      2.8%  __clock_gettime [libc.so.6]
+      2.8%  __futex_abstimed_wait_common64 [libc.so.6]
+  inclusive:
+    100.0%  start_thread [libc.so.6]
+    100.0%  clone3 [libc.so.6]
+    100.0%  ?? [libcuda.so.580.178.04]
+     63.9%  __poll [libc.so.6]
+      8.3%  __pthread_cond_wait_common [libc.so.6]
+      5.6%  __clock_gettime [libc.so.6]
+      2.8%  __pthread_mutex_cond_lock [libc.so.6]
+      2.8%  [[vdso]]
+      2.8%  __GI___pthread_mutex_unlock_usercnt [libc.so.6]
+      2.8%  __futex_abstimed_wait_common64 [libc.so.6]
+
+--- group: std::__future_base::_Async_state_impl<std::thread::_Invoker<std::tuple<strata::prefill:...  threads 20  samples 29 (0.1 CPU s)
+  self:
+     72.4%  strata::kernels::iq4nl_dequant_row
+     20.7%  __futex_abstimed_wait_common64 [libc.so.6]
+      3.4%  __GI___lll_lock_wake [libc.so.6]
+      3.4%  futex_wait [libc.so.6]
+  inclusive:
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  std::_Function_handler<std::unique_ptr<std::__future_base::_Result_base, std::__future_base::_Result_base::...
+    100.0%  std::__future_base::_State_baseV2::_M_do_set
+    100.0%  __pthread_once_slow [libc.so.6]
+    100.0%  clone3 [libc.so.6]
+    100.0%  std::__future_base::_Async_state_impl<std::thread::_Invoker<std::tuple<strata::prefill::Prefill::run_impl
+    100.0%  start_thread [libc.so.6]
+    100.0%  strata::kernels::PleTable::gather_batch
+     72.4%  strata::kernels::iq4nl_dequant_row
+     27.6%  strata::ngram::PleReader::collect
+     27.6%  __pthread_cond_wait_common [libc.so.6]
+     20.7%  __futex_abstimed_wait_common64 [libc.so.6]
+      3.4%  __GI___lll_lock_wake [libc.so.6]
+      3.4%  lll_mutex_unlock_optimized [libc.so.6]
+      3.4%  futex_wait [libc.so.6]
+      3.4%  __pthread_mutex_cond_lock [libc.so.6]
+
+--- group: std::thread::_State_impl<std::thread::_Invoker<std::tuple<main::'lambda73'  threads 1  samples 10 (0.0 CPU s)
+  self:
+     50.0%  __GI___libc_read [libc.so.6]
+     20.0%  __open [libc.so.6]
+     10.0%  clock_nanosleep [libc.so.6]
+     10.0%  _IO_file_open [libc.so.6]
+     10.0%  _IO_fgets [libc.so.6]
+  inclusive:
+    100.0%  std::thread::_State_impl<std::thread::_Invoker<std::tuple<main::'lambda73'
+    100.0%  ?? [libstdc++.so.6.0.33]
+    100.0%  clone3 [libc.so.6]
+    100.0%  start_thread [libc.so.6]
+     90.0%  
+     50.0%  __GI___libc_read [libc.so.6]
+     50.0%  _IO_file_underflow [libc.so.6]
+     40.0%  _IO_fread [libc.so.6]
+     40.0%  __GI__IO_file_xsgetn [libc.so.6]
+     30.0%  _IO_file_open [libc.so.6]
+     30.0%  __fopen_internal [libc.so.6]
+     30.0%  _IO_file_fopen [libc.so.6]
+     20.0%  __open [libc.so.6]
+     20.0%  _IO_fgets [libc.so.6]
+     10.0%  __nanosleep [libc.so.6]
+     10.0%  clock_nanosleep [libc.so.6]
+     10.0%  _IO_default_uflow [libc.so.6]
+     10.0%  _IO_getline_info [libc.so.6]
