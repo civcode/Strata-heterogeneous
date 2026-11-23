@@ -1,6 +1,7 @@
 # Status
 
-Turn holder: **Chat AI**, report 0094 reviewed; next step waits on the Human User's choice.
+Turn holder: **Coding Agent (Tier 1)**, handoff 0095 (design study: unload HIP1 and use the idle NVIDIA card;
+candidates A drafter on CUDA, B role swap HIP0 -> HIP1 -> CUDA, C configuration only). Up to 45 minutes of GPU time.
 
 ## The 19 November host crash (handoff 0086)
 
