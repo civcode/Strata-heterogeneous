@@ -1,0 +1,31 @@
+{
+ "name": "compaction-hiponly",
+ "limit": 6,
+ "env": [
+  "STRATA_PIPELINE_DEBUG=1",
+  "STRATA_PIPELINE_TRACE=/home/chris/workspace/strata-local-archive/profiles/0095/compaction-hiponly/pltrace.txt",
+  "STRATA_DECODE_TIMING=1"
+ ],
+ "cfg": [
+  "args=[\"--pack\", \"/home/chris/workspace/Strata-data/packs/iq3_xxs\", \"--native\", \"/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf\", \"--ple-gguf\", \"/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf\", \"--expert-profile\", \"/home/chris/tmp/Strata/data/expert-profile.bin\", \"--expert-cache\", \"auto\", \"--mmap-experts\", \"--prefill\", \"auto\", \"--spec\", \"3\", \"--spec-min-p\", \"0.5\", \"--mtp-window\", \"16384\", \"--mtp\", \"/home/chris/workspace/Strata-data/mtp/rt\", \"--max-context\", \"262144\", \"--kv\", \"int8\", \"--kv-resident\", \"0\", \"--vision\", \"--vram-reserve-mib\", \"700\", \"--pipeline-windows\", \"2\"]"
+ ],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "prof_builds": false,
+ "perf": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3713       12946           0       45959       58228\nSwap:          16383         836       15547\n",
+ "t_start": "2026-11-23T22:47:03+0100",
+ "ready_s": 15.0,
+ "server_pid": 1117044,
+ "replay_rc": 0,
+ "replay_s": 75.0,
+ "server_rc": 0,
+ "elapsed_s": 91.2,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3697       10951           0       47970       58245\nSwap:          16383         834       15549\n",
+ "leftovers": [],
+ "gpu_pause_lines": [],
+ "non_finite": 0
+}

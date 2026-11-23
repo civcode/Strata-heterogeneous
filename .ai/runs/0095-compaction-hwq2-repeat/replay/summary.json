@@ -1,0 +1,58 @@
+{
+ "requests": 6,
+ "generated_tokens": 4504,
+ "decode_seconds": 34.362,
+ "engine_decode_tps": 131.08,
+ "draft_acceptance_pct": 74.62,
+ "prompt_mismatches": 0,
+ "ttft_median_s": 4.281,
+ "phases": {
+  "reasoning": {
+   "chunks": 343,
+   "seconds": 2.5464,
+   "tok_s": 134.7
+  },
+  "content": {
+   "chunks": 877,
+   "seconds": 8.5525,
+   "tok_s": 102.54
+  },
+  "tool_calls": {
+   "chunks": 3004,
+   "seconds": 23.1663,
+   "tok_s": 129.67
+  }
+ },
+ "metrics_phases": {
+  "thinking": {
+   "tokens": 205,
+   "seconds": 1.506,
+   "samples": 6,
+   "tps": 136.1
+  },
+  "answering": {
+   "tokens": 873,
+   "seconds": 8.284,
+   "samples": 33,
+   "tps": 105.38
+  },
+  "writing tool calls": {
+   "tokens": 3090,
+   "seconds": 22.085,
+   "samples": 88,
+   "tps": 139.91
+  },
+  "overall": {
+   "tokens": 4168,
+   "seconds": 31.876,
+   "samples": 127,
+   "tps": 130.76
+  }
+ },
+ "recording": "/home/chris/workspace/strata-local-archive/profiles/0095/session-seq36-41.jsonl",
+ "sampling": "greedy",
+ "pauses": true,
+ "pause_scale": 1.0,
+ "wall_s": 67.6,
+ "errors": 0
+}

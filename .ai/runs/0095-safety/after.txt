@@ -1,0 +1,8 @@
+2026-11-23T22:57:33+01:00
+boot f94c87ce-2f4b-412e-b02c-09dfdb04f155
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3643       13163           0       45811       58298
+Swap:          16383         865       15518
+--- coredumps since boot
+No coredumps found.
+--- kernel record lines since 22:30

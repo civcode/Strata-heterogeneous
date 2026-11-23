@@ -1,0 +1,138 @@
+{"t": 4.5438, "phase": "writing tool calls", "tokens": 43, "seconds": 0.25075}
+{"t": 19.8562, "phase": "thinking", "tokens": 29, "seconds": 0.25101}
+{"t": 20.1076, "phase": "thinking", "tokens": 24, "seconds": 0.25133}
+{"t": 20.3588, "phase": "thinking", "tokens": 16, "seconds": 0.25121}
+{"t": 20.6097, "phase": "thinking", "tokens": 20, "seconds": 0.25099}
+{"t": 20.8606, "phase": "thinking", "tokens": 27, "seconds": 0.25086}
+{"t": 21.1121, "phase": "thinking", "tokens": 43, "seconds": 0.25145}
+{"t": 21.3632, "phase": "thinking", "tokens": 27, "seconds": 0.25112}
+{"t": 21.6142, "phase": "thinking", "tokens": 35, "seconds": 0.25103}
+{"t": 21.865, "phase": "thinking", "tokens": 35, "seconds": 0.25084}
+{"t": 22.1161, "phase": "thinking", "tokens": 33, "seconds": 0.25109}
+{"t": 22.6181, "phase": "writing tool calls", "tokens": 43, "seconds": 0.2508}
+{"t": 22.8691, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25101}
+{"t": 23.1204, "phase": "writing tool calls", "tokens": 48, "seconds": 0.25125}
+{"t": 23.3717, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25132}
+{"t": 27.3911, "phase": "thinking", "tokens": 42, "seconds": 0.25077}
+{"t": 27.6419, "phase": "thinking", "tokens": 27, "seconds": 0.25086}
+{"t": 27.8932, "phase": "thinking", "tokens": 27, "seconds": 0.2513}
+{"t": 28.1441, "phase": "thinking", "tokens": 31, "seconds": 0.25091}
+{"t": 28.3953, "phase": "thinking", "tokens": 23, "seconds": 0.25111}
+{"t": 28.6461, "phase": "thinking", "tokens": 32, "seconds": 0.25086}
+{"t": 28.897, "phase": "thinking", "tokens": 18, "seconds": 0.25089}
+{"t": 29.1479, "phase": "thinking", "tokens": 22, "seconds": 0.25088}
+{"t": 29.6499, "phase": "writing tool calls", "tokens": 30, "seconds": 0.25093}
+{"t": 29.9008, "phase": "writing tool calls", "tokens": 32, "seconds": 0.25091}
+{"t": 30.1517, "phase": "writing tool calls", "tokens": 28, "seconds": 0.25088}
+{"t": 30.403, "phase": "writing tool calls", "tokens": 28, "seconds": 0.25126}
+{"t": 34.1692, "phase": "thinking", "tokens": 28, "seconds": 0.25086}
+{"t": 34.4203, "phase": "thinking", "tokens": 29, "seconds": 0.25116}
+{"t": 37.9368, "phase": "thinking", "tokens": 24, "seconds": 0.25117}
+{"t": 38.188, "phase": "thinking", "tokens": 25, "seconds": 0.25121}
+{"t": 38.6901, "phase": "writing tool calls", "tokens": 43, "seconds": 0.25112}
+{"t": 42.7257, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25117}
+{"t": 42.9768, "phase": "writing tool calls", "tokens": 29, "seconds": 0.2511}
+{"t": 43.2278, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25101}
+{"t": 47.2457, "phase": "writing tool calls", "tokens": 38, "seconds": 0.25124}
+{"t": 47.4967, "phase": "writing tool calls", "tokens": 31, "seconds": 0.25098}
+{"t": 47.7476, "phase": "writing tool calls", "tokens": 41, "seconds": 0.2509}
+{"t": 47.9985, "phase": "writing tool calls", "tokens": 39, "seconds": 0.25084}
+{"t": 48.2496, "phase": "writing tool calls", "tokens": 37, "seconds": 0.25116}
+{"t": 52.5178, "phase": "thinking", "tokens": 25, "seconds": 0.25088}
+{"t": 52.7687, "phase": "thinking", "tokens": 25, "seconds": 0.25084}
+{"t": 53.0198, "phase": "thinking", "tokens": 26, "seconds": 0.25117}
+{"t": 53.2712, "phase": "thinking", "tokens": 32, "seconds": 0.25136}
+{"t": 53.5222, "phase": "thinking", "tokens": 26, "seconds": 0.25103}
+{"t": 53.7733, "phase": "thinking", "tokens": 21, "seconds": 0.25106}
+{"t": 54.2753, "phase": "writing tool calls", "tokens": 44, "seconds": 0.25092}
+{"t": 54.5264, "phase": "writing tool calls", "tokens": 24, "seconds": 0.25108}
+{"t": 54.7776, "phase": "writing tool calls", "tokens": 33, "seconds": 0.25125}
+{"t": 59.5512, "phase": "thinking", "tokens": 29, "seconds": 0.2512}
+{"t": 59.8022, "phase": "thinking", "tokens": 36, "seconds": 0.251}
+{"t": 60.0533, "phase": "thinking", "tokens": 24, "seconds": 0.25104}
+{"t": 60.3045, "phase": "thinking", "tokens": 31, "seconds": 0.25125}
+{"t": 60.5558, "phase": "thinking", "tokens": 27, "seconds": 0.25125}
+{"t": 60.807, "phase": "thinking", "tokens": 28, "seconds": 0.25122}
+{"t": 61.0585, "phase": "thinking", "tokens": 21, "seconds": 0.25154}
+{"t": 61.3099, "phase": "thinking", "tokens": 33, "seconds": 0.25138}
+{"t": 61.561, "phase": "thinking", "tokens": 30, "seconds": 0.25114}
+{"t": 61.8121, "phase": "thinking", "tokens": 34, "seconds": 0.2511}
+{"t": 62.0633, "phase": "thinking", "tokens": 22, "seconds": 0.25115}
+{"t": 62.3144, "phase": "thinking", "tokens": 26, "seconds": 0.25106}
+{"t": 62.5656, "phase": "thinking", "tokens": 26, "seconds": 0.25122}
+{"t": 63.0682, "phase": "writing tool calls", "tokens": 41, "seconds": 0.25133}
+{"t": 63.3191, "phase": "writing tool calls", "tokens": 33, "seconds": 0.25098}
+{"t": 63.5704, "phase": "writing tool calls", "tokens": 31, "seconds": 0.25122}
+{"t": 63.8213, "phase": "writing tool calls", "tokens": 32, "seconds": 0.25097}
+{"t": 64.0723, "phase": "writing tool calls", "tokens": 36, "seconds": 0.25095}
+{"t": 64.3234, "phase": "writing tool calls", "tokens": 34, "seconds": 0.25114}
+{"t": 64.5747, "phase": "writing tool calls", "tokens": 30, "seconds": 0.25124}
+{"t": 69.3479, "phase": "thinking", "tokens": 33, "seconds": 0.25135}
+{"t": 69.5994, "phase": "thinking", "tokens": 31, "seconds": 0.25143}
+{"t": 69.8504, "phase": "thinking", "tokens": 38, "seconds": 0.25105}
+{"t": 70.1013, "phase": "thinking", "tokens": 35, "seconds": 0.2509}
+{"t": 70.3525, "phase": "thinking", "tokens": 30, "seconds": 0.2512}
+{"t": 70.6039, "phase": "thinking", "tokens": 31, "seconds": 0.25138}
+{"t": 70.8553, "phase": "thinking", "tokens": 30, "seconds": 0.25137}
+{"t": 71.1065, "phase": "thinking", "tokens": 20, "seconds": 0.25119}
+{"t": 71.3575, "phase": "thinking", "tokens": 35, "seconds": 0.25106}
+{"t": 71.6084, "phase": "thinking", "tokens": 31, "seconds": 0.25089}
+{"t": 71.8597, "phase": "thinking", "tokens": 22, "seconds": 0.25129}
+{"t": 72.111, "phase": "thinking", "tokens": 36, "seconds": 0.25127}
+{"t": 72.3624, "phase": "thinking", "tokens": 36, "seconds": 0.25141}
+{"t": 72.6137, "phase": "thinking", "tokens": 38, "seconds": 0.25136}
+{"t": 72.8649, "phase": "thinking", "tokens": 21, "seconds": 0.25118}
+{"t": 73.1162, "phase": "thinking", "tokens": 22, "seconds": 0.25128}
+{"t": 73.3673, "phase": "thinking", "tokens": 19, "seconds": 0.25108}
+{"t": 73.8698, "phase": "writing tool calls", "tokens": 27, "seconds": 0.25126}
+{"t": 74.1209, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25108}
+{"t": 74.372, "phase": "writing tool calls", "tokens": 28, "seconds": 0.2511}
+{"t": 74.6229, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25092}
+{"t": 74.8741, "phase": "writing tool calls", "tokens": 39, "seconds": 0.2512}
+{"t": 81.6621, "phase": "thinking", "tokens": 31, "seconds": 0.2514}
+{"t": 81.9135, "phase": "thinking", "tokens": 21, "seconds": 0.25139}
+{"t": 82.1648, "phase": "thinking", "tokens": 24, "seconds": 0.2513}
+{"t": 82.4161, "phase": "thinking", "tokens": 24, "seconds": 0.25125}
+{"t": 82.9179, "phase": "writing tool calls", "tokens": 38, "seconds": 0.25088}
+{"t": 83.1695, "phase": "writing tool calls", "tokens": 37, "seconds": 0.25151}
+{"t": 83.4209, "phase": "writing tool calls", "tokens": 40, "seconds": 0.25142}
+{"t": 83.6721, "phase": "writing tool calls", "tokens": 29, "seconds": 0.2512}
+{"t": 83.923, "phase": "writing tool calls", "tokens": 28, "seconds": 0.25095}
+{"t": 84.1741, "phase": "writing tool calls", "tokens": 27, "seconds": 0.25108}
+{"t": 84.4254, "phase": "writing tool calls", "tokens": 30, "seconds": 0.25124}
+{"t": 84.6767, "phase": "writing tool calls", "tokens": 31, "seconds": 0.25132}
+{"t": 84.9277, "phase": "writing tool calls", "tokens": 38, "seconds": 0.25098}
+{"t": 85.1789, "phase": "writing tool calls", "tokens": 27, "seconds": 0.25126}
+{"t": 85.4301, "phase": "writing tool calls", "tokens": 28, "seconds": 0.25123}
+{"t": 85.6812, "phase": "writing tool calls", "tokens": 34, "seconds": 0.25102}
+{"t": 85.9324, "phase": "writing tool calls", "tokens": 31, "seconds": 0.25124}
+{"t": 86.1843, "phase": "writing tool calls", "tokens": 32, "seconds": 0.25188}
+{"t": 86.4356, "phase": "writing tool calls", "tokens": 33, "seconds": 0.25136}
+{"t": 86.6866, "phase": "writing tool calls", "tokens": 40, "seconds": 0.25099}
+{"t": 86.9377, "phase": "writing tool calls", "tokens": 29, "seconds": 0.25109}
+{"t": 87.189, "phase": "writing tool calls", "tokens": 29, "seconds": 0.25125}
+{"t": 87.44, "phase": "writing tool calls", "tokens": 30, "seconds": 0.251}
+{"t": 87.6914, "phase": "writing tool calls", "tokens": 48, "seconds": 0.25138}
+{"t": 87.943, "phase": "writing tool calls", "tokens": 42, "seconds": 0.25165}
+{"t": 88.1944, "phase": "writing tool calls", "tokens": 36, "seconds": 0.25139}
+{"t": 88.4457, "phase": "writing tool calls", "tokens": 34, "seconds": 0.25132}
+{"t": 88.6968, "phase": "writing tool calls", "tokens": 41, "seconds": 0.25107}
+{"t": 88.948, "phase": "writing tool calls", "tokens": 35, "seconds": 0.2512}
+{"t": 89.1991, "phase": "writing tool calls", "tokens": 33, "seconds": 0.25109}
+{"t": 89.4505, "phase": "writing tool calls", "tokens": 38, "seconds": 0.25141}
+{"t": 89.7018, "phase": "writing tool calls", "tokens": 28, "seconds": 0.25134}
+{"t": 89.953, "phase": "writing tool calls", "tokens": 34, "seconds": 0.2512}
+{"t": 90.2044, "phase": "writing tool calls", "tokens": 35, "seconds": 0.25135}
+{"t": 90.4557, "phase": "writing tool calls", "tokens": 43, "seconds": 0.25128}
+{"t": 90.7071, "phase": "writing tool calls", "tokens": 30, "seconds": 0.25142}
+{"t": 90.9585, "phase": "writing tool calls", "tokens": 32, "seconds": 0.2514}
+{"t": 91.2098, "phase": "writing tool calls", "tokens": 36, "seconds": 0.25131}
+{"t": 91.4611, "phase": "writing tool calls", "tokens": 28, "seconds": 0.25129}
+{"t": 91.7124, "phase": "writing tool calls", "tokens": 45, "seconds": 0.25131}
+{"t": 91.9635, "phase": "writing tool calls", "tokens": 36, "seconds": 0.25111}
+{"t": 92.2144, "phase": "writing tool calls", "tokens": 40, "seconds": 0.25093}
+{"t": 92.4659, "phase": "writing tool calls", "tokens": 36, "seconds": 0.25143}
+{"t": 92.7172, "phase": "writing tool calls", "tokens": 32, "seconds": 0.25136}
+{"t": 92.9685, "phase": "writing tool calls", "tokens": 43, "seconds": 0.25124}
+{"t": 93.2194, "phase": "writing tool calls", "tokens": 37, "seconds": 0.25089}
+{"t": 93.4706, "phase": "writing tool calls", "tokens": 33, "seconds": 0.25127}

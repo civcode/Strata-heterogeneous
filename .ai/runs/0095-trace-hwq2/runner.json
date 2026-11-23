@@ -1,0 +1,34 @@
+{
+ "name": "trace-hwq2",
+ "limit": 15,
+ "env": [
+  "GPU_MAX_HW_QUEUES=2",
+  "STRATA_PIPELINE_DEBUG=1",
+  "STRATA_PIPELINE_TRACE=/home/chris/workspace/strata-local-archive/profiles/0095/trace-hwq2/pltrace.txt",
+  "STRATA_SPLIT_TIMING=1",
+  "STRATA_DECODE_TIMING=1",
+  "STRATA_VERIFY_PROFILE=1"
+ ],
+ "cfg": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "prof_builds": false,
+ "perf": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3742       13034           0       45844       58200\nSwap:          16383         826       15557\n",
+ "t_start": "2026-11-23T22:54:03+0100",
+ "ready_s": 13.0,
+ "server_pid": 1123143,
+ "replay_rc": 0,
+ "replay_s": 94.0,
+ "server_rc": 0,
+ "elapsed_s": 109.4,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3584       13453           0       45580       58357\nSwap:          16383         881       15502\n",
+ "leftovers": [],
+ "gpu_pause_lines": [
+  "strata serve: the graphics driver paused the GPU for 769 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much"
+ ],
+ "non_finite": 0
+}

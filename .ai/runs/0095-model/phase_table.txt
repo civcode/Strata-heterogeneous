@@ -1,0 +1,15 @@
+scenario                                      fresh ms on-path ms thinking tok/s tool calls tok/s
+today, good state (measured)                     23.26      12.27          122.6            147.6
+today, bad state (measured)                      23.60      15.30          113.4            132.8
+A_best (model)                                   23.27      11.71          124.2            150.4
+A_central (model)                                23.97      11.88          121.1            146.9
+A_worst (model)                                  25.01      12.09          116.8            142.2
+B_best (model)                                   24.06      14.90          112.9            133.1
+B_central (model)                                24.60      15.35          110.1            129.7
+B_worst (model)                                  25.36      15.90          106.7            125.5
+C GPU_MAX_HW_QUEUES=16 (measured, 1 run)         21.90      14.60          121.0            141.2
+C STRATA_MTP_STAGE0=1 (measured, good state)     24.02      13.42          116.7            139.5
+0094 timer replay, requests 1-39 (before the first compaction): windows 6638, fresh 23.58 ms, on-path 12.50 ms
+0094 timer replay, requests 40-106 (after): windows 27230, fresh 24.07 ms, on-path 15.13 ms
+GPU_MAX_HW_QUEUES=2, after a compaction (measured, 2 runs)    21.40  11.50 thinking  132.6 tool calls  159.2
+GPU_MAX_HW_QUEUES=2, first 15 requests (measured)             23.35  12.27 thinking  122.3 tool calls  147.3

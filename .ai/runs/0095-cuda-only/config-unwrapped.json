@@ -1,0 +1,51 @@
+{
+ "exe": "/home/chris/workspace/Strata-heterogeneous/build-0093-cuda/strata",
+ "args": [
+  "--pack",
+  "/home/chris/workspace/Strata-data/packs/iq3_xxs",
+  "--native",
+  "/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/chris/models/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/chris/tmp/Strata/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--mmap-experts",
+  "--prefill",
+  "auto",
+  "--spec",
+  "3",
+  "--spec-min-p",
+  "0.5",
+  "--mtp-window",
+  "16384",
+  "--mtp",
+  "/home/chris/workspace/Strata-data/mtp/rt",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "0",
+  "--max-context",
+  "16384",
+  "--vram-reserve-mib",
+  "450"
+ ],
+ "cwd": "/home/chris/workspace/Strata-heterogeneous",
+ "tokenizer": "/home/chris/workspace/Strata-data/packs/iq3_xxs/tokenizer",
+ "model_name": "qwen3.8-flash-next-iq3_xxs",
+ "log": "/home/chris/workspace/strata-local-archive/profiles/0095/cuda-only/server.log",
+ "lib_dirs": [],
+ "port": 8081,
+ "backend": "cuda",
+ "gpu": [
+  0
+ ],
+ "gpus_asked": true,
+ "env": {
+  "HSA_ENABLE_SDMA": "0",
+  "STRATA_DECODE_TIMING": "1",
+  "STRATA_VERIFY_PROFILE": "1"
+ },
+ "parallel": 1
+}

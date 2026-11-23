@@ -1,0 +1,33 @@
+loading the model (the first start takes a minute or two) ...
+[strata] Drafting: MTP (DFlash2 isn't available in this mode)
+[strata] starting the engine: reading the model's weights ...
+[strata] engine priority: nice +5 (this PC has built-in Radeon graphics that usually draw the desktop; STRATA_ENGINE_NICE=0 turns it off)
+[strata] mapping the experts from the model files (about 47 GB, --mmap-experts): they are not loaded into RAM - the OS file cache reads them as the GPU's expert cache fills and as requests need them.
+         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.
+         Please wait and don't close this window; the server says when it is ready.
+[strata] filling the GPU's expert cache (5838 experts, 9.45 GiB of VRAM) ...
+[strata] almost ready ...
+ready: http://127.0.0.1:8081/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 16384 tokens)
+       open http://127.0.0.1:8081/ in a browser to chat; close this window to stop the model
+{"ready": true, "after_s": 7.5}
+[strata] reading the prompt: 66 of 71 tokens, 2 s so far
+[strata] thinking: 49 of max 300 tokens, 56.5 tok/s, 3 s
+[strata] answering: 112 of max 300 tokens, 59.3 tok/s, 4 s
+[strata] done: 149 tokens in 4 s (61.5 tok/s) (stop, cancel=False), expert cache 73.1% hit
+{"request": "short:300", "usage": {"prompt_tokens": 71, "completion_tokens": 149, "total_tokens": 220, "prompt_tokens_details": {"cached_tokens": 0}}, "timings": {"cache_n": 0, "prompt_n": 71, "prompt_ms": 1780.7, "prompt_per_token_ms": 25.08, "prompt_per_second": 39.9, "predicted_n": 149, "predicted_ms": 2423.7, "predicted_per_token_ms": 16.266, "predicted_per_second": 61.5, "draft_n": 111, "draft_n_accepted": 79}, "finish": "stop", "text": "The sky is blue during the day because molecules in the atmosphere scatter short", "wall_s": 4.207}
+[strata] reading the prompt: 4,966 of 4,971 tokens, 5 s so far
+[strata] thinking: 49 of max 300 tokens, 77.4 tok/s, 6 s
+[strata] thinking: 127 of max 300 tokens, 77.8 tok/s, 7 s
+[strata] thinking: 207 of max 300 tokens, 78.3 tok/s, 8 s
+[strata] thinking: 297 of max 300 tokens, 80.7 tok/s, 9 s
+[strata] done: 300 tokens in 9 s (80.8 tok/s) (length, cancel=False), expert cache 81.0% hit
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+{"request": "long:300", "usage": {"prompt_tokens": 4971, "completion_tokens": 300, "total_tokens": 5271, "prompt_tokens_details": {"cached_tokens": 0}}, "timings": {"cache_n": 0, "prompt_n": 4971, "prompt_ms": 5772.0, "prompt_per_token_ms": 1.161, "prompt_per_second": 861.2, "predicted_n": 300, "predicted_ms": 3713.6, "predicted_per_token_ms": 12.379, "predicted_per_second": 80.8, "draft_n": 209, "draft_n_accepted": 168}, "finish": "length", "text": "", "wall_s": 9.49}
+[strata] thinking: 57 of max 300 tokens, 65.5 tok/s, 1 s
+[strata] answering: 131 of max 300 tokens, 69.0 tok/s, 2 s
+[strata] done: 152 tokens in 2 s (70.5 tok/s) (stop, cancel=False), expert cache 77.9% hit
+{"request": "short:300", "usage": {"prompt_tokens": 71, "completion_tokens": 152, "total_tokens": 223, "prompt_tokens_details": {"cached_tokens": 66}}, "timings": {"cache_n": 66, "prompt_n": 5, "prompt_ms": 124.7, "prompt_per_token_ms": 24.94, "prompt_per_second": 40.1, "predicted_n": 152, "predicted_ms": 2157.1, "predicted_per_token_ms": 14.191, "predicted_per_second": 70.5, "draft_n": 116, "draft_n_accepted": 77}, "finish": "stop", "text": "The sky is blue during the day because molecules in the atmosphere scatter short", "wall_s": 2.284}
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped
+{"server_exit": 0, "alive_s": 26.7}

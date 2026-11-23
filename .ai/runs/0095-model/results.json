@@ -1,0 +1,162 @@
+{
+ "r15:today_good": {
+  "fresh": 22.67,
+  "spec": 12.27,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 2.92,
+  "mean_window": 17.51
+ },
+ "r15:today_bad": {
+  "fresh": 24.77,
+  "spec": 13.87,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 2.97,
+  "mean_window": 19.36
+ },
+ "r15:A_central": {
+  "fresh": 23.38,
+  "spec": 11.88,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 2.68,
+  "mean_window": 17.67
+ },
+ "r15:A_best": {
+  "fresh": 22.68,
+  "spec": 11.71,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 2.61,
+  "mean_window": 17.24
+ },
+ "r15:A_worst": {
+  "fresh": 24.42,
+  "spec": 12.09,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 2.79,
+  "mean_window": 18.3
+ },
+ "r15:B_central": {
+  "fresh": 24.01,
+  "spec": 15.35,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 9.75,
+  "mean_window": 19.71
+ },
+ "r15:B_best": {
+  "fresh": 23.47,
+  "spec": 14.9,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 9.6,
+  "mean_window": 19.22
+ },
+ "r15:B_worst": {
+  "fresh": 24.77,
+  "spec": 15.9,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 9.6,
+  "mean_window": 20.37
+ },
+ "r15:C_hwq16_measured": {
+  "fresh": 23.12,
+  "spec": 13.0,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 3.0,
+  "mean_window": 18.1
+ },
+ "r15:C_stage0_measured": {
+  "fresh": 22.92,
+  "spec": 13.34,
+  "n_fresh": 1073,
+  "n_spec": 1057,
+  "last_idle_on_path": 4.17,
+  "mean_window": 18.17
+ },
+ "long:today_good": {
+  "fresh": 22.67,
+  "spec": 12.38,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 3.03,
+  "mean_window": 16.47
+ },
+ "long:today_bad": {
+  "fresh": 24.77,
+  "spec": 14.11,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 3.21,
+  "mean_window": 18.34
+ },
+ "long:A_central": {
+  "fresh": 23.38,
+  "spec": 11.96,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 2.76,
+  "mean_window": 16.5
+ },
+ "long:A_best": {
+  "fresh": 22.68,
+  "spec": 11.77,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 2.67,
+  "mean_window": 16.1
+ },
+ "long:A_worst": {
+  "fresh": 24.42,
+  "spec": 12.18,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 2.88,
+  "mean_window": 17.05
+ },
+ "long:B_central": {
+  "fresh": 23.89,
+  "spec": 15.35,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 9.75,
+  "mean_window": 18.75
+ },
+ "long:B_best": {
+  "fresh": 23.33,
+  "spec": 14.9,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 9.6,
+  "mean_window": 18.25
+ },
+ "long:B_worst": {
+  "fresh": 24.72,
+  "spec": 15.9,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 9.6,
+  "mean_window": 19.4
+ },
+ "long:C_hwq16_measured": {
+  "fresh": 23.11,
+  "spec": 13.25,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 3.25,
+  "mean_window": 17.17
+ },
+ "long:C_stage0_measured": {
+  "fresh": 22.92,
+  "spec": 13.41,
+  "n_fresh": 2058,
+  "n_spec": 3121,
+  "last_idle_on_path": 4.24,
+  "mean_window": 17.19
+ }
+}

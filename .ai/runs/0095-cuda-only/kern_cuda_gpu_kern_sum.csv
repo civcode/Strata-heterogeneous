@@ -1,0 +1,110 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+18.5,299493129,134,2235023.4,1826650.0,249377,3541845,671133.1,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_f16_256x128_32x3_tn_align8>(T1::Params)
+6.3,101473735,276,367658.5,411603.0,34048,899557,207426.1,"void strata::prefill::fused::<unnamed>::native_kernel<(int)21, (bool)1, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+5.3,86529657,188,460264.1,455682.5,7744,918533,451596.2,"strata::prefill::<unnamed>::gr_write_norm_rs_kernel(float *, const float *, const float *, long, const float *, float, float *, unsigned short *, unsigned short *, long, int)"
+5.3,85468865,478,178805.2,190001.0,9376,366338,74064.1,"void strata::prefill::fused::<unnamed>::native_kernel<(int)42, (bool)0, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+5.2,84883634,24,3536818.1,3315796.0,16736,7536013,3607005.4,"strata::kernels::<unnamed>::prompt_attn_i8v3_kernel(const float *, strata::kernels::QsaAttnPools, const int *, const int *, int, int, float, float *, int)"
+4.9,78926372,195,404750.6,261825.0,4000,810084,400795.1,"strata::prefill::<unnamed>::gr_mix_r_kernel(const float *, const float *, const float *, const float *, float *, unsigned short *, long, unsigned short *, unsigned short *)"
+4.8,78377152,136,576302.6,582883.0,38304,847780,146098.6,"void strata::prefill::fused::<unnamed>::native_kernel<(int)17, (bool)1, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+4.8,77912315,133,585806.9,585667.0,58560,1227463,167711.6,"void strata::prefill::fused::<unnamed>::native_kernel<(int)22, (bool)1, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+3.8,61853922,142,435591.0,461762.5,40576,924165,275742.6,"void strata::kernels::<unnamed>::dequant_kernel<(int)14, strata::kernels::<unnamed>::H16, (bool)0>(const unsigned char *, long, long, long, long, long, T2 *)"
+3.6,58316461,108,539967.2,661827.5,294082,665188,173997.8,"void strata::prefill::<unnamed>::gdn_tc_scan_kernel<(bool)1, (bool)1, (int)3, (int)1>(float *, const float *, const unsigned short *, const float *, const float4 *, const unsigned short *, const unsigned short *, float *, long, int, long, const float *, const float *, float, unsigned short *, long)"
+3.6,58022005,311,186565.9,193505.0,10528,498179,91970.9,"void strata::prefill::fused::<unnamed>::native_kernel<(int)20, (bool)0, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+3.4,55817571,121,461302.2,460611.0,90144,792804,121593.8,"void strata::prefill::fused::<unnamed>::native_kernel<(int)16, (bool)1, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+3.1,49508955,157,315343.7,411074.0,157985,417794,122955.7,ampere_s1688gemm_bf16_128x128_ldg8_stages_32x1_tn
+3.1,49458463,96,515192.3,507538.5,9120,1022854,506987.4,"strata::prefill::<unnamed>::moe_combine4_kernel(const float *, const int *, const float *, const float4 *, const float *, float4 *, long, const float *)"
+2.9,46701650,98,476547.4,481411.0,154721,483555,36139.2,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_bf16_128x256_32x3_tn_align8>(T1::Params)
+2.8,46007816,134,343341.9,59056.5,44032,979142,328799.9,"void strata::kernels::<unnamed>::dequant_kernel<(int)23, strata::kernels::<unnamed>::H16, (bool)0>(const unsigned char *, long, long, long, long, long, T2 *)"
+2.5,41241685,123,335298.3,318049.0,30465,998693,212617.5,"void strata::prefill::fused::<unnamed>::native_kernel<(int)18, (bool)1, (int)2, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+2.0,31965712,90,355174.6,467042.0,41888,954950,325289.4,"void strata::kernels::<unnamed>::dequant_kernel<(int)12, strata::kernels::<unnamed>::H16, (bool)0>(const unsigned char *, long, long, long, long, long, T2 *)"
+1.6,26117686,72,362745.6,365474.0,18752,710757,345606.4,"strata::prefill::<unnamed>::gdn_conv_w_kernel(const float *, const float *, const float *, float *, long, float)"
+1.4,23031015,122,188778.8,184705.5,157377,906501,74281.8,ampere_s1688gemm_fp16_128x128_ldg8_stages_32x1_tn
+1.4,22145703,96,230684.4,230753.5,225890,233697,1488.6,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_bf16_64x128_64x3_tn_align2>(T1::Params)
+0.8,12645513,28,451625.5,476083.0,41824,799301,247325.3,"void strata::kernels::<unnamed>::dequant_kernel<(int)13, strata::kernels::<unnamed>::H16, (bool)0>(const unsigned char *, long, long, long, long, long, T2 *)"
+0.8,12358795,108,114433.3,135345.0,44000,165825,50604.8,"strata::prefill::<unnamed>::gdn_tc_prep_kernel(const float *, const float *, const float *, unsigned short *, float *, float4 *, unsigned short *, unsigned short *, long, long)"
+0.6,9388627,48,195596.4,195585.0,194273,196673,581.1,ampere_s1688gemm_fp16_128x128_ldg8_tn
+0.5,8198541,70,117122.0,109424.5,41888,162433,25645.5,"void strata::prefill::fused::<unnamed>::native_kernel<(int)22, (bool)1, (int)4, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+0.5,7347400,71,103484.5,98144.0,42944,189153,25306.4,"void strata::prefill::fused::<unnamed>::native_kernel<(int)17, (bool)1, (int)4, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+0.4,6435720,72,89385.0,19600.5,1888,433411,156084.0,"void strata::prefill::<unnamed>::rms_rope_rows_kernel<(bool)0>(const float *, long, long, float *, long, const float *, long, long, float, long, float, float, float, float, float, float, const int *, strata::kernels::RopeTab)"
+0.4,6276163,50,125523.3,123744.5,123297,133088,3237.5,ampere_s16816gemm_fp16_256x128_ldg8_stages_32x3_tn
+0.4,6156355,24,256514.8,256401.5,3488,510051,258428.0,"strata::prefill::<unnamed>::gate_attn_kernel(const float *, const float *, unsigned short *, long, long)"
+0.4,6033336,135,44691.4,45440.0,10240,71040,11069.7,"void strata::prefill::fused::<unnamed>::native_kernel<(int)42, (bool)0, (int)4, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+0.4,5788999,252,22972.2,38816.0,1248,42145,18223.8,"void strata::kernels::<unnamed>::block_topk_reg_kernel<(int)33>(const float *, const int *, long, long, int *)"
+0.4,5707389,252,22648.4,24096.0,5600,45664,8581.5,"strata::kernels::<unnamed>::block_scores_tc_kernel(const float *, const float *, const int *, long, long, long, float *)"
+0.4,5683689,59,96333.7,90753.0,40513,153825,24167.2,"void strata::prefill::fused::<unnamed>::native_kernel<(int)16, (bool)1, (int)4, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+0.3,5499680,96,57288.3,57152.0,1728,113569,55628.4,"strata::prefill::fused::<unnamed>::quant_act_nat_kernel(const float *, long, unsigned char *)"
+0.3,4707517,65,72423.3,72000.0,16224,114305,13849.0,"void strata::prefill::fused::<unnamed>::native_kernel<(int)20, (bool)0, (int)4, (int)512, (bool)0>(std::conditional<T4==(int)512, strata::prefill::fused::Batch, strata::prefill::fused::WideBatch>::type, strata::prefill::fused::NativeGeom, strata::prefill::fused::<unnamed>::Tables, const unsigned char *, const int *, unsigned char *, float *)"
+0.3,4561094,80,57013.7,56880.0,54081,60896,1374.8,"void strata::kernels::<unnamed>::dequant_kernel<(int)20, strata::kernels::<unnamed>::H16, (bool)0>(const unsigned char *, long, long, long, long, long, T2 *)"
+0.2,3937851,72,54692.4,54688.5,36864,73120,17385.3,void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_32x32_64x1_tn_align8>(T1::Params)
+0.2,3688725,2,1844362.5,1844362.5,745828,2942897,1553562.4,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_bf16_256x128_32x3_tn_align8>(T1::Params)
+0.2,2475668,39,63478.7,63009.0,62849,65664,795.5,ampere_s16816gemm_fp16_128x128_ldg8_stages_64x3_tn
+0.2,2437583,48,50783.0,50689.0,50624,53344,392.5,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_f16_128x128_32x4_tn_align8>(T1::Params)
+0.1,2321423,48,48363.0,48384.0,47425,49216,401.4,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)6, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __nv_bfloat16>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+0.1,2236172,6,372695.3,365330.0,6816,747876,399737.2,"strata::kernels::<unnamed>::rms_rep_kernel(const float *, const float *, float *)"
+0.1,2181586,110,19832.6,7648.0,6176,108161,22340.1,"void strata::kernels::<unnamed>::dequant_flat_kernel<__half>(int, const void *, T1 *, const float *)"
+0.1,2122512,98,21658.3,20576.5,20320,125825,10631.8,ampere_s16816gemm_bf16_256x128_ldg8_stages_32x3_tn
+0.1,1645863,96,17144.4,16672.5,1152,33824,16058.4,"strata::prefill::<unnamed>::swiglu_pair_kernel(const float *, const float *, unsigned short *, long)"
+0.1,1631242,4,407810.5,405586.5,7360,812709,462231.0,"strata::prefill::<unnamed>::gr_write_kernel(float *, const float *, const float *, long, long)"
+0.1,1581737,5,316347.4,249826.0,20608,754404,322482.3,"strata::kernels::<unnamed>::embed_rows_kernel(int, const unsigned char *, unsigned long, const int *, long, float *)"
+0.1,1559879,97,16081.2,14496.0,13504,19072,2400.6,ampere_s16816gemm_bf16_64x64_ldg8_stages_64x5_tn
+0.1,1535593,7,219370.4,164257.0,5664,502019,227350.3,"strata::prefill::<unnamed>::gr_norm_rs_kernel(const float *, const float *, float, float *, unsigned short *, unsigned short *, long, int)"
+0.1,1322568,2,661284.0,661284.0,8672,1313896,922932.7,"strata::kernels::<unnamed>::conv_residual_batch_kernel(const float *, const float *, const unsigned short *, float *, const float *, int)"
+0.1,1309609,122,10734.5,12000.0,5856,12576,2483.7,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_f16_64x64_32x6_tn_align8>(T1::Params)
+0.1,1260164,36,35004.6,35008.0,34784,35360,153.1,"strata::prefill::<unnamed>::gdn_rec_kh_kernel(float *, const float *, const float *, const float *, float *, long)"
+0.1,1127619,96,11746.0,11408.0,3744,20128,7940.8,"void strata::prefill::<unnamed>::route_kernel<(int)16>(const float *, int *, float *, long)"
+0.1,863013,16,53938.3,54032.5,52096,55105,952.9,"void strata::kernels::<unnamed>::dequant_kernel<(int)42, strata::kernels::<unnamed>::H16, (bool)0>(const unsigned char *, long, long, long, long, long, T2 *)"
+0.1,845158,12,70429.8,70416.5,69856,71169,431.8,ampere_s16816gemm_bf16_128x128_ldg8_stages_64x3_tn
+0.1,834756,195,4280.8,3104.0,960,7776,3308.5,"strata::prefill::<unnamed>::gr_silu_kernel(const float *, unsigned short *, unsigned short *, long)"
+0.1,827142,192,4308.0,3072.0,2368,20192,2557.9,"strata::prefill::<unnamed>::copy_i32_kernel(int *, const int *, long)"
+0.1,811907,507,1601.4,1472.0,1280,6080,475.7,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+0.0,796262,9,88473.6,15168.0,1632,482339,162054.2,"strata::prefill::<unnamed>::rms_rows_kernel(float *, const float *, long, long, float)"
+0.0,725956,3,241985.3,220417.0,6592,498947,246885.1,"strata::kernels::<unnamed>::add_streams_broadcast_kernel(const float *, const float *, float *, long, int)"
+0.0,680772,2,340386.0,340386.0,3040,677732,477079.3,"strata::kernels::<unnamed>::gate_kernel(const float *, const float *, float *, float)"
+0.0,634563,1,634563.0,634563.0,634563,634563,0.0,"void strata::kernels::<unnamed>::gather_rows_kernel<uint4>(const T1 *, long long, const int *, long long, T1 *)"
+0.0,626594,27,23207.2,14368.0,2176,46304,21459.1,"strata::prefill::<unnamed>::kv_append_kernel(const float *, const float *, long, const int *, long, unsigned short *, unsigned short *, signed char *, signed char *, unsigned short *, unsigned short *, strata::kernels::KvHostPools, strata::kernels::KvHostPools)"
+0.0,607747,32,18992.1,18864.0,10720,27712,5822.0,"void strata::kernels::<unnamed>::gr_down_multi_kernel<(int)2560, (int)8, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,558372,72,7755.2,7968.0,5440,9248,1021.7,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_bf16_64x64_32x6_tn_align8>(T1::Params)
+0.0,539105,48,11231.4,11136.0,10144,13120,654.8,"strata::prefill::fused::<unnamed>::place_kernel(const int *, long, int, int, strata::prefill::fused::<unnamed>::Tables, int *, int *)"
+0.0,532610,6,88768.3,23456.0,1536,347746,136333.4,"strata::prefill::<unnamed>::to_f16_kernel(const float *, unsigned short *, long)"
+0.0,476896,48,9935.3,9920.0,9888,10112,33.7,ampere_s16816gemm_fp16_128x64_ldg8_stages_32x6_tn
+0.0,472771,2,236385.5,236385.5,3680,469091,329095.3,"strata::kernels::<unnamed>::broadcast_batch_kernel(const float *, const float *, float *, int)"
+0.0,439714,2,219857.0,219857.0,3904,435810,305403.7,"strata::prefill::<unnamed>::gr_broadcast_kernel(const float *, float *, long)"
+0.0,406245,96,4231.7,4512.0,3552,5152,587.8,void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_32x32_128x2_tn_align2>(T1::Params)
+0.0,358177,252,1421.3,1440.0,1216,1504,59.1,"strata::kernels::<unnamed>::block_scores_tail_kernel(const float *, const float *, const int *, long, float *)"
+0.0,255586,72,3549.8,3584.5,2848,4385,480.8,void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_32x32_128x2_tn_align8>(T1::Params)
+0.0,253793,36,7049.8,7088.0,6497,7392,243.1,"strata::prefill::<unnamed>::gdn_out_norm_kernel(const float *, const float *, float, float *, unsigned short *, long)"
+0.0,248001,12,20666.8,20608.0,18688,22784,1440.3,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)8, (bool)0, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,143073,12,11922.8,9072.0,3776,26656,8741.2,"void strata::kernels::<unnamed>::dequant_q8_0_kernel<strata::kernels::<unnamed>::H16>(const unsigned char *, long, long, long, long, T1 *)"
+0.0,137920,72,1915.6,2032.0,1088,2976,801.3,"strata::prefill::<unnamed>::gdn_gates_kernel(const float *, const float *, const float *, float *, float *, long)"
+0.0,132544,48,2761.3,2752.0,2624,2912,64.3,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __nv_bfloat16>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+0.0,129633,1,129633.0,129633.0,129633,129633,0.0,ampere_s1688gemm_bf16_128x128_ldg8_tn
+0.0,121185,2,60592.5,60592.5,2016,119169,82839.7,"strata::prefill::<unnamed>::to_bf16_kernel(const float *, unsigned short *, unsigned short *, long)"
+0.0,117472,24,4894.7,4800.0,1344,8832,3538.2,"void strata::kernels::<unnamed>::append_blocks<(bool)0>(const float *, long, long, int, const float *, float, const float *, const float *, float *, int *, long, long, float, float, float, float, float, float, const int *, strata::kernels::RopeTab)"
+0.0,113059,4,28264.8,28224.5,27105,29505,1136.7,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)8, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,100864,72,1400.9,1312.0,960,2048,424.9,"strata::prefill::<unnamed>::gdn_conv_hist_kernel(float *, const float *, long)"
+0.0,99712,6,16618.7,16672.0,16032,17120,511.9,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)6, (bool)1, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,90785,48,1891.4,1856.0,1760,2112,85.6,"strata::prefill::fused::<unnamed>::scan_kernel(strata::prefill::fused::<unnamed>::Tables, int)"
+0.0,88672,6,14778.7,14800.0,14208,15200,431.0,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)5, (bool)1, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,79040,48,1646.7,1632.0,1600,1728,32.3,"strata::prefill::fused::<unnamed>::count_kernel(const int *, long, int, int *)"
+0.0,76576,32,2393.0,2384.0,2176,2624,144.4,strata::kernels::<unnamed>::gr_norm_split_kernel(strata::kernels::<unnamed>::GrMulti)
+0.0,75361,6,12560.2,12592.0,12128,12897,303.0,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)4, (bool)1, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,72161,16,4510.1,4368.0,3840,5184,498.1,strata::kernels::<unnamed>::gr_norm_multi_kernel(strata::kernels::<unnamed>::GrMulti)
+0.0,62594,6,10432.3,10432.5,10145,10656,202.2,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)3, (bool)1, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,55649,48,1159.4,1152.0,1120,1344,31.8,"strata::prefill::fused::<unnamed>::bounds_kernel(const int *, strata::prefill::fused::<unnamed>::Tables, int)"
+0.0,52033,6,8672.2,8768.0,8352,8928,232.6,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)2, (bool)1, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,47456,2,23728.0,23728.0,23520,23936,294.2,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)6, (bool)1>(strata::kernels::<unnamed>::GrMulti)"
+0.0,40512,2,20256.0,20256.0,20224,20288,45.3,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)5, (bool)1>(strata::kernels::<unnamed>::GrMulti)"
+0.0,37185,6,6197.5,6224.5,5888,6496,262.2,"void strata::kernels::<unnamed>::gr_up_multi_kernel<(int)1, (bool)1, (bool)0>(strata::kernels::<unnamed>::GrMulti)"
+0.0,34688,2,17344.0,17344.0,17216,17472,181.0,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)4, (bool)1>(strata::kernels::<unnamed>::GrMulti)"
+0.0,34144,1,34144.0,34144.0,34144,34144,0.0,ampere_s16816gemm_bf16_64x128_ldg8_stages_64x3_tn
+0.0,33857,24,1410.7,1392.0,1152,1792,236.2,"void strata::kernels::<unnamed>::append_first<(bool)0>(const float *, const float *, float, float *, float *, float, float, float, float, float, float, const int *, strata::kernels::RopeTab)"
+0.0,32352,1,32352.0,32352.0,32352,32352,0.0,ampere_s16816gemm_fp16_64x128_ldg8_stages_64x3_tn
+0.0,28288,2,14144.0,14144.0,13824,14464,452.5,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)3, (bool)1>(strata::kernels::<unnamed>::GrMulti)"
+0.0,24608,24,1025.3,960.0,896,1408,152.3,"strata::kernels::<unnamed>::append_tail(const float *, long, long, float *)"
+0.0,22976,2,11488.0,11488.0,10368,12608,1583.9,void strata::kernels::<unnamed>::gr_up_kernel<(bool)0>(strata::kernels::FusedGrArgs)
+0.0,22848,2,11424.0,11424.0,11296,11552,181.0,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)2, (bool)1>(strata::kernels::<unnamed>::GrMulti)"
+0.0,15264,2,7632.0,7632.0,7136,8128,701.4,void strata::kernels::<unnamed>::gr_down_kernel<(bool)0>(strata::kernels::FusedGrArgs)
+0.0,14144,2,7072.0,7072.0,7040,7104,45.3,"void strata::kernels::<unnamed>::gr_down_staged_kernel<(int)1, (bool)1>(strata::kernels::<unnamed>::GrMulti)"
+0.0,9216,3,3072.0,2912.0,1280,5024,1877.1,"void strata::prefill::<unnamed>::rope_kernel<(bool)0>(float *, long, long, long, long, float, float, float, float, float, float, const int *, strata::kernels::RopeTab)"
+0.0,7808,2,3904.0,3904.0,3552,4256,497.8,"strata::kernels::<unnamed>::history_batch_kernel(float *, const float *, int)"
+0.0,1664,2,832.0,832.0,768,896,90.5,"strata::prefill::mmq::<unnamed>::iota_kernel(int *, long)"

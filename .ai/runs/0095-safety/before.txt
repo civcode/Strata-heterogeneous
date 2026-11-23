@@ -1,0 +1,38 @@
+2026-11-23T22:30:38+01:00
+boot f94c87ce-2f4b-412e-b02c-09dfdb04f155
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3897       20495           0       38226       58044
+Swap:          16383         682       15701
+--- coredumps since boot
+No coredumps found.
+--- kernel record lines (last 30)
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          WALKER_ERROR: 0x5
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          PERMISSION_FAULTS: 0x5
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          MAPPING_ERROR: 0x1
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          RW: 0x1
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0: [gfxhub] page fault (src_id:0 ring:173 vmid:8 pasid:52)
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:  Process strata pid 9157 thread strata pid 9157
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:   in page starting at address 0x000062ecf9107000 from client 10
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0: GCVM_L2_PROTECTION_FAULT_STATUS:0x00841D5B
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          Faulty UTCL2 client ID: SDMA1 (0xe)
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          MORE_FAULTS: 0x1
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          WALKER_ERROR: 0x5
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          PERMISSION_FAULTS: 0x5
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          MAPPING_ERROR: 0x1
+Nov 23 12:31:44 oberon kernel: amdgpu 0000:07:00.0:          RW: 0x1
+Nov 23 12:42:33 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 11 times, consider switching to WQ_UNBOUND
+Nov 23 12:59:34 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND
+Nov 23 13:01:00 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 5 times, consider switching to WQ_UNBOUND
+Nov 23 13:09:46 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 19 times, consider switching to WQ_UNBOUND
+Nov 23 13:09:55 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 7 times, consider switching to WQ_UNBOUND
+Nov 23 13:09:57 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 11 times, consider switching to WQ_UNBOUND
+Nov 23 13:31:53 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 19 times, consider switching to WQ_UNBOUND
+Nov 23 13:37:37 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 35 times, consider switching to WQ_UNBOUND
+Nov 23 13:52:53 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 67 times, consider switching to WQ_UNBOUND
+Nov 23 14:14:21 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 35 times, consider switching to WQ_UNBOUND
+Nov 23 15:09:33 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 67 times, consider switching to WQ_UNBOUND
+Nov 23 15:36:54 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 131 times, consider switching to WQ_UNBOUND
+Nov 23 15:44:04 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 131 times, consider switching to WQ_UNBOUND
+Nov 23 16:25:37 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 259 times, consider switching to WQ_UNBOUND
+Nov 23 20:11:16 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 259 times, consider switching to WQ_UNBOUND
+Nov 23 20:11:22 oberon kernel: workqueue: svm_range_restore_work [amdgpu] hogged CPU for >10000us 515 times, consider switching to WQ_UNBOUND
