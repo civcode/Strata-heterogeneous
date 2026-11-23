@@ -1,0 +1,77 @@
+=== tid 899253 by dso (share of all samples)
+    27.39%  libamdhip64.so.7.16.26385-0000000
+     8.97%  libhsa-runtime64.so.1.21.0       
+     7.01%  ld-linux-x86-64.so.2             
+     4.75%  strata                           
+     3.94%  [vdso]                           
+     3.87%  libc.so.6                        
+     0.94%  [kernel.kallsyms]                
+     0.27%  libstdc++.so.6.0.33              
+=== tid 899465 by dso (share of all samples)
+    13.52%  libcuda.so.580.178.04  
+     6.68%  [kernel.kallsyms]      
+     2.82%  [vdso]                 
+     1.19%  libc.so.6              
+     0.92%  libcudart.so.13.0.96   
+     0.57%  strata                 
+     0.05%  libstdc++.so.6.0.33    
+     0.01%  libcublasLt.so.13.1.1.3
+=== tid 899254 by dso (share of all samples)
+     8.02%  libhsa-runtime64.so.1.21.0       
+     0.06%  [kernel.kallsyms]                
+     0.02%  libc.so.6                        
+     0.02%  libamdhip64.so.7.16.26385-0000000
+     0.01%  [amdgpu]                         
+     0.00%  libstdc++.so.6.0.33              
+     0.00%  [vdso]                           
+     0.00%  ld-linux-x86-64.so.2             
+=== tid 899257 by dso (share of all samples)
+     0.48%  libcuda.so.580.178.04
+     0.29%  libc.so.6            
+     0.28%  [kernel.kallsyms]    
+     0.06%  [vdso]               
+     0.06%  strata               
+     0.00%  libcudart.so.13.0.96 
+     0.00%  [nvidia_uvm]         
+     0.00%  libstdc++.so.6.0.33  
+=== whole profile by dso
+    27.44%  libamdhip64.so.7.16.26385-0000000
+    24.00%  libhsa-runtime64.so.1.21.0       
+    14.00%  libcuda.so.580.178.04            
+     8.46%  [kernel.kallsyms]                
+     7.01%  ld-linux-x86-64.so.2             
+     6.84%  [vdso]                           
+     5.48%  strata                           
+     5.46%  libc.so.6                        
+     0.92%  libcudart.so.13.0.96             
+     0.33%  libstdc++.so.6.0.33              
+     0.03%  libhipblaslt.so.1.4              
+     0.02%  [amdgpu]                         
+     0.01%  libcublasLt.so.13.1.1.3          
+     0.01%  [kvm]                            
+=== kernel symbols (all threads, top)
+     1.00%  [k] entry_SYSCALL_64
+     0.80%  [k] yield_task_fair
+     0.61%  [k] update_curr
+     0.55%  [k] __calc_delta.constprop.0
+     0.38%  [k] pick_task_fair
+     0.38%  [k] update_se
+     0.36%  [k] __schedule
+     0.27%  [k] pick_eevdf
+     0.22%  [k] update_deadline
+     0.22%  [k] entry_SYSRETQ_unsafe_stack
+     0.21%  [k] do_syscall_64
+     0.13%  [k] do_sched_yield
+     0.12%  [k] native_sched_clock
+     0.12%  [k] pick_next_task_fair
+     0.11%  [k] read_tsc
+     0.10%  [k] arch_exit_to_user_mode_prepare.isra.0
+     0.10%  [k] update_curr_dl_se
+     0.10%  [k] __pick_next_task
+     0.09%  [k] _raw_spin_lock
+     0.09%  [k] __css_rstat_updated
+     0.08%  [k] pick_next_task
+     0.07%  [k] native_irq_return_iret
+     0.07%  [k] migrate_disable_switch.isra.0
+     0.07%  [k] update_rq_clock
+     0.07%  [k] raw_spin_rq_lock_nested

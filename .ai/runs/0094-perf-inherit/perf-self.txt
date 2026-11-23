@@ -1,0 +1,92 @@
+=== tid 899253 self (dso, sym)
+     8.49%  libhsa-runtime64.so.1.21.0         [.] rocr::core::InterruptSignal::WaitRelaxed(hsa_signal_condition_t, long, unsigned long, hsa_wait_state_t)
+     7.00%  ld-linux-x86-64.so.2               [.] __tls_get_addr
+     3.31%  [vdso]                             [.] 0x0000000000000997
+     2.62%  libamdhip64.so.7.16.26385-0000000  [.] __tls_get_addr@plt
+     1.98%  libc.so.6                          [.] pthread_mutex_lock@@GLIBC_2.2.5
+     1.51%  strata                             [.] strata::core::Verifier::done(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)
+     1.37%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000013c0a6
+     1.30%  libamdhip64.so.7.16.26385-0000000  [.] hipSetDevice
+     1.26%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000013c098
+     1.25%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000013c09d
+     1.24%  libamdhip64.so.7.16.26385-0000000  [.] hipEventQuery
+     1.10%  strata                             [.] main
+     0.89%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000013c0a7
+     0.89%  libamdhip64.so.7.16.26385-0000000  [.] hipGetDevice
+     0.77%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000013c091
+     0.75%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000012bc2b
+     0.74%  libc.so.6                          [.] pthread_mutex_unlock@@GLIBC_2.2.5
+     0.72%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000017c1b1
+     0.64%  libc.so.6                          [.] __memmove_avx512_unaligned_erms
+     0.55%  strata                             [.] main::{lambda(main::PW const&)#3}::operator()(main::PW const&) const [clone .isra.0]
+     0.39%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000017c2f6
+     0.39%  libhsa-runtime64.so.1.21.0         [.] rocr::HSA::hsa_signal_load_relaxed(hsa_signal_s)
+=== tid 899465 self (dso, sym)
+     2.48%  [vdso]                   [.] 0x0000000000000997
+     1.63%  libcuda.so.580.178.04    [.] 0x000000000022be17
+     1.33%  libcuda.so.580.178.04    [.] 0x000000000021f6bd
+     0.97%  [kernel.kallsyms]        [k] entry_SYSCALL_64
+     0.80%  [kernel.kallsyms]        [k] yield_task_fair
+     0.60%  [kernel.kallsyms]        [k] update_curr
+     0.53%  [kernel.kallsyms]        [k] __calc_delta.constprop.0
+     0.44%  libc.so.6                [.] __sched_yield
+     0.38%  [kernel.kallsyms]        [k] pick_task_fair
+     0.37%  [kernel.kallsyms]        [k] update_se
+     0.35%  [kernel.kallsyms]        [k] __schedule
+     0.33%  strata                   [.] std::_Function_handler<bool (std::function<void ()> const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocat
+     0.28%  libcuda.so.580.178.04    [.] 0x00000000004609d0
+     0.27%  [kernel.kallsyms]        [k] pick_eevdf
+     0.26%  libcuda.so.580.178.04    [.] 0x000000000021f666
+     0.21%  [kernel.kallsyms]        [k] update_deadline
+     0.21%  libcuda.so.580.178.04    [.] 0x00000000004609d9
+     0.21%  [kernel.kallsyms]        [k] entry_SYSRETQ_unsafe_stack
+     0.20%  [kernel.kallsyms]        [k] do_syscall_64
+     0.19%  libc.so.6                [.] pthread_rwlock_rdlock@GLIBC_2.2.5
+     0.19%  libcuda.so.580.178.04    [.] 0x000000000021f6ae
+     0.19%  libcuda.so.580.178.04    [.] 0x0000000000460925
+=== tid 899254 self (dso, sym)
+     8.01%  libhsa-runtime64.so.1.21.0         [.] rocr::core::Runtime::AsyncEventsLoop(void*)
+     0.00%  libc.so.6                          [.] _int_free
+     0.00%  [kernel.kallsyms]                  [k] read_tsc
+     0.00%  [amdgpu]                           [k] kfd_wait_on_events
+     0.00%  [kernel.kallsyms]                  [k] __radix_tree_lookup
+     0.00%  [kernel.kallsyms]                  [k] __raw_spin_lock_irqsave
+     0.00%  [kernel.kallsyms]                  [k] __update_load_avg_cfs_rq
+     0.00%  libc.so.6                          [.] __memset_avx512_unaligned_erms
+     0.00%  [amdgpu]                           [k] kfd_ioctl
+     0.00%  libc.so.6                          [.] __GI___ioctl
+     0.00%  [kernel.kallsyms]                  [k] _raw_spin_lock
+     0.00%  libc.so.6                          [.] cfree@GLIBC_2.2.5
+     0.00%  [kernel.kallsyms]                  [k] _copy_to_user
+     0.00%  libamdhip64.so.7.16.26385-0000000  [.] 0x000000000060a853
+     0.00%  [kernel.kallsyms]                  [k] _copy_from_user
+     0.00%  [kernel.kallsyms]                  [k] __update_load_avg_se
+     0.00%  [kernel.kallsyms]                  [k] asm_sysvec_apic_timer_interrupt
+     0.00%  [kernel.kallsyms]                  [k] __sched_balance_update_blocked_averages
+     0.00%  libc.so.6                          [.] pthread_mutex_unlock@@GLIBC_2.2.5
+     0.00%  libc.so.6                          [.] pthread_cond_destroy@@GLIBC_2.3.2
+     0.00%  libc.so.6                          [.] _int_free_merge_chunk
+     0.00%  libc.so.6                          [.] pthread_mutex_lock@@GLIBC_2.2.5
+=== tid 899257 self (dso, sym)
+     0.22%  libc.so.6              [.] __memmove_avx512_unaligned_erms
+     0.06%  libc.so.6              [.] __memset_avx512_unaligned_erms
+     0.06%  libcuda.so.580.178.04  [.] 0x000000000022be17
+     0.05%  [vdso]                 [.] 0x0000000000000997
+     0.03%  strata                 [.] main::{lambda(strata::mixed_split::SessionOp, long, long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<c
+     0.03%  libcuda.so.580.178.04  [.] 0x000000000021f6bd
+     0.02%  libcuda.so.580.178.04  [.] 0x0000000000221694
+     0.02%  libcuda.so.580.178.04  [.] 0x0000000000221684
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221680
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221688
+     0.01%  libcuda.so.580.178.04  [.] 0x000000000022168c
+     0.01%  [kernel.kallsyms]      [k] native_irq_return_iret
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221690
+     0.01%  [kernel.kallsyms]      [k] kernel_init_pages
+     0.01%  [kernel.kallsyms]      [k] try_charge_memcg
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221674
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221698
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221678
+     0.01%  libcuda.so.580.178.04  [.] 0x0000000000221670
+     0.01%  strata                 [.] long strata::mixed_split::state_key<int, strata::core::ConversationImageKey>(int const*, long, bool, std::vector<strata::core::Conv
+     0.01%  [kernel.kallsyms]      [k] mod_memcg_lruvec_state
+     0.01%  libcuda.so.580.178.04  [.] 0x000000000022167c

@@ -1,0 +1,29 @@
+{
+ "name": "check15-0093",
+ "limit": 15,
+ "env": [],
+ "cfg": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "prof_builds": false,
+ "perf": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3827       12381           0       46410       58115\nSwap:          16383         753       15630\n",
+ "t_start": "2026-11-23T20:51:06+0100",
+ "ready_s": 13.0,
+ "server_pid": 873348,
+ "replay_rc": 0,
+ "replay_s": 96.0,
+ "server_rc": 0,
+ "elapsed_s": 110.6,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3792       13700           0       45125       58149\nSwap:          16383         751       15632\n",
+ "leftovers": [],
+ "gpu_pause_lines": [
+  "strata serve: the graphics driver paused the GPU for 593 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 854 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 493 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much"
+ ],
+ "non_finite": 0
+}

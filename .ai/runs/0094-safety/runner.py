@@ -31,7 +31,7 @@ def free_m():
 
 
 def leftovers():
-    r = subprocess.run(['pgrep', '-af', r'build-0093|serve/server.py|strata-vision|rocprofv3|nsys|py-spy'],
+    r = subprocess.run(['pgrep', '-af', r'build-009[34]|serve/server.py|strata-vision|rocprofv3|nsys|py-spy|perf record'],
                        capture_output=True, text=True, timeout=10).stdout
     return [l for l in r.splitlines() if 'runner.py' not in l and 'pgrep' not in l]
 
@@ -59,6 +59,8 @@ def main():
     ap.add_argument('--pyspy', action='store_true')
     ap.add_argument('--sampler', action='store_true')
     ap.add_argument('--timeout-s', type=float, default=2400)
+    ap.add_argument('--prof-builds', action='store_true', help='build-0094-prof-* instead of build-0093-*')
+    ap.add_argument('--perf', action='store_true', help='perf record -F 499 -g on the host engine and the front stage')
     ap.add_argument('--cfg', action='append', default=[], help='KEY=JSON top-level config override (a copy)')
     a = ap.parse_args()
     reset_ignored_signals()
@@ -77,6 +79,8 @@ def main():
     for kv in a.env:
         k, v = kv.split('=', 1)
         cfg['env'][k] = v
+    if a.prof_builds:
+        cfg = json.loads(json.dumps(cfg).replace('build-0093-hip/strata', 'build-0094-prof-hip/strata').replace('build-0093-cuda/strata', 'build-0094-prof-cuda/strata'))
     for kv in a.cfg:
         k, v = kv.split('=', 1)
         cfg[k] = json.loads(v)
@@ -96,7 +100,7 @@ def main():
     cpath = d / 'config.json'
     cpath.write_text(json.dumps(cfg, indent=1))
     info = dict(name=a.name, limit=a.limit, env=a.env, cfg=a.cfg, exe_wrap=a.exe_wrap, front_wrap=a.front_wrap, pyspy=a.pyspy,
-                sampler=a.sampler, boot=BOOT, free_before=free_m(), t_start=time.strftime('%Y-%m-%dT%H:%M:%S%z'))
+                sampler=a.sampler, prof_builds=a.prof_builds, perf=a.perf, boot=BOOT, free_before=free_m(), t_start=time.strftime('%Y-%m-%dT%H:%M:%S%z'))
     stop = threading.Event()
     j = subprocess.Popen(['journalctl', '-k', '-f', '-n', '0', '--no-pager'], stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -142,6 +146,19 @@ def main():
         info['server_pid'] = server_pid
         if a.sampler:
             (prof / 'cpusampler' / 'START').write_text('1')
+        perfp = None
+        if a.perf:
+            def exe_of(pid):
+                try:
+                    return os.readlink(f'/proc/{pid}/exe')
+                except OSError:
+                    return ''
+            host = [c for c in children(server_pid) if exe_of(c).endswith('-hip/strata')]
+            front = [c for c in children(host[0]) if exe_of(c).endswith('-cuda/strata')] if host else []
+            info['perf_pids'] = dict(host=host, front=front)
+            assert host and front, f'perf targets not found: {host} {front}'
+            perfp = subprocess.Popen(['perf', 'record', '-F', '499', '-g', '-p', f'{host[0]},{front[0]}', '-o', str(prof / 'perf.data')],
+                                     stdout=(prof / 'perf.log').open('w'), stderr=subprocess.STDOUT)
         rp = subprocess.Popen([PY, str(REPO / 'mixed_split/tools/replay_session.py'), 'run', REC, str(d / 'replay'),
                                '--url', 'http://127.0.0.1:8081', '--limit', str(a.limit)],
                               stdout=(d / 'replay.log').open('w'), stderr=subprocess.STDOUT, env=env)
@@ -171,6 +188,12 @@ def main():
                 rp.terminate()
                 rp.wait(timeout=30)
         info['replay_rc'] = rp.returncode
+        if a.perf and perfp is not None:
+            perfp.send_signal(signal.SIGINT)
+            try:
+                info['perf_rc'] = perfp.wait(timeout=300)
+            except subprocess.TimeoutExpired:
+                info['perf_rc'] = 'still writing'
         info['replay_s'] = round(time.monotonic() - tr, 1)
         if a.sampler:
             (prof / 'cpusampler' / 'STOP').write_text('1')

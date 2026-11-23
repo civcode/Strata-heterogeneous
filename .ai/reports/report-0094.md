@@ -1,6 +1,6 @@
-# Report 0094: profiling the recorded pi session (Tier 1). Completed
+# Report 0094: profiling the recorded pi session (Tier 1). Completed, including the perf profile
 
-No engine or tool code was changed. Every run used `build-0093-*` (`check_launch.py` OK; BUILD_COMMIT `3fb31013`
+No engine or tool code was changed. Every run used `build-0093-*` (`check_launch.py` OK; BUILD_COMMIT `3fb31013`; the perf runs used `build-0094-prof-*`, built from `c9802cc5`, the same engine source
 everywhere; only tools and `.ai/` have changed since). Each run used a copy of `strata-iq3_xxs-mixed-maxperf.json`
 on a freshly started server on port 8081, launched like the run script, with the safety watchers. Runner, wrappers and
 analysis scripts: `.ai/runs/0094-safety/`. Numbers: `.ai/runs/0094-*`. Large traces stay in
@@ -92,29 +92,52 @@ as verify, with commit, draft and adapt at 0 (adaptive overlap is off). The host
 - **Phases:** thinking is slower than tool calls because of more misses (48 against 33%) and fewer tokens per window.
   Answering is slower because it decodes serially.
 
-## 4. CPU samples (one full replay)
+## 4. CPU samples (perf, after the Human User enabled it; and the earlier sampler)
 
-perf is not available to the user: `kernel.perf_event_paranoid` is 4 and there is no sudo. **Deviation:** an
-LD_PRELOAD on-CPU sampler (`0094-safety/cpusampler/`) replaced it. It sets per-thread CPU-time timers at 499 Hz and
-unwinds with eh_frame, which is equivalent to perf `-F 499 --call-graph dwarf`. It ran on `build-0093-*` directly,
-the handoff's fallback, so no profiling build was made. py-spy recorded `server.py` (100 Hz, `--nonblocking`). This
-run decoded at 146.1 tok/s (baseline range 134.8 to 140.7), so no overhead shows beyond the content spread.
-`0094-cpu/cpu-profile.txt`, `cpu-engine-frames.txt`, `pyspy-server.txt`.
+**Profiling build:** `build-0094-prof-hip` and `build-0094-prof-cuda` have the same `STRATA_*` options as
+`build-0093-*`, plus `RelWithDebInfo`, `-fno-omit-frame-pointer` and `-g`. On the device side `-g` and the frame
+pointer go to the host compiler only (`-Xarch_host`, `-Xcompiler`). The build-type flags are kept at **`-O3`**,
+because `RelWithDebInfo`'s default `-O2` would change the code being measured. Logs: `0094-build/`.
+- **The 3% check** (`--limit 15`, one run each): 139.7 tok/s on `build-0093-*` against 144.2 on the profiling build.
+  The profiling build is not slower; content differences are larger than any build difference.
+- **perf, full replay:** `perf record -F 499 -g` (frame-pointer call graphs) and `py-spy` on `server.py`.
+- **Fix:** the first attempt attached with `-p`. That misses threads started later: the front's window runner and
+  the per-run prompt threads. It was redone with perf as the host's `exe` wrapper (`wrap-perf.sh`), which inherits
+  every new thread and the front stage it spawns. The analysis is restricted to the replay window. That run decoded
+  141.4 tok/s (the `-p` run 143.6), inside the baseline spread.
+- **Results:** `0094-perf-inherit/perf-self.txt`, `perf-dso-kernel.txt`, `perf-inclusive.txt`. The first run with
+  the LD_PRELOAD sampler (`0094-cpu/`), which unwinds with eh_frame, gives the better inclusive attribution: perf's
+  frame-pointer chains break inside `libamdhip64`.
+
+perf, 690K samples over the 957 s replay:
+
+| thread | share of all samples | where |
+|---|---:|---|
+| host main (decode loop) | 57.2% (about 83% of a core) | User space, polling: `libamdhip64` 27.4%, `libhsa-runtime64` 9.0% (`InterruptSignal::WaitRelaxed` 8.5%), `__tls_get_addr` 7.0% (TLS lookups in `hipSetDevice`, `hipGetDevice` and `hipEventQuery`), vdso clock 3.9%, the engine's own code 4.8% (`Verifier::done`, `main`, the pipeline lambdas). Kernel 0.9%. |
+| front WindowRunner | 25.8% | `libcuda` 13.5%, **kernel 6.7% (`sched_yield`)**. Inclusive: prompt `cudaStreamSynchronize` 10.9%, `Verifier::done` → `cudaEventQuery` + `sched_yield` 7.5%. |
+| host HSA `AsyncEventsLoop` | 8.1% | ROCr's event thread, all in `libhsa-runtime64` |
+| front main (link) | 1.2% | snapshot and checkpoint copies (`memmove`), session operations |
+| short-lived prompt threads (host) | ~7.7% | `hipStreamSynchronize` waits |
+
+Kernel time is 8.5% of all samples, mostly from the front's `sched_yield` loop. The AMD driver accounts for 0.02% of
+these processes' time. Its userptr-restore workqueues run in kernel workers, which this per-process profile does not
+see; that would need system-wide `-a`, which `perf_event_paranoid = 1` does not allow. server.py had 10.9 s of
+active Python in this run (11.5 s in the first).
+
+The earlier sampler (eh_frame, `build-0093-*`), for inclusive attribution:
 
 | process / thread | CPU s over 931 s | in polling / wait leaves | where |
 |---|---:|---:|---|
-| host main (decode loop) | 681 (73% of a core) | 88% | `Verifier::done` 54% (→ `hipEventQuery`, `hipSetDevice` / `hipGetDevice` / TLS lookups), prefill 12.5%, `MtpDrafter::chain_poll` + `chain_outputs_ready` 19%, `Verifier::run` 4.9%, snapshot/restore copies ~2% |
-| host HSA `AsyncEventsLoop` | 112 | 99% | ROCr's event thread |
-| host prefill async threads (176, short-lived) | 113 | 100% | `hipStreamSynchronize` spin (27% under `MtpDrafter::prefill`) |
+| host main | 681 | 88% | `Verifier::done` 54%, prompt 12.5%, `MtpDrafter::chain_poll` + `chain_outputs_ready` 19%, `Verifier::run` 4.9%, snapshot/restore copies ~2% |
+| host prompt async threads (176) | 113 | 100% | `hipStreamSynchronize` (27% under `MtpDrafter::prefill`) |
 | host pool workers (15) | ~0 | | idle in decode |
-| front WindowRunner | 322 (35%) | 95% | prefill `cudaStreamSynchronize` spin 40%, `Verifier::done` (`cudaEventQuery` + `sched_yield`) 31% |
-| front main (link) | 14 | 51% | `conversation_snapshot_save` 57%, checkpoint copies (`copy_beating`) 13% |
-| front file readers (16) | 10 | | `pread` (PLE / expert reads) |
-| server.py | 11.5 active | | stream encode, `_pump`, telemetry; negligible |
+| front main (link) | 14 | 51% | `conversation_snapshot_save` 57%, checkpoint copies 13% |
 
-No CPU work hot spot. Both decode threads are busy-pollers. Real host work per window is small (the only notable
-items are `Verifier::run` and the drafter launch). Each poller occupies a core. That matters only under CPU
-contention (report 0093's case).
+**Both measures agree: there is no CPU work hot spot.** The host's decode thread and the front's window runner
+spend their time polling. Each takes most of a core, and about a quarter of the front runner's time is in the kernel
+(`sched_yield`). Real host work per window is small. The polling cores matter only under CPU contention (report
+0093's case). The cost per poll is about 12% of the host thread in TLS lookups inside the HIP API (`hipSetDevice` /
+`hipGetDevice` around every `hipEventQuery`).
 
 ## 5. AMD kernels (rocprofv3, `--limit 40`; decode 121.3 tok/s against 137.7 untraced on the same 40 requests: −12%)
 
@@ -207,9 +230,15 @@ Not counted as hot spots:
   - amd: 20, 18.3 s, 5.5 s;
   - nvidia: 19, 14.3 s, 3.1 s;
   - split33: 5, 4.3 s, 1.6 s.
-- **Swap:** 540 MiB before, 891 MiB after (16,383 total). Baseline2 grew it from 503 to 847 MiB.
-- **GPU time:** 102.6 min, the sum of server lifetimes including start and drain, within the approved 2.5 hours.
-  Runs were sequential. The full replays took 16 to 18 min each.
+- **Swap:** 540 MiB before, 891 MiB after the first part (16,383 total), 728 MiB at the end. Baseline2 grew it
+  from 503 to 847 MiB.
+- **After perf was enabled:** check15 runs 3 and 1 pauses (largest 0.9 and 1.7 s); `perf` 15 (10.8 s, largest
+  1.7 s); `perf-inherit` 26 (12.3 s, largest 2.1 s). No new record or stop lines after 20:33 (`after-perf.txt`),
+  same boot, no core dumps.
+- **GPU time:** 102.6 min in the first part, plus 35.9 min after perf was enabled (2 short checks and 2 full perf
+  replays): **138.5 min** in total. That is within the approved 2.5 hours; the Human User then allowed more. Runs
+  were sequential. The full replays took 16 to 18 min each.
 
 `py-spy` was installed into the checkout's `.venv` (pip). The sampler's `.so` is not committed: build it with the
-`gcc` line in its source header.
+`gcc` line in its source header. The Human User set `kernel.perf_event_paranoid=1`, `kptr_restrict=0` and
+`yama.ptrace_scope=0` during the turn. perf and py-spy attaching were checked on test processes before use.

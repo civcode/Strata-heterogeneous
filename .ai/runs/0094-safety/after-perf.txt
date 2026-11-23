@@ -1,0 +1,7 @@
+date: 2026-11-23T21:29:10+01:00
+boot_id: f94c87ce-2f4b-412e-b02c-09dfdb04f155
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3984       20920           0       37714       57958
+Swap:          16383         728       15655
+No coredumps found.
+--- record-pattern lines since 20:33
