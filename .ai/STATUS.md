@@ -1,7 +1,6 @@
 # Status
 
-Turn holder: **Coding Agent (Tier 1)**, handoff 0094 (profile the Human User's real pi workload: replay of a
-recorded session, engine timers, perf, rocprofv3, nsys; no code changes). Budget about 2.5 hours, announced.
+Turn holder: **Chat AI**, report 0094 reviewed; next step waits on the Human User's choice.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -175,6 +174,17 @@ pi sessions: IQ3_XXS, `--spec 3`, `--mtp-window 16384`, pipelined, front reserve
 76.8% draft acceptance; phases thinking 112.5, answering 107.5, tool calls 161.1, overall 141.2 (vanilla HIP-only
 pipelined: 120). New tools: `record_proxy.py`, `replay_session.py`, `phase_tps.py` (the Human User's benchmark with
 plots). A session was recorded (107 requests; kept local). Handoff 0094 profiles it.
+
+Report 0094 (Tier 1, profile of the recorded session, no code changes): 3 greedy replays, median 138.4 tok/s engine
+decode, 76.9% acceptance (/metrics overall 137.6; thinking 115.8, answering 106.5, tool calls 154.2); greedy replays
+are not deterministic (85-91K tokens), so A/B tests need several runs per side. Hot spots: H1 wrong pipeline guesses
+(46.5% of windows fresh, 24.0 ms against 14.7 on the path; vanilla's guess, an upstream candidate); H2 HIP1 carries
+verify, the MTP drafter chain and the head and paces speculative windows (CUDA card 65% idle); H3 stage 0 is two cards
+in series (HIP0 waits 4.5 ms per window on the front); H4 AMD launch gaps (vanilla); H5 prompt chunks paced by the
+front (28% of prompt time), slow parks, compactions decoded serially (the model card's presence_penalty 1.5). No CPU
+hot spot. GPU pauses from the driver 2-30 s per replay (one of 18.8 s). An SDMA1 GPU page fault at 12:31:44 on
+2026-11-23 came from a strata process the agent did not start (the vanilla configs in ~/tmp/Strata have no
+HSA_ENABLE_SDMA=0). perf enabled by the Human User (perf_event_paranoid 1, kptr_restrict 0, ptrace_scope 0).
 
 Human User's context for 0093 (22:56): vanilla 2x R9700 IQ3_XXS busy HIP0 45 / HIP1 98 serial, 70 / 85 pipelined.
 
