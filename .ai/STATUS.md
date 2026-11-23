@@ -1,6 +1,7 @@
 # Status
 
-Turn holder: **Chat AI**, report 0093 reviewed; next: the Human User's agent run on the fixed build.
+Turn holder: **Coding Agent (Tier 1)**, handoff 0094 (profile the Human User's real pi workload: replay of a
+recorded session, engine timers, perf, rocprofv3, nsys; no code changes). Budget about 2.5 hours, announced.
 
 ## The 19 November host crash (handoff 0086)
 
@@ -168,6 +169,12 @@ in DIVERGENCE as a known difference, not a defect. Also found: the front card's 
 reserve for the picture reader, which runs on HIP0, not the front card) costs it 170 of 7680 expert slots; at 450
 MiB the front cache was full and decode 115.6 / 104.3 tok/s. The front card also drives the display (Xorg), so that
 reserve is the Human User's choice. Workqueue warnings kept rising (up to 515 times); no stop line.
+
+Since report 0093 (Human User, 2026-11-20 to 23): mixed split in daily use, stable. Optimal config from 15-minute real
+pi sessions: IQ3_XXS, `--spec 3`, `--mtp-window 16384`, pipelined, front reserve 450 MiB: 142.2 tok/s engine decode,
+76.8% draft acceptance; phases thinking 112.5, answering 107.5, tool calls 161.1, overall 141.2 (vanilla HIP-only
+pipelined: 120). New tools: `record_proxy.py`, `replay_session.py`, `phase_tps.py` (the Human User's benchmark with
+plots). A session was recorded (107 requests; kept local). Handoff 0094 profiles it.
 
 Human User's context for 0093 (22:56): vanilla 2x R9700 IQ3_XXS busy HIP0 45 / HIP1 98 serial, 70 / 85 pipelined.
 
