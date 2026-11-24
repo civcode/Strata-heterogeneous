@@ -1,0 +1,33 @@
+{
+ "name": "sweep-compaction-hwq3",
+ "limit": 6,
+ "env": [
+  "GPU_MAX_HW_QUEUES=3",
+  "STRATA_PIPELINE_DEBUG=1",
+  "STRATA_PIPELINE_TRACE=/home/chris/workspace/strata-local-archive/profiles/0095/sweep-compaction-hwq3/pltrace.txt",
+  "STRATA_SPLIT_TIMING=1",
+  "STRATA_DECODE_TIMING=1"
+ ],
+ "cfg": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "prof_builds": false,
+ "perf": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3700       13075           0       45842       58241\nSwap:          16383         792       15591\n",
+ "t_start": "2026-11-23T23:07:53+0100",
+ "ready_s": 13.0,
+ "server_pid": 1136890,
+ "replay_rc": 0,
+ "replay_s": 70.0,
+ "server_rc": 0,
+ "elapsed_s": 85.3,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3848       12873           0       45896       58093\nSwap:          16383         797       15586\n",
+ "leftovers": [],
+ "gpu_pause_lines": [
+  "strata serve: the graphics driver paused the GPU for 265 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much"
+ ],
+ "non_finite": 0
+}

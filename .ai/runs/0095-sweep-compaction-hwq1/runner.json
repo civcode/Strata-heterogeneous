@@ -1,0 +1,31 @@
+{
+ "name": "sweep-compaction-hwq1",
+ "limit": 6,
+ "env": [
+  "GPU_MAX_HW_QUEUES=1",
+  "STRATA_PIPELINE_DEBUG=1",
+  "STRATA_PIPELINE_TRACE=/home/chris/workspace/strata-local-archive/profiles/0095/sweep-compaction-hwq1/pltrace.txt",
+  "STRATA_SPLIT_TIMING=1",
+  "STRATA_DECODE_TIMING=1"
+ ],
+ "cfg": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "prof_builds": false,
+ "perf": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3755       12894           0       45969       58186\nSwap:          16383         792       15591\n",
+ "t_start": "2026-11-23T23:06:24+0100",
+ "ready_s": 13.0,
+ "server_pid": 1135186,
+ "replay_rc": 0,
+ "replay_s": 72.0,
+ "server_rc": 0,
+ "elapsed_s": 86.9,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3698       13078           0       45841       58243\nSwap:          16383         792       15591\n",
+ "leftovers": [],
+ "gpu_pause_lines": [],
+ "non_finite": 0
+}

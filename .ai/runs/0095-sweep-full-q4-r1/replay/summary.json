@@ -1,0 +1,58 @@
+{
+ "requests": 106,
+ "generated_tokens": 91126,
+ "decode_seconds": 630.758,
+ "engine_decode_tps": 144.47,
+ "draft_acceptance_pct": 77.13,
+ "prompt_mismatches": 0,
+ "ttft_median_s": 3.512,
+ "phases": {
+  "reasoning": {
+   "chunks": 22091,
+   "seconds": 181.4323,
+   "tok_s": 121.76
+  },
+  "content": {
+   "chunks": 3884,
+   "seconds": 38.0974,
+   "tok_s": 101.95
+  },
+  "tool_calls": {
+   "chunks": 53443,
+   "seconds": 403.3141,
+   "tok_s": 132.51
+  }
+ },
+ "metrics_phases": {
+  "thinking": {
+   "tokens": 19651,
+   "seconds": 161.263,
+   "samples": 642,
+   "tps": 121.86
+  },
+  "answering": {
+   "tokens": 3937,
+   "seconds": 36.665,
+   "samples": 146,
+   "tps": 107.38
+  },
+  "writing tool calls": {
+   "tokens": 60072,
+   "seconds": 383.327,
+   "samples": 1526,
+   "tps": 156.71
+  },
+  "overall": {
+   "tokens": 83660,
+   "seconds": 581.256,
+   "samples": 2314,
+   "tps": 143.93
+  }
+ },
+ "recording": "/home/chris/workspace/strata-local-archive/recordings/session-20261123T170506Z.jsonl",
+ "sampling": "greedy",
+ "pauses": true,
+ "pause_scale": 1.0,
+ "wall_s": 987.1,
+ "errors": 0
+}

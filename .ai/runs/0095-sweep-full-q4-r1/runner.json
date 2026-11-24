@@ -1,0 +1,36 @@
+{
+ "name": "sweep-full-q4-r1",
+ "limit": 106,
+ "env": [
+  "GPU_MAX_HW_QUEUES=4"
+ ],
+ "cfg": [],
+ "exe_wrap": null,
+ "front_wrap": null,
+ "pyspy": false,
+ "sampler": false,
+ "prof_builds": false,
+ "perf": false,
+ "boot": "f94c87ce-2f4b-412e-b02c-09dfdb04f155",
+ "free_before": "               total        used        free      shared  buff/cache   available\nMem:           61942        3811       12903           0       45904       58130\nSwap:          16383         797       15586\n",
+ "t_start": "2026-11-23T23:09:28+0100",
+ "ready_s": 14.0,
+ "server_pid": 1138688,
+ "replay_rc": 0,
+ "replay_s": 988.1,
+ "server_rc": 0,
+ "elapsed_s": 1004.2,
+ "free_after": "               total        used        free      shared  buff/cache   available\nMem:           61942        3647       22268           0       36702       58294\nSwap:          16383         821       15562\n",
+ "leftovers": [],
+ "gpu_pause_lines": [
+  "strata serve: the graphics driver paused the GPU for 509 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 853 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 553 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 540 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 575 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 127 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 121 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much",
+  "strata serve: the graphics driver paused the GPU for 647 ms during this request while Linux moved memory the GPU uses; the request was slower by up to that much"
+ ],
+ "non_finite": 0
+}

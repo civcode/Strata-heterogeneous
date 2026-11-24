@@ -1,0 +1,15 @@
+2026-11-24T01:01:42+01:00
+               total        used        free      shared  buff/cache   available
+Mem:           61942        3710       19838           0       39069       58231
+Swap:          16383         758       15625
+Boot: f94c87ce-2f4b-412e-b02c-09dfdb04f155
+No coredumps found.
+Nov 24 00:34:03 oberon kernel: workqueue: amdgpu_amdkfd_restore_userptr_worker [amdgpu] hogged CPU for >10000us 515 times, consider switching to WQ_UNBOUND
+
+Engine stop evidence:
+strata serve: conversation cache: restored 106783 tokens (checkpoint) in 176.0 ms; parked=4 bytes=6821349132
+strata serve: non-finite logits (#879) in a prompt window at position 107233 (row 0): its tokens are not emitted, the request ends (DONE nonfinite) and the next request reads its prompt from token 0
+strata serve: prompt 107238 tokens = 106783 reused + 450 of 455 read in 572 ms (787.0 tok/s), 0 generated in 0 ms (0.0 tok/s), drafts accepted 0 of 0, 6 checkpoints (cancelled)
+strata serve: after non-finite logits (#879): dropped the live session, 6 checkpoints, 4 parked conversations and 0 idle slots (0 running slots not kept after their reply); reading this prompt from token 0
+strata serve: after non-finite logits in a prompt window (#3465): this request reads its whole prompt through the batched path, none of it through the verify windows
+strata serve: prompt 107238 tokens = 0 reused + 74092 of 107238 read in 16029 ms (4622.5 tok/s), 0 generated in 0 ms (0.0 tok/s), drafts accepted 0 of 0, 5 checkpoints (cancelled)
